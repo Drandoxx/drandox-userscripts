@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.42
+// @version      2.36.43
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -17,6 +17,7 @@
 // @grant        GM_removeValueChangeListener
 // @grant        GM_xmlhttpRequest
 // @grant        GM_info
+// @connect      raw.githubusercontent.com
 // @connect      raw.githubusercontent.com
 // @connect      api.openai.com
 // ==/UserScript==
@@ -13345,7 +13346,7 @@
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.42' });
+    addLog('info', 'helper-version', { version: '2.36.43' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -13686,6 +13687,16 @@
 
   const RELEASE_ID = 'sn-ai';
   const UPDATE_API_URL = 'https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/versions.json';
+  const UPDATE_GITHUB_API_URL = 'https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/versions.json';
+  const UPDATE_INSTALL_URLS = {
+    primary: 'https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js',
+    github: 'https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js',
+  };
+  const UPDATE_STATE_KEY = 'sn-ai-official-update-state-v2';
+  const UPDATE_LOCK_KEY = 'sn-ai-official-update-lock-v2';
+  const UPDATE_SESSION_COOKIE = 'sn_ai_update_browser_session';
+  const UPDATE_HOUR = 60 * 60 * 1000;
+  const UPDATE_MANUAL_COOLDOWN = 10 * 60 * 1000;
 
   function compareVersions(a, b) {
     const left = String(a).split('.').map(part => Number(part) || 0);
@@ -13797,33 +13808,17 @@
     document.body.append(popup);
   }
 
-  function checkOfficialUpdate() {
-    if (officialUpdateClickedThisSession || officialUpdateRequestPending) return;
+  async function renderOfficialUpdate(release) {
+    if (officialUpdateClickedThisSession || !release) return;
     const currentVersion = typeof GM_info !== 'undefined' ? GM_info.script?.version : '';
     if (!currentVersion || typeof GM_xmlhttpRequest !== 'function') return;
-    const warn = (message) => console.warn('[SN AI update]', message);
-    try {
-      officialUpdateRequestPending = true;
-      GM_xmlhttpRequest({
-        method: 'GET',
-        url: UPDATE_API_URL,
-        timeout: 15000,
-        async onload(response) {
-          if (response.status < 200 || response.status >= 300) {
-            officialUpdateRequestPending = false;
-            warn(`HTTP ${response.status}`);
-            return;
-          }
-          try {
-            if (officialUpdateClickedThisSession) return;
-            const payload = JSON.parse(response.responseText);
-            if (!Array.isArray(payload.releases)) throw new Error('Invalid release list');
-            const release = payload.releases.find(item => item?.id === RELEASE_ID);
-            if (!release || release.available === false) return;
-            if (!/^\d+(?:\.\d+)*$/.test(String(release.version))) throw new Error('Invalid release version');
-            if (compareVersions(release.version, currentVersion) <= 0) return;
-            const download = new URL(release.downloadUrl);
-            if (download.protocol !== 'https:' || download.hostname !== 'raw.githubusercontent.com') throw new Error('Invalid release download URL');
+            if (release.available === false || compareVersions(release.version, currentVersion) <= 0) {
+              document.querySelectorAll('[data-official-update], .local-sn-update-badge').forEach(element => element.remove());
+              document.getElementById('local-sn-ai-update-notification')?.remove();
+              document.querySelector(`#${ROOT_ID} [data-action="open-ai-settings"]`)?.setAttribute('aria-label', 'SN AI settings');
+              return;
+            }
+            if (release.downloadUrl !== UPDATE_INSTALL_URLS[release.source]) return;
             const settings = document.getElementById('local-sn-ai-settings-template');
             const settingsContent = settings?.querySelector('.local-sn-settings-content');
             const settingsButton = document.querySelector(`#${ROOT_ID} [data-action="open-ai-settings"]`);
@@ -13860,17 +13855,166 @@
               existingLink.querySelector('small').textContent = `${currentVersion} → ${release.version}`;
               await showOfficialUpdatePopup(release, currentVersion);
             }
-          } catch (error) { warn(error.message); }
-          finally { officialUpdateRequestPending = false; }
-        },
-        onerror: () => { officialUpdateRequestPending = false; warn('Network request failed'); },
-        ontimeout: () => { officialUpdateRequestPending = false; warn('Request timed out'); },
-        onabort: () => { officialUpdateRequestPending = false; },
-      });
-    } catch (error) { officialUpdateRequestPending = false; warn(error.message); }
   }
 
-  // Quiet background polling; a slow request cannot overlap the next check.
-  setTimeout(checkOfficialUpdate, 3000);
-  setInterval(checkOfficialUpdate, 10000);
+  function officialUpdateSession() {
+    const read = () => document.cookie.split(';').map(part => part.trim())
+      .find(part => part.startsWith(`${UPDATE_SESSION_COOKIE}=`))?.slice(UPDATE_SESSION_COOKIE.length + 1);
+    let session = read();
+    if (!session) {
+      session = crypto.randomUUID();
+      // No expiry/max-age: shared by tabs, cleared with the browser session.
+      document.cookie = `${UPDATE_SESSION_COOKIE}=${session}; Path=/; SameSite=Lax; Secure`;
+      session = read();
+    }
+    if (!session) throw new Error('Update session cookie is unavailable');
+    return session;
+  }
+
+  async function readOfficialUpdateState() {
+    const saved = await gmGetValue(UPDATE_STATE_KEY, {});
+    const session = officialUpdateSession();
+    if (saved?.session === session) return saved;
+    return {
+      session, mode: 'primary', failures: 0, lastPrimaryAttempt: 0,
+      lastGithubAttempt: Number(saved?.lastGithubAttempt) || 0,
+      lastGithubSuccess: Number(saved?.lastGithubSuccess) || 0,
+      nextGithubAutomaticAt: Number(saved?.nextGithubAutomaticAt) || 0,
+      cache: saved?.cache || null,
+    };
+  }
+
+  function fetchOfficialUpdate(source) {
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        method: 'GET', url: source === 'github' ? UPDATE_GITHUB_API_URL : UPDATE_API_URL, timeout: 15000,
+        onload(response) {
+          try {
+            if (response.status < 200 || response.status >= 300) throw new Error(`HTTP ${response.status}`);
+            const payload = JSON.parse(response.responseText);
+            const release = Array.isArray(payload?.releases) && payload.releases.find(item => item?.id === RELEASE_ID);
+            if (!release || !/^\d+(?:\.\d+)*$/.test(String(release.version))
+              || typeof release.available !== 'boolean'
+              || release.downloadUrl !== UPDATE_INSTALL_URLS[source]) throw new Error('Invalid matching release data');
+            resolve({ id: RELEASE_ID, version: String(release.version), available: release.available,
+              downloadUrl: release.downloadUrl, source });
+          } catch (error) { reject(error); }
+        },
+        onerror: () => reject(new Error('Network request failed')),
+        ontimeout: () => reject(new Error('Request timed out')),
+        onabort: () => reject(new Error('Request aborted')),
+      });
+    });
+  }
+
+  async function renderOfficialUpdateState(state) {
+    const content = document.querySelector('#local-sn-ai-settings-template .local-sn-settings-content');
+    if (content) {
+      let row = content.querySelector('[data-update-check-controls]');
+      if (!row) {
+        row = document.createElement('div');
+        row.dataset.updateCheckControls = 'true';
+        row.style.cssText = 'display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:0 0 12px;font:12px/1.4 system-ui;color:#b5c9c0';
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = 'Check GitHub for updates';
+        button.style.cssText = 'padding:6px 10px;border:1px solid #528b80;border-radius:6px;background:#172923;color:#e2f5ef;cursor:pointer';
+        button.addEventListener('click', () => checkOfficialUpdate(true));
+        const status = document.createElement('span');
+        row.append(button, status);
+        content.prepend(row);
+      }
+      const remaining = Math.max(0, (Number(state.lastGithubAttempt) || 0) + UPDATE_MANUAL_COOLDOWN - Date.now());
+      const seconds = Math.ceil(remaining / 1000);
+      row.querySelector('button').disabled = remaining > 0 || officialUpdateRequestPending;
+      row.querySelector('span').textContent = remaining > 0
+        ? `GitHub check in ${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`
+        : state.mode === 'github' ? 'GitHub fallback active' : 'Primary update API active';
+    }
+    await renderOfficialUpdate(state.cache);
+  }
+
+  async function checkOfficialUpdate(manual = false) {
+    if (officialUpdateRequestPending || typeof GM_xmlhttpRequest !== 'function') return;
+    officialUpdateRequestPending = true;
+    try {
+      // Web Locks makes acquiring the shared GM lease atomic across SN tabs.
+      // The lease also survives a crashed/closed tab, but expires after 30s.
+      if (!navigator.locks?.request) throw new Error('Shared update locking is unavailable');
+      await navigator.locks.request(UPDATE_LOCK_KEY, { ifAvailable: true }, async lock => {
+        if (!lock) return;
+        const state = await readOfficialUpdateState();
+        const now = Date.now();
+        const lease = await gmGetValue(UPDATE_LOCK_KEY, null);
+        if (lease?.expires > now && lease.session === state.session) return;
+        let source;
+        if (manual) {
+          if (now - (Number(state.lastGithubAttempt) || 0) < UPDATE_MANUAL_COOLDOWN) return;
+          source = 'github';
+        } else if (state.mode === 'github') {
+          if (now < (Number(state.nextGithubAutomaticAt) || 0)) return;
+          source = 'github';
+        } else {
+          if (now - (Number(state.lastPrimaryAttempt) || 0) < 10000) return;
+          source = 'primary';
+        }
+        const owner = crypto.randomUUID();
+        await gmSetValue(UPDATE_LOCK_KEY, { owner, session: state.session, expires: now + 30000 });
+        try {
+          async function run(source) {
+            const started = Date.now();
+            if (source === 'github') {
+              state.lastGithubAttempt = started;
+              state.nextGithubAutomaticAt = started + UPDATE_HOUR;
+            }
+            else state.lastPrimaryAttempt = started;
+            // Reserve cooldowns before issuing a request, including failures.
+            await gmSetValue(UPDATE_STATE_KEY, state);
+            try {
+              const release = await fetchOfficialUpdate(source);
+              state.cache = release;
+              if (source === 'github') state.lastGithubSuccess = Date.now();
+              else state.failures = 0;
+            } catch (error) {
+              if (source === 'primary') {
+                state.failures = (Number(state.failures) || 0) + 1;
+                if (state.failures >= 3) {
+                  state.mode = 'github';
+                  state.nextGithubAutomaticAt = Date.now() - (Number(state.lastGithubSuccess) || 0) < UPDATE_HOUR
+                    ? Math.max(Number(state.nextGithubAutomaticAt) || 0, state.lastGithubSuccess + UPDATE_HOUR)
+                    : Math.max(Date.now(), (Number(state.lastGithubAttempt) || 0) + UPDATE_MANUAL_COOLDOWN);
+                }
+              }
+              console.warn('[SN AI update]', source, error.message);
+            }
+            await gmSetValue(UPDATE_STATE_KEY, state);
+          }
+          await run(source);
+          if (source === 'primary' && state.mode === 'github') {
+            // Enter fallback immediately unless GitHub was checked successfully
+            // within the hour. An earlier manual attempt still has its cooldown.
+            if (Date.now() >= state.nextGithubAutomaticAt) await run('github');
+          }
+        } finally {
+          const held = await gmGetValue(UPDATE_LOCK_KEY, null);
+          if (held?.owner === owner) await gmDeleteValue(UPDATE_LOCK_KEY);
+        }
+      });
+    } catch (error) { console.warn('[SN AI update]', error.message); }
+    finally {
+      officialUpdateRequestPending = false;
+      try { await renderOfficialUpdateState(await readOfficialUpdateState()); }
+      catch (error) { console.warn('[SN AI update]', error.message); }
+    }
+  }
+
+  addGMValueListener(UPDATE_STATE_KEY, () => {
+    readOfficialUpdateState().then(renderOfficialUpdateState).catch(error => console.warn('[SN AI update]', error.message));
+  });
+  // Shared timestamps, cooldowns and the lock deduplicate these tab-local ticks.
+  setTimeout(() => checkOfficialUpdate(), 3000);
+  setInterval(() => checkOfficialUpdate(), 10000);
+  setInterval(() => {
+    readOfficialUpdateState().then(renderOfficialUpdateState).catch(error => console.warn('[SN AI update]', error.message));
+  }, 1000);
 })();
