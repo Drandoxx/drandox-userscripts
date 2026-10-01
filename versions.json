@@ -1,0 +1,22 @@
+{
+  "checkedAt": "2026-10-01T17:20:27.9743800Z",
+  "ok": true,
+  "releases": [
+    {
+      "version": "2.36.42",
+      "downloadUrl": "https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js",
+      "name": "SN AI",
+      "available": true,
+      "fileName": "SNOW_CHAT_AI.user.js",
+      "id": "sn-ai"
+    },
+    {
+      "version": "1.501.0",
+      "downloadUrl": "https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js",
+      "name": "Genesys V2",
+      "available": true,
+      "fileName": "Genesys_V2.user.js",
+      "id": "genesys-v2"
+    }
+  ]
+}
