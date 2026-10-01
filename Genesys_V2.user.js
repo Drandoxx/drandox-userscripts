@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.501.0
+// @version      1.502.0
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -2138,6 +2138,10 @@
       outline-offset: -1px !important;
     }
     .gbs-summary-card {
+      border-top-width: 2px !important;
+      border-right-width: 2px !important;
+      border-bottom-width: 2px !important;
+      border-left-width: 7px !important;
       border-top-color: color-mix(in srgb, var(--gbs-card-status, #64748b) 85%, #4b596a) !important;
       border-right-color: color-mix(in srgb, var(--gbs-card-status, #64748b) 85%, #4b596a) !important;
       border-bottom-color: color-mix(in srgb, var(--gbs-card-status, #64748b) 85%, #4b596a) !important;
