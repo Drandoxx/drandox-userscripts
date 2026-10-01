@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.505.0
+// @version      1.506.0
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -68,7 +68,18 @@
   }
   function showUpdateCooldown(ms) {
     const button = document.querySelector('.gbs-settings-check-updates');
-    if (button) button.textContent = `GitHub check available in ${Math.ceil(ms / 60000)} min`;
+    // Keep the same button text/style regardless of update source.
+    if (button) {
+      button.textContent = 'Check for updates';
+      button.title = `Manual check available in ${Math.ceil(ms / 60000)} min`;
+      let status = button.parentElement?.querySelector('.gbs-update-cooldown');
+      if (!status && button.parentElement) {
+        status = document.createElement('span'); status.className = 'gbs-update-cooldown';
+        status.style.cssText = 'font-size:12px;color:#a9bcc2;align-self:center';
+        button.parentElement.prepend(status);
+      }
+      if (status) status.textContent = button.title;
+    }
   }
   let updateCheckPending = false;
   let updateCheckTimer = 0;
@@ -193,7 +204,9 @@
     const currentVersion = GM_info.script?.version;
     if (!/^\d+(?:\.\d+)*$/.test(String(currentVersion))) return;
     let state = readUpdateState();
-    applyCachedUpdate(state);
+    // Both sources enter the very same renderer, including cached updates
+    // during network failures or when a different tab owns the request.
+    applyCachedUpdate(state, manual);
     const now = Date.now();
     if (state.fallback) {
       const due = manual ? (state.githubManualAt || 0) + MANUAL_MS : Math.max(state.githubAutoAt || 0, state.githubSuccessAt || 0) + HOUR_MS;
@@ -202,7 +215,10 @@
     } else if (!manual && now - (state.primaryAt || 0) < 10000) return;
     if (manual) {
       const button = document.querySelector('.gbs-settings-check-updates');
-      if (button) button.textContent = 'Check for updates';
+      if (button) {
+        button.textContent = 'Check for updates'; button.removeAttribute('title');
+        button.parentElement?.querySelector('.gbs-update-cooldown')?.remove();
+      }
     }
     const oldLock = GM_getValue(UPDATE_LOCK_KEY, null);
     if (oldLock?.expires > now) return;
