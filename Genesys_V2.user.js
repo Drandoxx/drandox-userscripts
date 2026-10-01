@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.502.0
+// @version      1.505.0
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -18,6 +18,7 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_info
 // @connect      raw.githubusercontent.com
+// @connect      raw.githubusercontent.com
 // @license      MIT
 // ==/UserScript==
 
@@ -31,6 +32,44 @@
   // Official release checker: metadata updates remain managed by Tampermonkey.
   const RELEASE_ID = 'genesys-v2';
   const UPDATE_API_URL = 'https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/versions.json';
+  const GITHUB_VERSION_URL = 'https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/versions.json';
+  const PRIMARY_INSTALL_URL = 'https://drandox.cc/work/Genesys/Genesys_V2.user.js';
+  const GITHUB_INSTALL_URL = 'https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js';
+  const UPDATE_STATE_KEY = 'genesys-v2-update-policy-state';
+  const UPDATE_LOCK_KEY = 'genesys-v2-update-policy-lock';
+  const UPDATE_SESSION_COOKIE = 'gbs_update_session';
+  const HOUR_MS = 3600000, MANUAL_MS = 600000;
+  function updateSessionId() {
+    const existing = document.cookie.split('; ').find(part => part.startsWith(UPDATE_SESSION_COOKIE + '='))?.split('=')[1];
+    if (existing) return existing;
+    const id = String(Date.now()) + Math.random().toString(36).slice(2);
+    // Session cookie shared by Genesys login/app tabs; no persistent expiry.
+    document.cookie = `${UPDATE_SESSION_COOKIE}=${id}; Domain=.mypurecloud.de; Path=/; Secure; SameSite=Lax`;
+    return document.cookie.split('; ').find(part => part.startsWith(UPDATE_SESSION_COOKIE + '='))?.split('=')[1] || id;
+  }
+  function readUpdateState() {
+    const session = updateSessionId();
+    const old = GM_getValue(UPDATE_STATE_KEY, {});
+    if (old.session === session) return old;
+    const fresh = { session, fallback: false, failures: 0, primaryAt: 0,
+      githubSuccessAt: old.githubSuccessAt || 0, githubAutoAt: 0, githubManualAt: old.githubManualAt || 0, cached: old.cached || null };
+    GM_setValue(UPDATE_STATE_KEY, fresh);
+    return fresh;
+  }
+  function applyCachedUpdate(state, manual = false) {
+    const current = GM_info.script.version;
+    const comparison = confirmedUpdateVersion && compareVersions(confirmedUpdateVersion, current) > 0 ? confirmedUpdateVersion : current;
+    const cached = state.cached;
+    availableUpdateRelease = cached && [PRIMARY_INSTALL_URL, GITHUB_INSTALL_URL].includes(cached.downloadUrl)
+      && /^\d+(?:\.\d+)*$/.test(String(cached.version))
+      && compareVersions(cached.version, comparison) > 0 ? cached : null;
+    syncGenesysUpdateControls();
+    if (manual && availableUpdateRelease) showGenesysUpdateNotice(current, availableUpdateRelease, true);
+  }
+  function showUpdateCooldown(ms) {
+    const button = document.querySelector('.gbs-settings-check-updates');
+    if (button) button.textContent = `GitHub check available in ${Math.ceil(ms / 60000)} min`;
+  }
   let updateCheckPending = false;
   let updateCheckTimer = 0;
   let availableUpdateRelease = null;
@@ -148,43 +187,75 @@
     }
   }
 
-  function checkGenesysUpdates(manual = false) {
+  async function checkGenesysUpdates(manual = false) {
     if (window !== window.top || updateCheckPending) return;
     if (typeof GM_xmlhttpRequest !== 'function' || typeof GM_info === 'undefined') return;
     const currentVersion = GM_info.script?.version;
     if (!/^\d+(?:\.\d+)*$/.test(String(currentVersion))) return;
+    let state = readUpdateState();
+    applyCachedUpdate(state);
+    const now = Date.now();
+    if (state.fallback) {
+      const due = manual ? (state.githubManualAt || 0) + MANUAL_MS : Math.max(state.githubAutoAt || 0, state.githubSuccessAt || 0) + HOUR_MS;
+      const adminManual = manual && isSavedAdmin(document);
+      if (now < due && !adminManual) { if (manual) { showUpdateCooldown(due - now); applyCachedUpdate(state, true); } return; }
+    } else if (!manual && now - (state.primaryAt || 0) < 10000) return;
+    if (manual) {
+      const button = document.querySelector('.gbs-settings-check-updates');
+      if (button) button.textContent = 'Check for updates';
+    }
+    const oldLock = GM_getValue(UPDATE_LOCK_KEY, null);
+    if (oldLock?.expires > now) return;
     updateCheckPending = true;
-    const warn = message => { updateCheckPending = false; console.warn('[Genesys V2 update]', message); };
+    const token = String(now) + Math.random().toString(36).slice(2);
+    GM_setValue(UPDATE_LOCK_KEY, { token, expires: now + 20000 });
+    // Shared GM storage is not atomic: settle simultaneous claims before
+    // issuing a request, then only the final owner proceeds.
+    await new Promise(resolve => window.setTimeout(resolve, 100));
+    if (GM_getValue(UPDATE_LOCK_KEY, {}).token !== token) { updateCheckPending = false; return; }
+    state = readUpdateState();
+    const fallback = state.fallback;
+    const releaseLock = () => {
+      updateCheckPending = false;
+      if (GM_getValue(UPDATE_LOCK_KEY, {}).token === token) GM_setValue(UPDATE_LOCK_KEY, null);
+    };
+    const warn = message => {
+      const shared = readUpdateState();
+      if (!fallback) { shared.failures = (shared.failures || 0) + 1; if (shared.failures >= 3) shared.fallback = true; }
+      GM_setValue(UPDATE_STATE_KEY, shared);
+      releaseLock(); console.warn('[Genesys V2 update]', message);
+      if (!fallback && shared.fallback) checkGenesysUpdates(false);
+    };
+    if (fallback) {
+      state.githubAutoAt = now;
+      if (manual) state.githubManualAt = now;
+    } else state.primaryAt = now;
+    GM_setValue(UPDATE_STATE_KEY, state);
     try {
       GM_xmlhttpRequest({
-        method: 'GET', url: UPDATE_API_URL, headers: { Accept: 'application/json' },
+        method: 'GET', url: fallback ? GITHUB_VERSION_URL : UPDATE_API_URL, headers: { Accept: 'application/json' },
         anonymous: true, nocache: true, timeout: 15000,
         onload(response) {
-          updateCheckPending = false;
           if (response.status < 200 || response.status >= 300) { warn(`HTTP ${response.status}`); return; }
           try {
             const payload = JSON.parse(response.responseText);
             if (!Array.isArray(payload.releases)) throw new Error('Invalid release list');
             const release = payload.releases.find(item => item?.id === RELEASE_ID);
-            if (!release || release.available === false) return;
+            if (!release || release.available === false) throw new Error('Missing or unavailable matching release');
             if (!/^\d+(?:\.\d+)*$/.test(String(release.version))) throw new Error('Invalid release version');
-            const comparisonVersion = confirmedUpdateVersion && compareVersions(confirmedUpdateVersion, currentVersion) > 0 ? confirmedUpdateVersion : currentVersion;
-            if (compareVersions(release.version, comparisonVersion) > 0) {
-              const download = new URL(release.downloadUrl);
-              if (download.protocol !== 'https:' || download.hostname !== 'raw.githubusercontent.com') throw new Error('Invalid release download URL');
-              availableUpdateRelease = release;
-              syncGenesysUpdateControls();
-              if (manual) showGenesysUpdateNotice(currentVersion, release);
-            } else {
-              availableUpdateRelease = null;
-              syncGenesysUpdateControls();
-              if (manual) showGenesysUpdateNotice(currentVersion, null, true);
-            }
+            const allowed = fallback ? GITHUB_INSTALL_URL : PRIMARY_INSTALL_URL;
+            if (release.downloadUrl !== allowed) throw new Error('Invalid release download URL');
+            const shared = readUpdateState();
+            shared.failures = 0;
+            shared.cached = { id: RELEASE_ID, version: release.version, downloadUrl: allowed, source: fallback ? 'github' : 'primary' };
+            if (fallback) shared.githubSuccessAt = Date.now();
+            GM_setValue(UPDATE_STATE_KEY, shared);
+            releaseLock(); applyCachedUpdate(shared, manual);
           } catch (error) { warn(error.message); }
         },
         onerror: () => warn('Network request failed'),
         ontimeout: () => warn('Request timed out'),
-        onabort: () => { updateCheckPending = false; }
+        onabort: () => warn('Request aborted')
       });
     } catch (error) { warn(error.message); }
   }
@@ -4864,7 +4935,7 @@
     popover.querySelector('[data-setting="power"]').lastElementChild.textContent = `Genesys V2 is ${on ? 'ON' : 'OFF'}`;
     settingsHeading.icons = { Dashboard: popover.querySelector('[data-setting="dashboard"] svg').outerHTML, 'Status Colors': popover.querySelector('[data-setting="colors"] svg').outerHTML };
     const updateFooter = doc.createElement('div'); updateFooter.className = 'gbs-settings-footer';
-    const updateButton = doc.createElement('button'); updateButton.type = 'button'; updateButton.textContent = 'Check for updates';
+    const updateButton = doc.createElement('button'); updateButton.type = 'button'; updateButton.textContent = 'Check for updates'; updateButton.className = 'gbs-settings-check-updates';
     updateButton.addEventListener('click', () => checkGenesysUpdates(true));
     updateFooter.appendChild(updateButton); popover.appendChild(updateFooter);
     syncGenesysUpdateControls(doc);
