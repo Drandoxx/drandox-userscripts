@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.49
+// @version      2.36.50
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -6911,6 +6911,32 @@
     automationFailure(failureCode, message, { field: fieldLabel, optionValue, actual: lastActual, attempts: maxAttempts });
   }
 
+  async function commitTextWithTouch(field, text, resolveField) {
+    // Activate Workspace's touched state before editing. Give its event
+    // handlers time to process input before committing the focus transition.
+    field.click();
+    field.focus({ preventScroll: true });
+    await sleep(60);
+    field = resolveField() || field;
+    if (field.isConnected === false) return false;
+    field.focus({ preventScroll: true });
+    setNativeValue(field, text);
+    await sleep(100);
+    field.blur();
+    await sleep(60);
+    const current = resolveField();
+    if (!current || current.isConnected === false) return false;
+    // Clicking a populated input clears Workspace's stale mandatory state
+    // on affected forms. Do not hide validation errors or alter requiredness.
+    if (current.tagName === 'INPUT') {
+      current.click();
+      current.focus({ preventScroll: true });
+      await sleep(60);
+      current.blur();
+    }
+    return true;
+  }
+
   async function autoText(fieldLabel, value, code, maxLength) {
     const text = String(value ?? '');
     if (maxLength && text.length > maxLength) automationFailure(`${code}_TOO_LONG`, `${fieldLabel} exceeds ${maxLength} characters.`, { length: text.length, maxLength });
@@ -6940,12 +6966,10 @@
           node = node.parentElement || (node.getRootNode?.() instanceof ShadowRoot ? node.getRootNode().host : null);
         }
       }
-      field.focus();
-      setNativeValue(field, text);
-      field.blur();
+      await commitTextWithTouch(field, text, () => findControlByLabel(fieldLabel));
       const committed = await waitStableValue(fieldLabel, text, 'exact', 2200, 450);
       addLog(committed.stable ? 'info' : 'warn', 'auto-text-attempt', { field: fieldLabel, attempt, expected: text, actual: committed.actual, stable: committed.stable });
-      if (committed.stable) return committed.actual;
+      if (committed.stable && findControlByLabel(fieldLabel)?.getAttribute('aria-invalid') !== 'true') return committed.actual;
       await sleep(retryPause(attempt));
     }
     automationFailure(code, `${fieldLabel} did not retain its text after 10 attempts.`, { attempts: 10 });
@@ -7010,12 +7034,21 @@
     for (let attempt = 1; attempt <= 10; attempt += 1) {
       const field = dynamicDescriptionControl(fieldMetadata);
       if (!field) automationFailure(`${code}_FIELD_MISSING`, `${fieldMetadata.label} was not found.`, { attempt, name: fieldMetadata.name || '' });
-      field.focus();
-      setNativeValue(field, text);
-      field.blur();
-      const committed = await waitUntil(() => subordinateFieldMatchesExpected(readableElementValue(field), text, fieldMetadata.label) ? readableElementValue(field) : null, 2200, 45);
-      addLog(committed ? 'info' : 'warn', 'auto-description-field-attempt', { field: fieldMetadata.label, name: fieldMetadata.name || '', attempt, expected: text, actual: readableElementValue(field), stable: Boolean(committed) });
-      if (committed) return committed;
+      await commitTextWithTouch(field, text, () => dynamicDescriptionControl(fieldMetadata));
+      let stableSince = 0;
+      const committed = await waitUntil(() => {
+        const current = dynamicDescriptionControl(fieldMetadata);
+        const actual = readableElementValue(current);
+        if (!current || current.getAttribute('aria-invalid') === 'true'
+          || !subordinateFieldMatchesExpected(actual, text, fieldMetadata.label)) {
+          stableSince = 0;
+          return null;
+        }
+        if (!stableSince) stableSince = Date.now();
+        return Date.now() - stableSince >= 450 ? { actual } : null;
+      }, 2200, 45);
+      addLog(committed ? 'info' : 'warn', 'auto-description-field-attempt', { field: fieldMetadata.label, name: fieldMetadata.name || '', attempt, expected: text, actual: readableDescriptionFieldValue(fieldMetadata), stable: Boolean(committed) });
+      if (committed) return committed.actual;
       await sleep(retryPause(attempt));
     }
     automationFailure(code, `${fieldMetadata.label} did not retain its complete text after 10 attempts.`, { name: fieldMetadata.name || '', length: text.length });
@@ -13460,7 +13493,7 @@
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.49' });
+    addLog('info', 'helper-version', { version: '2.36.50' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
