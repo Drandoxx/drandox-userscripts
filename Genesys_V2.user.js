@@ -2,8 +2,8 @@
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
 // @version      1.523.0
-// @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
-// @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
+// @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
+// @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
 // @author       Drandox | Laszlo Akim
 // @match        https://apps.mypurecloud.de/*
@@ -17,7 +17,7 @@
 // @grant        unsafeWindow
 // @grant        GM_xmlhttpRequest
 // @grant        GM_info
-// @connect      raw.githubusercontent.com
+// @connect      drandox.cc
 // @connect      raw.githubusercontent.com
 // @license      MIT
 // ==/UserScript==
