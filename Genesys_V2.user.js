@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.512.0
+// @version      1.513.0
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -71,7 +71,8 @@
     // Keep the same button text/style regardless of update source.
     if (button) {
       button.textContent = 'Check for updates';
-      button.title = `Manual check available in ${Math.ceil(ms / 60000)} min`;
+      const seconds = Math.max(0, Math.ceil(ms / 1000));
+      button.title = `Manual check available in ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
       let status = button.parentElement?.querySelector('.gbs-update-cooldown');
       if (!status && button.parentElement) {
         status = document.createElement('span'); status.className = 'gbs-update-cooldown';
@@ -79,6 +80,16 @@
         button.parentElement.prepend(status);
       }
       if (status) status.textContent = button.title;
+    }
+  }
+  function refreshUpdateCooldown() {
+    const state = readUpdateState();
+    const remaining = (state.githubManualAt || 0) + MANUAL_MS - Date.now();
+    if (state.fallback && remaining > 0 && !isSavedAdmin(document)) showUpdateCooldown(remaining);
+    else {
+      const button = document.querySelector('.gbs-settings-check-updates');
+      button?.removeAttribute('title');
+      button?.parentElement?.querySelector('.gbs-update-cooldown')?.remove();
     }
   }
   let updateCheckPending = false;
@@ -212,7 +223,7 @@
       const due = manual ? (state.githubManualAt || 0) + MANUAL_MS : Math.max(state.githubAutoAt || 0, state.githubSuccessAt || 0) + HOUR_MS;
       const adminManual = manual && isSavedAdmin(document);
       if (now < due && !adminManual) { if (manual) { showUpdateCooldown(due - now); applyCachedUpdate(state, true); } return; }
-    } else if (!manual && now - (state.primaryAt || 0) < 10000) return;
+    } else if (state.primaryRetryAt ? now < state.primaryRetryAt : !manual && now - (state.primaryAt || 0) < 10000) return;
     if (manual) {
       const button = document.querySelector('.gbs-settings-check-updates');
       if (button) {
@@ -237,7 +248,11 @@
     };
     const warn = message => {
       const shared = readUpdateState();
-      if (!fallback) { shared.failures = (shared.failures || 0) + 1; if (shared.failures >= 3) shared.fallback = true; }
+      if (!fallback) {
+        shared.failures = (shared.failures || 0) + 1;
+        shared.primaryRetryAt = Date.now() + 5000;
+        if (shared.failures >= 3) { shared.fallback = true; shared.primaryRetryAt = 0; }
+      }
       GM_setValue(UPDATE_STATE_KEY, shared);
       releaseLock(); console.warn('[Genesys V2 update]', message);
       if (!fallback && shared.fallback) checkGenesysUpdates(false);
@@ -263,10 +278,12 @@
             if (release.downloadUrl !== allowed) throw new Error('Invalid release download URL');
             const shared = readUpdateState();
             shared.failures = 0;
+            shared.primaryRetryAt = 0;
             shared.cached = { id: RELEASE_ID, version: release.version, downloadUrl: allowed, source: fallback ? 'github' : 'primary' };
             if (fallback) shared.githubSuccessAt = Date.now();
             GM_setValue(UPDATE_STATE_KEY, shared);
             releaseLock(); applyCachedUpdate(shared, manual);
+            if (manual && !availableUpdateRelease) showGenesysUpdateNotice(currentVersion, null, true);
           } catch (error) { warn(error.message); }
         },
         onerror: () => warn('Network request failed'),
@@ -279,7 +296,12 @@
   function scheduleGenesysUpdateCheck() {
     if (window !== window.top) return;
     const schedule = () => {
-      if (!updateCheckTimer) updateCheckTimer = window.setInterval(() => checkGenesysUpdates(), 10000);
+      if (!updateCheckTimer) updateCheckTimer = window.setInterval(() => {
+        refreshUpdateCooldown();
+        // Shared timestamps keep normal primary requests ten seconds apart;
+        // the one-second tick also services five-second failure retries.
+        checkGenesysUpdates();
+      }, 1000);
     };
     if (document.readyState === 'complete') schedule();
     else window.addEventListener('load', schedule, { once: true });
