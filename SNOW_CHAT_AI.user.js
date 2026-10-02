@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.48
+// @version      2.36.49
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -6380,6 +6380,30 @@
     return exact || (match === 'prefix' ? prefix : null) || contains || null;
   }
 
+  async function waitForStableCIOption(field, expected) {
+    const wanted = normalisedFieldValue(expected);
+    let candidate = null;
+    let text = '';
+    let stableSince = 0;
+    return waitUntil(() => {
+      // Ignore unrelated Recent Selections; preserve displayed order among
+      // results matching the requested CI instead of preferring an exact row.
+      const first = popupOptionsFor(field, true).find(option =>
+        normalisedFieldValue(option.textContent).includes(wanted));
+      const nextText = first ? normalisedFieldValue(first.textContent) : '';
+      if (!first || !first.isConnected || first.getAttribute('aria-disabled') === 'true') {
+        candidate = null; text = ''; stableSince = 0;
+        return null;
+      }
+      if (first !== candidate || nextText !== text) {
+        candidate = first; text = nextText; stableSince = performance.now();
+        return null;
+      }
+      // Every disappearance, replacement, or label change restarts the clock.
+      return performance.now() - stableSince >= 850 ? first : null;
+    }, 7000, 80);
+  }
+
   const ROUTING_DEPENDENCIES = Object.freeze({
     category: 'Sub Category',
     'sub category': 'Symptom',
@@ -6435,7 +6459,7 @@
     // `allowRoutingFastTrial` escape hatch is benchmark-only: it lets CMD
     // measure the real typeahead interaction on a fresh, unsaved Event
     // without weakening any ticket runner.
-    if (options.forceReselect || options.strictCommit
+    if (comparableLabel(fieldLabel) === 'configuration item' || options.forceReselect || options.strictCommit
       || (!options.allowRoutingFastTrial && routingNext)
       || (!options.allowRoutingFastTrial && comparableLabel(fieldLabel) === 'symptom')) {
       const hasExplicitDependency = Object.prototype.hasOwnProperty.call(options, 'dependentNextField');
@@ -6487,6 +6511,7 @@
     const maxAttempts = Math.max(1, Math.min(10, Number(options.maxAttempts) || 10));
     let lastActual = '';
     let foundField = false;
+    const isCI = comparableLabel(fieldLabel) === 'configuration item';
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       if (fieldLabel === 'Attached Knowledge') await revealVirtualisedActiveEventField(fieldLabel);
       const field = await waitForControlByLabel(fieldLabel, 2200);
@@ -6542,7 +6567,7 @@
         // result replaces them. Let the query settle before navigating or
         // evaluating options so a stale recent location is never committed.
         await sleep(fieldLabel === 'Location' ? 1150 : 180);
-        const option = await waitUntil(
+        const option = isCI ? await waitForStableCIOption(field, expected) : await waitUntil(
           () => choosePopupOption(field, expected, match, options.first === true, true),
           fieldLabel === 'Location' ? 7000 : 4200,
           routingDependentField(fieldLabel) || comparableLabel(fieldLabel) === 'symptom' ? 90 : 60,
@@ -6557,7 +6582,7 @@
         // Workspace. Keep the reference focused and let the popup settle for
         // a short, measured interval from the moment this exact option is
         // available, then confirm it is still visible before the one click.
-        await sleep(Number(options.optionReadyDelayMs ?? 300));
+        if (!isCI) await sleep(Number(options.optionReadyDelayMs ?? 300));
         const settledOption = option.isConnected && isVisible(option)
           ? option
           : choosePopupOption(field, expected, match, options.first === true, true);
@@ -6567,7 +6592,7 @@
           await sleep(retryPause(attempt));
           continue;
         }
-        if (attempt >= 2) await sleep(attempt >= 3 ? 1000 : 500);
+        if (!isCI && attempt >= 2) await sleep(attempt >= 3 ? 1000 : 500);
         // Reference/typeahead results commit with one native option click. A
         // synthetic pointer sequence followed by Enter can activate the same
         // result twice or move selection away from it.
@@ -13435,7 +13460,7 @@
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.48' });
+    addLog('info', 'helper-version', { version: '2.36.49' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
