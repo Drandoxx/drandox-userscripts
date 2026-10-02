@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.68
+// @version      2.36.69
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -14323,7 +14323,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.68' });
+    addLog('info', 'helper-version', { version: '2.36.69' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -14663,6 +14663,18 @@ function startSNAI() {
   const inboxPolicy = { autoAccept: true, logs: [], bytes: 0, observers: [], timers: new Map(), seen: new WeakSet(), disposed: false };
   const INBOX_AUTO_ACCEPT_KEY = 'sn-ai-inbox-auto-accept-v1';
   let notificationSettingsAvailable = false;
+  let notificationSettingsConfirmedNoticeShown = false;
+  function showNotificationSettingsConfirmed() {
+    if (notificationSettingsConfirmedNoticeShown || inboxPolicy.disposed) return;
+    notificationSettingsConfirmedNoticeShown = true;
+    const box = document.createElement('div');
+    box.id = 'local-sn-ai-notification-settings-confirmed';
+    box.setAttribute('role', 'status');
+    box.style.cssText = 'position:fixed;right:20px;bottom:20px;z-index:2147483647;max-width:calc(100vw - 40px);box-sizing:border-box;padding:12px 16px;border:1px solid #448a70;border-radius:8px;background:#183329;color:#d6f9e4;font:14px/1.4 system-ui;box-shadow:0 4px 16px #0004';
+    box.textContent = 'All settings are properly set.';
+    document.body.append(box);
+    setTimeout(() => box.remove(), 5000);
+  }
   function showNotificationSettingsMissingError() {
     if (notificationSettingsAvailable || inboxPolicy.disposed) return;
     const box = document.createElement('div');
@@ -14727,6 +14739,10 @@ function startSNAI() {
             current.getRootNode()?.host?.getAttribute('aria-label')?.includes(label?.split(', ')[1]) && current.checked) || null, 1500, 100);
           inboxLog('notification-setting-enforced', { label, confirmed: Boolean(confirmed) });
         }
+        const verified = controls();
+        if (!stopped && verified.length === labels.length && verified.every(control => control.checked)) {
+          showNotificationSettingsConfirmed();
+        }
       } catch (error) { inboxLog('notification-settings-check-failed', { reason: error.message }); }
       finally {
         if (opened && trigger?.isConnected) trigger.click();
@@ -14751,7 +14767,11 @@ function startSNAI() {
     const select = document.createElement('select');
     select.dataset.snAiPresence = 'true';
     select.setAttribute('aria-label', 'SN AI agent presence');
-    select.style.cssText = 'display:block;width:100%;min-width:0;height:30px;box-sizing:border-box;padding:0 10px;border:1px solid #526a62;border-radius:5px;background:#1b2c26;color:#e5f5ef;font:13px system-ui;cursor:pointer;box-shadow:inset 0 1px 0 #ffffff08';
+    select.style.cssText = 'display:block;width:100%;min-width:0;height:30px;box-sizing:border-box;padding:0 36px 0 10px;appearance:none;border:1px solid #526a62;border-radius:5px;background:#1b2c26;color:#e5f5ef;font:13px system-ui;cursor:pointer;box-shadow:inset 0 1px 0 #ffffff08';
+    const arrow = document.createElement('span');
+    arrow.setAttribute('aria-hidden', 'true');
+    arrow.style.cssText = 'position:absolute;right:12px;top:50%;transform:translateY(-50%);width:14px;height:14px;pointer-events:none;color:#b9d3c7';
+    arrow.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
     for (const name of ['Available', 'Away', 'Offline']) {
       const option = document.createElement('option'); option.value = name; option.textContent = name; select.append(option);
     }
@@ -14764,8 +14784,8 @@ function startSNAI() {
     const originalGearStyle = gear?.getAttribute('style');
     if (gear) gear.style.flex = '0 0 auto';
     const box = document.createElement('div');
-    box.style.cssText = 'flex:1 1 100%;width:100%;min-width:0;margin:0;box-sizing:border-box';
-    box.append(select); container.prepend(box);
+    box.style.cssText = 'position:relative;flex:1 1 100%;width:100%;min-width:0;margin:0;box-sizing:border-box';
+    box.append(select, arrow); container.prepend(box);
     // Keep the authoritative native control mounted for its normal event path,
     // but remove its footprint from the visible status widget.
     if (popover) { popover.style.position = 'absolute'; popover.style.visibility = 'hidden'; popover.style.pointerEvents = 'none'; }
@@ -14810,6 +14830,7 @@ function startSNAI() {
           : { border: '#687278', text: '#c5cbd0', background: '#272d31' };
       select.style.borderColor = presenceColours.border;
       select.style.color = presenceColours.text;
+      arrow.style.color = presenceColours.text;
       select.style.backgroundColor = presenceColours.background;
       for (const option of select.options) {
         option.style.color = option.value === 'Available' ? '#8de3af' : option.value === 'Away' ? '#f3d86f' : '#c5cbd0';
@@ -14989,6 +15010,7 @@ function startSNAI() {
     document.addEventListener('sn-ai-runtime-dispose', () => {
       inboxPolicy.disposed = true; clearInterval(timer);
       clearTimeout(settingsDeadline);
+      document.getElementById('local-sn-ai-notification-settings-confirmed')?.remove();
       document.getElementById('local-sn-ai-notification-settings-error')?.remove();
       inboxPolicy.observers.forEach(observer => observer.disconnect());
       inboxPolicy.timers.forEach(timer => clearTimeout(timer));
