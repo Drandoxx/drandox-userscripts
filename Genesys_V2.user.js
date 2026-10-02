@@ -250,13 +250,13 @@
     // Shared GM storage is not atomic: settle simultaneous claims before
     // issuing a request, then only the final owner proceeds.
     await new Promise(resolve => window.setTimeout(resolve, 100));
-    if (GM_getValue(UPDATE_LOCK_KEY, {}).token !== token) { updateCheckPending = false; return; }
+    if (GM_getValue(UPDATE_LOCK_KEY, {})?.token !== token) { updateCheckPending = false; return; }
     state = readUpdateState();
     const fallback = state.fallback && !primaryProbe;
     const recovering = state.fallback && primaryProbe;
     const releaseLock = () => {
       updateCheckPending = false;
-      if (GM_getValue(UPDATE_LOCK_KEY, {}).token === token) GM_setValue(UPDATE_LOCK_KEY, null);
+      if (GM_getValue(UPDATE_LOCK_KEY, {})?.token === token) GM_setValue(UPDATE_LOCK_KEY, null);
     };
     const warn = message => {
       const shared = readUpdateState();
