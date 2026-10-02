@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.43
+// @version      2.36.44
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -4197,7 +4197,7 @@
     // is not linked back to the active record panel. Fall back only for this
     // known field and only to a visible control, avoiding inactive record tabs.
     if (wanted === 'attached knowledge') {
-      const visibleControls = sourceElements.filter((el) => isUsefulControl(el) && isVisible(el));
+      const visibleControls = allPageElements().filter((el) => isUsefulControl(el) && isVisible(el));
       const namedControl = visibleControls.find((el) => normalise(el.getAttribute('name')).toLowerCase() === 'u_attached_knowledge_input');
       return namedControl || matchingControl(visibleControls);
     }
@@ -6211,7 +6211,7 @@
       // so waiting for isConnected=false reads stale/blank state and triggers
       // repeated dropdown reopen cycles. Keep the clicked element only as a
       // fallback during the short gap between replacement controls.
-      const currentControl = findControlByLabel(fieldLabel, allPageElements()) || null;
+      const currentControl = findControlByLabel(fieldLabel) || null;
       if (currentControl && currentControl !== lockedControl) lockedControl = currentControl;
       else if (lockedControl && (!lockedControl.isConnected || !isVisible(lockedControl))) lockedControl = currentControl;
       actual = lockedControl ? readableElementValue(lockedControl) : readableControlValue(fieldLabel);
@@ -6237,7 +6237,9 @@
     while (validationScope && !validationSeen.has(validationScope)) {
       validationSeen.add(validationScope);
       const invalid = validationScope.getAttribute?.('aria-invalid') === 'true';
-      const warning = String(validationScope.textContent || '');
+      // Never concatenate an entire form/page's text on every commit poll.
+      const localWarningScope = validationScope === field || /(TYPEAHEAD|REFERENCE)/i.test(validationScope.tagName || '');
+      const warning = localWarningScope ? String(validationScope.textContent || '') : '';
       if (invalid || /please select a value from the list of results/i.test(warning)) return '';
       validationScope = validationScope.parentElement;
     }
@@ -6274,7 +6276,7 @@
       const needsControlScan = !lockedControl || !lockedControl.isConnected || !isVisible(lockedControl)
         || performance.now() - lastControlScanAt >= 250;
       if (needsControlScan) {
-        const currentControl = findControlByLabel(fieldLabel, allPageElements()) || null;
+        const currentControl = findControlByLabel(fieldLabel) || null;
         lastControlScanAt = performance.now();
         if (currentControl) lockedControl = currentControl;
         else if (!lockedControl?.isConnected || !isVisible(lockedControl)) lockedControl = null;
@@ -6324,15 +6326,16 @@
 
   function popupOptionsFor(field, allowUnscoped = false) {
     const controlledId = normalise(field.getAttribute('aria-controls'));
-    const all = allPageElements();
     if (controlledId) {
-      const listbox = all.find((el) => el.id === controlledId);
+      const listbox = document.getElementById(controlledId) || allPageElements().find((el) => el.id === controlledId);
       if (listbox) {
-        const scoped = all.filter((el) => el.getAttribute('role') === 'option' && isVisible(el) && isWithinDeepRoot(el, listbox));
+        const options = [];
+        addDeep(listbox, options, new Set());
+        const scoped = options.filter((el) => el.getAttribute('role') === 'option' && isVisible(el));
         if (scoped.length || !allowUnscoped) return scoped;
       } else if (!allowUnscoped) return [];
     }
-    return all.filter((el) => el.getAttribute('role') === 'option' && isVisible(el));
+    return allPageElements().filter((el) => el.getAttribute('role') === 'option' && isVisible(el));
   }
 
   function choosePopupOption(field, wanted, match = 'exact', first = false, allowUnscoped = false) {
@@ -6364,7 +6367,7 @@
     let candidate = null;
     let stableSince = 0;
     const settled = await waitUntil(() => {
-      const control = findControlByLabel(nextField, allPageElements());
+      const control = findControlByLabel(nextField);
       const enabled = control && isVisible(control)
         && control.getAttribute('aria-disabled') !== 'true' && !control.disabled;
       if (!enabled) {
@@ -6585,7 +6588,7 @@
     let lastControl = null;
     let stableSince = 0;
     const settled = await waitUntil(() => {
-      const control = findControlByLabel('Classification', allPageElements());
+      const control = findControlByLabel('Classification');
       if (!control || !isVisible(control) || control.getAttribute('aria-expanded') === 'true') {
         lastControl = null;
         stableSince = 0;
@@ -13366,7 +13369,7 @@
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.43' });
+    addLog('info', 'helper-version', { version: '2.36.44' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
