@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.509.0
+// @version      1.510.0
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -290,6 +290,20 @@
   }
 
   const INTERVAL_MS = 1000;
+  const POWER_MODE_KEY = 'genesys-v2-power-mode';
+  function powerMode() {
+    try { const mode = GM_getValue(POWER_MODE_KEY, 'auto'); return ['auto', 'full', 'low'].includes(mode) ? mode : 'auto'; } catch (_) { return 'auto'; }
+  }
+  function lowPowerMode() {
+    const mode = powerMode();
+    if (mode !== 'auto') return mode === 'low';
+    return Boolean((navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4)
+      || (navigator.deviceMemory && navigator.deviceMemory <= 4) || navigator.connection?.saveData);
+  }
+  function applyPowerMode(doc) {
+    doc.documentElement.classList.toggle('gbs-low-power', lowPowerMode());
+    doc.documentElement.classList.toggle('gbs-page-hidden', doc.hidden);
+  }
   const STATUS_ORDER = [
     'Busy', 'Not Responding', 'Idle', 'Interacting', 'Break',
     'Meal', 'Available', 'Training', 'Meeting', 'Away'
@@ -908,6 +922,19 @@
       --gbs-card-border-cyan: #22d3ee;
       --gbs-text-primary: #e5e7eb;
     }
+    /* Disable decoration, never call actions/status updates, on low-end devices. */
+    html.gbs-low-power #gbs-startup-loader .gbs-startup-space,
+    html.gbs-low-power #gbs-startup-loader .gbs-startup-space *,
+    html.gbs-low-power .gbs-login-space *,
+    html.gbs-page-hidden #gbs-startup-loader .gbs-startup-space * {
+      animation: none !important; filter: none !important;
+    }
+    html.gbs-low-power .gbs-settings-backdrop,
+    html.gbs-low-power .gbs-settings-popover,
+    html.gbs-low-power #gbs-call-information {
+      backdrop-filter: none !important; box-shadow: none !important;
+    }
+    html.gbs-low-power .gbs-settings-tile svg { animation: none !important; filter: none !important; }
     ${PROFILE_STATUS_SELECTOR_CSS}
     /* Modern, compact agent board */
     table.gbs-board { border-collapse: separate !important; border-spacing: 0 5px !important; table-layout: fixed !important; width: 100% !important; min-width: 0 !important; max-width: 100% !important; }
@@ -2235,7 +2262,7 @@
     .analytics-ui-dashboard-widget:has(table.gbs-board) [class*="table-viewport"] {
       background: transparent !important; background-color: transparent !important; background-image: none !important;
     }
-    .analytics-ui-dashboard-widget { background: #252b33 !important; color: #e5e7eb !important; border-color: #3a4655 !important; }
+    .analytics-ui-dashboard-widget { background: var(--gbs-surface-base, #1d2025) !important; color: #e5e7eb !important; border-color: #3a4655 !important; }
     .main-grid .analytics-ui-dashboard-widget:not(.sidebar-widget) {
       border-color: color-mix(in srgb, var(--gbs-card-border-cyan) 70%, #3a4655) !important;
       outline: 1px solid color-mix(in srgb, var(--gbs-card-border-cyan) 70%, #3a4655) !important;
@@ -2250,7 +2277,7 @@
       border-right-color: color-mix(in srgb, var(--gbs-card-status, #64748b) 85%, #4b596a) !important;
       border-bottom-color: color-mix(in srgb, var(--gbs-card-status, #64748b) 85%, #4b596a) !important;
     }
-    .analytics-ui-dashboard-widget .widget-title, .analytics-ui-dashboard-widget .widget-title-display { background: #2d3540 !important; color: #f8fafc !important; }
+    .analytics-ui-dashboard-widget .widget-title, .analytics-ui-dashboard-widget .widget-title-display { background: var(--gbs-surface-base, #1d2025) !important; color: #f8fafc !important; }
     .analytics-ui-dashboard-widget a { color: #93c5fd !important; }
     .analytics-ui-dashboard-widget [class*="value"], .analytics-ui-dashboard-widget [class*="metric"] { color: #a5b4fc !important; }
     /* Board canvas follows the same named surface all the way through the
@@ -4967,6 +4994,20 @@
     popover.innerHTML = settingsHeading('Genesys V2 Settings') + `<div class="gbs-settings-body"><div class="gbs-settings-grid"><button type="button" class="gbs-settings-tile ${on ? 'is-on' : ''}" data-setting="power" aria-pressed="${on}"><span class="gbs-power-icons">${svg(sparkle).replace('<svg ', '<svg class="gbs-power-off" ')}${svg(sparkle + '<path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/>').replace('<svg ', '<svg class="gbs-power-on" ')}</span><span>Genesys V2 ${on ? 'ON' : 'OFF'}</span></button><button type="button" class="gbs-settings-tile" data-setting="dashboard">${svg('<path d="M15.536 11.293a1 1 0 0 0 0 1.414l2.376 2.377a1 1 0 0 0 1.414 0l2.377-2.377a1 1 0 0 0 0-1.414l-2.377-2.377a1 1 0 0 0-1.414 0z"/><path d="M2.297 11.293a1 1 0 0 0 0 1.414l2.377 2.377a1 1 0 0 0 1.414 0l2.377-2.377a1 1 0 0 0 0-1.414L6.088 8.916a1 1 0 0 0-1.414 0z"/><path d="M8.916 17.912a1 1 0 0 0 0 1.415l2.377 2.376a1 1 0 0 0 1.414 0l2.377-2.376a1 1 0 0 0 0-1.415l-2.377-2.376a1 1 0 0 0-1.414 0z"/><path d="M8.916 4.674a1 1 0 0 0 0 1.414l2.377 2.376a1 1 0 0 0 1.414 0l2.377-2.376a1 1 0 0 0 0-1.414l-2.377-2.377a1 1 0 0 0-1.414 0z"/>')}<span>Dashboard</span></button><button type="button" class="gbs-settings-tile" data-setting="colors">${svg('<path d="m14.622 17.897-10.68-2.913"/><path d="M18.376 2.622a1 1 0 1 1 3.002 3.002L17.36 9.643a.5.5 0 0 0 0 .707l.944.944a2.41 2.41 0 0 1 0 3.408l-.944.944a.5.5 0 0 1-.707 0L8.354 7.348a.5.5 0 0 1 0-.707l.944-.944a2.41 2.41 0 0 1 3.408 0l.944.944a.5.5 0 0 0 .707 0z"/><path d="M9 8c-1.804 2.71-3.97 3.46-6.583 3.948a.507.507 0 0 0-.302.819l7.32 8.883a1 1 0 0 0 1.185.204C12.735 20.405 16 16.792 16 15"/>')}<span>Status Colors</span></button></div></div>`;
     popover.querySelector('[data-setting="power"]').lastElementChild.textContent = `Genesys V2 is ${on ? 'ON' : 'OFF'}`;
     settingsHeading.icons = { Dashboard: popover.querySelector('[data-setting="dashboard"] svg').outerHTML, 'Status Colors': popover.querySelector('[data-setting="colors"] svg').outerHTML };
+    const powerCard = doc.createElement('label');
+    powerCard.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px;margin-top:18px;border:1px solid #22d3ee80;border-radius:10px;background:#242a30;color:#a5f3fc';
+    powerCard.appendChild(doc.createTextNode('Power saving'));
+    const powerSelect = doc.createElement('select'); powerSelect.setAttribute('aria-label', 'Power saving mode');
+    powerSelect.style.cssText = 'background:#1d2025;color:#a5f3fc;border:1px solid #22d3ee;border-radius:5px;padding:8px';
+    for (const [value, label] of [['auto', 'Auto'], ['full', 'Full effects'], ['low', 'Low-power']]) {
+      const option = doc.createElement('option'); option.value = value; option.textContent = label; powerSelect.appendChild(option);
+    }
+    powerSelect.value = powerMode();
+    powerSelect.addEventListener('change', () => {
+      GM_setValue(POWER_MODE_KEY, powerSelect.value);
+      collectReachableDocuments().forEach(applyPowerMode);
+    });
+    powerCard.appendChild(powerSelect); popover.querySelector('.gbs-settings-body').appendChild(powerCard);
     const updateFooter = doc.createElement('div'); updateFooter.className = 'gbs-settings-footer';
     const updateButton = doc.createElement('button'); updateButton.type = 'button'; updateButton.textContent = 'Check for updates'; updateButton.className = 'gbs-settings-check-updates';
     updateButton.addEventListener('click', () => checkGenesysUpdates(true));
@@ -8270,6 +8311,7 @@ function fitDashboardMetricSpacing(doc) {
   }
 
   function sortDocument(doc) {
+    applyPowerMode(doc);
     syncCallTestLayout(doc);
     injectStyles(doc);
     applyBoardSettings(doc);
@@ -8485,6 +8527,7 @@ function fitDashboardMetricSpacing(doc) {
   // Login uses the same injected stylesheet but none of the authenticated
   // application's observers, iframes, or one-second dashboard maintenance.
   if (location.hostname === 'login.mypurecloud.de') {
+    applyPowerMode(document);
     injectStyles(document);
     installLoginSpaceScene(document);
     installLoginBrandLayout(document);
@@ -8515,14 +8558,23 @@ function fitDashboardMetricSpacing(doc) {
     if (!document.querySelector('.gbs-theme-toggle')) ensureThemeToggle(document);
   });
   shadowObserver.observe(document.documentElement, { childList: true, subtree: true });
-  const timer = window.setInterval(tick, INTERVAL_MS);
+  let lastMaintenanceAt = 0;
+  const timer = window.setInterval(() => {
+    applyPowerMode(document);
+    const interval = document.hidden ? 10000 : lowPowerMode() ? 2000 : INTERVAL_MS;
+    if (Date.now() - lastMaintenanceAt < interval) return;
+    lastMaintenanceAt = Date.now(); tick();
+  }, INTERVAL_MS);
   const identityTimer = window.setInterval(() => rememberCurrentAgentName(document), 5000);
   document.addEventListener('click', recordIncomingCallAction, true);
   const incomingCallTimer = window.setInterval(() => watchIncomingCall(document), 1000);
   watchIncomingCall(document);
   // A low-frequency safety sweep covers late-attached closed app widgets
   // without imposing the old every-second full-tree traversal.
+  let lastShadowSweepAt = 0;
   const shadowTimer = window.setInterval(() => {
+    if (document.hidden || (lowPowerMode() && Date.now() - lastShadowSweepAt < 90000)) return;
+    lastShadowSweepAt = Date.now();
     refreshShadowThemes();
     sortReachableEmbeddedDocuments(document);
   }, 30000);
