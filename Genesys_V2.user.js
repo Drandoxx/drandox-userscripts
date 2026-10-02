@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.516.0
+// @version      1.516.1
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -5669,7 +5669,11 @@
     const visible = element => element && element.getBoundingClientRect().width > 0
       && element.getBoundingClientRect().height > 0;
     const incomingAction = doc.querySelector('.messenger-shown [data-action="answerInteraction"]');
-    const incoming = callTestEnabled(doc) && (incomingAction || (testCallSession
+    // The native Genesys Answer action is the authoritative ringing signal in
+    // normal operation too. Restrict only the synthetic fallback to call-test
+    // mode; otherwise a real selected interaction is mislabeled Connected and
+    // exposes Mute/Hold/Hang up before the agent has answered it.
+    const incoming = Boolean(incomingAction) || (callTestEnabled(doc) && Boolean(testCallSession
       && !testCallSession.answeredAt && !testCallSession.finishedAt && !testCallSession.timeoutAt));
     const selected = [...doc.querySelectorAll('.selected-interaction-container')].find(visible);
     let popup = doc.getElementById('gbs-call-information');
