@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.72
+// @version      2.36.73
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -14328,7 +14328,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.72' });
+    addLog('info', 'helper-version', { version: '2.36.73' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -15067,7 +15067,7 @@ function startSNAI() {
   let dismissedUpdateVersion = '';
   // Optimistic acknowledgement is page-local: never change the installed
   // version or persist this flag. A reload must check the real version again.
-  let officialUpdateClickedThisSession = false;
+  let officialUpdateClickedVersion = '';
 
   function showOfficialUpdateReloadNotice() {
     document.getElementById('local-sn-ai-update-reload-notification')?.remove();
@@ -15095,7 +15095,7 @@ function startSNAI() {
 
   function acknowledgeOfficialUpdateClick(event) {
     if (event.type === 'auxclick' && event.button !== 1) return;
-    officialUpdateClickedThisSession = true;
+    officialUpdateClickedVersion = event.currentTarget?.dataset.updateVersion || '';
     // Let the anchor's normal navigation complete before removing its DOM.
     setTimeout(() => {
       document.querySelectorAll('[data-official-update], .local-sn-update-badge').forEach(element => element.remove());
@@ -15113,7 +15113,7 @@ function startSNAI() {
   async function showOfficialUpdatePopup(release, currentVersion) {
     const version = String(release.version);
     const ignoredVersion = await gmGetValue(IGNORED_UPDATE_VERSION_KEY, '');
-    if (officialUpdateClickedThisSession) return;
+    if (officialUpdateClickedVersion && compareVersions(version, officialUpdateClickedVersion) <= 0) return;
     const existing = document.getElementById('local-sn-ai-update-notification');
     if (dismissedUpdateVersion === version || ignoredVersion === version) {
       existing?.remove();
@@ -15145,6 +15145,7 @@ function startSNAI() {
     // Its separate sibling X can dismiss without opening the update.
     const link = document.createElement('a');
     link.href = release.downloadUrl;
+    link.dataset.updateVersion = version;
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
     link.style.cssText = 'display:block;box-sizing:border-box;padding:13px 40px 13px 14px;border-radius:7px;color:inherit;background:transparent;text-decoration:none;cursor:pointer;pointer-events:auto';
@@ -15159,7 +15160,8 @@ function startSNAI() {
   }
 
   async function renderOfficialUpdate(release) {
-    if (officialUpdateClickedThisSession || !release) return;
+    if (!release) return;
+    if (officialUpdateClickedVersion && compareVersions(release.version, officialUpdateClickedVersion) <= 0) return;
     const currentVersion = typeof GM_info !== 'undefined' ? GM_info.script?.version : '';
     if (!currentVersion || typeof GM_xmlhttpRequest !== 'function') return;
             if (release.available === false || compareVersions(release.version, currentVersion) <= 0) {
@@ -15177,6 +15179,7 @@ function startSNAI() {
               const updateLink = document.createElement('a');
               updateLink.dataset.officialUpdate = 'true';
               updateLink.href = release.downloadUrl;
+              updateLink.dataset.updateVersion = String(release.version);
               updateLink.target = '_blank';
               updateLink.rel = 'noopener noreferrer';
               wireOfficialUpdateLink(updateLink);
@@ -15201,6 +15204,7 @@ function startSNAI() {
             const existingLink = settings.querySelector('[data-official-update]');
             if (existingLink) {
               existingLink.href = release.downloadUrl;
+              existingLink.dataset.updateVersion = String(release.version);
               existingLink.title = `Current version: ${currentVersion}; available version: ${release.version}`;
               existingLink.querySelector('small').textContent = `${currentVersion} → ${release.version}`;
               await showOfficialUpdatePopup(release, currentVersion);
