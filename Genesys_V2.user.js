@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.521.0
+// @version      1.522.0
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -31,7 +31,9 @@
 
   // Official release checker: metadata updates remain managed by Tampermonkey.
   const RELEASE_ID = 'genesys-v2';
-  const UPDATE_API_URL = 'https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/versions.json';
+  // Keep the runtime primary API independent of publication-time URL rewrites.
+  // GitHub may rewrite metadata, but must not turn this into the fallback API.
+  const UPDATE_API_URL = ['https://', 'drandox.cc', '/work/', '?format=json'].join('');
   const GITHUB_VERSION_URL = 'https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/versions.json';
   const PRIMARY_INSTALL_URL = 'https://drandox.cc/work/Genesys/Genesys_V2.user.js';
   const GITHUB_INSTALL_URL = 'https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js';
