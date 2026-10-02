@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.69
+// @version      2.36.70
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -327,6 +327,7 @@
 // Install presentation rules before Workspace builds its action bars. Observe
 // added subtrees only; never repeatedly scan the whole application.
 (() => {
+  if (location.hostname !== 'kingfisher.service-now.com' || !location.pathname.startsWith('/now/workspace/')) return;
   const roots = new WeakSet();
   const announcedPresence = new WeakSet();
   const css = `
@@ -1154,6 +1155,8 @@ function installChatSnippets() {
 }
 
 function startSNAI() {
+  const workspacePage = location.hostname === 'kingfisher.service-now.com'
+    && location.pathname.startsWith('/now/workspace/');
   'use strict';
 
   const ROOT_ID = 'local-sn-inspector-root';
@@ -10753,7 +10756,7 @@ function startSNAI() {
       testEnabledSwitch.checked = state.testEnabled;
       fieldTestEnabledSwitch.checked = state.fieldTestEnabled;
       feedbackEnableSwitch.checked = state.feedbackEnabled;
-      cmdActionButton.hidden = !state.cmdEnabled;
+      cmdActionButton.hidden = classicIncidentMode || !state.cmdEnabled;
       for (const modeSwitch of ticketModeSwitches) modeSwitch.checked = Boolean(state.enabledModes[modeSwitch.dataset.ticketMode]);
       syncActionColourControls();
       applyActionColours();
@@ -14302,10 +14305,10 @@ function startSNAI() {
       clearTimeout(ticketWindowPersistTimer);
     }, { once: true });
     restoreLauncherPosition();
-    restorePersistedTicketWindows();
+    if (workspacePage) restorePersistedTicketWindows();
     // With no restored/open ticket bubble there is no valid IMS owner. Remove
     // stale transcripts, AI responses and bridge routing left by older builds.
-    void purgeAllTransientIMSDataWhenNoBubbles();
+    if (workspacePage) void purgeAllTransientIMSDataWhenNoBubbles();
     host.classList.add('collapsed');
     host.querySelector('#local-sn-inspector-ai-instructions').textContent = JSON.stringify(AI_WIZARD_PROTOCOL, null, 2);
     host.querySelector('#local-sn-inspector-ai-command-door').textContent = JSON.stringify({
@@ -14316,14 +14319,16 @@ function startSNAI() {
     }, null, 2);
     // Preserve only window-owned entries that another open ServiceNow tab may
     // still be using. Every new AI Run force-refreshes its own IMS entry.
-    writeChatCache(readChatCache(), currentInteractionIMS());
-    publishChatCache();
-    if (state.chatCacheInterval) clearInterval(state.chatCacheInterval);
-    state.chatCacheInterval = setInterval(releaseUnavailableIMSCache, 5000);
+    if (workspacePage) {
+      writeChatCache(readChatCache(), currentInteractionIMS());
+      publishChatCache();
+      if (state.chatCacheInterval) clearInterval(state.chatCacheInterval);
+      state.chatCacheInterval = setInterval(releaseUnavailableIMSCache, 5000);
+    }
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.69' });
+    addLog('info', 'helper-version', { version: '2.36.70' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -14500,7 +14505,7 @@ function startSNAI() {
       target: target.localName, type: file.type, size: file.size,
     });
   }
-  document.addEventListener('paste', handleChatImagePaste, true);
+  if (workspacePage) document.addEventListener('paste', handleChatImagePaste, true);
 
   // Workspace inserts this full-panel visual prompt while a file is dragged
   // over chat. It is only decoration: the real attachment listener is owned
@@ -14539,9 +14544,11 @@ function startSNAI() {
   }
   // Running this only during a drag avoids a perpetual full Workspace scan on
   // a page whose virtualized chat constantly mounts and unmounts messages.
-  document.addEventListener('dragenter', scheduleChatDropOverlaySuppression, true);
-  document.addEventListener('dragover', scheduleChatDropOverlaySuppression, true);
-  scheduleChatDropOverlaySuppression();
+  if (workspacePage) {
+    document.addEventListener('dragenter', scheduleChatDropOverlaySuppression, true);
+    document.addEventListener('dragover', scheduleChatDropOverlaySuppression, true);
+    scheduleChatDropOverlaySuppression();
+  }
 
   // Direct incident-form Stack mode.  Classic incident.do is not a Workspace
   // record, so it uses its stable native IDs and never calls Save or Update.
@@ -15020,7 +15027,9 @@ function startSNAI() {
     }, { once: true });
   }
   installPanel();
-  try { installInboxMonitor(); } catch (error) { console.warn('[SN AI inbox]', error); }
+  if (workspacePage) {
+    try { installInboxMonitor(); } catch (error) { console.warn('[SN AI inbox]', error); }
+  }
   // An optional toolbar failure must never prevent update recovery.
   try { installChatSnippets(); }
   catch (error) { console.warn('[SN AI snippets]', error); }
@@ -15258,7 +15267,7 @@ function startSNAI() {
   async function renderOfficialUpdateState(state) {
     const content = document.querySelector('#local-sn-ai-settings-template .local-sn-settings-content');
     if (content) {
-      renderInboxSettings(content);
+      if (workspacePage) renderInboxSettings(content);
       let row = content.querySelector('[data-update-check-controls]');
       if (!row) {
         row = document.createElement('div');
