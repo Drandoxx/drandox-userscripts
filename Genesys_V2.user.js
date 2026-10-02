@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.514.0
+// @version      1.515.0
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -2689,7 +2689,7 @@
         align-self: center !important; transform: none !important;
       }
       .command-bar .command-user-settings {
-        position: relative !important; left: -5px !important;
+        position: relative !important; left: -5px !important; top: -2px !important;
       }
       .command-bar #user-settings-button gux-avatar-beta {
         width: 24px !important; min-width: 24px !important; max-width: 24px !important;
