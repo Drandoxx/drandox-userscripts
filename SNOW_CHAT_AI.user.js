@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.76
+// @version      2.36.77
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -330,6 +330,79 @@
   if (location.hostname !== 'kingfisher.service-now.com' || !location.pathname.startsWith('/now/workspace/')) return;
   const roots = new WeakSet();
   const announcedPresence = new WeakSet();
+  // Incoming-card autofocus must not interrupt any editable field.
+  // Keep only the focused control and selection, never a copy of its value.
+  let protectedChat = null;
+  let chatSelection = null;
+  let restoringChatFocus = false;
+  const isChatEditor = element => element instanceof Element && !insideIncomingCard(element)
+    && !element.disabled && (element.matches('textarea,select,input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="hidden"]):not([type="checkbox"]):not([type="radio"])')
+      || element.isContentEditable);
+  const insideIncomingCard = element => {
+    for (let current = element; current instanceof Element;
+      current = current.parentElement || current.getRootNode()?.host) {
+      if (current.matches('sn-inbox-card,.sn-card-list')) return true;
+    }
+    return false;
+  };
+  const rememberChatCaret = () => {
+    if (!protectedChat?.isConnected) return;
+    if (protectedChat.isContentEditable) {
+      const selection = protectedChat.getRootNode()?.getSelection?.() || document.getSelection();
+      chatSelection = selection?.rangeCount && protectedChat.contains(selection.anchorNode)
+        ? selection.getRangeAt(0).cloneRange() : null;
+    } else chatSelection = typeof protectedChat.selectionStart === 'number'
+      ? [protectedChat.selectionStart, protectedChat.selectionEnd, protectedChat.selectionDirection] : null;
+  };
+  const activeDeepElement = () => {
+    let current = document.activeElement;
+    while (current?.shadowRoot?.activeElement) current = current.shadowRoot.activeElement;
+    return current;
+  };
+  const restoreChatFocus = () => {
+    if (!protectedChat?.isConnected || protectedChat.disabled || restoringChatFocus || !document.hasFocus()) return;
+    const active = activeDeepElement();
+    if (active === protectedChat || (active && active !== document.body && !insideIncomingCard(active))) return;
+    restoringChatFocus = true;
+    try {
+      protectedChat.focus({ preventScroll: true });
+      if (Array.isArray(chatSelection)) protectedChat.setSelectionRange(...chatSelection);
+      else if (chatSelection && protectedChat.isContentEditable) {
+        const selection = protectedChat.getRootNode()?.getSelection?.() || document.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(chatSelection);
+      }
+      document.dispatchEvent(new CustomEvent('sn-ai-inbox-focus-restored', {
+        detail: { from: active?.localName || 'none', editor: protectedChat.localName },
+      }));
+    } finally { restoringChatFocus = false; }
+  };
+  document.addEventListener('pointerdown', event => {
+    // A deliberate click elsewhere takes priority over focus preservation.
+    const target = event.composedPath().find(element => element instanceof Element);
+    if (!isChatEditor(target)) { protectedChat = null; chatSelection = null; }
+  }, true);
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Tab') { protectedChat = null; chatSelection = null; }
+  }, true);
+  for (const type of ['input', 'keyup', 'select']) document.addEventListener(type, event => {
+    if (event.composedPath().includes(protectedChat)) rememberChatCaret();
+  }, true);
+  document.addEventListener('selectionchange', () => {
+    if (activeDeepElement() === protectedChat) rememberChatCaret();
+  });
+  document.addEventListener('focusin', event => {
+    const target = event.composedPath().find(element => element instanceof Element);
+    if (isChatEditor(target)) { protectedChat = target; rememberChatCaret(); }
+    else if (protectedChat && insideIncomingCard(target)) restoreChatFocus();
+    else if (!restoringChatFocus) { protectedChat = null; chatSelection = null; }
+  }, true);
+  document.addEventListener('focusout', event => {
+    if (!event.composedPath().includes(protectedChat) || restoringChatFocus) return;
+    rememberChatCaret();
+    // Run after SNOW completes the focus transition, including Reject.blur().
+    queueMicrotask(restoreChatFocus);
+  }, true);
   let rejectEnabled = false;
   const rejectControls = new Set();
   const applyRejectPolicy = element => {
@@ -14439,7 +14512,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.76' });
+    addLog('info', 'helper-version', { version: '2.36.77' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -15142,6 +15215,8 @@ function startSNAI() {
     };
     document.addEventListener('focusin', focusLog, true);
     document.addEventListener('click', focusLog, true);
+    const restoredFocusLog = event => inboxLog('chat-focus-restored', event.detail || {});
+    document.addEventListener('sn-ai-inbox-focus-restored', restoredFocusLog);
     const presenceMounted = event => {
       if (event.detail instanceof Element && event.detail.matches('.sn-presence-state-container')) {
         watch(event.detail, 'presence');
@@ -15164,6 +15239,7 @@ function startSNAI() {
       inboxPolicy.timers.forEach(timer => clearTimeout(timer));
       document.removeEventListener('focusin', focusLog, true);
       document.removeEventListener('click', focusLog, true);
+      document.removeEventListener('sn-ai-inbox-focus-restored', restoredFocusLog);
       document.removeEventListener('sn-ai-presence-mounted', presenceMounted);
     }, { once: true });
   }
