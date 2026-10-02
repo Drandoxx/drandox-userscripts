@@ -10934,6 +10934,10 @@ function startSNAI() {
       #local-sn-ai-settings-template [data-settings-panel="general"] input:focus-visible,
       #local-sn-ai-settings-template [data-settings-panel="general"] button:focus-visible { outline:2px solid #b6a1ed;outline-offset:3px; }
       #local-sn-ai-settings-template [data-inbox-settings] button { justify-self:start; }
+      #local-sn-ai-settings-template .sn-ai-delay-stepper { display:flex;align-items:center;border:1px solid #48695d;border-radius:9px;background:#0d2019;overflow:hidden; }
+      #local-sn-ai-settings-template .sn-ai-delay-stepper input { appearance:textfield;-moz-appearance:textfield; }
+      #local-sn-ai-settings-template .sn-ai-delay-stepper input::-webkit-inner-spin-button,
+      #local-sn-ai-settings-template .sn-ai-delay-stepper input::-webkit-outer-spin-button { appearance:none;margin:0; }
     `;
     settingsDialog.append(generalStyle);
     tabList.after(generalPanel);
@@ -15174,6 +15178,7 @@ function startSNAI() {
     const label = document.createElement('label');
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
+    checkbox.setAttribute('role', 'switch');
     checkbox.checked = inboxPolicy.autoAccept;
     checkbox.addEventListener('change', () => {
       inboxPolicy.autoAccept = checkbox.checked;
@@ -15191,7 +15196,7 @@ function startSNAI() {
     delayInput.min = '0'; delayInput.max = '3600'; delayInput.step = '1';
     delayInput.setAttribute('aria-label', 'Automatic chat acceptance delay in seconds');
     delayInput.value = String(inboxPolicy.acceptDelaySeconds);
-    delayInput.style.cssText = 'width:70px;min-width:70px;box-sizing:border-box;padding:6px 8px;border:1px solid #48695d;border-radius:7px;background:#0d2019;color:#e2f5ef;text-align:center';
+    delayInput.style.cssText = 'width:54px;min-width:0;box-sizing:border-box;padding:7px 2px;border:0;border-radius:0;background:transparent;color:#e2f5ef;text-align:center';
     delayInput.title = '0 = immediate. Applies to new incoming chats.';
     delayInput.addEventListener('change', () => {
       inboxPolicy.acceptDelaySeconds = normaliseInboxAcceptDelay(delayInput.value);
@@ -15199,13 +15204,26 @@ function startSNAI() {
       gmSetValue(INBOX_ACCEPT_DELAY_KEY, inboxPolicy.acceptDelaySeconds).catch(error => console.warn('[SN AI inbox]', error));
     });
     const delayControl = document.createElement('span');
-    delayControl.style.cssText = 'display:flex;align-items:center;gap:6px';
-    delayControl.append(delayInput, 's');
-    delayLabel.append('Delay', delayControl);
+    delayControl.className = 'sn-ai-delay-stepper';
+    const stepButton = (text, amount) => {
+      const button = document.createElement('button');
+      button.type = 'button'; button.textContent = text;
+      button.setAttribute('aria-label', amount < 0 ? 'Decrease acceptance delay' : 'Increase acceptance delay');
+      button.style.cssText = 'width:32px;min-width:32px;padding:6px 0;border:0;border-radius:0;background:transparent;color:#a9d7c5;font:18px system-ui;cursor:pointer;box-shadow:none';
+      button.addEventListener('click', event => {
+        event.preventDefault();
+        delayInput.value = String(Math.max(0, Math.min(3600, normaliseInboxAcceptDelay(delayInput.value) + amount)));
+        delayInput.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      return button;
+    };
+    delayControl.append(stepButton('−', -1), delayInput, stepButton('+', 1));
+    delayLabel.append('Delay (seconds)', delayControl);
     const rejectLabel = document.createElement('label');
     rejectLabel.className = 'sn-ai-general-toggle';
     const rejectCheckbox = document.createElement('input');
     rejectCheckbox.type = 'checkbox';
+    rejectCheckbox.setAttribute('role', 'switch');
     gmGetValue('sn-ai-inbox-reject-enabled-v1', false).then(value => { rejectCheckbox.checked = value === true; });
     rejectCheckbox.addEventListener('change', () => {
       gmSetValue('sn-ai-inbox-reject-enabled-v1', rejectCheckbox.checked).catch(error => console.warn('[SN AI inbox]', error));
