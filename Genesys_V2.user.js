@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.518.0
+// @version      1.519.0
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -67,9 +67,9 @@
     syncGenesysUpdateControls();
     if (!manual && document.body && availableUpdateRelease && shownAutomaticUpdateVersion !== availableUpdateRelease.version) {
       shownAutomaticUpdateVersion = availableUpdateRelease.version;
-      showGenesysUpdateNotice(current, availableUpdateRelease);
+      showGenesysUpdateNotice(comparison, availableUpdateRelease);
     }
-    if (manual && availableUpdateRelease) showGenesysUpdateNotice(current, availableUpdateRelease, true);
+    if (manual && availableUpdateRelease) showGenesysUpdateNotice(comparison, availableUpdateRelease, true);
   }
   function showUpdateCooldown(ms) {
     const button = document.querySelector('.gbs-settings-check-updates');
@@ -105,6 +105,8 @@
   function confirmGenesysUpdateInstalled() {
     if (!availableUpdateRelease || openedUpdateVersion !== availableUpdateRelease.version) return;
     confirmedUpdateVersion = availableUpdateRelease.version;
+    // Advance only the in-page comparison baseline. Never stop polling or
+    // alter GM_info: subsequent releases remain detectable without reload.
     availableUpdateRelease = null;
     document.getElementById('gbs-official-update-notice')?.remove();
     syncGenesysUpdateControls();
