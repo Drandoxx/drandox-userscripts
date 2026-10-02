@@ -4128,11 +4128,28 @@
     }
   }
 
+  let pageElementSnapshot = null;
+  let pageElementSnapshotAt = -Infinity;
+  let pageElementSnapshotRoute = '';
   function allPageElements() {
     // Polling callers share a short-lived discovery snapshot.
+    if (pageElementSnapshot && pageElementSnapshotRoute === location.href && performance.now() - pageElementSnapshotAt < 250) {
+      return pageElementSnapshot.filter(el => el.isConnected);
+    }
     const all = [];
     addDeep(document, all, new Set());
+    pageElementSnapshot = all;
+    pageElementSnapshotAt = performance.now();
+    pageElementSnapshotRoute = location.href;
     return all;
+  }
+
+  function currentFormElements() {
+    const panel = activeWorkspaceRecordPanel();
+    if (!panel?.isConnected) return allPageElements();
+    const elements = [];
+    addDeep(panel, elements, new Set());
+    return elements;
   }
 
   function isUsefulControl(el) {
