@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.80
+// @version      2.36.81
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -14622,7 +14622,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.80' });
+    addLog('info', 'helper-version', { version: '2.36.81' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -15229,7 +15229,7 @@ function startSNAI() {
       gmSetValue('sn-ai-inbox-reject-enabled-v1', rejectCheckbox.checked).catch(error => console.warn('[SN AI inbox]', error));
       document.dispatchEvent(new CustomEvent('sn-ai-inbox-reject-setting', { detail: rejectCheckbox.checked }));
     });
-    rejectLabel.append('Show Reject', rejectCheckbox);
+    rejectLabel.append('Show Reject Button', rejectCheckbox);
     const download = document.createElement('button');
     download.type = 'button';
     download.textContent = 'Download logs';
@@ -15244,7 +15244,17 @@ function startSNAI() {
     const help = document.createElement('small');
     help.textContent = 'Diagnostics stay in this page until reload (up to 5 MB). The download may contain customer data; review before sharing.';
     help.style.display = 'block';
-    row.append(label, delayLabel, rejectLabel, download);
+    const acceptRow = document.createElement('div');
+    acceptRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap';
+    label.style.flex = '1 1 auto';
+    delayLabel.replaceChildren(delayControl);
+    delayLabel.title = 'Acceptance delay in seconds; 0 = immediate';
+    const secondsUnit = document.createElement('span');
+    secondsUnit.textContent = 's';
+    secondsUnit.style.cssText = 'padding-right:8px;color:#a9c7ba;font-size:12px';
+    delayControl.append(secondsUnit);
+    acceptRow.append(label, delayLabel);
+    row.append(acceptRow, rejectLabel, download);
     content.append(row);
   }
   function installInboxMonitor() {
@@ -15435,6 +15445,7 @@ function startSNAI() {
   }
 
   let officialUpdateRequestPending = false;
+  let officialUpdateManualPending = false;
   let officialUpdateManualMessage = '';
   const IGNORED_UPDATE_VERSION_KEY = 'local-sn-ai-ignored-update-version-v1';
   let dismissedUpdateVersion = '';
@@ -15660,18 +15671,18 @@ function startSNAI() {
         result.dataset.updateCheckResult = 'true';
         result.setAttribute('role', 'status');
         result.setAttribute('aria-live', 'polite');
-        result.style.cssText = 'flex-basis:100%;color:#e2f5ef';
-        row.append(button, status, result);
+        result.style.cssText = 'flex:1 1 140px;color:#e2f5ef';
+        status.hidden = true;
+        row.append(button, result, status);
         content.prepend(row);
       }
       const remaining = state.mode === 'github'
         ? Math.max(0, (Number(state.lastGithubAttempt) || 0) + UPDATE_MANUAL_COOLDOWN - Date.now()) : 0;
       const seconds = Math.ceil(remaining / 1000);
-      row.querySelector('button').disabled = officialUpdateRequestPending;
-      row.querySelector('span').textContent = remaining > 0
-        ? `GitHub check in ${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`
-        : state.mode === 'github' ? 'GitHub' : 'Drandox';
-      row.querySelector('[data-update-check-result]').textContent = officialUpdateManualMessage;
+      const button = row.querySelector('button');
+      if (button.disabled !== officialUpdateManualPending) button.disabled = officialUpdateManualPending;
+      const result = row.querySelector('[data-update-check-result]');
+      if (result.textContent !== officialUpdateManualMessage) result.textContent = officialUpdateManualMessage;
     }
     await renderOfficialUpdate(state.cache);
   }
@@ -15679,6 +15690,7 @@ function startSNAI() {
   async function checkOfficialUpdate(manual = false) {
     if (officialUpdateRequestPending || typeof GM_xmlhttpRequest !== 'function') return;
     officialUpdateRequestPending = true;
+    officialUpdateManualPending = manual;
     if (manual) {
       officialUpdateManualMessage = 'Checking for updates…';
     }
@@ -15732,7 +15744,7 @@ function startSNAI() {
                 const current = typeof GM_info !== 'undefined' ? GM_info.script?.version : '';
                 const provider = source === 'primary' ? 'Drandox' : 'GitHub';
                 officialUpdateManualMessage = release.available && compareVersions(release.version, current) > 0
-                  ? `${provider}: Update available — ${current} → ${release.version}.`
+                  ? `Update available · ${current} → ${release.version}`
                   : `v${current} · Up to date`;
               }
             } catch (error) {
@@ -15767,6 +15779,7 @@ function startSNAI() {
     }
     finally {
       officialUpdateRequestPending = false;
+      officialUpdateManualPending = false;
       try { await renderOfficialUpdateState(await readOfficialUpdateState()); }
       catch (error) { console.warn('[SN AI update]', error.message); }
     }
