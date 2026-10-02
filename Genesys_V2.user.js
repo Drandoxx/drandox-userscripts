@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.515.0
+// @version      1.516.0
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -4959,7 +4959,8 @@
     });
     lastCall.append(title, info, download, historyDownload); body.appendChild(lastCall);
     checkbox.checked = showAdminCallButton(doc);
-    popover.querySelector('.gbs-settings-save').addEventListener('click', () => {
+    popover.querySelector('.gbs-settings-footer .gbs-settings-save').addEventListener('click', () => {
+      if (!isSavedAdmin(doc)) return;
       try { doc.defaultView.localStorage.setItem(ADMIN_CALL_BUTTON_KEY, String(checkbox.checked)); } catch (_) {}
       GM_setValue(CALL_TEST_MODE_KEY, testToggle.checked);
       syncCallTestLayout(doc);
@@ -5014,7 +5015,7 @@
       applyStatusColorOverrides(doc, draft);
       renderStatusColorSettings(doc, popover, draft);
     });
-    popover.querySelector('.gbs-settings-save').addEventListener('click', () => {
+    popover.querySelector('.gbs-settings-footer .gbs-settings-save').addEventListener('click', () => {
       try { doc.defaultView.localStorage.setItem(STATUS_COLOR_SETTINGS_KEY, JSON.stringify(draft)); } catch (_) { /* storage unavailable */ }
       delete doc.__gbsStatusColorDraft; applyStatusColorOverrides(doc, draft); closeSettings(doc);
     });
@@ -5064,6 +5065,11 @@
       const tile = event.currentTarget;
       tile.disabled = true;
       const wasOn = tile.classList.contains('is-on');
+      if (wasOn && (!doc.defaultView.confirm('Do you really want to turn off Genesys V2?')
+          || !doc.defaultView.confirm('Confirm again: turn off Genesys V2 and reload this page?'))) {
+        tile.disabled = false;
+        return;
+      }
       const wait = () => new Promise(resolve => doc.defaultView.setTimeout(resolve, 85));
       if (wasOn) {
         tile.classList.add('power-unglow'); await wait();
@@ -5261,7 +5267,7 @@
       resetFrame = doc.defaultView.requestAnimationFrame(tick);
     });
     popover.querySelector('.gbs-settings-cancel').addEventListener('click', () => closeSettings(doc));
-    popover.querySelector('.gbs-settings-save').addEventListener('click', () => {
+    popover.querySelector('.gbs-settings-footer .gbs-settings-save').addEventListener('click', () => {
       doc.defaultView.localStorage.setItem(BOARD_SETTINGS_KEY, JSON.stringify(draft));
       collectReachableDocuments().forEach(frameDoc => { applyBoardSettings(frameDoc, draft); frameDoc.querySelectorAll('table.gbs-board').forEach(table => applyResponsiveBoardColumns(table)); });
       closeSettings(doc);
