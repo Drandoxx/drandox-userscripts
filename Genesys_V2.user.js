@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.516.2
+// @version      1.517.0
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -56,6 +56,7 @@
     GM_setValue(UPDATE_STATE_KEY, fresh);
     return fresh;
   }
+  let shownAutomaticUpdateVersion = null;
   function applyCachedUpdate(state, manual = false) {
     const current = GM_info.script.version;
     const comparison = confirmedUpdateVersion && compareVersions(confirmedUpdateVersion, current) > 0 ? confirmedUpdateVersion : current;
@@ -64,6 +65,10 @@
       && /^\d+(?:\.\d+)*$/.test(String(cached.version))
       && compareVersions(cached.version, comparison) > 0 ? cached : null;
     syncGenesysUpdateControls();
+    if (!manual && document.body && availableUpdateRelease && shownAutomaticUpdateVersion !== availableUpdateRelease.version) {
+      shownAutomaticUpdateVersion = availableUpdateRelease.version;
+      showGenesysUpdateNotice(current, availableUpdateRelease);
+    }
     if (manual && availableUpdateRelease) showGenesysUpdateNotice(current, availableUpdateRelease, true);
   }
   function showUpdateCooldown(ms) {
@@ -5664,6 +5669,52 @@
     });
   }
 
+  let activeCallSummary = null;
+  let lastCallSummary = null;
+  function callClock(value) {
+    return new Intl.DateTimeFormat(undefined, {
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    }).format(new Date(value));
+  }
+  function syncLastCallDataPopup(doc, wrapup) {
+    let popup = doc.getElementById('gbs-last-call-data');
+    if (!lastCallSummary) { popup?.remove(); return; }
+    const liveDuration = wrapup?.querySelector('[data-testid="wrapup-header-message-duration"]')?.textContent?.trim();
+    if (liveDuration && /^\d{1,2}:\d{2}$/.test(liveDuration)) {
+      const [minutes, seconds] = liveDuration.split(':').map(Number);
+      lastCallSummary.wrapupSeconds = minutes * 60 + seconds;
+      lastCallSummary.wrapupObservedAt = Date.now();
+    }
+    if (!popup) {
+      popup = doc.createElement('section');
+      popup.id = 'gbs-last-call-data';
+      popup.setAttribute('aria-label', 'Last call data');
+      popup.style.cssText = 'position:fixed;right:20px;top:80px;width:300px;max-width:calc(100vw - 24px);max-height:70vh;overflow:auto;z-index:2147483643;background:#1d2228;color:#e7f5f8;border:1px solid #22d3ee;border-radius:12px;box-shadow:0 0 16px #22d3ee35;font:14px/1.5 system-ui;';
+      doc.body.appendChild(popup);
+    }
+    const heading = doc.createElement('div');
+    heading.style.cssText = 'padding:12px 16px;border-bottom:1px solid #22d3ee70;color:#67e8f9;font-weight:600;';
+    heading.textContent = `Last call data - ${callClock(lastCallSummary.startedAt)} until ${callClock(lastCallSummary.endedAt)}`;
+    const body = doc.createElement('div'); body.style.padding = '12px 16px';
+    for (const [label, value] of lastCallSummary.details) {
+      const row = doc.createElement('div'); row.style.cssText = 'margin-bottom:8px;overflow-wrap:anywhere';
+      const title = doc.createElement('div'); title.textContent = label; title.style.cssText = 'color:#8fb2bd;font-size:12px';
+      const content = doc.createElement('div'); content.textContent = value;
+      row.append(title, content); body.appendChild(row);
+    }
+    if (Number.isFinite(lastCallSummary.wrapupSeconds)) {
+      const elapsed = Math.floor((Date.now() - lastCallSummary.wrapupObservedAt) / 1000);
+      const remaining = Math.max(0, lastCallSummary.wrapupSeconds - elapsed);
+      const row = doc.createElement('div'); row.style.cssText = 'margin-top:10px;padding-top:10px;border-top:1px solid #22d3ee40';
+      const title = doc.createElement('div'); title.textContent = 'After Call Work'; title.style.cssText = 'color:#8fb2bd;font-size:12px';
+      const value = doc.createElement('div');
+      value.textContent = `${String(Math.floor(remaining / 60)).padStart(2, '0')}:${String(remaining % 60).padStart(2, '0')}`;
+      value.setAttribute('role', 'timer');
+      row.append(title, value); body.appendChild(row);
+    }
+    popup.replaceChildren(heading, body);
+  }
+
   function syncCallInformationPopup(doc) {
     // Customer details stay in the live DOM only; never persist or transmit them.
     const visible = element => element && element.getBoundingClientRect().width > 0
@@ -5676,8 +5727,20 @@
     const incoming = Boolean(incomingAction) || (callTestEnabled(doc) && Boolean(testCallSession
       && !testCallSession.answeredAt && !testCallSession.finishedAt && !testCallSession.timeoutAt));
     const selected = [...doc.querySelectorAll('.selected-interaction-container')].find(visible);
+    const wrapup = [...doc.querySelectorAll('[data-testid="wrapup-main-container"]')].find(visible);
     let popup = doc.getElementById('gbs-call-information');
-    if (!selected && !incoming) {
+    if ((!selected || wrapup) && !incoming) {
+      if (activeCallSummary?.connectedAt) {
+        lastCallSummary = {
+          startedAt: activeCallSummary.connectedAt,
+          endedAt: Date.now(),
+          details: activeCallSummary.details || [],
+          wrapupSeconds: null,
+          wrapupObservedAt: Date.now()
+        };
+        activeCallSummary = null;
+      }
+      syncLastCallDataPopup(doc, wrapup);
       if (popup && testCallSession && !testCallSession.finishedAt) {
         testCallSession.finishedAt = new Date().toISOString();
         testCallSession.popupVisibleMs = Date.now() - testCallSession.startedMs;
@@ -5730,6 +5793,10 @@
       if (seenValues.has(key)) details.delete(label);
       else seenValues.add(key);
     }
+    if (!activeCallSummary) activeCallSummary = { ringingAt: Date.now(), connectedAt: null, details: [] };
+    if (!incoming && !activeCallSummary.connectedAt) activeCallSummary.connectedAt = Date.now();
+    activeCallSummary.details = [...details];
+    doc.getElementById('gbs-last-call-data')?.remove();
     if (!popup) {
       popup = doc.createElement('section');
       popup.id = 'gbs-call-information';
@@ -5840,9 +5907,7 @@
       row.append(title, content);
       body.appendChild(row);
     }
-    // Keep the ringing state focused on the one action the agent can take.
-    // The SNOW shortcut and in-call controls appear only after Answer.
-    if (!incoming && (snowAction || callTestEnabled(doc))) {
+    if (snowAction || callTestEnabled(doc)) {
       const button = doc.createElement('button');
       button.type = 'button';
       button.textContent = 'Open in SNOW';
@@ -5875,7 +5940,10 @@
         }
       });
       controls.appendChild(answer);
-      const timer = doc.createElement('div'); timer.textContent = `${Math.max(0, 29 - Math.floor((Date.now() - (testCallSession?.startedMs || Date.now())) / 1000))}s to answer`;
+      const snow = [...body.querySelectorAll('button')].find(button => button.textContent === 'Open in SNOW');
+      if (snow) { snow.style.marginLeft = 'auto'; controls.appendChild(snow); }
+      const ringingStartedAt = testCallSession?.startedMs || activeCallSummary?.ringingAt || Date.now();
+      const timer = doc.createElement('div'); timer.textContent = `${Math.max(0, 29 - Math.floor((Date.now() - ringingStartedAt) / 1000))}s to answer`;
       timer.style.cssText = 'width:100%;color:#a0a8b0;font-size:12px'; controls.prepend(timer);
     }
     for (const control of incoming ? [] : callControls) {
@@ -5908,8 +5976,9 @@
   function closeWorkspaceAfterCallEnds(doc) {
     const panel = doc.querySelector('.command-panel.active.agent');
     if (!panel || panel.classList.contains('hidden')) return;
+    const wrapup = panel.querySelector('[data-testid="wrapup-main-container"]');
     const activeCall = panel.querySelector('.selected-interaction-container .acd-interaction, .selected-interaction-container [class*="interaction-grid"]');
-    if (activeCall) {
+    if (activeCall && !wrapup) {
       panel.dataset.gbsHadSelectedInteraction = 'true';
       if (panel.__gbsCallEndCloseTimer) {
         doc.defaultView.clearTimeout(panel.__gbsCallEndCloseTimer);
