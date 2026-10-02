@@ -478,6 +478,7 @@
     document.dispatchEvent(new CustomEvent('sn-ai-inbox-reject-setting', { detail: value === true }));
   }).catch(error => console.warn('[SN AI inbox]', error));
   const css = `
+    [data-sn-ai-inbox-proxy][hidden] { display: none !important; }
     sn-inbox-card {
       display: block;
       border-radius: 10px !important;
