@@ -7397,7 +7397,10 @@ function startSNAI() {
         optionReadyDelayMs: Number(options.optionReadyDelayMs ?? 350),
       });
     }
-    const field = await waitForControlByLabel(fieldLabel, 1000);
+    // KB can be several virtualised sections below the current viewport.
+    // Its reveal/scroll budget must exceed a single smooth-scroll duration.
+    const field = await waitForControlByLabel(fieldLabel,
+      comparableLabel(fieldLabel) === 'attached knowledge' ? 4200 : 1000);
     if (field) {
       try {
         const current = committedReferenceValue(field);
@@ -7870,6 +7873,7 @@ function startSNAI() {
       current.click();
       current.focus({ preventScroll: true });
       await sleep(60);
+      current.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
       current.blur();
     }
     return true;
