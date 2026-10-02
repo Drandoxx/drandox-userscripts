@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.60
+// @version      2.36.61
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -14286,7 +14286,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.60' });
+    addLog('info', 'helper-version', { version: '2.36.61' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -14625,6 +14625,74 @@ function startSNAI() {
   if (classicIncidentPage && !classicIncidentNumber) return;
   const inboxPolicy = { autoAccept: false, logs: [], bytes: 0, observers: [], timers: new Map(), seen: new WeakSet(), disposed: false };
   const INBOX_AUTO_ACCEPT_KEY = 'sn-ai-inbox-auto-accept-v1';
+  // Deliberately page-local: never persist a selected presence across reloads.
+  const presencePreference = { desired: '', busy: false, failures: 0, lastAttempt: 0 };
+  function installPresencePreference(container) {
+    if (container.querySelector('[data-sn-ai-presence]')) return;
+    const native = container.querySelector('#presenceBar');
+    if (!native) return;
+    const popover = container.querySelector('.sn-presence-state-popover');
+    const select = document.createElement('select');
+    select.dataset.snAiPresence = 'true';
+    select.setAttribute('aria-label', 'SN AI agent presence');
+    select.style.cssText = 'height:38px;padding:0 10px;border:1px solid #526a62;border-radius:4px;background:#182a24;color:#e5f5ef;font:14px system-ui';
+    for (const name of ['Available', 'Away', 'Offline']) {
+      const option = document.createElement('option'); option.value = name; option.textContent = name; select.append(option);
+    }
+    const message = document.createElement('small');
+    message.style.cssText = 'display:block;color:#c4d8d0;font:11px/1.4 system-ui;max-width:210px';
+    const box = document.createElement('div'); box.append(select, message); container.prepend(box);
+    // Keep the authoritative native control mounted for its normal event path,
+    // but remove its footprint from the visible status widget.
+    if (popover) { popover.style.position = 'absolute'; popover.style.visibility = 'hidden'; popover.style.pointerEvents = 'none'; }
+    const actual = () => normalise(native.querySelector('.status')?.textContent
+      || (native.getAttribute('aria-label') || '').replace(/^Agent presence state:\s*/, ''));
+    async function applyDesired() {
+      if (presencePreference.busy || !presencePreference.desired || !native.isConnected) return;
+      presencePreference.busy = true; presencePreference.lastAttempt = Date.now();
+      try {
+        const desired = presencePreference.desired;
+        inboxLog('presence-preference-apply', { desired, actual: actual() });
+        native.click();
+        const option = await waitUntil(() => allPageElements().find(element =>
+          element.matches('[role="option"][id^="presencestate_"]') && element.getAttribute('title') === desired), 2500, 100);
+        if (!option || presencePreference.desired !== desired) throw new Error('Native presence choice did not become ready');
+        option.click();
+        const committed = await waitUntil(() => actual() === desired ? true : null, 4000, 100);
+        if (!committed) throw new Error('ServiceNow did not confirm the requested presence');
+        presencePreference.failures = 0;
+        inboxLog('presence-preference-confirmed', { desired });
+      } catch (error) {
+        presencePreference.failures += 1;
+        inboxLog('presence-preference-failed', { desired: presencePreference.desired, actual: actual(), reason: error.message });
+      } finally { presencePreference.busy = false; sync(); }
+    }
+    function sync() {
+      const current = actual();
+      if (current && ![...select.options].some(option => option.value === current)) {
+        const option = document.createElement('option'); option.value = current; option.textContent = current; select.append(option);
+      }
+      // Always show actual server-reported state, not merely the preference.
+      if (current) select.value = current;
+      if (!presencePreference.desired) message.textContent = 'Using ServiceNow status · unlocked';
+      else if (current === presencePreference.desired) message.textContent = 'Your selection is held until reload';
+      else if (presencePreference.failures >= 3) message.textContent = `ServiceNow reports ${current}. Could not restore ${presencePreference.desired}; select it again to retry.`;
+      else message.textContent = `ServiceNow reports ${current} · restoring ${presencePreference.desired}…`;
+      if (presencePreference.desired && current !== presencePreference.desired
+        && !presencePreference.busy && presencePreference.failures < 3 && Date.now() - presencePreference.lastAttempt >= 10000) applyDesired();
+    }
+    select.addEventListener('change', () => {
+      presencePreference.desired = select.value; presencePreference.failures = 0;
+      inboxLog('presence-preference-user-selected', { desired: select.value });
+      applyDesired();
+    });
+    const timer = setInterval(() => { if (container.isConnected) sync(); else clearInterval(timer); }, 500);
+    sync();
+    document.addEventListener('sn-ai-runtime-dispose', () => {
+      clearInterval(timer); box.remove();
+      if (popover) { popover.style.position = ''; popover.style.visibility = ''; popover.style.pointerEvents = ''; }
+    }, { once: true });
+  }
   function inboxLog(kind, detail) {
     const entry = { at: new Date().toISOString(), kind, ...detail };
     const bytes = JSON.stringify(entry).length;
@@ -14713,6 +14781,7 @@ function startSNAI() {
       monitored.add(node);
       discoveredWidgets.push(node);
       inboxLog(kind + '-initial', { html: node.outerHTML });
+      if (kind === 'presence') installPresencePreference(node);
       const roots = new WeakSet();
       const observeRoot = root => {
         if (roots.has(root)) return;
