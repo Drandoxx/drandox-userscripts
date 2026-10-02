@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.510.0
+// @version      1.511.0
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -2275,13 +2275,14 @@
       outline-offset: -1px !important;
     }
     .gbs-summary-card {
-      border-top-width: 2px !important;
-      border-right-width: 2px !important;
-      border-bottom-width: 2px !important;
-      border-left-width: 7px !important;
+      border-top-width: 1px !important;
+      border-right-width: 1px !important;
+      border-bottom-width: 1px !important;
+      border-left-width: 4px !important;
       border-top-color: color-mix(in srgb, var(--gbs-card-status, #64748b) 85%, #4b596a) !important;
       border-right-color: color-mix(in srgb, var(--gbs-card-status, #64748b) 85%, #4b596a) !important;
       border-bottom-color: color-mix(in srgb, var(--gbs-card-status, #64748b) 85%, #4b596a) !important;
+      box-shadow: 0 0 8px color-mix(in srgb, var(--gbs-card-status, #64748b) 18%, transparent) !important;
     }
     .analytics-ui-dashboard-widget .widget-title, .analytics-ui-dashboard-widget .widget-title-display { background: var(--gbs-surface-base, #1d2025) !important; color: #f8fafc !important; }
     .analytics-ui-dashboard-widget a { color: #93c5fd !important; }
