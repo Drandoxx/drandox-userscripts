@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.73
+// @version      2.36.74
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -14328,7 +14328,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.73' });
+    addLog('info', 'helper-version', { version: '2.36.74' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -14887,7 +14887,7 @@ function startSNAI() {
       inboxPolicy.timers.clear();
       inboxLog('auto-accept-setting', { enabled: checkbox.checked });
     });
-    label.append(checkbox, ' Automatically accept incoming chats after 15 seconds');
+    label.append(checkbox, ' Automatically accept incoming chats after 12 seconds');
     const download = document.createElement('button');
     download.type = 'button';
     download.textContent = 'Download inbox diagnostics';
@@ -14907,6 +14907,7 @@ function startSNAI() {
   function installInboxMonitor() {
     const settingsDeadline = setTimeout(showNotificationSettingsMissingError, 10000);
     const monitored = new WeakSet();
+    const inboxRoots = new WeakMap();
     const discoveredWidgets = [];
     const deep = root => {
       const elements = [...root.querySelectorAll('*')];
@@ -14924,7 +14925,15 @@ function startSNAI() {
       close.onclick = () => box.remove(); box.append(close); document.body.append(box);
     };
     const inspectButtons = list => {
-      for (const button of deep(list).filter(element => element.matches('button'))) {
+      // Recorded native selector: Accept is the positive card action; Reject
+      // is negative. Query only already-discovered shadow roots, not every
+      // inbox element again for each countdown or class mutation.
+      const buttons = new Set();
+      for (const root of inboxRoots.get(list) || []) {
+        if (root.host && !root.host.isConnected) { inboxRoots.get(list).delete(root); continue; }
+        for (const button of root.querySelectorAll('button.now-button.-positive')) buttons.add(button);
+      }
+      for (const button of buttons) {
         const name = normalise(button.getAttribute('aria-label') || button.textContent).toLowerCase();
         if (!/^(accept|accept chat|accept work item)$/.test(name)) continue;
         if (inboxPolicy.seen.has(button)) continue;
@@ -14936,7 +14945,7 @@ function startSNAI() {
           if (!inboxPolicy.autoAccept || !button.isConnected || !list.isConnected || button.disabled || button.getAttribute('aria-disabled') === 'true' || !isVisible(button)) {
             inboxLog('auto-accept-cancelled', { reason: 'Original incoming control is no longer actionable' }); return;
           }
-          inboxLog('auto-accept-click', { html: button.outerHTML, delayMs: 15000 });
+          inboxLog('auto-accept-click', { html: button.outerHTML, delayMs: 12000 });
           button.click();
           // Confirm the offer action disappears, rather than claiming success
           // immediately after dispatch. Retained buttons report a failed click.
@@ -14944,7 +14953,7 @@ function startSNAI() {
             if (!button.isConnected) { inboxLog('auto-accept-offer-removed', {}); notice(); }
             else inboxLog('auto-accept-unconfirmed', { html: button.outerHTML });
           }, 1500);
-        }, 15000);
+        }, 12000);
         inboxPolicy.timers.set(button, timer);
       }
     };
@@ -14958,20 +14967,31 @@ function startSNAI() {
         installNotificationEnforcement(node);
       }
       const roots = new WeakSet();
+      if (kind === 'inbox') inboxRoots.set(node, new Set());
       const observeRoot = root => {
         if (roots.has(root)) return;
         roots.add(root);
+        if (kind === 'inbox') inboxRoots.get(node).add(root);
         const observer = new MutationObserver(records => {
+          let actionControlsChanged = false;
           for (const record of records) {
+            // Exclude our status presentation writes from native diagnostics.
+            if (kind === 'presence' && record.target instanceof Element
+              && (record.target.matches('[data-sn-ai-presence]') || record.target.closest('[data-sn-ai-presence]'))) continue;
+            if (record.type === 'childList' && record.addedNodes.length) actionControlsChanged = true;
+            if (record.type === 'attributes' && record.target.matches?.('button.now-button.-positive')) actionControlsChanged = true;
             if (record.type === 'attributes') inboxLog(kind + '-attribute', { name: record.attributeName, old: record.oldValue, html: record.target.outerHTML });
             else if (record.type === 'characterData') inboxLog(kind + '-text', { old: record.oldValue, text: record.target.textContent });
             else for (const added of record.addedNodes) if (added.nodeType === 1) {
               inboxLog(kind + '-added', { html: added.outerHTML });
-              for (const child of deep(added)) inboxLog(kind + '-added-descendant', { html: child.outerHTML });
+              if (added.shadowRoot) observeRoot(added.shadowRoot);
+              for (const child of deep(added)) {
+                inboxLog(kind + '-added-descendant', { html: child.outerHTML });
+                if (child.shadowRoot) observeRoot(child.shadowRoot);
+              }
             }
           }
-          for (const element of deep(node)) if (element.shadowRoot) observeRoot(element.shadowRoot);
-          if (kind === 'inbox') inspectButtons(node);
+          if (kind === 'inbox' && actionControlsChanged) inspectButtons(node);
         });
         observer.observe(root, { subtree: true, childList: true, attributes: true, attributeOldValue: true, characterData: true, characterDataOldValue: true });
         inboxPolicy.observers.push(observer);
