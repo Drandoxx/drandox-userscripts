@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.59
+// @version      2.36.60
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -14286,7 +14286,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.59' });
+    addLog('info', 'helper-version', { version: '2.36.60' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -14623,7 +14623,153 @@ function startSNAI() {
   // non-record shells. Do not place SN AI there unless a real incident Number
   // control is present and populated.
   if (classicIncidentPage && !classicIncidentNumber) return;
+  const inboxPolicy = { autoAccept: false, logs: [], bytes: 0, observers: [], timers: new Map(), seen: new WeakSet(), disposed: false };
+  const INBOX_AUTO_ACCEPT_KEY = 'sn-ai-inbox-auto-accept-v1';
+  function inboxLog(kind, detail) {
+    const entry = { at: new Date().toISOString(), kind, ...detail };
+    const bytes = JSON.stringify(entry).length;
+    inboxPolicy.logs.push(entry);
+    inboxPolicy.bytes += bytes;
+    while (inboxPolicy.bytes > 5000000 && inboxPolicy.logs.length > 1) inboxPolicy.bytes -= JSON.stringify(inboxPolicy.logs.shift()).length;
+  }
+  function renderInboxSettings(content) {
+    if (content.querySelector('[data-inbox-settings]')) return;
+    const row = document.createElement('div');
+    row.dataset.inboxSettings = 'true';
+    row.style.cssText = 'padding:10px 0;font:13px/1.5 system-ui;color:#e2f5ef';
+    const label = document.createElement('label');
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = inboxPolicy.autoAccept;
+    checkbox.addEventListener('change', () => {
+      inboxPolicy.autoAccept = checkbox.checked;
+      gmSetValue(INBOX_AUTO_ACCEPT_KEY, checkbox.checked).catch(error => console.warn('[SN AI inbox]', error));
+      for (const timer of inboxPolicy.timers.values()) clearTimeout(timer);
+      inboxPolicy.timers.clear();
+      inboxLog('auto-accept-setting', { enabled: checkbox.checked });
+    });
+    label.append(checkbox, ' Automatically accept incoming chats after 15 seconds');
+    const download = document.createElement('button');
+    download.type = 'button';
+    download.textContent = 'Download inbox diagnostics';
+    download.style.cssText = 'display:block;margin-top:8px;padding:6px 10px;border-radius:4px;cursor:pointer';
+    download.addEventListener('click', () => {
+      const url = URL.createObjectURL(new Blob([inboxPolicy.logs.map(entry => JSON.stringify(entry)).join('\n')], { type: 'application/x-ndjson' }));
+      const link = document.createElement('a');
+      link.href = url; link.download = 'SN_AI_inbox_diagnostics.jsonl'; link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+    const help = document.createElement('small');
+    help.textContent = 'Diagnostics stay in this page until reload (up to 5 MB). The download may contain customer data; review before sharing.';
+    help.style.display = 'block';
+    row.append(label, download, help);
+    content.append(row);
+  }
+  function installInboxMonitor() {
+    const monitored = new WeakSet();
+    const discoveredWidgets = [];
+    const deep = root => {
+      const elements = [...root.querySelectorAll('*')];
+      for (const element of [...elements]) if (element.shadowRoot) elements.push(...deep(element.shadowRoot));
+      return elements;
+    };
+    const notice = () => {
+      const box = document.createElement('div');
+      box.setAttribute('role', 'status');
+      box.style.cssText = 'position:fixed;right:20px;bottom:100px;z-index:2147483647;max-width:calc(100vw - 40px);width:440px;box-sizing:border-box;padding:24px 48px 24px 24px;border:1px solid #62b99d;border-radius:10px;background:#16392e;color:#e5fff5;font:17px/1.5 system-ui;box-shadow:0 5px 24px #0005';
+      box.textContent = 'New chat has been automatically accepted. Click on X to clear this notification';
+      const close = document.createElement('button');
+      close.type = 'button'; close.textContent = '×'; close.setAttribute('aria-label', 'Dismiss automatic chat acceptance notification');
+      close.style.cssText = 'position:absolute;right:10px;top:10px;background:transparent;border:0;color:inherit;font:22px system-ui;cursor:pointer';
+      close.onclick = () => box.remove(); box.append(close); document.body.append(box);
+    };
+    const inspectButtons = list => {
+      for (const button of deep(list).filter(element => element.matches('button'))) {
+        const name = normalise(button.getAttribute('aria-label') || button.textContent).toLowerCase();
+        if (!/^(accept|accept chat|accept work item)$/.test(name)) continue;
+        if (inboxPolicy.seen.has(button)) continue;
+        inboxPolicy.seen.add(button);
+        inboxLog('accept-button-found', { html: button.outerHTML, enabled: !button.disabled, autoAccept: inboxPolicy.autoAccept });
+        if (!inboxPolicy.autoAccept) continue;
+        const timer = setTimeout(() => {
+          inboxPolicy.timers.delete(button);
+          if (!inboxPolicy.autoAccept || !button.isConnected || !list.isConnected || button.disabled || button.getAttribute('aria-disabled') === 'true' || !isVisible(button)) {
+            inboxLog('auto-accept-cancelled', { reason: 'Original incoming control is no longer actionable' }); return;
+          }
+          inboxLog('auto-accept-click', { html: button.outerHTML, delayMs: 15000 });
+          button.click();
+          // Confirm the offer action disappears, rather than claiming success
+          // immediately after dispatch. Retained buttons report a failed click.
+          setTimeout(() => {
+            if (!button.isConnected) { inboxLog('auto-accept-offer-removed', {}); notice(); }
+            else inboxLog('auto-accept-unconfirmed', { html: button.outerHTML });
+          }, 1500);
+        }, 15000);
+        inboxPolicy.timers.set(button, timer);
+      }
+    };
+    function watch(node, kind) {
+      if (monitored.has(node)) return;
+      monitored.add(node);
+      discoveredWidgets.push(node);
+      inboxLog(kind + '-initial', { html: node.outerHTML });
+      const roots = new WeakSet();
+      const observeRoot = root => {
+        if (roots.has(root)) return;
+        roots.add(root);
+        const observer = new MutationObserver(records => {
+          for (const record of records) {
+            if (record.type === 'attributes') inboxLog(kind + '-attribute', { name: record.attributeName, old: record.oldValue, html: record.target.outerHTML });
+            else if (record.type === 'characterData') inboxLog(kind + '-text', { old: record.oldValue, text: record.target.textContent });
+            else for (const added of record.addedNodes) if (added.nodeType === 1) {
+              inboxLog(kind + '-added', { html: added.outerHTML });
+              for (const child of deep(added)) inboxLog(kind + '-added-descendant', { html: child.outerHTML });
+            }
+          }
+          for (const element of deep(node)) if (element.shadowRoot) observeRoot(element.shadowRoot);
+          if (kind === 'inbox') inspectButtons(node);
+        });
+        observer.observe(root, { subtree: true, childList: true, attributes: true, attributeOldValue: true, characterData: true, characterDataOldValue: true });
+        inboxPolicy.observers.push(observer);
+      };
+      observeRoot(node);
+      for (const element of deep(node)) if (element.shadowRoot) observeRoot(element.shadowRoot);
+      if (kind === 'inbox') inspectButtons(node);
+    }
+    const discover = () => {
+      if (inboxPolicy.disposed) return;
+      if (discoveredWidgets.some(node => node.isConnected && node.matches('.sn-presence-state-container'))
+        && discoveredWidgets.some(node => node.isConnected && node.matches('.sn-card-list'))) return;
+      // Discovery uses the existing cached shadow traversal; detailed observers
+      // are confined to the presence widget and inbox, never the ticket form.
+      for (const element of allPageElements()) {
+        if (element.matches('.sn-presence-state-container')) watch(element, 'presence');
+        if (element.matches('.sn-card-list')) watch(element, 'inbox');
+      }
+    };
+    const focusLog = event => {
+      const path = event.composedPath();
+      const target = path.find(element => element instanceof Element);
+      if (!target) return;
+      const name = target.getAttribute('aria-label') || target.textContent;
+      if (!path.some(element => element instanceof Element && element.matches('.sn-card-list,.sn-presence-state-container')) && !/^(accept|reject)/i.test(normalise(name))) return;
+      inboxLog(event.type, { trusted: event.isTrusted, html: target.outerHTML, related: event.relatedTarget?.outerHTML || null, handlerAttribute: target.getAttribute('onclick'), handlerProperty: target.onclick ? String(target.onclick) : null });
+    };
+    document.addEventListener('focusin', focusLog, true);
+    document.addEventListener('click', focusLog, true);
+    const timer = setInterval(discover, 5000);
+    discover();
+    gmGetValue(INBOX_AUTO_ACCEPT_KEY, false).then(value => { inboxPolicy.autoAccept = Boolean(value); });
+    document.addEventListener('sn-ai-runtime-dispose', () => {
+      inboxPolicy.disposed = true; clearInterval(timer);
+      inboxPolicy.observers.forEach(observer => observer.disconnect());
+      inboxPolicy.timers.forEach(timer => clearTimeout(timer));
+      document.removeEventListener('focusin', focusLog, true);
+      document.removeEventListener('click', focusLog, true);
+    }, { once: true });
+  }
   installPanel();
+  try { installInboxMonitor(); } catch (error) { console.warn('[SN AI inbox]', error); }
   // An optional toolbar failure must never prevent update recovery.
   try { installChatSnippets(); }
   catch (error) { console.warn('[SN AI snippets]', error); }
@@ -14861,6 +15007,7 @@ function startSNAI() {
   async function renderOfficialUpdateState(state) {
     const content = document.querySelector('#local-sn-ai-settings-template .local-sn-settings-content');
     if (content) {
+      renderInboxSettings(content);
       let row = content.querySelector('[data-update-check-controls]');
       if (!row) {
         row = document.createElement('div');
