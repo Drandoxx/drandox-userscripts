@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.62
+// @version      2.36.63
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -14286,7 +14286,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.62' });
+    addLog('info', 'helper-version', { version: '2.36.63' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -14635,13 +14635,21 @@ function startSNAI() {
     const select = document.createElement('select');
     select.dataset.snAiPresence = 'true';
     select.setAttribute('aria-label', 'SN AI agent presence');
-    select.style.cssText = 'height:38px;padding:0 10px;border:1px solid #526a62;border-radius:4px;background:#182a24;color:#e5f5ef;font:14px system-ui';
+    select.style.cssText = 'display:block;width:100%;min-width:0;height:30px;box-sizing:border-box;padding:0 10px;border:1px solid #526a62;border-radius:5px;background:#1b2c26;color:#e5f5ef;font:13px system-ui;cursor:pointer;box-shadow:inset 0 1px 0 #ffffff08';
     for (const name of ['Available', 'Away', 'Offline']) {
       const option = document.createElement('option'); option.value = name; option.textContent = name; select.append(option);
     }
-    const message = document.createElement('small');
-    message.style.cssText = 'display:block;color:#c4d8d0;font:11px/1.4 system-ui;max-width:210px';
-    const box = document.createElement('div'); box.append(select, message); container.prepend(box);
+    const message = { textContent: '' };
+    const originalContainerStyle = container.getAttribute('style');
+    container.style.display = 'flex';
+    container.style.alignItems = 'center';
+    container.style.gap = '6px';
+    const gear = container.querySelector('.sn-notification-gear');
+    const originalGearStyle = gear?.getAttribute('style');
+    if (gear) gear.style.flex = '0 0 auto';
+    const box = document.createElement('div');
+    box.style.cssText = 'flex:1 1 0%;min-width:0';
+    box.append(select); container.prepend(box);
     // Keep the authoritative native control mounted for its normal event path,
     // but remove its footprint from the visible status widget.
     if (popover) { popover.style.position = 'absolute'; popover.style.visibility = 'hidden'; popover.style.pointerEvents = 'none'; }
@@ -14678,6 +14686,8 @@ function startSNAI() {
       else if (current === presencePreference.desired) message.textContent = 'Your selection is held until reload';
       else if (presencePreference.failures >= 3) message.textContent = `ServiceNow reports ${current}. Could not restore ${presencePreference.desired}; select it again to retry.`;
       else message.textContent = `ServiceNow reports ${current} · restoring ${presencePreference.desired}…`;
+      select.title = message.textContent;
+      select.style.borderColor = current === 'Available' ? '#448a70' : current === 'Away' ? '#9b8450' : '#59666b';
       if (presencePreference.desired && current !== presencePreference.desired
         && !presencePreference.busy && presencePreference.failures < 3 && Date.now() - presencePreference.lastAttempt >= 10000) applyDesired();
     }
@@ -14690,6 +14700,12 @@ function startSNAI() {
     sync();
     document.addEventListener('sn-ai-runtime-dispose', () => {
       clearInterval(timer); box.remove();
+      if (originalContainerStyle === null) container.removeAttribute('style');
+      else container.setAttribute('style', originalContainerStyle);
+      if (gear) {
+        if (originalGearStyle === null) gear.removeAttribute('style');
+        else gear.setAttribute('style', originalGearStyle);
+      }
       if (popover) { popover.style.position = ''; popover.style.visibility = ''; popover.style.pointerEvents = ''; }
     }, { once: true });
   }
