@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.78
+// @version      2.36.79
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -10905,6 +10905,21 @@ function startSNAI() {
     const stackAction = host.querySelector('[data-action="open-stack-dialog"]');
     const hpStackAction = host.querySelector('[data-action="open-hp-stack-dialog"]');
     const settingsDialog = host.querySelector('#local-sn-ai-settings-template');
+    const generalTab = document.createElement('button');
+    generalTab.type = 'button';
+    generalTab.className = 'local-sn-settings-tab';
+    generalTab.setAttribute('role', 'tab');
+    generalTab.setAttribute('aria-selected', 'false');
+    generalTab.dataset.settingsTab = 'general';
+    generalTab.textContent = 'General';
+    const tabList = settingsDialog.querySelector('.local-sn-settings-tabs');
+    tabList.style.gridTemplateColumns = 'repeat(3,minmax(0,1fr))';
+    tabList.prepend(generalTab);
+    const generalPanel = document.createElement('section');
+    generalPanel.className = 'local-sn-settings-panel';
+    generalPanel.dataset.settingsPanel = 'general';
+    generalPanel.hidden = true;
+    tabList.after(generalPanel);
     const settingsTabs = [...settingsDialog.querySelectorAll('[data-settings-tab]')];
     const settingsPanels = [...settingsDialog.querySelectorAll('[data-settings-panel]')];
     const ticketModeSwitches = [...settingsDialog.querySelectorAll('[data-ticket-mode]')];
@@ -14586,7 +14601,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.78' });
+    addLog('info', 'helper-version', { version: '2.36.79' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -14925,7 +14940,12 @@ function startSNAI() {
   // non-record shells. Do not place SN AI there unless a real incident Number
   // control is present and populated.
   if (classicIncidentPage && !classicIncidentNumber) return;
-  const inboxPolicy = { autoAccept: true, logs: [], bytes: 0, observers: [], timers: new Map(), seen: new WeakSet(), disposed: false };
+  const inboxPolicy = { autoAccept: true, acceptDelaySeconds: 12, logs: [], bytes: 0, observers: [], timers: new Map(), seen: new WeakSet(), disposed: false };
+  const INBOX_ACCEPT_DELAY_KEY = 'sn-ai-inbox-accept-delay-seconds-v1';
+  function normaliseInboxAcceptDelay(value) {
+    const seconds = Number(value);
+    return Number.isFinite(seconds) && seconds >= 0 ? Math.min(3600, Math.floor(seconds)) : 12;
+  }
   const INBOX_AUTO_ACCEPT_KEY = 'sn-ai-inbox-auto-accept-v1';
   let notificationSettingsAvailable = false;
   let notificationSettingsConfirmedNoticeShown = false;
@@ -15145,7 +15165,21 @@ function startSNAI() {
       inboxPolicy.timers.clear();
       inboxLog('auto-accept-setting', { enabled: checkbox.checked });
     });
-    label.append(checkbox, ' Automatically accept incoming chats after 12 seconds');
+    label.append(checkbox, ' Automatically accept incoming chats');
+    const delayLabel = document.createElement('label');
+    delayLabel.style.cssText = 'display:flex;align-items:center;gap:8px;margin:8px 0;flex-wrap:wrap';
+    const delayInput = document.createElement('input');
+    delayInput.type = 'number';
+    delayInput.min = '0'; delayInput.max = '3600'; delayInput.step = '1';
+    delayInput.setAttribute('aria-label', 'Automatic chat acceptance delay in seconds');
+    delayInput.value = String(inboxPolicy.acceptDelaySeconds);
+    delayInput.style.cssText = 'width:80px;padding:6px;border-radius:4px';
+    delayInput.addEventListener('change', () => {
+      inboxPolicy.acceptDelaySeconds = normaliseInboxAcceptDelay(delayInput.value);
+      delayInput.value = String(inboxPolicy.acceptDelaySeconds);
+      gmSetValue(INBOX_ACCEPT_DELAY_KEY, inboxPolicy.acceptDelaySeconds).catch(error => console.warn('[SN AI inbox]', error));
+    });
+    delayLabel.append('Accept after', delayInput, 'seconds (0 = immediately). Applies to new incoming chats.');
     const rejectLabel = document.createElement('label');
     rejectLabel.style.display = 'block';
     const rejectCheckbox = document.createElement('input');
@@ -15169,7 +15203,7 @@ function startSNAI() {
     const help = document.createElement('small');
     help.textContent = 'Diagnostics stay in this page until reload (up to 5 MB). The download may contain customer data; review before sharing.';
     help.style.display = 'block';
-    row.append(label, rejectLabel, download, help);
+    row.append(label, delayLabel, rejectLabel, download, help);
     content.append(row);
   }
   function installInboxMonitor() {
@@ -15209,12 +15243,13 @@ function startSNAI() {
         inboxPolicy.seen.add(button);
         inboxLog('accept-button-found', { html: button.outerHTML, enabled: !button.disabled, autoAccept: inboxPolicy.autoAccept });
         if (!inboxPolicy.autoAccept) continue;
+        const acceptDelayMs = inboxPolicy.acceptDelaySeconds * 1000;
         const timer = setTimeout(() => {
           inboxPolicy.timers.delete(button);
           if (!inboxPolicy.autoAccept || !button.isConnected || !list.isConnected || button.disabled || button.getAttribute('aria-disabled') === 'true' || !isVisible(button)) {
             inboxLog('auto-accept-cancelled', { reason: 'Original incoming control is no longer actionable' }); return;
           }
-          inboxLog('auto-accept-click', { html: button.outerHTML, delayMs: 12000 });
+          inboxLog('auto-accept-click', { html: button.outerHTML, delayMs: acceptDelayMs });
           button.click();
           // Confirm the offer action disappears, rather than claiming success
           // immediately after dispatch. Retained buttons report a failed click.
@@ -15222,7 +15257,7 @@ function startSNAI() {
             if (!button.isConnected) { inboxLog('auto-accept-offer-removed', {}); notice(); }
             else inboxLog('auto-accept-unconfirmed', { html: button.outerHTML });
           }, 1500);
-        }, 12000);
+        }, acceptDelayMs);
         inboxPolicy.timers.set(button, timer);
       }
     };
@@ -15305,6 +15340,11 @@ function startSNAI() {
     const timer = setInterval(discover, 5000);
     discover();
     gmGetValue(INBOX_AUTO_ACCEPT_KEY, true).then(value => { inboxPolicy.autoAccept = Boolean(value); });
+    gmGetValue(INBOX_ACCEPT_DELAY_KEY, 12).then(value => {
+      inboxPolicy.acceptDelaySeconds = normaliseInboxAcceptDelay(value);
+      const input = document.querySelector('[aria-label="Automatic chat acceptance delay in seconds"]');
+      if (input) input.value = String(inboxPolicy.acceptDelaySeconds);
+    });
     document.addEventListener('sn-ai-runtime-dispose', () => {
       inboxPolicy.disposed = true; clearInterval(timer);
       clearTimeout(settingsDeadline);
@@ -15464,7 +15504,7 @@ function startSNAI() {
             }
             if (release.downloadUrl !== UPDATE_INSTALL_URLS[release.source]) return;
             const settings = document.getElementById('local-sn-ai-settings-template');
-            const settingsContent = settings?.querySelector('.local-sn-settings-content');
+            const settingsContent = settings?.querySelector('[data-settings-panel="general"]');
             const settingsButton = document.querySelector(`#${ROOT_ID} [data-action="open-ai-settings"]`);
             if (!settingsContent || !settingsButton) return;
             if (!settings.querySelector('[data-official-update]')) {
@@ -15561,7 +15601,7 @@ function startSNAI() {
   }
 
   async function renderOfficialUpdateState(state) {
-    const content = document.querySelector('#local-sn-ai-settings-template .local-sn-settings-content');
+    const content = document.querySelector('#local-sn-ai-settings-template [data-settings-panel="general"]');
     if (content) {
       if (workspacePage) renderInboxSettings(content);
       let row = content.querySelector('[data-update-check-controls]');
