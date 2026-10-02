@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.506.0
+// @version      1.507.0
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -832,26 +832,26 @@
   if (themeMode(document) !== 'light') installStartupLoader();
 
   function installNativeAppErrorRecovery() {
-    const errorPattern = /App\s+could\s+not\s+be\s+loaded\.\s*Please\s+try\s+again\s+later\.?/i;
+    const fallbackUrl = 'https://apps.mypurecloud.de/directory/#/analytics/dashboards/4bbdbd2a-1114-4bd9-b40c-5ae6663f6647?tabId=cc5cb78c-996e-49ba-8fa2-3641c1f5930f';
+    const errorPattern = /App\s+could\s+not\s+be\s+loaded\.\s*Please\s+try\s+again\s+later\.?|^(?:Page not found|This page (?:does not exist|could not be found)|404(?:\s+Not Found)?)$/im;
     let reloading = false;
     let observer = null;
     const recoverIfNeeded = () => {
       if (reloading || !document.body || !errorPattern.test(document.body.innerText || '')) return;
-      // The message is rendered inside the child application iframe. Reloading
-      // that iframe alone repeats its broken mini-router state; reload the
-      // same-origin parent shell so Genesys rebuilds the selected menu route.
+      // Child applications can report a broken route; recover the top shell,
+      // never navigate an individual call iframe or an external destination.
       let topWindow = window;
       let topHref = location.href;
       try {
         topWindow = window.top || window;
         topHref = topWindow.location.href || topHref;
       } catch (_) {}
-      const recoveryKey = `gbs-native-app-reload-v2:${topHref}`;
+      if (!topHref.startsWith('https://apps.mypurecloud.de/directory/') || topHref === fallbackUrl) return;
+      const recoveryKey = 'gbs-dashboard-fallback-redirect-v1';
       let attempts = 0;
       try { attempts = Number(topWindow.sessionStorage.getItem(recoveryKey) || '0'); } catch (_) {}
-      // Reload the complete shell once per exact failing route per browser
-      // session. This recovers a transient menu-to-app mount error without a
-      // reload loop when Genesys itself remains unavailable.
+      // One automatic fallback per tab session prevents bouncing between
+      // failing routes when Genesys itself is unavailable.
       if (attempts >= 1) {
         observer?.disconnect();
         return;
@@ -859,18 +859,15 @@
       reloading = true;
       try { topWindow.sessionStorage.setItem(recoveryKey, String(attempts + 1)); } catch (_) {}
       observer?.disconnect();
-      window.setTimeout(() => {
-        try { topWindow.location.reload(); } catch (_) { location.reload(); }
-      }, 180);
+      try { topWindow.location.replace(fallbackUrl); }
+      catch (_) { reloading = false; }
     };
     const watch = () => {
       recoverIfNeeded();
       if (reloading || !document.body) return;
       observer = new MutationObserver(recoverIfNeeded);
       observer.observe(document.body, { childList: true, characterData: true, subtree: true });
-      // Native app startup errors surface promptly; do not retain an observer
-      // forever on every subpage.
-      window.setTimeout(() => observer?.disconnect(), 20000);
+      window.addEventListener('pagehide', () => observer?.disconnect(), { once: true });
     };
     if (document.body) watch(); else document.addEventListener('DOMContentLoaded', watch, { once: true });
   }
