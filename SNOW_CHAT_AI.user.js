@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.75
+// @version      2.36.76
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -330,6 +330,29 @@
   if (location.hostname !== 'kingfisher.service-now.com' || !location.pathname.startsWith('/now/workspace/')) return;
   const roots = new WeakSet();
   const announcedPresence = new WeakSet();
+  let rejectEnabled = false;
+  const rejectControls = new Set();
+  const applyRejectPolicy = element => {
+    const host = element.getRootNode()?.host;
+    element.tabIndex = -1;
+    element.inert = !rejectEnabled;
+    element.toggleAttribute('data-sn-ai-inbox-reject-hidden', !rejectEnabled);
+    if (host?.matches('now-button')) {
+      host.toggleAttribute('data-sn-ai-inbox-reject-hidden', !rejectEnabled);
+      host.inert = !rejectEnabled;
+    }
+    element.blur();
+  };
+  document.addEventListener('sn-ai-inbox-reject-setting', event => {
+    rejectEnabled = event.detail === true;
+    for (const element of rejectControls) {
+      if (!element.isConnected) rejectControls.delete(element);
+      else applyRejectPolicy(element);
+    }
+  });
+  Promise.resolve(GM_getValue('sn-ai-inbox-reject-enabled-v1', false)).then(value => {
+    document.dispatchEvent(new CustomEvent('sn-ai-inbox-reject-setting', { detail: value === true }));
+  }).catch(error => console.warn('[SN AI inbox]', error));
   const css = `
     sn-inbox-card {
       display: block;
@@ -341,7 +364,7 @@
       border: 1px solid #496a5f;
       box-shadow: 0 2px 8px #0002;
     }
-    [data-sn-ai-inbox-reject] {
+    [data-sn-ai-inbox-reject-hidden] {
       display: none !important;
       width: 0 !important;
       min-width: 0 !important;
@@ -427,17 +450,21 @@
       if (element.matches('.now-card-actions')) element.setAttribute('data-sn-ai-inbox-actions', '');
       if (element.matches('button.now-button.-negative') && element.textContent.trim() === 'Reject') {
         element.setAttribute('data-sn-ai-inbox-reject', '');
-        element.disabled = true;
-        element.tabIndex = -1;
-        element.inert = true;
+        if (!rejectControls.has(element)) {
+          rejectControls.add(element);
+          // Suppress focus, not clicks. Native disabled/business state is preserved.
+          element.focus = () => {};
+          element.addEventListener('pointerdown', event => event.preventDefault());
+          element.addEventListener('mousedown', event => event.preventDefault());
+          element.addEventListener('focus', () => element.blur());
+        }
         const host = element.getRootNode()?.host;
         if (host?.matches('now-button')) {
           host.setAttribute('data-sn-ai-inbox-reject', '');
-          host.inert = true;
         }
         // Also release focus if a component focused it before insertion was
         // observed. Do not move focus to Accept or click any other action.
-        element.blur();
+        applyRejectPolicy(element);
       }
       if (element.matches('button.now-button.-positive') && element.textContent.trim() === 'Accept') {
         element.setAttribute('data-sn-ai-inbox-accept', '');
@@ -7822,7 +7849,18 @@ function startSNAI() {
     field.focus({ preventScroll: true });
     setNativeValue(field, text);
     await sleep(100);
-    field.blur();
+    // Input/change can replace the control synchronously. Commit the current
+    // component, not a detached input whose blur never reaches Workspace.
+    const edited = resolveField();
+    if (!edited || edited.isConnected === false) return false;
+    edited.focus({ preventScroll: true });
+    if (String(edited.value ?? '') !== text) setNativeValue(edited, text);
+    edited.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+    await sleep(60);
+    const beforeBlur = resolveField();
+    if (!beforeBlur || beforeBlur.isConnected === false) return false;
+    beforeBlur.focus({ preventScroll: true });
+    beforeBlur.blur();
     await sleep(60);
     const current = resolveField();
     if (!current || current.isConnected === false) return false;
@@ -8084,9 +8122,11 @@ function startSNAI() {
       const field = target.name ? dynamicDescriptionControl(target) : findControlByLabel(target.label);
       if (!field || seen.has(field) || !isVisible(field)) continue;
       seen.add(field);
-      field.focus({ preventScroll: false });
-      await sleep(500);
+      await commitTextWithTouch(field, String(field.value ?? ''), () =>
+        target.name ? dynamicDescriptionControl(target) : findControlByLabel(target.label));
     }
+    // Final text validation must not leave CPC/ILS above the KB section.
+    if (findControlByLabel('Attached Knowledge')) await waitForControlByLabel('Attached Knowledge', 4200);
   }
 
   async function autoCPC(rawData) {
@@ -14395,7 +14435,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.75' });
+    addLog('info', 'helper-version', { version: '2.36.76' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -14955,6 +14995,16 @@ function startSNAI() {
       inboxLog('auto-accept-setting', { enabled: checkbox.checked });
     });
     label.append(checkbox, ' Automatically accept incoming chats after 12 seconds');
+    const rejectLabel = document.createElement('label');
+    rejectLabel.style.display = 'block';
+    const rejectCheckbox = document.createElement('input');
+    rejectCheckbox.type = 'checkbox';
+    gmGetValue('sn-ai-inbox-reject-enabled-v1', false).then(value => { rejectCheckbox.checked = value === true; });
+    rejectCheckbox.addEventListener('change', () => {
+      gmSetValue('sn-ai-inbox-reject-enabled-v1', rejectCheckbox.checked).catch(error => console.warn('[SN AI inbox]', error));
+      document.dispatchEvent(new CustomEvent('sn-ai-inbox-reject-setting', { detail: rejectCheckbox.checked }));
+    });
+    rejectLabel.append(rejectCheckbox, ' Enable Reject button (never auto-focused)');
     const download = document.createElement('button');
     download.type = 'button';
     download.textContent = 'Download inbox diagnostics';
@@ -14968,7 +15018,7 @@ function startSNAI() {
     const help = document.createElement('small');
     help.textContent = 'Diagnostics stay in this page until reload (up to 5 MB). The download may contain customer data; review before sharing.';
     help.style.display = 'block';
-    row.append(label, download, help);
+    row.append(label, rejectLabel, download, help);
     content.append(row);
   }
   function installInboxMonitor() {
