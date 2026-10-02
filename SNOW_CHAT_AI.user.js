@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.50
+// @version      2.36.51
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
 // @author       Drandox
 // @description  Inspects visible Workspace fields and locally fills user-directed form values without submitting records.
 // @match        https://kingfisher.service-now.com/now/workspace/*
 // @match        https://kingfisher.service-now.com/incident.do*
-// @run-at       document-idle
+// @run-at       document-start
 // @sandbox      DOM
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -323,7 +323,56 @@
  * the same snapshot via normal page inspection.
  */
 
+// Install presentation rules before Workspace builds its action bars. Observe
+// added subtrees only; never repeatedly scan the whole application.
 (() => {
+  const roots = new WeakSet();
+  const css = `
+    button[aria-label="Create Incident"],
+    now-button[component-name="_node0_a89d504b873303002ae97e2526cb0bdd"] {
+      display: none !important;
+    }
+    button[aria-label="End Chat"], button[aria-label="Save"],
+    button[aria-label="Create a new Event"] { border-radius: 4px !important; }
+  `;
+  function discover(node) {
+    if (node.nodeType === 1 && node.shadowRoot) watch(node.shadowRoot);
+    for (const element of node.querySelectorAll?.('*') || []) {
+      if (element.shadowRoot) watch(element.shadowRoot);
+    }
+  }
+  function watch(root) {
+    if (roots.has(root)) return;
+    roots.add(root);
+    const style = document.createElement('style');
+    style.dataset.snAiActionStyle = 'true';
+    style.textContent = css;
+    (root === document ? (document.head || document.documentElement) : root)?.prepend(style);
+    const observer = new MutationObserver(records => {
+      for (const record of records) for (const node of record.addedNodes) discover(node);
+    });
+    observer.observe(root, { childList: true, subtree: true });
+    discover(root);
+  }
+  // Cover roots created synchronously before their first children are mounted.
+  const attach = Element.prototype.attachShadow;
+  Element.prototype.attachShadow = function (...args) {
+    const root = attach.apply(this, args);
+    watch(root);
+    return root;
+  };
+  if (document.documentElement) watch(document);
+  else {
+    const observer = new MutationObserver(() => {
+      if (!document.documentElement) return;
+      observer.disconnect();
+      watch(document);
+    });
+    observer.observe(document, { childList: true });
+  }
+})();
+
+function startSNAI() {
   'use strict';
 
   const ROOT_ID = 'local-sn-inspector-root';
@@ -13493,7 +13542,7 @@
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.50' });
+    addLog('info', 'helper-version', { version: '2.36.51' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -14164,4 +14213,6 @@
   setInterval(() => {
     readOfficialUpdateState().then(renderOfficialUpdateState).catch(error => console.warn('[SN AI update]', error.message));
   }, 1000);
-})();
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startSNAI, { once: true });
+else startSNAI();
