@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.517.0
+// @version      1.517.1
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -5831,33 +5831,47 @@
         popup.style.left = `${bounds.left}px`;
         popup.style.top = `${bounds.top}px`;
         popup.style.setProperty('will-change', 'transform');
+        popup.style.setProperty('contain', 'layout paint');
         const paint = () => {
           frame = 0;
           popup.style.setProperty('transform', `translate3d(${x - bounds.left}px,${y - bounds.top}px,0)`, 'important');
         };
-        const layer = createWorkspaceResizeCapture(doc);
+        // Pointer capture avoids inserting a viewport-sized layer on every
+        // drag. That layer forced Genesys to repaint its full application and
+        // made a compositor-only card transform feel severely delayed.
+        const pointerId = event.pointerId;
+        heading.setPointerCapture(pointerId);
         let active = true;
         const end = () => {
           if (!active) return;
           active = false;
           popup.__gbsDragging = false;
+          if (heading.hasPointerCapture(pointerId)) heading.releasePointerCapture(pointerId);
           if (frame) doc.defaultView.cancelAnimationFrame(frame);
           popup.style.left = `${x}px`;
           popup.style.top = `${y}px`;
           popup.style.setProperty('transform', 'none', 'important');
           popup.style.removeProperty('will-change');
-          layer.remove();
+          popup.style.removeProperty('contain');
+          heading.removeEventListener('pointermove', move);
+          heading.removeEventListener('pointerup', end);
+          heading.removeEventListener('pointercancel', end);
+          heading.removeEventListener('lostpointercapture', end);
           doc.defaultView.removeEventListener('blur', end);
         };
-        layer.addEventListener('pointermove', move => {
+        const move = moveEvent => {
           if (!active) return;
-          if (!(move.buttons & 1)) { end(); return; }
-          x = Math.max(0, Math.min(maxX, move.clientX - offsetX));
-          y = Math.max(0, Math.min(maxY, move.clientY - offsetY));
+          if (!(moveEvent.buttons & 1)) { end(); return; }
+          const samples = moveEvent.getCoalescedEvents?.() || [moveEvent];
+          const latest = samples[samples.length - 1];
+          x = Math.max(0, Math.min(maxX, latest.clientX - offsetX));
+          y = Math.max(0, Math.min(maxY, latest.clientY - offsetY));
           if (!frame) frame = doc.defaultView.requestAnimationFrame(paint);
-        });
-        layer.addEventListener('pointerup', end);
-        layer.addEventListener('pointercancel', end);
+        };
+        heading.addEventListener('pointermove', move);
+        heading.addEventListener('pointerup', end);
+        heading.addEventListener('pointercancel', end);
+        heading.addEventListener('lostpointercapture', end);
         doc.defaultView.addEventListener('blur', end);
       });
     }
