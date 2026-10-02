@@ -4129,6 +4129,7 @@
   }
 
   function allPageElements() {
+    // Polling callers share a short-lived discovery snapshot.
     const all = [];
     addDeep(document, all, new Set());
     return all;
