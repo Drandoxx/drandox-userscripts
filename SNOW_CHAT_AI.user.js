@@ -2,8 +2,8 @@
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
 // @version      2.36.70
-// @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
-// @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
+// @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
+// @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
 // @description  Inspects visible Workspace fields and locally fills user-directed form values without submitting records.
 // @match        https://kingfisher.service-now.com/now/workspace/*
@@ -18,7 +18,7 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_info
 // @grant        GM_setClipboard
-// @connect      raw.githubusercontent.com
+// @connect      drandox.cc
 // @connect      raw.githubusercontent.com
 // @connect      api.openai.com
 // ==/UserScript==
@@ -15035,7 +15035,7 @@ function startSNAI() {
   catch (error) { console.warn('[SN AI snippets]', error); }
 
   const RELEASE_ID = 'sn-ai';
-  const UPDATE_API_URL = 'https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/versions.json';
+  const UPDATE_API_URL = 'https://drandox.cc/work/?format=json';
   const UPDATE_GITHUB_API_URL = 'https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/versions.json';
   const UPDATE_INSTALL_URLS = {
     primary: 'https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js',
