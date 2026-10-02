@@ -1,22 +1,22 @@
 {
-    "ok":  true,
-    "checkedAt":  "2026-10-02T16:44:30.8472168Z",
-    "releases":  [
-                     {
-                         "id":  "sn-ai",
-                         "name":  "SN AI",
-                         "version":  "2.36.70",
-                         "available":  true,
-                         "fileName":  "SNOW_CHAT_AI.user.js",
-                         "downloadUrl":  "https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js"
-                     },
-                     {
-                         "id":  "genesys-v2",
-                         "name":  "Genesys V2",
-                         "version":  "1.523.0",
-                         "available":  true,
-                         "fileName":  "Genesys_V2.user.js",
-                         "downloadUrl":  "https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js"
-                     }
-                 ]
+  "ok": true,
+  "checkedAt": "2026-10-02T16:44:30.8472168Z",
+  "releases": [
+    {
+      "id": "sn-ai",
+      "name": "SN AI",
+      "version": "2.36.70",
+      "available": true,
+      "fileName": "SNOW_CHAT_AI.user.js",
+      "downloadUrl": "https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js"
+    },
+    {
+      "id": "genesys-v2",
+      "name": "Genesys V2",
+      "version": "1.523.0",
+      "available": true,
+      "fileName": "Genesys_V2.user.js",
+      "downloadUrl": "https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js"
+    }
+  ]
 }
