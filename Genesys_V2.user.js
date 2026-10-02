@@ -5840,7 +5840,9 @@
       row.append(title, content);
       body.appendChild(row);
     }
-    if (snowAction || callTestEnabled(doc)) {
+    // Keep the ringing state focused on the one action the agent can take.
+    // The SNOW shortcut and in-call controls appear only after Answer.
+    if (!incoming && (snowAction || callTestEnabled(doc))) {
       const button = doc.createElement('button');
       button.type = 'button';
       button.textContent = 'Open in SNOW';
@@ -5873,8 +5875,6 @@
         }
       });
       controls.appendChild(answer);
-      const snow = [...body.querySelectorAll('button')].find(button => button.textContent === 'Open in SNOW');
-      if (snow) { snow.style.marginLeft = 'auto'; controls.appendChild(snow); }
       const timer = doc.createElement('div'); timer.textContent = `${Math.max(0, 29 - Math.floor((Date.now() - (testCallSession?.startedMs || Date.now())) / 1000))}s to answer`;
       timer.style.cssText = 'width:100%;color:#a0a8b0;font-size:12px'; controls.prepend(timer);
     }
