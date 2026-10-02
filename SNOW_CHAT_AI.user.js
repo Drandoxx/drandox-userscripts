@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.81
+// @version      2.36.82
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -14622,7 +14622,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.81' });
+    addLog('info', 'helper-version', { version: '2.36.82' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -14967,6 +14967,13 @@ function startSNAI() {
     const seconds = Number(value);
     return Number.isFinite(seconds) && seconds >= 0 ? Math.min(3600, Math.floor(seconds)) : 12;
   }
+  function inboxCountdownSeconds(text) {
+    const value = String(text || '').trim();
+    const clock = value.match(/\b(\d{1,2}):(\d{2})\b/);
+    if (clock && Number(clock[2]) < 60) return Number(clock[1]) * 60 + Number(clock[2]);
+    const seconds = value.match(/^\s*(\d+)\s*(?:s|sec|seconds)?\s*$/i);
+    return seconds ? Number(seconds[1]) : null;
+  }
   const INBOX_AUTO_ACCEPT_KEY = 'sn-ai-inbox-auto-accept-v1';
   let notificationSettingsAvailable = false;
   let notificationSettingsConfirmedNoticeShown = false;
@@ -15295,12 +15302,29 @@ function startSNAI() {
         inboxLog('accept-button-found', { html: button.outerHTML, enabled: !button.disabled, autoAccept: inboxPolicy.autoAccept });
         if (!inboxPolicy.autoAccept) continue;
         const acceptDelayMs = inboxPolicy.acceptDelaySeconds * 1000;
-        const timer = setTimeout(() => {
-          inboxPolicy.timers.delete(button);
+        const detectedAt = performance.now();
+        let card = button;
+        while (card instanceof Element && !card.matches('sn-inbox-card')) card = deepParentElement(card);
+        // Cache this offer's timer roots once; no page-wide polling/scanning.
+        const countdown = card?.shadowRoot?.querySelector('.sn-card-timer');
+        const countdownRoots = countdown ? [countdown] : [];
+        for (let i = 0; i < countdownRoots.length; i += 1) {
+          for (const element of countdownRoots[i].querySelectorAll('*')) if (element.shadowRoot) countdownRoots.push(element.shadowRoot);
+        }
+        let accepted = false;
+        const checkAcceptance = () => {
+          if (accepted) return;
           if (!inboxPolicy.autoAccept || !button.isConnected || !list.isConnected || button.disabled || button.getAttribute('aria-disabled') === 'true' || !isVisible(button)) {
+            clearInterval(inboxPolicy.timers.get(button)); inboxPolicy.timers.delete(button);
             inboxLog('auto-accept-cancelled', { reason: 'Original incoming control is no longer actionable' }); return;
           }
-          inboxLog('auto-accept-click', { html: button.outerHTML, delayMs: acceptDelayMs });
+          const remaining = countdownRoots.map(root => inboxCountdownSeconds(root.textContent)).find(value => value !== null);
+          const countdownReached = remaining != null && remaining <= 30 - acceptDelayMs / 1000;
+          if (!countdownReached && performance.now() - detectedAt < acceptDelayMs) return;
+          accepted = true;
+          clearInterval(inboxPolicy.timers.get(button)); inboxPolicy.timers.delete(button);
+          inboxLog('auto-accept-click', { html: button.outerHTML, delayMs: acceptDelayMs,
+            trigger: countdownReached ? 'native-countdown' : 'local-timer', remainingSeconds: remaining ?? null });
           button.click();
           // Confirm the offer action disappears, rather than claiming success
           // immediately after dispatch. Retained buttons report a failed click.
@@ -15308,8 +15332,10 @@ function startSNAI() {
             if (!button.isConnected) { inboxLog('auto-accept-offer-removed', {}); notice(); }
             else inboxLog('auto-accept-unconfirmed', { html: button.outerHTML });
           }, 1500);
-        }, acceptDelayMs);
+        };
+        const timer = setInterval(checkAcceptance, 100);
         inboxPolicy.timers.set(button, timer);
+        checkAcceptance();
       }
     };
     function watch(node, kind) {
