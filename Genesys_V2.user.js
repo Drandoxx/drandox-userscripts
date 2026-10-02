@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.513.0
+// @version      1.514.0
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -399,7 +399,7 @@
     try { saved = JSON.parse(doc.defaultView.localStorage.getItem(BOARD_SETTINGS_KEY) || '{}'); } catch (_) {}
     const base = boardDefaultMetrics(doc);
     const padding = Number.isFinite(saved.rowPadding) ? saved.rowPadding : Number.isFinite(saved.heightOffset) ? 8 + (saved.heightOffset + 4) / 2 : 8;
-    return { gap: Math.max(1, Math.min(13.5, Number(saved.gap) || base.gap)), fontOffset: Math.max(-5, Math.min(6, Number.isFinite(saved.fontOffset) ? saved.fontOffset : -1)), showYou: saved.showYou !== false, rowPadding: Math.max(1, Math.min(13.5, padding)), padding: Math.max(1, Math.min(13.5, padding)), columns: BOARD_COLUMNS.map((_, index) => saved.columns?.[index] !== false) };
+    return { gap: Math.max(1, Math.min(13.5, Number(saved.gap) || base.gap)), fontOffset: Math.max(-5, Math.min(6, Number.isFinite(saved.fontOffset) ? saved.fontOffset : -1)), showYou: saved.showYou !== false, whiteNames: saved.whiteNames === true, rowPadding: Math.max(1, Math.min(13.5, padding)), padding: Math.max(1, Math.min(13.5, padding)), columns: BOARD_COLUMNS.map((_, index) => saved.columns?.[index] !== false) };
   }
   function boardDefaultMetrics(doc) {
     const width = doc.defaultView.innerWidth;
@@ -475,8 +475,13 @@
     const circleSize = Math.min(18, 14 + Math.max(0, (settings.rowPadding ?? 8) - 1) * 2);
     const circleCSS = `table.gbs-board td.column-agentPresence .entity-v3-presence-indicator-dot{width:${circleSize}px!important;height:${circleSize}px!important;min-width:${circleSize}px!important;min-height:${circleSize}px!important;box-sizing:border-box!important;transition:width 120ms ease,height 120ms ease!important}`;
     const durationPaddingCSS = 'table.gbs-board tbody tr.gbs-duration-wrapped>td{padding-top:2px!important;padding-bottom:2px!important;height:auto!important;min-height:0!important}';
-    const liveCSS = (fullCSS + fontCSS + lineCSS + wrappedCSS + durationPaddingCSS + circleCSS).replaceAll('table.gbs-board', 'table.gbs-board:not([aria-label="Board preview"])');
+    const liveCSS = (fullCSS + fontCSS + lineCSS + wrappedCSS + durationPaddingCSS + circleCSS + boardNameColorCSS(settings)).replaceAll('table.gbs-board', 'table.gbs-board:not([aria-label="Board preview"])');
     if (style.textContent !== liveCSS) style.textContent = liveCSS;
+  }
+  function boardNameColorCSS(settings) {
+    if (!settings.whiteNames) return '';
+    // Keep the YOU badge and status indicators in their own status colours.
+    return 'table.gbs-board tbody tr[class] td.gbs-rank-cell,table.gbs-board tbody tr[class] td.gbs-rank-cell *,table.gbs-board tbody tr[class] td.column-agent,table.gbs-board tbody tr[class] td.column-agent a,table.gbs-board tbody tr[class] td.column-agent span:not(.gbs-current-agent-badge){color:#fff!important}';
   }
   const CURRENT_AGENT_KEY = 'genesys-board-sorter-current-agent-name';
   const RESIZE_KEY_PREFIX = 'genesys-board-sorter-sidebar-width:';
@@ -2304,7 +2309,7 @@
       border-top-color: #3a4655 !important;
       border-right-color: #3a4655 !important;
       border-bottom-color: #3a4655 !important;
-      box-shadow: 0 0 8px color-mix(in srgb, var(--gbs-card-status, #64748b) 18%, transparent) !important;
+      box-shadow: 0 1px 2px rgba(0,0,0,.22) !important;
     }
     .analytics-ui-dashboard-widget .widget-title, .analytics-ui-dashboard-widget .widget-title-display { background: var(--gbs-surface-base, #1d2025) !important; color: #f8fafc !important; }
     .analytics-ui-dashboard-widget a { color: #93c5fd !important; }
@@ -5106,10 +5111,16 @@
     fontSlider.value = String(draft.fontOffset || 0);
     const youLabel = doc.createElement('label');
     youLabel.style.cssText = 'display:flex;align-items:center;gap:8px;margin:16px 0;color:#dce8eb';
-    youLabel.innerHTML = '<input data-board-you type="checkbox" style="accent-color:#22d3ee">Show <span class="gbs-current-agent-badge" style="color:#22d3ee">YOU</span> marker';
+    youLabel.innerHTML = '<input data-board-you type="checkbox" style="accent-color:#22d3ee;width:22px;height:22px;flex:none">Show <span class="gbs-current-agent-badge" style="color:#22d3ee">YOU</span> marker';
     popover.querySelector('.gbs-board-column-options').previousElementSibling.before(youLabel);
     const youCheckbox = youLabel.querySelector('input');
     youCheckbox.checked = draft.showYou !== false;
+    const whiteLabel = doc.createElement('label');
+    whiteLabel.style.cssText = youLabel.style.cssText;
+    whiteLabel.innerHTML = '<input type="checkbox" style="accent-color:#22d3ee;width:22px;height:22px;flex:none">Use white colored names';
+    youLabel.after(whiteLabel);
+    const whiteCheckbox = whiteLabel.querySelector('input');
+    whiteCheckbox.checked = draft.whiteNames === true;
     const ownRow = preview.querySelectorAll('tbody tr')[1];
     ownRow.classList.add('gbs-current-agent');
     const ownCell = ownRow.querySelector('td.column-agent');
@@ -5191,7 +5202,7 @@
         [...row.children].forEach((cell,i) => cell.style.setProperty('display', draft.columns[i] ? 'flex' : 'none', 'important'));
         row.style.setProperty('grid-template-columns', ['32px','26px','minmax(0,2fr)','minmax(0,1fr)','minmax(0,1fr)','minmax(0,1fr)'].filter((_,i) => draft.columns[i]).join(' '), 'important');
       });
-      edgeStyle.textContent = boardEdgeCSS(draft).replaceAll('table.gbs-board', '.gbs-board-preview table.gbs-board');
+      edgeStyle.textContent = (boardEdgeCSS(draft) + boardNameColorCSS(draft)).replaceAll('table.gbs-board', '.gbs-board-preview table.gbs-board');
       if (animateColumns) before.forEach(({row,rect}) => {
         const next = row.getBoundingClientRect();
         row.getAnimations().forEach(animation => animation.cancel());
@@ -5217,6 +5228,7 @@
     paddingSlider.addEventListener('input', event => {doc.defaultView.cancelAnimationFrame(resetFrame);slide('rowPadding', event.target.value);});
     fontSlider.addEventListener('input', event => {doc.defaultView.cancelAnimationFrame(resetFrame);slide('fontOffset', event.target.value);});
     youCheckbox.addEventListener('change', () => {draft.showYou = youCheckbox.checked;update();});
+    whiteCheckbox.addEventListener('change', () => {draft.whiteNames = whiteCheckbox.checked;update();});
     popover.querySelectorAll('[data-board-column]').forEach(button => button.addEventListener('click', () => {
       const index = Number(button.dataset.boardColumn);
       if (draft.columns[index] && draft.columns.filter(Boolean).length === 1) return;
@@ -5228,6 +5240,7 @@
       const fromGap = Number(gapSlider.value), fromHeight = Number(paddingSlider.value);
       const fromFont = Number(fontSlider.value);
       draft.showYou = true; youCheckbox.checked = true;
+      draft.whiteNames = false; whiteCheckbox.checked = false;
       draft.columns = BOARD_COLUMNS.map(() => true);
       popover.querySelectorAll('[data-board-column]').forEach(button => {button.classList.add('is-active');button.setAttribute('aria-pressed','true');});
       update();
