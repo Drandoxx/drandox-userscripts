@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.44
+// @version      2.36.45
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -10916,6 +10916,14 @@
         template.innerHTML = entry.html;
         const dialog = template.content.firstElementChild;
         if (!(dialog instanceof HTMLElement) || !dialog.matches('.local-sn-cpc-dialog[data-ticket-window]')) return;
+        if (dialog.dataset.ticketWindow === 'HP') {
+          // Saved HTML contains data, never event handlers or live closures.
+          // Rebuild HP through the current factory instead of reviving inert DOM.
+          void createHPWindow(hpAction, { dialog, centre: entry.centre }).catch(error => {
+            addLog('error', 'hp-draft-restore-failed', { message: error?.message || String(error) });
+          });
+          return;
+        }
         if (!dialog.dataset.ticketWindowId) {
           let restoredId = '';
           do { restoredId = `${String(dialog.dataset.ticketWindow || 'ticket').toUpperCase()}-${++ticketWindowCommandSequence}`; }
@@ -12746,15 +12754,15 @@
     }));
 
     let hpWindowSequence = 0;
-    const createHPWindow = async (actionButton) => {
+    const createHPWindow = async (actionButton, restoredDraft = null) => {
       await loadAISettings();
-      if (!state.enabledModes.HP) return;
-      if (!state.ai.enabled || (state.ai.provider === 'api' && !state.ai.keySaved)) {
+      if (!restoredDraft && !state.enabledModes.HP) return;
+      if (!restoredDraft && (!state.ai.enabled || (state.ai.provider === 'api' && !state.ai.keySaved))) {
         state.lastAction = 'Turn on AI power and configure the selected AI connection in SN AI settings before using HP mode.';
         syncAISettingsUI(); refresh(); return;
       }
-      const pinnedIMS = currentWindowIMS();
-      const openedForDisplay = currentOpenedForDisplay();
+      const pinnedIMS = restoredDraft?.dialog.dataset.pinnedIms || currentWindowIMS();
+      const openedForDisplay = restoredDraft?.dialog.querySelector('[data-ticket-user]')?.textContent || currentOpenedForDisplay();
       if (!pinnedIMS) { state.lastAction = 'Open or select an IMS interaction before opening HP mode.'; refresh(); return; }
       retainAIChatCache(pinnedIMS);
       let chatCacheReleased = false;
@@ -12797,6 +12805,16 @@
       };
       setIssueType('Generic issue');
       typeButtons.forEach((button) => button.addEventListener('click', (event) => { event.stopPropagation(); setIssueType(button.dataset.hpType); }));
+      if (restoredDraft) {
+        const saved = restoredDraft.dialog;
+        setIssueType(saved.querySelector('[data-hp-type][aria-pressed="true"]')?.dataset.hpType || 'Generic issue');
+        for (const field of fields) {
+          const previous = [...saved.querySelectorAll('[data-hp-field]')].find(item => item.dataset.hpField === field.dataset.hpField);
+          if (previous) field.value = previous.value;
+        }
+        const instruction = saved.querySelector('[data-ticket-case-instruction], textarea[id^="local-sn-case-instruction-"]');
+        if (shell.caseInstruction && instruction) shell.caseInstruction.value = instruction.value;
+      }
       fields.forEach((field) => field.addEventListener('blur', () => { field.value = field.value.trim(); }));
       const suppliedValues = () => Object.fromEntries(fields
         .filter((field) => issueType === 'Toner order' || field.dataset.hpField !== 'ink-colors')
@@ -12972,7 +12990,17 @@
         } finally { document.removeEventListener('sn-ai-web-progress', aiWebProgress); running = false; }
       });
       dialog.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !running) closeAndRemove('escape'); });
-      await openWindowFromAction(actionButton, dialog, { pinnedIMS });
+      if (restoredDraft) {
+        dialog.classList.add('is-minimized');
+        dialog.style.inset = 'auto';
+        dialog.style.right = 'auto'; dialog.style.bottom = 'auto';
+        const centre = restoredDraft.centre;
+        if (Number.isFinite(centre?.x) && Number.isFinite(centre?.y)) {
+          dialog.style.left = `${centre.x - dialog.offsetWidth / 2}px`;
+          dialog.style.top = `${centre.y - dialog.offsetHeight / 2}px`;
+        }
+        persistOpenTicketWindows();
+      } else await openWindowFromAction(actionButton, dialog, { pinnedIMS });
     };
     hpAction.addEventListener('click', (event) => createHPWindow(event.currentTarget).catch((error) => {
       state.lastAction = error.message; addLog('error', 'hp-window-open-failed', { message: error.message }); refresh();
@@ -13369,7 +13397,7 @@
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.44' });
+    addLog('info', 'helper-version', { version: '2.36.45' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
