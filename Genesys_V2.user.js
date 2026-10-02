@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.517.2
+// @version      1.518.0
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -255,8 +255,9 @@
       const shared = readUpdateState();
       if (!fallback) {
         shared.failures = (shared.failures || 0) + 1;
-        shared.primaryRetryAt = Date.now() + 5000;
-        if (shared.failures >= 3) { shared.fallback = true; shared.primaryRetryAt = 0; }
+        shared.primaryRetryAt = Date.now() + 10000;
+        shared.lastPrimaryFailure = { at: Date.now(), reason: message };
+        if (shared.failures >= 5) { shared.fallback = true; shared.primaryRetryAt = 0; }
       }
       GM_setValue(UPDATE_STATE_KEY, shared);
       releaseLock(); console.warn('[Genesys V2 update]', message);
@@ -283,7 +284,8 @@
             if (release.downloadUrl !== allowed) throw new Error('Invalid release download URL');
             const shared = readUpdateState();
             shared.failures = 0;
-            shared.primaryRetryAt = 0;
+            shared.primaryRetryAt = fallback ? 0 : Date.now() + 10000;
+            if (!fallback) shared.lastPrimaryFailure = null;
             shared.cached = { id: RELEASE_ID, version: release.version, downloadUrl: allowed, source: fallback ? 'github' : 'primary' };
             if (fallback) shared.githubSuccessAt = Date.now();
             GM_setValue(UPDATE_STATE_KEY, shared);
@@ -304,7 +306,7 @@
       if (!updateCheckTimer) updateCheckTimer = window.setInterval(() => {
         refreshUpdateCooldown();
         // Shared timestamps keep normal primary requests ten seconds apart;
-        // the one-second tick also services five-second failure retries.
+        // the one-second tick also services ten-second post-response delays.
         checkGenesysUpdates();
       }, 1000);
     };
