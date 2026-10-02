@@ -390,196 +390,322 @@ function installChatSnippets() {
 
     if (!location.pathname.startsWith('/now/workspace/agent/')) return;
     document.getElementById('tm-toolbar')?.remove();
+    const SCROLL_LOCK_CHECK_INTERVAL_MS = 5000;
+
+    function enforcePageScrollLock() {
+        if (document.body) {
+            document.body.style.setProperty('overflow', 'hidden', 'important');
+        }
+
+        const scrollingElement = document.scrollingElement || document.documentElement;
+        const hasPageScrolled = window.scrollX !== 0 ||
+            window.scrollY !== 0 ||
+            scrollingElement.scrollLeft !== 0 ||
+            scrollingElement.scrollTop !== 0;
+
+        if (hasPageScrolled) {
+            window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+            scrollingElement.scrollTop = 0;
+            scrollingElement.scrollLeft = 0;
+        }
+    }
+
+    enforcePageScrollLock();
+    const scrollLockTimer = window.setInterval(enforcePageScrollLock, SCROLL_LOCK_CHECK_INTERVAL_MS);
+
     const STORAGE_KEY = 'snippets_manager_v1';
+    const THEME_KEY = 'snippets_manager_theme_v1';
 
     const style = document.createElement('style');
     style.textContent = `
-        #tm-toolbar {
-            position: fixed;
-            top: 7px;
-            left: 100px;
-            z-index: 99999;
-            right: 12px;
-            max-width: calc(100vw - 112px);
-            box-sizing: border-box;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-family: Arial, sans-serif;
+        :root{
+            --tm-bg:#1d1f20 !important;
+            --tm-bg-hover:#25282a !important;
+            --tm-bg-secondary:#2b2d2f !important;
+            --tm-border:#505050 !important;
+            --tm-text:rgb(216,213,208) !important;
+            --tm-icon-bg:#444 !important;
+            --tm-icon-hover:#5a5a5a !important;
+            --tm-icon-color:#fff !important;
+            --tm-overlay:rgba(0,0,0,.6) !important;
         }
 
-        #tm-add-btn {
-            width: 35px;
-            height: 35px;
-            border: 1px solid #505050;
-            border-radius: 6px;
-            background: #1d1f20;
-            color: rgb(216, 213, 208);
-            font-size: 22px;
-            cursor: pointer;
-            padding: 0;
-            flex-shrink: 0;
+        :root.tm-light-theme{
+            --tm-bg:#ffffff !important;
+            --tm-bg-hover:#eef2f3 !important;
+            --tm-bg-secondary:#f5f7f8 !important;
+            --tm-border:#516466 !important;
+            --tm-text:#172125 !important;
+            --tm-icon-bg:#516466 !important;
+            --tm-icon-hover:#252a2d !important;
+            --tm-icon-color:#ffffff !important;
+            --tm-overlay:rgba(23,33,37,.32) !important;
         }
 
-        #tm-add-btn:hover {
-            background: #25282a;
+        :root.tm-light-theme #tm-add-btn,
+        :root.tm-light-theme #tm-export-btn,
+        :root.tm-light-theme #tm-theme-btn,
+        :root.tm-light-theme .tm-snippet,
+        :root.tm-light-theme .tm-edit-btn,
+        :root.tm-light-theme .tm-modal,
+        :root.tm-light-theme .tm-modal input,
+        :root.tm-light-theme .tm-modal textarea,
+        :root.tm-light-theme .tm-buttons button,
+        :root.tm-light-theme .tm-toast{
+            border-width:2px !important;
+            border-color:#516466 !important;
         }
 
-        #tm-snippet-container {
-            display: flex;
-            gap: 6px;
-            flex-wrap: nowrap;
-            min-width: 0;
-            overflow-x: auto;
-            overflow-y: hidden;
-            scrollbar-width: thin;
-            overscroll-behavior-x: contain;
+        :root.tm-light-theme .tm-edit-btn{
+            background:#516466 !important;
+            color:#ffffff !important;
         }
 
-        .tm-snippet {
-            background: #1d1f20;
-            color: rgb(216, 213, 208);
-            border: 1px solid #505050;
-            border-radius: 6px;
-            height: 35px;
-            box-sizing: border-box;
-            display: flex;
-            align-items: center;
-            padding: 0 10px;
-            cursor: pointer;
-            user-select: none;
-            position: relative;
-            font-size: 13px;
-            min-width: 120px;
-            flex: 0 0 auto;
+        #tm-toolbar{
+            position:fixed;
+            top:7px;
+            left:100px;
+            z-index:99999;
+            right:12px;
+            max-width:calc(100vw - 112px);
+            display:flex;
+            align-items:center;
+            gap:10px;
+            font-family:Arial,sans-serif;
         }
 
-        .tm-snippet:hover {
-            background: #25282a;
+        #tm-add-btn,
+        #tm-export-btn,
+        #tm-theme-btn{
+            width:35px;
+            height:35px;
+            border:1px solid var(--tm-border) !important;
+            border-radius:6px;
+            background:var(--tm-bg) !important;
+            color:var(--tm-text) !important;
+            cursor:pointer;
+            padding:0;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            box-sizing:border-box;
+            transition:background-color .28s ease, color .28s ease, border-color .28s ease;
         }
 
-        .tm-snippet-title {
-            padding-right: 22px;
-            white-space: nowrap;
+        #tm-add-btn{
+            font-size:22px;
         }
 
-        .tm-delete-btn {
-            position: absolute;
-            right: 6px;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 18px;
-            height: 18px;
-            border: none;
-            border-radius: 4px;
-            background: #444;
-            color: white;
-            cursor: pointer;
-            font-size: 11px;
-            line-height: 18px;
-            padding: 0;
+        #tm-add-btn:hover,
+        #tm-export-btn:hover,
+        #tm-theme-btn:hover{
+            background:var(--tm-bg-hover) !important;
         }
 
-        .tm-delete-btn:hover {
-            background: #c62828;
+        #tm-export-btn svg,
+        #tm-theme-btn svg{
+            width:18px;
+            height:18px;
+            display:block;
+            pointer-events:none;
         }
 
-        .tm-modal-overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.6);
-            z-index: 100001;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        #tm-snippet-container{
+            display:flex;
+            gap:6px;
+            flex-wrap:nowrap;
+            flex:1 1 auto;
+            min-width:0;
+            overflow-x:auto;
+            overflow-y:hidden;
+            scrollbar-width:thin;
         }
 
-        .tm-modal {
-            width: 450px;
-            max-width: 90vw;
-            background: #1d1f20;
-            border: 1px solid #505050;
-            border-radius: 8px;
-            padding: 16px;
-            color: rgb(216, 213, 208);
+        .tm-snippet{
+            background:var(--tm-bg) !important;
+            color:var(--tm-text) !important;
+            border:1px solid var(--tm-border) !important;
+            border-radius:6px;
+            height:35px;
+            min-width:120px;
+            flex:0 0 auto;
+            display:flex;
+            align-items:center;
+            padding:0 10px;
+            position:relative;
+            cursor:grab;
+            user-select:none;
+            box-sizing:border-box;
+            transition:background-color .28s ease, color .28s ease, border-color .28s ease;
         }
 
-        .tm-modal h3 {
-            margin-top: 0;
+        .tm-snippet.dragging{
+            opacity:.5;
+        }
+
+        .tm-snippet-title{
+            padding-right:22px;
+            white-space:nowrap;
+        }
+
+        .tm-edit-btn{
+            position:absolute;
+            right:6px;
+            top:50%;
+            transform:translateY(-50%);
+            width:18px;
+            height:18px;
+            border:none;
+            border-radius:4px;
+            background:var(--tm-icon-bg) !important;
+            color:var(--tm-icon-color) !important;
+            border:1px solid var(--tm-border) !important;
+            cursor:pointer;
+            padding:0;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            line-height:0;
+            box-sizing:border-box;
+            transition:background-color .28s ease, color .28s ease;
+        }
+
+        .tm-edit-btn:hover{
+            background:var(--tm-icon-hover) !important;
+        }
+
+        .tm-edit-btn svg{
+            display:block;
+            width:12px;
+            height:12px;
+            flex:none;
+            pointer-events:none;
+        }
+
+        #tm-edit-delete-btn,
+        #tm-yes-btn{
+            background:#c62828 !important;
+            border-color:#c62828 !important;
+            color:#fff !important;
+        }
+
+        #tm-edit-delete-btn:hover,
+        #tm-yes-btn:hover{
+            background:#b71c1c !important;
+        }
+
+        .tm-modal-overlay{
+            position:fixed;
+            inset:0;
+            background:var(--tm-overlay) !important;
+            z-index:100001;
+            display:flex;
+            justify-content:center;
+            align-items:center;
+            transition:background-color .28s ease;
+        }
+
+        .tm-modal{
+            width:450px;
+            max-width:90vw;
+            background:var(--tm-bg) !important;
+            border:2px solid var(--tm-border) !important;
+            border-radius:8px;
+            padding:16px;
+            color:var(--tm-text) !important;
+            transition:background-color .28s ease, color .28s ease, border-color .28s ease;
         }
 
         .tm-modal input,
-        .tm-modal textarea {
-            width: 100%;
-            box-sizing: border-box;
-            margin-top: 5px;
-            margin-bottom: 12px;
-            padding: 8px;
-            background: #2b2d2f;
-            border: 1px solid #505050;
-            color: rgb(216,213,208);
-            border-radius: 4px;
+        .tm-modal textarea{
+            width:100%;
+            box-sizing:border-box;
+            margin:5px 0 12px;
+            padding:8px;
+            background:var(--tm-bg-secondary) !important;
+            border:2px solid var(--tm-border) !important;
+            color:var(--tm-text) !important;
+            border-radius:4px;
+            transition:background-color .28s ease, color .28s ease, border-color .28s ease;
         }
 
-        .tm-modal textarea {
-            min-height: 140px;
-            resize: vertical;
+        .tm-modal textarea{
+            min-height:140px;
+            resize:vertical;
         }
 
-        .tm-buttons {
-            display: flex;
-            justify-content: flex-end;
-            gap: 10px;
+        .tm-buttons{
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:10px;
         }
 
-        .tm-buttons button {
-            cursor: pointer;
-            padding: 8px 15px;
-            border-radius: 5px;
-            border: 1px solid #505050;
-            background: #2b2d2f;
-            color: rgb(216,213,208);
+        .tm-buttons-left,
+        .tm-buttons-right{
+            display:flex;
+            gap:10px;
         }
 
-        .tm-buttons button:hover {
-            background: #383b3d;
+        .tm-buttons button{
+            padding:8px 15px;
+            cursor:pointer;
+            border-radius:5px;
+            border:2px solid var(--tm-border) !important;
+            background:var(--tm-bg-secondary) !important;
+            color:var(--tm-text) !important;
+            transition:background-color .28s ease, color .28s ease, border-color .28s ease;
         }
 
-        .tm-toast {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            z-index: 100002;
-            background: #1d1f20;
-            color: rgb(216,213,208);
-            border: 1px solid #505050;
-            border-radius: 6px;
-            padding: 10px 15px;
+        .tm-buttons button:hover{
+            background:var(--tm-bg-hover) !important;
+        }
+
+        #tm-edit-delete-btn,
+        #tm-yes-btn{
+            background:#c62828 !important;
+            border-color:#c62828 !important;
+            color:#fff !important;
+        }
+
+        #tm-edit-delete-btn:hover,
+        #tm-yes-btn:hover{
+            background:#b71c1c !important;
+        }
+
+        .tm-toast{
+            position:fixed;
+            bottom:20px;
+            right:20px;
+            z-index:100002;
+            background:var(--tm-bg) !important;
+            color:var(--tm-text) !important;
+            border:2px solid var(--tm-border) !important;
+            border-radius:6px;
+            padding:10px 15px;
+            transition:background-color .28s ease, color .28s ease, border-color .28s ease;
         }
     `;
-    style.dataset.snAiSnippetsStyle = 'true';
+
     style.textContent += `
-      @media (max-width: 600px) {
-        #tm-toolbar { left: 8px; right: 8px; max-width: calc(100vw - 16px); gap: 6px; }
-        #tm-snippet-container { flex: 1 1 auto; }
-      }
+      #tm-add-btn, #tm-export-btn, #tm-theme-btn { flex:0 0 auto; }
+      @media(max-width:600px) { #tm-toolbar { left:8px;right:8px;max-width:calc(100vw - 16px);gap:6px; } }
     `;
     document.head.appendChild(style);
 
-    function loadSnippets() {
+    const loadSnippets = () => {
         try {
             return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
         } catch {
             return [];
         }
-    }
+    };
 
-    function saveSnippets(snippets) {
+    const saveSnippets = () => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(snippets));
-    }
+    };
 
     let snippets = loadSnippets();
-    if (!Array.isArray(snippets)) snippets = [];
 
     const toolbar = document.createElement('div');
     toolbar.id = 'tm-toolbar';
@@ -588,134 +714,285 @@ function installChatSnippets() {
     addButton.id = 'tm-add-btn';
     addButton.textContent = '+';
 
+    const exportButton = document.createElement('button');
+    exportButton.id = 'tm-export-btn';
+    exportButton.title = 'Copy configuration';
+    exportButton.setAttribute('aria-label', 'Copy configuration');
+
+    exportButton.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/>
+            <path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7M7 3v4a1 1 0 0 0 1 1h7"/>
+        </svg>
+    `;
+
+
+    const moonIcon = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/>
+        </svg>
+    `;
+
+    const sunIcon = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="4"/>
+            <path d="M12 2v2"/><path d="M12 20v2"/>
+            <path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/>
+            <path d="M2 12h2"/><path d="M20 12h2"/>
+            <path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>
+        </svg>
+    `;
+
+    const themeButton = document.createElement('button');
+    themeButton.id = 'tm-theme-btn';
+
+    let currentTheme = localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark';
+
+    function applyTheme(theme) {
+        currentTheme = theme;
+        const isLight = theme === 'light';
+        document.documentElement.classList.toggle('tm-light-theme', isLight);
+        themeButton.innerHTML = isLight ? sunIcon : moonIcon;
+        themeButton.title = isLight ? 'Switch to dark mode' : 'Switch to light mode';
+        themeButton.setAttribute('aria-label', themeButton.title);
+        localStorage.setItem(THEME_KEY, theme);
+    }
+
+    applyTheme(currentTheme);
+
     const container = document.createElement('div');
     container.id = 'tm-snippet-container';
 
     toolbar.appendChild(addButton);
-    const exportButton = document.createElement('button');
-    exportButton.type = 'button';
-    exportButton.id = 'tm-export-btn';
-    exportButton.textContent = 'Copy config';
-    exportButton.style.cssText = 'flex:none;height:35px;border:1px solid #505050;border-radius:6px;background:#1d1f20;color:#d8d5d0;cursor:pointer';
-    exportButton.addEventListener('click', () => copyText(localStorage.getItem(STORAGE_KEY) || '[]'));
     toolbar.appendChild(exportButton);
+    toolbar.appendChild(themeButton);
     toolbar.appendChild(container);
 
     document.body.appendChild(toolbar);
 
     async function copyText(text) {
-        try {
-            if (typeof GM_setClipboard !== 'undefined') {
-                GM_setClipboard(text);
-            } else {
-                await navigator.clipboard.writeText(text);
-            }
-
-            showToast('Message copied to clipboard');
-        } catch (error) {
-            console.error(error);
+        if (typeof GM_setClipboard !== 'undefined') {
+            GM_setClipboard(text);
+        } else {
+            await navigator.clipboard.writeText(text);
         }
     }
 
-    function showToast(message) {
+    function showToast(text) {
         const toast = document.createElement('div');
         toast.className = 'tm-toast';
-        toast.textContent = message;
+        toast.textContent = text;
 
         document.body.appendChild(toast);
 
         setTimeout(() => toast.remove(), 2000);
     }
 
+    themeButton.addEventListener('click', () => {
+        applyTheme(currentTheme === 'dark' ? 'light' : 'dark');
+    });
+
+    exportButton.addEventListener('click', async () => {
+
+        const exportData = {
+            version: 1,
+            snippets: snippets
+        };
+
+        const text = JSON.stringify(exportData, null, 2);
+
+        await copyText(text);
+
+        showToast('Configuration copied to clipboard');
+    });
+
+    let draggedId = null;
+
     function renderSnippets() {
+
         container.innerHTML = '';
 
         snippets.forEach(item => {
+
             const div = document.createElement('div');
             div.className = 'tm-snippet';
+            div.draggable = true;
+
+            div.addEventListener('dragstart', () => {
+                draggedId = item.id;
+                div.classList.add('dragging');
+            });
+
+            div.addEventListener('dragend', () => {
+                div.classList.remove('dragging');
+            });
+
+            div.addEventListener('dragover', e => {
+                e.preventDefault();
+            });
+
+            div.addEventListener('drop', e => {
+
+                e.preventDefault();
+
+                if (draggedId === item.id) return;
+
+                const from = snippets.findIndex(x => x.id === draggedId);
+                const to = snippets.findIndex(x => x.id === item.id);
+
+                if (from < 0 || to < 0) return;
+
+                const moved = snippets.splice(from, 1)[0];
+                snippets.splice(to, 0, moved);
+
+                saveSnippets();
+                renderSnippets();
+            });
 
             const title = document.createElement('span');
             title.className = 'tm-snippet-title';
             title.textContent = item.title;
 
-            const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'tm-delete-btn';
-            deleteBtn.textContent = '✎';
-            deleteBtn.setAttribute('aria-label', `Edit ${item.title}`);
-
-            deleteBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                showAddModal(item.id);
+            div.addEventListener('click', async () => {
+                await copyText(item.message);
+                showToast('Message copied to clipboard');
             });
 
-            div.addEventListener('click', () => {
-                copyText(item.message);
+            const edit = document.createElement('button');
+            edit.className = 'tm-edit-btn';
+            edit.title = 'Edit snippet';
+            edit.setAttribute('aria-label', `Edit ${item.title}`);
+            edit.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"
+                     viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/>
+                </svg>
+            `;
+
+            edit.addEventListener('click', e => {
+                e.stopPropagation();
+                showEditModal(item.id);
             });
 
             div.appendChild(title);
-            div.appendChild(deleteBtn);
+            div.appendChild(edit);
 
             container.appendChild(div);
         });
     }
 
-    function showAddModal(editId = null) {
-        const existing = snippets.find(item => item.id === editId);
+    function importFromClipboard() {
+
+        navigator.clipboard.readText()
+            .then(text => {
+
+                const data = JSON.parse(text);
+
+                if (!data.snippets || !Array.isArray(data.snippets)) {
+                    throw new Error();
+                }
+
+                const existingTitles = new Set(
+                    snippets.map(x => x.title)
+                );
+
+                const filteredExisting = snippets.filter(
+                    x => !data.snippets.some(y => y.title === x.title)
+                );
+
+                const imported = data.snippets.map(item => ({
+                    id: Date.now() + Math.random(),
+                    title: item.title,
+                    message: item.message
+                }));
+
+                snippets = [
+                    ...filteredExisting,
+                    ...imported
+                ];
+
+                saveSnippets();
+                renderSnippets();
+
+                showToast('Snippets imported');
+            })
+            .catch(() => {
+                showToast('Clipboard does not contain a valid export');
+            });
+    }
+
+    function showAddModal() {
+
         const overlay = document.createElement('div');
         overlay.className = 'tm-modal-overlay';
 
         overlay.innerHTML = `
             <div class="tm-modal">
+
                 <h3>Create Snippet</h3>
 
                 <label>Title</label>
-                <input id="tm-title-input" type="text">
+                <input id="tm-title-input">
 
                 <label>Message</label>
                 <textarea id="tm-message-input"></textarea>
 
                 <div class="tm-buttons">
-                    <button id="tm-cancel-btn">Cancel</button>
-                    <button id="tm-save-btn">Save</button>
+
+                    <div class="tm-buttons-left">
+                        <button id="tm-import-btn">Import from clipboard</button>
+                    </div>
+
+                    <div class="tm-buttons-right">
+                        <button id="tm-cancel-btn">Cancel</button>
+                        <button id="tm-save-btn">Save</button>
+                    </div>
+
                 </div>
+
             </div>
         `;
 
         document.body.appendChild(overlay);
 
-        if (existing) {
-            overlay.querySelector('h3').textContent = 'Edit Snippet';
-            overlay.querySelector('#tm-title-input').value = existing.title;
-            overlay.querySelector('#tm-message-input').value = existing.message;
-            const remove = document.createElement('button');
-            remove.textContent = 'Delete';
-            remove.type = 'button';
-            remove.onclick = () => { overlay.remove(); showDeleteModal(existing.id); };
-            overlay.querySelector('.tm-buttons').prepend(remove);
-        }
+        overlay.querySelector('#tm-import-btn').onclick = () => {
+            importFromClipboard();
+            overlay.remove();
+        };
+
         overlay.querySelector('#tm-cancel-btn').onclick = () => {
             overlay.remove();
         };
 
         overlay.querySelector('#tm-save-btn').onclick = () => {
+
             const title = overlay.querySelector('#tm-title-input').value.trim();
             const message = overlay.querySelector('#tm-message-input').value.trim();
 
-            if (!title || !message) {
-                alert('Please fill in all fields.');
-                return;
-            }
+            if (!title || !message) return;
 
-            if (existing) Object.assign(existing, { title, message });
-            else snippets.push({ id: Date.now(), title, message });
+            snippets.push({
+                id: Date.now(),
+                title,
+                message
+            });
 
-            saveSnippets(snippets);
+            saveSnippets();
             renderSnippets();
+
             overlay.remove();
         };
     }
 
-    function showDeleteModal(id) {
+
+    function showEditModal(id) {
+
         const item = snippets.find(x => x.id === id);
         if (!item) return;
 
@@ -724,50 +1001,119 @@ function installChatSnippets() {
 
         overlay.innerHTML = `
             <div class="tm-modal">
-                <h3>Delete Confirmation</h3>
 
-                <p>
-                    Are you really want to delete
-                    "<strong data-snippet-delete-title></strong>"
-                    message?
-                </p>
+                <h3>Edit Snippet</h3>
+
+                <label>Title</label>
+                <input id="tm-title-input">
+
+                <label>Message</label>
+                <textarea id="tm-message-input"></textarea>
 
                 <div class="tm-buttons">
-                    <button id="tm-no-btn">No</button>
-                    <button id="tm-yes-btn">Yes</button>
+                    <div></div>
+
+                    <div class="tm-buttons-right">
+                        <button id="tm-edit-delete-btn">Delete</button>
+                        <button id="tm-cancel-btn">Cancel</button>
+                        <button id="tm-save-btn">Save</button>
+                    </div>
                 </div>
+
             </div>
         `;
 
         document.body.appendChild(overlay);
 
-        overlay.querySelector('[data-snippet-delete-title]').textContent = item.title;
-        overlay.querySelector('#tm-no-btn').onclick = () => {
+        const titleInput = overlay.querySelector('#tm-title-input');
+        const messageInput = overlay.querySelector('#tm-message-input');
+
+        titleInput.value = item.title;
+        messageInput.value = item.message;
+
+        overlay.querySelector('#tm-edit-delete-btn').onclick = () => {
+            overlay.remove();
+            showDeleteModal(id);
+        };
+
+        overlay.querySelector('#tm-cancel-btn').onclick = () => {
             overlay.remove();
         };
 
-        overlay.querySelector('#tm-yes-btn').onclick = () => {
-            snippets = snippets.filter(x => x.id !== id);
-            saveSnippets(snippets);
+        overlay.querySelector('#tm-save-btn').onclick = () => {
+
+            const title = titleInput.value.trim();
+            const message = messageInput.value.trim();
+
+            if (!title || !message) return;
+
+            item.title = title;
+            item.message = message;
+
+            saveSnippets();
             renderSnippets();
+
             overlay.remove();
+            showToast('Snippet updated');
         };
     }
 
-    addButton.addEventListener('click', () => showAddModal());
+   function showDeleteModal(id) {
+
+    const item = snippets.find(x => x.id === id);
+    if (!item) return;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'tm-modal-overlay';
+
+    overlay.innerHTML = `
+        <div class="tm-modal">
+            <h3>Delete Confirmation</h3>
+
+            <p>
+                Are you really want to delete
+                "<strong data-snippet-delete-title></strong>"
+                message?
+            </p>
+
+            <div class="tm-buttons">
+                <div></div>
+
+                <div class="tm-buttons-right">
+                    <button id="tm-no-btn">No</button>
+                    <button id="tm-yes-btn">Yes</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    overlay.querySelector('[data-snippet-delete-title]').textContent = item.title;
+    overlay.querySelector('#tm-no-btn').onclick = () => {
+        overlay.remove();
+    };
+
+    overlay.querySelector('#tm-yes-btn').onclick = () => {
+        snippets = snippets.filter(x => x.id !== id);
+        saveSnippets();
+        renderSnippets();
+        overlay.remove();
+    };
+}
+
+    addButton.addEventListener('click', showAddModal);
 
     const sync = event => {
-        if (event.key !== STORAGE_KEY) return;
-        const saved = loadSnippets();
-        if (Array.isArray(saved)) { snippets = saved; renderSnippets(); }
+      if (event.key === STORAGE_KEY) { const saved = loadSnippets(); if (Array.isArray(saved)) { snippets = saved; renderSnippets(); } }
+      if (event.key === THEME_KEY) applyTheme(event.newValue === 'light' ? 'light' : 'dark');
     };
     window.addEventListener('storage', sync);
     document.addEventListener('sn-ai-runtime-dispose', () => {
-        window.removeEventListener('storage', sync);
-        toolbar.remove();
-        style.remove();
-    }, { once: true });
+      clearInterval(scrollLockTimer); window.removeEventListener('storage', sync); toolbar.remove(); style.remove();
+    }, {once:true});
     renderSnippets();
+
 }
 
 function startSNAI() {
