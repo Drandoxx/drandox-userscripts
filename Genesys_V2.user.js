@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.508.0
+// @version      1.509.0
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -843,7 +843,7 @@
   if (themeMode(document) !== 'light') installStartupLoader();
 
   function installNativeAppErrorRecovery() {
-    const fallbackUrl = 'https://apps.mypurecloud.de/directory/#/analytics/dashboards/4bbdbd2a-1114-4bd9-b40c-5ae6663f6647?tabId=cc5cb78c-996e-49ba-8fa2-3641c1f5930f';
+    const fallbackUrl = 'https://apps.mypurecloud.de/directory/#/analytics/dashboards/4bbdbd2a-1114-4bd9-b40c-5ae6663f6647';
     const errorPattern = /App\s+could\s+not\s+be\s+loaded\.\s*Please\s+try\s+again\s+later\.?|^(?:Page not found|This page (?:does not exist|could not be found)|404(?:\s+Not Found)?)$/im;
     let reloading = false;
     let observer = null;
@@ -862,7 +862,8 @@
         topWindow = window.top || window;
         topHref = topWindow.location.href || topHref;
       } catch (_) {}
-      if (!topHref.startsWith('https://apps.mypurecloud.de/directory/') || topHref === fallbackUrl) return;
+      if (!topHref.startsWith('https://apps.mypurecloud.de/directory/')
+        || topHref.split('?')[0] === fallbackUrl) return;
       const recoveryKey = 'gbs-dashboard-fallback-redirect-v1';
       let attempts = 0;
       try { attempts = Number(topWindow.sessionStorage.getItem(recoveryKey) || '0'); } catch (_) {}
