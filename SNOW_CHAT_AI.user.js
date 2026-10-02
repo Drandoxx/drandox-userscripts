@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.79
+// @version      2.36.80
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -10919,6 +10919,23 @@ function startSNAI() {
     generalPanel.className = 'local-sn-settings-panel';
     generalPanel.dataset.settingsPanel = 'general';
     generalPanel.hidden = true;
+    const generalStyle = document.createElement('style');
+    generalStyle.textContent = `
+      #local-sn-ai-settings-template [data-settings-panel="general"] { display:grid;gap:12px; }
+      #local-sn-ai-settings-template [data-settings-panel="general"][hidden] { display:none; }
+      #local-sn-ai-settings-template [data-inbox-settings],
+      #local-sn-ai-settings-template [data-update-check-controls] { background:#142923;border:1px solid #36564c;border-radius:12px;padding:16px!important;margin:0!important; }
+      #local-sn-ai-settings-template [data-inbox-settings] { display:grid;gap:12px; }
+      #local-sn-ai-settings-template .sn-ai-general-toggle { display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer; }
+      #local-sn-ai-settings-template .sn-ai-general-toggle input { appearance:none;width:38px!important;height:22px!important;min-width:38px;padding:0!important;margin:0;border:1px solid #60746d;border-radius:20px;background:#293c35;cursor:pointer;position:relative; }
+      #local-sn-ai-settings-template .sn-ai-general-toggle input::after { content:'';position:absolute;width:16px;height:16px;top:2px;left:2px;border-radius:50%;background:#c4d4cc;transition:transform .15s; }
+      #local-sn-ai-settings-template .sn-ai-general-toggle input:checked { background:#25886b;border-color:#51b796; }
+      #local-sn-ai-settings-template .sn-ai-general-toggle input:checked::after { transform:translateX(16px);background:#fff; }
+      #local-sn-ai-settings-template [data-settings-panel="general"] input:focus-visible,
+      #local-sn-ai-settings-template [data-settings-panel="general"] button:focus-visible { outline:2px solid #b6a1ed;outline-offset:3px; }
+      #local-sn-ai-settings-template [data-inbox-settings] button { justify-self:start; }
+    `;
+    settingsDialog.append(generalStyle);
     tabList.after(generalPanel);
     const settingsTabs = [...settingsDialog.querySelectorAll('[data-settings-tab]')];
     const settingsPanels = [...settingsDialog.querySelectorAll('[data-settings-panel]')];
@@ -14601,7 +14618,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.79' });
+    addLog('info', 'helper-version', { version: '2.36.80' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -15165,23 +15182,28 @@ function startSNAI() {
       inboxPolicy.timers.clear();
       inboxLog('auto-accept-setting', { enabled: checkbox.checked });
     });
-    label.append(checkbox, ' Automatically accept incoming chats');
+    label.className = 'sn-ai-general-toggle';
+    label.append('Auto-accept chats', checkbox);
     const delayLabel = document.createElement('label');
-    delayLabel.style.cssText = 'display:flex;align-items:center;gap:8px;margin:8px 0;flex-wrap:wrap';
+    delayLabel.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px';
     const delayInput = document.createElement('input');
     delayInput.type = 'number';
     delayInput.min = '0'; delayInput.max = '3600'; delayInput.step = '1';
     delayInput.setAttribute('aria-label', 'Automatic chat acceptance delay in seconds');
     delayInput.value = String(inboxPolicy.acceptDelaySeconds);
-    delayInput.style.cssText = 'width:80px;padding:6px;border-radius:4px';
+    delayInput.style.cssText = 'width:70px;min-width:70px;box-sizing:border-box;padding:6px 8px;border:1px solid #48695d;border-radius:7px;background:#0d2019;color:#e2f5ef;text-align:center';
+    delayInput.title = '0 = immediate. Applies to new incoming chats.';
     delayInput.addEventListener('change', () => {
       inboxPolicy.acceptDelaySeconds = normaliseInboxAcceptDelay(delayInput.value);
       delayInput.value = String(inboxPolicy.acceptDelaySeconds);
       gmSetValue(INBOX_ACCEPT_DELAY_KEY, inboxPolicy.acceptDelaySeconds).catch(error => console.warn('[SN AI inbox]', error));
     });
-    delayLabel.append('Accept after', delayInput, 'seconds (0 = immediately). Applies to new incoming chats.');
+    const delayControl = document.createElement('span');
+    delayControl.style.cssText = 'display:flex;align-items:center;gap:6px';
+    delayControl.append(delayInput, 's');
+    delayLabel.append('Delay', delayControl);
     const rejectLabel = document.createElement('label');
-    rejectLabel.style.display = 'block';
+    rejectLabel.className = 'sn-ai-general-toggle';
     const rejectCheckbox = document.createElement('input');
     rejectCheckbox.type = 'checkbox';
     gmGetValue('sn-ai-inbox-reject-enabled-v1', false).then(value => { rejectCheckbox.checked = value === true; });
@@ -15189,11 +15211,12 @@ function startSNAI() {
       gmSetValue('sn-ai-inbox-reject-enabled-v1', rejectCheckbox.checked).catch(error => console.warn('[SN AI inbox]', error));
       document.dispatchEvent(new CustomEvent('sn-ai-inbox-reject-setting', { detail: rejectCheckbox.checked }));
     });
-    rejectLabel.append(rejectCheckbox, ' Enable Reject button (never auto-focused)');
+    rejectLabel.append('Show Reject', rejectCheckbox);
     const download = document.createElement('button');
     download.type = 'button';
-    download.textContent = 'Download inbox diagnostics';
-    download.style.cssText = 'display:block;margin-top:8px;padding:6px 10px;border-radius:4px;cursor:pointer';
+    download.textContent = 'Download logs';
+    download.title = 'Page diagnostics may contain customer data. Review before sharing.';
+    download.style.cssText = 'display:block;padding:8px 12px;border:1px solid #48695d;background:#203e32;color:#ddf3e8;border-radius:7px;cursor:pointer';
     download.addEventListener('click', () => {
       const url = URL.createObjectURL(new Blob([inboxPolicy.logs.map(entry => JSON.stringify(entry)).join('\n')], { type: 'application/x-ndjson' }));
       const link = document.createElement('a');
@@ -15203,7 +15226,7 @@ function startSNAI() {
     const help = document.createElement('small');
     help.textContent = 'Diagnostics stay in this page until reload (up to 5 MB). The download may contain customer data; review before sharing.';
     help.style.display = 'block';
-    row.append(label, delayLabel, rejectLabel, download, help);
+    row.append(label, delayLabel, rejectLabel, download);
     content.append(row);
   }
   function installInboxMonitor() {
@@ -15629,7 +15652,7 @@ function startSNAI() {
       row.querySelector('button').disabled = officialUpdateRequestPending;
       row.querySelector('span').textContent = remaining > 0
         ? `GitHub check in ${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`
-        : state.mode === 'github' ? 'GitHub fallback active' : 'Primary update API active';
+        : state.mode === 'github' ? 'GitHub' : 'Drandox';
       row.querySelector('[data-update-check-result]').textContent = officialUpdateManualMessage;
     }
     await renderOfficialUpdate(state.cache);
@@ -15692,7 +15715,7 @@ function startSNAI() {
                 const provider = source === 'primary' ? 'Drandox' : 'GitHub';
                 officialUpdateManualMessage = release.available && compareVersions(release.version, current) > 0
                   ? `${provider}: Update available — ${current} → ${release.version}.`
-                  : `Current Version ${current} - Up to date`;
+                  : `v${current} · Up to date`;
               }
             } catch (error) {
               if (source === 'primary') {
