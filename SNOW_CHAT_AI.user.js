@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.46
+// @version      2.36.47
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -4019,9 +4019,7 @@
     // A prior step may have left the viewport at the bottom. Search from the
     // top once so an unmounted field above us is discoverable too.
     if (scroller instanceof HTMLElement && !findControlByLabel(fieldLabel) && scroller.scrollTop > 0) {
-      scroller.scrollTop = 0;
-      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
-      await sleep(150);
+      await smoothActiveFormScroll(scroller, 0);
     }
     while (performance.now() - started < timeoutMs) {
       if (findControlByLabel(fieldLabel, allPageElements())) {
@@ -4043,8 +4041,7 @@
       const before = scroller.scrollTop;
       const step = Math.max(180, Math.round(scroller.clientHeight * 0.82));
       const bottom = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-      scroller.scrollTop = Math.min(bottom, before + step);
-      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await smoothActiveFormScroll(scroller, Math.min(bottom, before + step));
       moves += 1;
       addLog('info', 'virtualised-field-auto-scroll', { field: fieldLabel, move: moves, from: Math.round(before), to: Math.round(scroller.scrollTop), bottom: Math.round(bottom) });
       await sleep(150);
@@ -4495,6 +4492,13 @@
     });
   }
 
+  async function smoothActiveFormScroll(scroller, top) {
+    const target = Math.max(0, Math.min(scroller.scrollHeight - scroller.clientHeight, top));
+    scroller.scrollTo({ top: target, behavior: 'smooth' });
+    const started = performance.now();
+    while (performance.now() - started < 1500 && Math.abs(scroller.scrollTop - target) > 2) await sleep(60);
+  }
+
   async function waitForControlByLabel(label, timeoutMs = 6000) {
     const started = performance.now();
     let searched = false;
@@ -4508,9 +4512,8 @@
           const rect = field.getBoundingClientRect();
           if (rect.top < viewport.top + 16 || rect.bottom > viewport.bottom - 16) {
             const before = scroller.scrollTop;
-            scroller.scrollTop = Math.max(0, Math.min(scroller.scrollHeight - scroller.clientHeight,
-              before + rect.top + rect.height / 2 - viewport.top - viewport.height / 2));
-            scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+            await smoothActiveFormScroll(scroller,
+              before + rect.top + rect.height / 2 - viewport.top - viewport.height / 2);
             addLog('info', 'auto-field-scrolled-into-view', { field: label, from: Math.round(before), to: Math.round(scroller.scrollTop) });
             await sleep(150);
             // Scrolling can replace the input: return only its current instance.
@@ -4519,7 +4522,7 @@
             continue;
           }
         } else {
-          field.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
+          field.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
           await sleep(150);
           return findControlByLabel(label) || null;
         }
@@ -4922,10 +4925,8 @@
     let chat = [];
     // A mounted virtual list can need one more rendering turn before its text
     // is readable. Retry only the exact active chat collector, never all tabs.
-    for (let attempt = 1; attempt <= 3 && !chat.length; attempt += 1) {
-      chat = await collectCompleteChat();
-      if (!chat.length && attempt < 3) await sleep(350);
-    }
+    const completeCache = await ensureCompleteChatCacheForAI(requestedIMS);
+    chat = completeCache?.complete ? completeCache.chat : [];
     if (chat.length) {
       cacheChat(requestedIMS, chat, 'complete transcript/live chat', { complete: true, replace: true });
       state.commandResult = { kind: 'chat', ims: requestedIMS, chat };
@@ -5011,8 +5012,8 @@
     }
     if (!action) throw new Error('Clickable text not found: Create a new Event');
     clickableAncestor(action).click();
-    const form = await waitForControlByLabel('Location', 3500);
-    if (!form) throw new Error('New Event form did not load within 3.5 seconds.');
+    const form = await waitForControlByLabel('Location', 12000);
+    if (!form) throw new Error('New Event form did not load within 12 seconds.');
     return form;
   }
 
@@ -5087,11 +5088,11 @@
     // leaving the draft. Details is only a fallback for a closed chat whose
     // durable Transcript is the remaining source.
     let cached = getCachedChat(requestedIMS);
-    if (options.forceChat || !cached?.complete) {
+    if (!cached?.complete) {
       const activeConversation = activeConversationElements();
       const liveScope = activeLiveMessageScope(activeConversation.elements);
       if (liveScope) {
-        cached = await ensureCompleteChatCacheForAI(requestedIMS, { force: true }) || cached;
+        cached = await ensureCompleteChatCacheForAI(requestedIMS) || cached;
         if (cached?.complete) addLog('info', 'description-live-chat-read-without-details', {
           ims: requestedIMS,
           blocks: cached.chat.length,
@@ -5336,7 +5337,10 @@
       // Description combines the durable transcript under Details with the
       // template and subordinate fields under the existing New Event. Capture
       // both surfaces and always restore New Event before returning.
-      if (profile === 'TEXT') return await prepareDescriptionAcrossWorkspaceTabs(requestedIMS, { forceChat: true });
+      if (profile === 'TEXT') return await prepareDescriptionAcrossWorkspaceTabs(requestedIMS);
+      if (getCachedChat(requestedIMS)?.complete) {
+        return await prepareTicketSessionFromCache(profile, requestedIMS, { requireChat: true });
+      }
 
       // One helper command owns the entire opening sequence: exact IMS switch,
       // active-tab confirmation, chat recovery, then matching New Event reuse
@@ -8423,19 +8427,14 @@
       const to = Math.max(0, Number(target) || 0);
       if (Math.abs(to - from) < 2) return from;
       const started = performance.now();
-      await new Promise((resolve) => {
-        const step = (now) => {
-          const elapsed = Math.min(1, (now - started) / durationMs);
-          // A linear interpolation deliberately keeps one constant speed from
-          // top to bottom. ServiceNow's virtual list still mounts rows as it
-          // moves, but the visible scroll itself never eases or pauses.
-          scroller.scrollTop = from + ((to - from) * elapsed);
-          onFrame?.(now);
-          if (elapsed < 1) requestAnimationFrame(step);
-          else resolve();
-        };
-        requestAnimationFrame(step);
-      });
+      // Let the browser animate scrolling independently of expensive transcript
+      // parsing. Sampling remains bounded and never runs on animation frames.
+      scroller.scrollTo({ top: to, behavior: 'smooth' });
+      while (performance.now() - started < Math.max(2000, durationMs + 1500)) {
+        await sleep(120);
+        onFrame?.(performance.now());
+        if (Math.abs(scroller.scrollTop - to) < 2) break;
+      }
       return scroller.scrollTop;
     };
 
@@ -8453,7 +8452,7 @@
         // Begin at the oldest mounted slice, then make exactly one smooth,
         // constant-speed pass to the bottom. Throttled sampling avoids making
         // ServiceNow reflow on every animation frame.
-        scroller.scrollTop = 0;
+        await scrollChatCaptureSmoothly(scroller, 0, 500);
         mergeCurrent();
         const bottom = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
         let lastMergeAt = 0;
@@ -8478,10 +8477,13 @@
     return [];
   }
 
+  const chatCaptureInFlight = new Map();
   async function ensureCompleteChatCacheForAI(ims, options = {}) {
     const requestedIMS = normaliseIMS(ims);
     let cached = getCachedChat(requestedIMS);
-    if (!requestedIMS || (!options.force && cached?.complete)) return cached;
+    if (!requestedIMS || cached?.complete) return cached;
+    if (chatCaptureInFlight.has(requestedIMS)) return chatCaptureInFlight.get(requestedIMS);
+    const capture = (async () => {
     const recovered = compactChatItems(await collectCompleteChat());
     // A single currently rendered virtual-list bubble is not proof of a
     // complete conversation. Keep the cache incomplete in that case so no AI
@@ -8489,6 +8491,10 @@
     if (recovered.length < 2) return options.force ? null : cached;
     cached = cacheChat(requestedIMS, recovered, 'ticket-launch complete chat recovery', { complete: true, replace: true }) || cached;
     return cached;
+    })();
+    chatCaptureInFlight.set(requestedIMS, capture);
+    try { return await capture; }
+    finally { if (chatCaptureInFlight.get(requestedIMS) === capture) chatCaptureInFlight.delete(requestedIMS); }
   }
 
   function visibleBubbleItems(root, agentId = '') {
@@ -12195,7 +12201,8 @@
               setProgress(58);
               titleMain.textContent = `${pinnedIMS} - Retrying cached CPC…`;
             } else {
-            let cacheEntry = chatLoadedForWindow ? getCachedChat(pinnedIMS) : await ensureCompleteChatCacheForAI(pinnedIMS, { force: true });
+            let cacheEntry = getCachedChat(pinnedIMS);
+            if (!cacheEntry?.complete) cacheEntry = await ensureCompleteChatCacheForAI(pinnedIMS);
             chatLoadedForWindow = Boolean(cacheEntry?.complete);
             if (!cacheEntry?.complete) {
               collapsedCommandInput.value = `START CPC ${pinnedIMS}`;
@@ -12438,7 +12445,8 @@
             setProgress(58);
             collapsedCommandInput.value = reusableAICommand;
           } else if (useAI) {
-            let cacheEntry = chatLoadedForWindow ? getCachedChat(pinnedIMS) : await ensureCompleteChatCacheForAI(pinnedIMS, { force: true });
+            let cacheEntry = getCachedChat(pinnedIMS);
+            if (!cacheEntry?.complete) cacheEntry = await ensureCompleteChatCacheForAI(pinnedIMS);
             chatLoadedForWindow = Boolean(cacheEntry?.complete);
             if (!cacheEntry?.complete) {
               collapsedCommandInput.value = `START ILS_PRNT ${pinnedIMS}`;
@@ -12698,7 +12706,8 @@
             setProgress(58);
             collapsedCommandInput.value = reusableAICommand;
           } else {
-          let cacheEntry = chatLoadedForWindow ? getCachedChat(pinnedIMS) : await ensureCompleteChatCacheForAI(pinnedIMS, { force: true });
+          let cacheEntry = getCachedChat(pinnedIMS);
+          if (!cacheEntry?.complete) cacheEntry = await ensureCompleteChatCacheForAI(pinnedIMS);
           chatLoadedForWindow = Boolean(cacheEntry?.complete);
           if (!cacheEntry?.complete) {
             collapsedCommandInput.value = `START FTF ${pinnedIMS}`;
@@ -12938,7 +12947,8 @@
             } catch { /* Normal command parsing below reports an unusable cache. */ }
             titleMain.textContent = `${pinnedIMS} - Retrying cached HP…`; setProgress(58); collapsedCommandInput.value = reusableAICommand;
           } else {
-            let cacheEntry = chatLoadedForWindow ? getCachedChat(pinnedIMS) : await ensureCompleteChatCacheForAI(pinnedIMS, { force: true });
+            let cacheEntry = getCachedChat(pinnedIMS);
+            if (!cacheEntry?.complete) cacheEntry = await ensureCompleteChatCacheForAI(pinnedIMS);
             chatLoadedForWindow = Boolean(cacheEntry?.complete);
             if (!cacheEntry?.complete) {
               collapsedCommandInput.value = `START HP ${pinnedIMS}`;
@@ -13419,7 +13429,7 @@
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.46' });
+    addLog('info', 'helper-version', { version: '2.36.47' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
