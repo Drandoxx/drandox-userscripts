@@ -4181,7 +4181,7 @@
 
   function findControlByLabel(label, elements) {
     const wanted = comparableLabel(label);
-    const sourceElements = elements || allPageElements();
+    const sourceElements = elements || currentFormElements();
     const matchingControl = (controls) => {
       const exact = controls.find((el) => comparableLabel(elementLabel(el)) === wanted);
       if (exact) return exact;
@@ -6401,7 +6401,7 @@
     // `allowRoutingFastTrial` escape hatch is benchmark-only: it lets CMD
     // measure the real typeahead interaction on a fresh, unsaved Event
     // without weakening any ticket runner.
-    if (options.strictCommit
+    if (options.forceReselect || options.strictCommit
       || (!options.allowRoutingFastTrial && routingNext)
       || (!options.allowRoutingFastTrial && comparableLabel(fieldLabel) === 'symptom')) {
       const hasExplicitDependency = Object.prototype.hasOwnProperty.call(options, 'dependentNextField');
@@ -6469,7 +6469,7 @@
         const existingMatches = match === 'prefix'
           ? existingActual.startsWith(existingWanted)
           : (match === 'contains' ? existingActual.includes(existingWanted) : existingActual === existingWanted);
-        if (existingMatches) {
+        if (existingMatches && !options.forceReselect) {
           const alreadyCommitted = await waitStableReferenceValue(fieldLabel, expected, match, 4400, 650, field);
           lastActual = alreadyCommitted.actual;
           addLog(alreadyCommitted.stable ? 'info' : 'warn', 'auto-field-already-correct', {
@@ -7459,9 +7459,11 @@
     const nativeApplied = false;
     if (templateAlreadyApplied) addLog('info', 'native-template-bypassed', { profile: codePrefix, template: templateName });
     await applyLocalFieldTemplate({ profile: codePrefix, fields: routing });
-    const templateAlreadySelected = fieldMatchesExpected(readableControlValue('Template Name'), templateName, 'Template Name');
+    const templateAlreadySelected = fieldMatchesExpected(committedReferenceValue(findControlByLabel('Template Name')), templateName, 'Template Name')
+      && Boolean(normalise(readableControlValue('Description')));
     if (!nativeApplied && !templateAlreadySelected) {
-      await autoLookup('Template Name', templateName, { expected: templateName, code: `${codePrefix}_TEMPLATE_COMMIT_FAILED` });
+      await autoLookup('Template Name', templateName, { expected: templateName, strictCommit: true,
+        forceReselect: true, code: `${codePrefix}_TEMPLATE_COMMIT_FAILED` });
     }
     const descriptionReady = await waitUntil(() => {
       const current = String(readableControlValue('Description') || '');
