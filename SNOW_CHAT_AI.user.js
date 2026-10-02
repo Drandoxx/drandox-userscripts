@@ -405,6 +405,53 @@
   }, true);
   let rejectEnabled = false;
   const rejectControls = new Set();
+  const incomingActions = new WeakMap();
+  const proxyRejects = new Set();
+  const installIncomingAction = (card, native, kind) => {
+    const root = card.shadowRoot;
+    if (!root) return;
+    let actions = incomingActions.get(card);
+    if (!actions) {
+      const bar = document.createElement('div');
+      bar.dataset.snAiInboxProxyBar = 'true';
+      bar.style.cssText = 'display:flex;gap:8px;padding:8px;box-sizing:border-box';
+      actions = { bar };
+      incomingActions.set(card, actions);
+      root.append(bar);
+    }
+    if (actions[kind]?.native === native) return;
+    actions[kind]?.button.remove();
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `now-button ${kind === 'Accept' ? '-positive' : '-negative'}`;
+    button.dataset.snAiInboxProxy = kind;
+    button.textContent = kind;
+    button.style.cssText = `flex:1;min-height:32px;border-radius:6px;border:1px solid #496a5f;color:#e2f5ef;background:${kind === 'Accept' ? '#205944' : '#642e2e'};cursor:pointer`;
+    if (kind === 'Reject') {
+      button.hidden = !rejectEnabled;
+      button.tabIndex = -1;
+      button.addEventListener('pointerdown', event => event.preventDefault());
+      button.addEventListener('mousedown', event => event.preventDefault());
+      proxyRejects.add(button);
+    }
+    const syncDisabled = () => { button.disabled = native.disabled || native.getAttribute('aria-disabled') === 'true'; };
+    syncDisabled();
+    const observer = new MutationObserver(syncDisabled);
+    observer.observe(native, { attributes: true, attributeFilter: ['disabled', 'aria-disabled'] });
+    button.addEventListener('click', () => {
+      syncDisabled();
+      if (!button.disabled && native.isConnected && (kind !== 'Reject' || rejectEnabled)) native.click();
+    });
+    actions[kind] = { native, button };
+    actions.bar.append(button);
+    // Release per-control observers when Workspace removes/rebuilds the offer.
+    const lifecycle = new MutationObserver(() => {
+      if (!native.isConnected || !card.isConnected) {
+        observer.disconnect(); lifecycle.disconnect(); button.remove(); proxyRejects.delete(button);
+      }
+    });
+    lifecycle.observe(root, { childList: true, subtree: true });
+  };
   const applyRejectPolicy = element => {
     const host = element.getRootNode()?.host;
     element.tabIndex = -1;
@@ -418,6 +465,10 @@
   };
   document.addEventListener('sn-ai-inbox-reject-setting', event => {
     rejectEnabled = event.detail === true;
+    for (const button of proxyRejects) {
+      if (!button.isConnected) proxyRejects.delete(button);
+      else button.hidden = !rejectEnabled;
+    }
     for (const element of rejectControls) {
       if (!element.isConnected) rejectControls.delete(element);
       else applyRejectPolicy(element);
@@ -445,7 +496,7 @@
       padding: 0 !important;
     }
     [data-sn-ai-inbox-actions] {
-      display: flex !important;
+      display: none !important;
       width: 100% !important;
       gap: 0 !important;
       box-sizing: border-box;
@@ -512,6 +563,7 @@
   function discover(node) {
     const styleInboxElement = element => {
       if (!(element instanceof Element)) return;
+      if (element.hasAttribute('data-sn-ai-inbox-proxy')) return;
       // Walk component ancestry only for the known incoming-card controls.
       if (!element.matches('button.now-button.-negative, button.now-button.-positive, now-card.sn-card, .now-card-actions')) return;
       let ancestor = element;
@@ -519,7 +571,12 @@
         ancestor = ancestor.parentElement || ancestor.getRootNode?.().host;
       }
       if (!ancestor) return;
-      if (element.matches('now-card.sn-card')) element.setAttribute('data-sn-ai-incoming-card', '');
+      if (element.matches('now-card.sn-card')) {
+        element.setAttribute('data-sn-ai-incoming-card', '');
+        // Browser-enforced: native autofocus cannot enter this subtree, even
+        // through a cached reference or HTMLElement.prototype.focus.call().
+        element.inert = true;
+      }
       if (element.matches('.now-card-actions')) element.setAttribute('data-sn-ai-inbox-actions', '');
       if (element.matches('button.now-button.-negative') && element.textContent.trim() === 'Reject') {
         element.setAttribute('data-sn-ai-inbox-reject', '');
@@ -538,11 +595,13 @@
         // Also release focus if a component focused it before insertion was
         // observed. Do not move focus to Accept or click any other action.
         applyRejectPolicy(element);
+        installIncomingAction(ancestor, element, 'Reject');
       }
       if (element.matches('button.now-button.-positive') && element.textContent.trim() === 'Accept') {
         element.setAttribute('data-sn-ai-inbox-accept', '');
         const host = element.getRootNode()?.host;
         if (host?.matches('now-button')) host.setAttribute('data-sn-ai-inbox-accept-host', '');
+        installIncomingAction(ancestor, element, 'Accept');
       }
     };
     const announce = element => {
@@ -15128,6 +15187,7 @@ function startSNAI() {
         for (const button of root.querySelectorAll('button.now-button.-positive')) buttons.add(button);
       }
       for (const button of buttons) {
+        if (button.hasAttribute('data-sn-ai-inbox-accept')) continue;
         const name = normalise(button.getAttribute('aria-label') || button.textContent).toLowerCase();
         if (!/^(accept|accept chat|accept work item)$/.test(name)) continue;
         if (inboxPolicy.seen.has(button)) continue;
