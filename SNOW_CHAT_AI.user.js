@@ -373,15 +373,20 @@
     }
     .now-form-field-label,.now-form-field-label-text,.sn-section-header-content,
     .sn-panel-header-heading,.sn-header-layout-content { color:#c8d7ef!important; }
-    .now-input-field,.now-textarea-field,.now-select-field,.now-typeahead-field,
-    .now-input-native,.now-textarea-field-backdrop,.sn-global-typeahead-input {
+    .now-input-field,.now-textarea-field,.now-select-field,.now-select-trigger,.now-select-input,.now-typeahead-field,
+    .now-input-native,.now-typeahead-native-input,.now-input-date-time-input,.now-textarea-field-backdrop,.sn-global-typeahead-input {
       background-color:#101b30!important;color:#e6edf9!important;border-color:#4c6081!important;caret-color:#9de2f5;
     }
-    .now-input-field.is-readonly,.now-textarea-field.is-readonly {
+    .now-input-field.is-readonly,.now-textarea-field.is-readonly,.now-typeahead-field.is-readonly {
       background-color:#1b2941!important;color:#b5c5df!important;
     }
     .now-input-native::placeholder,.now-textarea-field::placeholder { color:#a8b8d1!important;opacity:1; }
     .now-input-field:focus-within,.now-textarea-field:focus { border-color:#93cfea!important; }
+    .now-select-trigger-label,.now-select-trigger-icon,.now-template-message-empty-state-heading,
+    .now-template-message-empty-state-content,.now-message-child { color:#c8d7ef!important; }
+    .now-select-trigger:focus,.now-typeahead-field:focus-within { border-color:#93cfea!important; }
+    .now-input-field.is-invalid,.now-typeahead-field.is-invalid,.now-select-trigger.is-invalid,
+    .now-textarea-field[aria-invalid="true"] { border-color:#fa99aa!important; }
     .now-button:not(.-negative):not(.-positive) {
       background-color:#253958!important;color:#d9ecff!important;border-color:#587296!important;
     }
