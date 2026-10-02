@@ -925,6 +925,12 @@
     /* Disable decoration, never call actions/status updates, on low-end devices. */
     html.gbs-low-power #gbs-startup-loader .gbs-startup-space,
     html.gbs-low-power #gbs-startup-loader .gbs-startup-space *,
+    html.gbs-low-power #gbs-startup-loader .gbs-startup-nebula,
+    html.gbs-low-power #gbs-startup-loader .gbs-startup-orbit,
+    html.gbs-low-power #gbs-startup-loader .gbs-v2-logo,
+    html.gbs-low-power #pc-auth-app::before,
+    html.gbs-low-power #pc-auth-app::after,
+    html.gbs-low-power #pc-auth-app .gbs-login-shooting-stars i,
     html.gbs-low-power .gbs-login-space *,
     html.gbs-page-hidden #gbs-startup-loader .gbs-startup-space * {
       animation: none !important; filter: none !important;
