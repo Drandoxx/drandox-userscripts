@@ -319,6 +319,13 @@
 
   function scheduleGenesysUpdateCheck() {
     if (window !== window.top) return;
+    // Every new page execution starts with Drandox, even if another page
+    // previously stored a GitHub fallback. Retain cache and GitHub cooldowns.
+    const fresh = readUpdateState();
+    fresh.fallback = false;
+    fresh.failures = 0;
+    fresh.primaryAt = fresh.primaryRetryAt = fresh.primaryRecoveryAt = 0;
+    GM_setValue(UPDATE_STATE_KEY, fresh);
     const schedule = () => {
       if (!updateCheckTimer) updateCheckTimer = window.setInterval(() => {
         try { refreshUpdateCooldown(); } catch (error) { console.warn('[Genesys V2 update] Cooldown display', error); }
