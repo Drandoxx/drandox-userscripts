@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.74
+// @version      2.36.75
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -331,6 +331,40 @@
   const roots = new WeakSet();
   const announcedPresence = new WeakSet();
   const css = `
+    sn-inbox-card {
+      display: block;
+      border-radius: 10px !important;
+    }
+    [data-sn-ai-incoming-card] {
+      border-radius: 10px !important;
+      overflow: hidden;
+      border: 1px solid #496a5f;
+      box-shadow: 0 2px 8px #0002;
+    }
+    [data-sn-ai-inbox-reject] {
+      display: none !important;
+      width: 0 !important;
+      min-width: 0 !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    [data-sn-ai-inbox-actions] {
+      display: flex !important;
+      width: 100% !important;
+      gap: 0 !important;
+      box-sizing: border-box;
+    }
+    [data-sn-ai-inbox-accept-host] {
+      flex: 1 1 100% !important;
+      width: 100% !important;
+      min-width: 0 !important;
+      margin: 0 !important;
+    }
+    button[data-sn-ai-inbox-accept] {
+      width: 100% !important;
+      border-radius: 6px !important;
+      min-height: 32px;
+    }
     sn-agent-presence-state {
       display: block !important;
       width: 100% !important;
@@ -380,15 +414,48 @@
     }
   `;
   function discover(node) {
+    const styleInboxElement = element => {
+      if (!(element instanceof Element)) return;
+      // Walk component ancestry only for the known incoming-card controls.
+      if (!element.matches('button.now-button.-negative, button.now-button.-positive, now-card.sn-card, .now-card-actions')) return;
+      let ancestor = element;
+      while (ancestor && ancestor.localName !== 'sn-inbox-card') {
+        ancestor = ancestor.parentElement || ancestor.getRootNode?.().host;
+      }
+      if (!ancestor) return;
+      if (element.matches('now-card.sn-card')) element.setAttribute('data-sn-ai-incoming-card', '');
+      if (element.matches('.now-card-actions')) element.setAttribute('data-sn-ai-inbox-actions', '');
+      if (element.matches('button.now-button.-negative') && element.textContent.trim() === 'Reject') {
+        element.setAttribute('data-sn-ai-inbox-reject', '');
+        element.disabled = true;
+        element.tabIndex = -1;
+        element.inert = true;
+        const host = element.getRootNode()?.host;
+        if (host?.matches('now-button')) {
+          host.setAttribute('data-sn-ai-inbox-reject', '');
+          host.inert = true;
+        }
+        // Also release focus if a component focused it before insertion was
+        // observed. Do not move focus to Accept or click any other action.
+        element.blur();
+      }
+      if (element.matches('button.now-button.-positive') && element.textContent.trim() === 'Accept') {
+        element.setAttribute('data-sn-ai-inbox-accept', '');
+        const host = element.getRootNode()?.host;
+        if (host?.matches('now-button')) host.setAttribute('data-sn-ai-inbox-accept-host', '');
+      }
+    };
     const announce = element => {
       if (!element.matches?.('.sn-presence-state-container') || announcedPresence.has(element)) return;
       announcedPresence.add(element);
       document.dispatchEvent(new CustomEvent('sn-ai-presence-mounted', { detail: element }));
     };
     announce(node);
+    styleInboxElement(node);
     if (node.nodeType === 1 && node.shadowRoot) watch(node.shadowRoot);
     for (const element of node.querySelectorAll?.('*') || []) {
       announce(element);
+      styleInboxElement(element);
       if (element.shadowRoot) watch(element.shadowRoot);
     }
   }
@@ -14328,7 +14395,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.74' });
+    addLog('info', 'helper-version', { version: '2.36.75' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
