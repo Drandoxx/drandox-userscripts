@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.519.0
+// @version      1.520.0
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -226,11 +226,15 @@
     // during network failures or when a different tab owns the request.
     applyCachedUpdate(state, manual);
     const now = Date.now();
-    if (state.fallback) {
+    // Probe the primary once a minute while on fallback, or on an admin's
+    // manual check. A valid primary response restores normal ten-second polling.
+    const primaryProbe = state.fallback && (manual && isSavedAdmin(document)
+      || !manual && now >= (state.primaryRecoveryAt || 0));
+    if (state.fallback && !primaryProbe) {
       const due = manual ? (state.githubManualAt || 0) + MANUAL_MS : Math.max(state.githubAutoAt || 0, state.githubSuccessAt || 0) + HOUR_MS;
       const adminManual = manual && isSavedAdmin(document);
       if (now < due && !adminManual) { if (manual) { showUpdateCooldown(due - now); applyCachedUpdate(state, true); } return; }
-    } else if (state.primaryRetryAt ? now < state.primaryRetryAt : !manual && now - (state.primaryAt || 0) < 10000) return;
+    } else if (!primaryProbe && (state.primaryRetryAt ? now < state.primaryRetryAt : !manual && now - (state.primaryAt || 0) < 10000)) return;
     if (manual) {
       const button = document.querySelector('.gbs-settings-check-updates');
       if (button) {
@@ -248,7 +252,8 @@
     await new Promise(resolve => window.setTimeout(resolve, 100));
     if (GM_getValue(UPDATE_LOCK_KEY, {}).token !== token) { updateCheckPending = false; return; }
     state = readUpdateState();
-    const fallback = state.fallback;
+    const fallback = state.fallback && !primaryProbe;
+    const recovering = state.fallback && primaryProbe;
     const releaseLock = () => {
       updateCheckPending = false;
       if (GM_getValue(UPDATE_LOCK_KEY, {}).token === token) GM_setValue(UPDATE_LOCK_KEY, null);
@@ -259,7 +264,10 @@
         shared.failures = (shared.failures || 0) + 1;
         shared.primaryRetryAt = Date.now() + 10000;
         shared.lastPrimaryFailure = { at: Date.now(), reason: message };
-        if (shared.failures >= 5) { shared.fallback = true; shared.primaryRetryAt = 0; }
+        if (shared.failures >= 5) {
+          shared.fallback = true; shared.primaryRetryAt = 0;
+          shared.primaryRecoveryAt = Date.now() + 60000;
+        }
       }
       GM_setValue(UPDATE_STATE_KEY, shared);
       releaseLock(); console.warn('[Genesys V2 update]', message);
@@ -268,7 +276,10 @@
     if (fallback) {
       state.githubAutoAt = now;
       if (manual) state.githubManualAt = now;
-    } else state.primaryAt = now;
+    } else {
+      state.primaryAt = now;
+      if (recovering) state.primaryRecoveryAt = now + 60000;
+    }
     GM_setValue(UPDATE_STATE_KEY, state);
     try {
       GM_xmlhttpRequest({
@@ -287,7 +298,11 @@
             const shared = readUpdateState();
             shared.failures = 0;
             shared.primaryRetryAt = fallback ? 0 : Date.now() + 10000;
-            if (!fallback) shared.lastPrimaryFailure = null;
+            if (!fallback) {
+              shared.lastPrimaryFailure = null;
+              shared.fallback = false;
+              shared.primaryRecoveryAt = 0;
+            }
             shared.cached = { id: RELEASE_ID, version: release.version, downloadUrl: allowed, source: fallback ? 'github' : 'primary' };
             if (fallback) shared.githubSuccessAt = Date.now();
             GM_setValue(UPDATE_STATE_KEY, shared);
@@ -306,18 +321,18 @@
     if (window !== window.top) return;
     const schedule = () => {
       if (!updateCheckTimer) updateCheckTimer = window.setInterval(() => {
-        refreshUpdateCooldown();
+        try { refreshUpdateCooldown(); } catch (error) { console.warn('[Genesys V2 update] Cooldown display', error); }
         // Shared timestamps keep normal primary requests ten seconds apart;
         // the one-second tick also services ten-second post-response delays.
-        checkGenesysUpdates();
+        checkGenesysUpdates().catch(error => console.warn('[Genesys V2 update] Check failed', error));
       }, 1000);
     };
-    if (document.readyState === 'complete') schedule();
-    else window.addEventListener('load', schedule, { once: true });
+    // Do not wait for every Genesys iframe/resource to finish loading.
+    schedule();
     window.addEventListener('pagehide', () => {
       window.clearInterval(updateCheckTimer); updateCheckTimer = 0;
     });
-    window.addEventListener('pageshow', event => { if (event.persisted) schedule(); });
+    window.addEventListener('pageshow', schedule);
   }
 
   const INTERVAL_MS = 1000;
