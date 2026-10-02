@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.507.0
+// @version      1.508.0
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -717,6 +717,7 @@
         let board = null;
         let nativeDashboardWidget = null;
         let nativeBoard = null;
+        let genericDashboardReady = false;
         const dashboardFrame = [...document.querySelectorAll('frame-router[route]')]
           .find(frame => /\/analytics\/dashboards\b/i.test(frame.getAttribute('route') || ''));
         const dashboardRouteMounted = !!dashboardFrame;
@@ -752,6 +753,16 @@
             const frameDocument = accessibleFrameDocument(iframe);
             const href = frameDocument?.location?.href || '';
             if (frameDocument && href && href !== 'about:blank') {
+              // The list and ordinary dashboards do not necessarily contain
+              // an agent Board. Evaluate the actual active Analytics route.
+              const frameRoute = frameDocument.location.hash.split('?')[0];
+              const shown = node => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0;
+              const busy = [...frameDocument.querySelectorAll('[aria-busy="true"], .loading-spinner, .gbs-component-loader')].some(shown);
+              const listRoute = /^#\/dashboards\/?$/.test(frameRoute);
+              const listRendered = listRoute && [...frameDocument.querySelectorAll('gux-table, table, [role="table"]')].some(shown);
+              const detailRoute = /^#\/dashboards\/[^/]+\/?$/.test(frameRoute);
+              const detailRendered = detailRoute && [...frameDocument.querySelectorAll('.analytics-ui-dashboard-detail-display, .dashboard-fullscreen-target, .analytics-view-dashboard-detail')].some(shown);
+              genericDashboardReady = !busy && (listRendered || detailRendered) && Date.now() - startedAt > 2400;
               // The Dashboard creates widgets and the Board table before its
               // own local overlays finish. Require the explicit settled marks
               // created by finishComponentLoad(), not merely their presence.
@@ -810,7 +821,7 @@
         // iframe, yet releases it when Genesys has visibly rendered both the
         // Dashboard cards and its actual Board table.
         const nativeDashboardReady = !!(iframeLoaded && nativeDashboardWidget && nativeBoard && elapsed > 2400);
-        const dashboardReady = enhancedDashboardReady || nativeDashboardReady;
+        const dashboardReady = enhancedDashboardReady || nativeDashboardReady || genericDashboardReady;
         if (dashboardDetected && !dashboardReady) {
           const interval = Math.max(360, (learnedDashboardDuration - 1800) / 23);
           const slowTarget = Math.min(99, 76 + Math.floor(Math.max(0, elapsed - 1800) / interval));
@@ -836,8 +847,13 @@
     const errorPattern = /App\s+could\s+not\s+be\s+loaded\.\s*Please\s+try\s+again\s+later\.?|^(?:Page not found|This page (?:does not exist|could not be found)|404(?:\s+Not Found)?)$/im;
     let reloading = false;
     let observer = null;
+    const recoveryStarted = Date.now();
     const recoverIfNeeded = () => {
-      if (reloading || !document.body || !errorPattern.test(document.body.innerText || '')) return;
+      if (reloading || !document.body) return;
+      const stalledPerson = window === window.top && /^#\/person\//.test(location.hash)
+        && document.readyState === 'complete' && Date.now() - recoveryStarted > 20000
+        && !document.querySelector('.command-view, main.center-stage');
+      if (!stalledPerson && !errorPattern.test(document.body.innerText || '')) return;
       // Child applications can report a broken route; recover the top shell,
       // never navigate an individual call iframe or an external destination.
       let topWindow = window;
@@ -867,6 +883,9 @@
       if (reloading || !document.body) return;
       observer = new MutationObserver(recoverIfNeeded);
       observer.observe(document.body, { childList: true, characterData: true, subtree: true });
+      // A failed preferences bootstrap may leave a blank Person shell with
+      // no further mutations. Use the same guarded dashboard fallback once.
+      if (window === window.top && /^#\/person\//.test(location.hash)) window.setTimeout(recoverIfNeeded, 21000);
       window.addEventListener('pagehide', () => observer?.disconnect(), { once: true });
     };
     if (document.body) watch(); else document.addEventListener('DOMContentLoaded', watch, { once: true });
