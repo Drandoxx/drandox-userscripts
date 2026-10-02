@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.54
+// @version      2.36.55
 // @updateURL    https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
 // @downloadURL  https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -17,6 +17,7 @@
 // @grant        GM_removeValueChangeListener
 // @grant        GM_xmlhttpRequest
 // @grant        GM_info
+// @grant        GM_setClipboard
 // @connect      raw.githubusercontent.com
 // @connect      raw.githubusercontent.com
 // @connect      api.openai.com
@@ -383,6 +384,391 @@
     observer.observe(document, { childList: true });
   }
 })();
+
++function installChatSnippets() {
+    'use strict';
+
+    if (!location.pathname.startsWith('/now/workspace/agent/')) return;
+    document.getElementById('tm-toolbar')?.remove();
+    const STORAGE_KEY = 'snippets_manager_v1';
+
+    const style = document.createElement('style');
+    style.textContent = `
+        #tm-toolbar {
+            position: fixed;
+            top: 7px;
+            left: 100px;
+            z-index: 99999;
+            right: 12px;
+            max-width: calc(100vw - 112px);
+            box-sizing: border-box;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-family: Arial, sans-serif;
+        }
+
+        #tm-add-btn {
+            width: 35px;
+            height: 35px;
+            border: 1px solid #505050;
+            border-radius: 6px;
+            background: #1d1f20;
+            color: rgb(216, 213, 208);
+            font-size: 22px;
+            cursor: pointer;
+            padding: 0;
+            flex-shrink: 0;
+        }
+
+        #tm-add-btn:hover {
+            background: #25282a;
+        }
+
+        #tm-snippet-container {
+            display: flex;
+            gap: 6px;
+            flex-wrap: nowrap;
+            min-width: 0;
+            overflow-x: auto;
+            overflow-y: hidden;
+            scrollbar-width: thin;
+            overscroll-behavior-x: contain;
+        }
+
+        .tm-snippet {
+            background: #1d1f20;
+            color: rgb(216, 213, 208);
+            border: 1px solid #505050;
+            border-radius: 6px;
+            height: 35px;
+            box-sizing: border-box;
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+            font-size: 13px;
+            min-width: 120px;
+            flex: 0 0 auto;
+        }
+
+        .tm-snippet:hover {
+            background: #25282a;
+        }
+
+        .tm-snippet-title {
+            padding-right: 22px;
+            white-space: nowrap;
+        }
+
+        .tm-delete-btn {
+            position: absolute;
+            right: 6px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 18px;
+            height: 18px;
+            border: none;
+            border-radius: 4px;
+            background: #444;
+            color: white;
+            cursor: pointer;
+            font-size: 11px;
+            line-height: 18px;
+            padding: 0;
+        }
+
+        .tm-delete-btn:hover {
+            background: #c62828;
+        }
+
+        .tm-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.6);
+            z-index: 100001;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .tm-modal {
+            width: 450px;
+            max-width: 90vw;
+            background: #1d1f20;
+            border: 1px solid #505050;
+            border-radius: 8px;
+            padding: 16px;
+            color: rgb(216, 213, 208);
+        }
+
+        .tm-modal h3 {
+            margin-top: 0;
+        }
+
+        .tm-modal input,
+        .tm-modal textarea {
+            width: 100%;
+            box-sizing: border-box;
+            margin-top: 5px;
+            margin-bottom: 12px;
+            padding: 8px;
+            background: #2b2d2f;
+            border: 1px solid #505050;
+            color: rgb(216,213,208);
+            border-radius: 4px;
+        }
+
+        .tm-modal textarea {
+            min-height: 140px;
+            resize: vertical;
+        }
+
+        .tm-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .tm-buttons button {
+            cursor: pointer;
+            padding: 8px 15px;
+            border-radius: 5px;
+            border: 1px solid #505050;
+            background: #2b2d2f;
+            color: rgb(216,213,208);
+        }
+
+        .tm-buttons button:hover {
+            background: #383b3d;
+        }
+
+        .tm-toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 100002;
+            background: #1d1f20;
+            color: rgb(216,213,208);
+            border: 1px solid #505050;
+            border-radius: 6px;
+            padding: 10px 15px;
+        }
+    `;
+    style.dataset.snAiSnippetsStyle = 'true';
+    style.textContent += `
+      @media (max-width: 600px) {
+        #tm-toolbar { left: 8px; right: 8px; max-width: calc(100vw - 16px); gap: 6px; }
+        #tm-snippet-container { flex: 1 1 auto; }
+      }
+    `;
+    document.head.appendChild(style);
+
+    function loadSnippets() {
+        try {
+            return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+        } catch {
+            return [];
+        }
+    }
+
+    function saveSnippets(snippets) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(snippets));
+    }
+
+    let snippets = loadSnippets();
+    if (!Array.isArray(snippets)) snippets = [];
+
+    const toolbar = document.createElement('div');
+    toolbar.id = 'tm-toolbar';
+
+    const addButton = document.createElement('button');
+    addButton.id = 'tm-add-btn';
+    addButton.textContent = '+';
+
+    const container = document.createElement('div');
+    container.id = 'tm-snippet-container';
+
+    toolbar.appendChild(addButton);
+    const exportButton = document.createElement('button');
+    exportButton.type = 'button';
+    exportButton.id = 'tm-export-btn';
+    exportButton.textContent = 'Copy config';
+    exportButton.style.cssText = 'flex:none;height:35px;border:1px solid #505050;border-radius:6px;background:#1d1f20;color:#d8d5d0;cursor:pointer';
+    exportButton.addEventListener('click', () => copyText(localStorage.getItem(STORAGE_KEY) || '[]'));
+    toolbar.appendChild(exportButton);
+    toolbar.appendChild(container);
+
+    document.body.appendChild(toolbar);
+
+    async function copyText(text) {
+        try {
+            if (typeof GM_setClipboard !== 'undefined') {
+                GM_setClipboard(text);
+            } else {
+                await navigator.clipboard.writeText(text);
+            }
+
+            showToast('Message copied to clipboard');
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
+    function showToast(message) {
+        const toast = document.createElement('div');
+        toast.className = 'tm-toast';
+        toast.textContent = message;
+
+        document.body.appendChild(toast);
+
+        setTimeout(() => toast.remove(), 2000);
+    }
+
+    function renderSnippets() {
+        container.innerHTML = '';
+
+        snippets.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'tm-snippet';
+
+            const title = document.createElement('span');
+            title.className = 'tm-snippet-title';
+            title.textContent = item.title;
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'tm-delete-btn';
+            deleteBtn.textContent = '✎';
+            deleteBtn.setAttribute('aria-label', `Edit ${item.title}`);
+
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                showAddModal(item.id);
+            });
+
+            div.addEventListener('click', () => {
+                copyText(item.message);
+            });
+
+            div.appendChild(title);
+            div.appendChild(deleteBtn);
+
+            container.appendChild(div);
+        });
+    }
+
+    function showAddModal(editId = null) {
+        const existing = snippets.find(item => item.id === editId);
+        const overlay = document.createElement('div');
+        overlay.className = 'tm-modal-overlay';
+
+        overlay.innerHTML = `
+            <div class="tm-modal">
+                <h3>Create Snippet</h3>
+
+                <label>Title</label>
+                <input id="tm-title-input" type="text">
+
+                <label>Message</label>
+                <textarea id="tm-message-input"></textarea>
+
+                <div class="tm-buttons">
+                    <button id="tm-cancel-btn">Cancel</button>
+                    <button id="tm-save-btn">Save</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+
+        if (existing) {
+            overlay.querySelector('h3').textContent = 'Edit Snippet';
+            overlay.querySelector('#tm-title-input').value = existing.title;
+            overlay.querySelector('#tm-message-input').value = existing.message;
+            const remove = document.createElement('button');
+            remove.textContent = 'Delete';
+            remove.type = 'button';
+            remove.onclick = () => { overlay.remove(); showDeleteModal(existing.id); };
+            overlay.querySelector('.tm-buttons').prepend(remove);
+        }
+        overlay.querySelector('#tm-cancel-btn').onclick = () => {
+            overlay.remove();
+        };
+
+        overlay.querySelector('#tm-save-btn').onclick = () => {
+            const title = overlay.querySelector('#tm-title-input').value.trim();
+            const message = overlay.querySelector('#tm-message-input').value.trim();
+
+            if (!title || !message) {
+                alert('Please fill in all fields.');
+                return;
+            }
+
+            if (existing) Object.assign(existing, { title, message });
+            else snippets.push({ id: Date.now(), title, message });
+
+            saveSnippets(snippets);
+            renderSnippets();
+            overlay.remove();
+        };
+    }
+
+    function showDeleteModal(id) {
+        const item = snippets.find(x => x.id === id);
+        if (!item) return;
+
+        const overlay = document.createElement('div');
+        overlay.className = 'tm-modal-overlay';
+
+        overlay.innerHTML = `
+            <div class="tm-modal">
+                <h3>Delete Confirmation</h3>
+
+                <p>
+                    Are you really want to delete
+                    "<strong data-snippet-delete-title></strong>"
+                    message?
+                </p>
+
+                <div class="tm-buttons">
+                    <button id="tm-no-btn">No</button>
+                    <button id="tm-yes-btn">Yes</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+
+        overlay.querySelector('[data-snippet-delete-title]').textContent = item.title;
+        overlay.querySelector('#tm-no-btn').onclick = () => {
+            overlay.remove();
+        };
+
+        overlay.querySelector('#tm-yes-btn').onclick = () => {
+            snippets = snippets.filter(x => x.id !== id);
+            saveSnippets(snippets);
+            renderSnippets();
+            overlay.remove();
+        };
+    }
+
+    addButton.addEventListener('click', () => showAddModal());
+
+    const sync = event => {
+        if (event.key !== STORAGE_KEY) return;
+        const saved = loadSnippets();
+        if (Array.isArray(saved)) { snippets = saved; renderSnippets(); }
+    };
+    window.addEventListener('storage', sync);
+    document.addEventListener('sn-ai-runtime-dispose', () => {
+        window.removeEventListener('storage', sync);
+        toolbar.remove();
+        style.remove();
+    }, { once: true });
+    renderSnippets();
+}
 
 function startSNAI() {
   'use strict';
@@ -13554,7 +13940,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.54' });
+    addLog('info', 'helper-version', { version: '2.36.55' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -13892,6 +14278,7 @@ function startSNAI() {
   // control is present and populated.
   if (classicIncidentPage && !classicIncidentNumber) return;
   installPanel();
+  installChatSnippets();
 
   const RELEASE_ID = 'sn-ai';
   const UPDATE_API_URL = 'https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/versions.json';
