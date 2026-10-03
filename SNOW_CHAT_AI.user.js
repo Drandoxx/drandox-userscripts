@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.206
+// @version      2.36.207
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -16943,7 +16943,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.206' });
+    addLog('info', 'helper-version', { version: '2.36.207' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -17297,6 +17297,12 @@ function startSNAI(tabIdentity) {
   }
   const INBOX_AUTO_ACCEPT_KEY = 'sn-ai-inbox-auto-accept-v1';
   let notificationSettingsAvailable = false;
+  function confirmedNativePresence(container) {
+    const native = container.querySelector('#presenceBar');
+    const text = normalise(native?.querySelector('.status')?.textContent
+      || (native?.getAttribute('aria-label') || '').replace(/^Agent presence state:\s*/, ''));
+    return ['Available', 'Away', 'Offline'].find(name => name.toLowerCase() === text.toLowerCase()) || '';
+  }
   let notificationSettingsConfirmedNoticeShown = false;
   function showNotificationSettingsConfirmed() {
     if (notificationSettingsConfirmedNoticeShown || inboxPolicy.disposed) return;
@@ -17306,6 +17312,8 @@ function startSNAI(tabIdentity) {
   }
   function showNotificationSettingsMissingError() {
     if (notificationSettingsAvailable || inboxPolicy.disposed) return;
+    if (!allPageElements().some(element => element.matches?.('.sn-presence-state-container') && confirmedNativePresence(element) === 'Available')) return;
+    if (document.getElementById('local-sn-ai-notification-settings-error')) return;
     const box = document.createElement('div');
     box.id = 'local-sn-ai-notification-settings-error';
     box.setAttribute('role', 'alert');
@@ -17338,6 +17346,10 @@ function startSNAI(tabIdentity) {
     });
     async function check() {
       if (busy || stopped || !container.isConnected) return;
+      if (confirmedNativePresence(container) !== 'Available') {
+        document.getElementById('local-sn-ai-notification-settings-error')?.remove();
+        return;
+      }
       busy = true;
       let opened = false;
       let trigger = null;
@@ -17359,7 +17371,7 @@ function startSNAI(tabIdentity) {
         notificationSettingsAvailable = true;
         document.getElementById('local-sn-ai-notification-settings-error')?.remove();
         for (const control of switches) {
-          if (stopped || !container.isConnected) break;
+          if (stopped || !container.isConnected || confirmedNativePresence(container) !== 'Available') break;
           // checked is authoritative here: never blindly toggle an ON control.
           if (control.checked || control.disabled) continue;
           const label = control.getRootNode()?.host?.getAttribute('aria-label');
@@ -17404,6 +17416,8 @@ function startSNAI(tabIdentity) {
     for (const name of ['Available', 'Away', 'Offline']) {
       const option = document.createElement('option'); option.value = name; option.textContent = name; select.append(option);
     }
+    let lastConfirmedPresence = confirmedNativePresence(container) || 'Offline';
+    select.value = lastConfirmedPresence;
     const message = { textContent: '' };
     const originalContainerStyle = container.getAttribute('style');
     container.style.display = 'flex';
@@ -17418,8 +17432,11 @@ function startSNAI(tabIdentity) {
     // Keep the authoritative native control mounted for its normal event path,
     // but remove its footprint from the visible status widget.
     if (popover) { popover.style.position = 'absolute'; popover.style.visibility = 'hidden'; popover.style.pointerEvents = 'none'; }
-    const actual = () => normalise(native.querySelector('.status')?.textContent
-      || (native.getAttribute('aria-label') || '').replace(/^Agent presence state:\s*/, ''));
+    const actual = () => {
+      const confirmed = confirmedNativePresence(container);
+      if (confirmed) lastConfirmedPresence = confirmed;
+      return lastConfirmedPresence;
+    };
     async function applyDesired() {
       if (presencePreference.busy || !presencePreference.desired || !native.isConnected) return;
       presencePreference.busy = true; presencePreference.lastAttempt = Date.now();
@@ -17431,7 +17448,7 @@ function startSNAI(tabIdentity) {
           element.matches('[role="option"][id^="presencestate_"]') && element.getAttribute('title') === desired), 2500, 100);
         if (!option || presencePreference.desired !== desired) throw new Error('Native presence choice did not become ready');
         option.click();
-        const committed = await waitUntil(() => actual() === desired ? true : null, 4000, 100);
+        const committed = await waitUntil(() => confirmedNativePresence(container) === desired ? true : null, 4000, 100);
         if (!committed) throw new Error('ServiceNow did not confirm the requested presence');
         presencePreference.failures = 0;
         inboxLog('presence-preference-confirmed', { desired });
@@ -17445,13 +17462,15 @@ function startSNAI(tabIdentity) {
       if (current && ![...select.options].some(option => option.value === current)) {
         const option = document.createElement('option'); option.value = current; option.textContent = current; select.append(option);
       }
-      // Always show actual server-reported state, not merely the preference.
+      // Retain confirmed native state during transient empty renders; never default to Available.
       if (current) select.value = current;
       if (select.dataset.snAiStatus !== (current || 'Offline')) {
         select.dataset.snAiStatus = current || 'Offline';
         document.dispatchEvent(new CustomEvent('sn-ai-presence-status', { detail:select.dataset.snAiStatus }));
       }
-      if (!presencePreference.desired) message.textContent = 'Using ServiceNow status · unlocked';
+      if (confirmedNativePresence(container) !== 'Available') document.getElementById('local-sn-ai-notification-settings-error')?.remove();
+      if (!confirmedNativePresence(container)) message.textContent = 'Waiting for ServiceNow presence · retaining ' + current;
+      else if (!presencePreference.desired) message.textContent = 'Using ServiceNow status · unlocked';
       else if (current === presencePreference.desired) message.textContent = 'Your selection is held until reload';
       else if (presencePreference.failures >= 3) message.textContent = `ServiceNow reports ${current}. Could not restore ${presencePreference.desired}; select it again to retry.`;
       else message.textContent = `ServiceNow reports ${current} · restoring ${presencePreference.desired}…`;
