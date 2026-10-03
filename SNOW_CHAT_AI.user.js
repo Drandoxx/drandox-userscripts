@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.96
+// @version      2.36.97
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -621,6 +621,20 @@
     .nlq-search-box-heading-main,.nlq-search-box-heading-second { color:var(--sn-theme-e6edf9)!important; }
     .nlq-search-box-footer-container { color:var(--sn-theme-a8b8d1)!important; }
     .now-input-native::placeholder,.now-typeahead-native-input::placeholder { color:var(--sn-theme-a8b8d1)!important;opacity:1!important; }
+    .label-placeholder,.now-score-value,.now-score-content,
+    .now-card-header-caption,.now-card-header-caption-label,.now-dropdown-label,
+    .sn-label-value-value,.now-highlighted-value-label { color:var(--sn-theme-e6edf9)!important; }
+    .sn-label-value-label,.help-text { color:var(--sn-theme-a8b8d1)!important; }
+    :host(now-score-basic) .will-truncate,:host(now-content-tree) li { color:var(--sn-theme-e6edf9)!important; }
+    :host(now-empty-state) .header { color:var(--sn-theme-e6edf9)!important; }
+    :host(now-empty-state) .body { color:var(--sn-theme-a8b8d1)!important; }
+    :host(now-chart-bar) div[style*="color:"],:host(now-chart-bar) span,
+    :host(now-chart-bar) .xn-register-item-value { color:var(--sn-theme-e6edf9)!important; }
+    .sn-grid-checkbox-label,span.sn-section-header { background:transparent!important; }
+    .now-badge.-secondary,.now-highlighted-value.-low {
+      background:var(--sn-theme-392e48)!important;color:var(--sn-theme-e6edf9)!important;
+    }
+    :host(now-badge) .now-line-height-crop { color:inherit!important;background:transparent!important; }
     .sn-inbox,.sn-inbox .sn-card-list { border-color:var(--sn-theme-423750)!important; }
     .sn-inbox .sn-presence--header,.sn-inbox .sn-presence--header.is-uxf,
     .sn-presence-state-container { background:var(--sn-theme-1c1827)!important;border-color:var(--sn-theme-423750)!important; }
@@ -15066,7 +15080,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.96' });
+    addLog('info', 'helper-version', { version: '2.36.97' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -15624,7 +15638,7 @@ function startSNAI() {
       for (const observer of capture.observers) observer.disconnect();
       for (const cleanup of capture.cleanups) cleanup();
       clearTimeout(capture.deadline);
-      const blob = new Blob([JSON.stringify({ kind: 'SN AI style capture', version: 2,
+      const blob = new Blob([JSON.stringify({ kind: 'SN AI style capture', version: 3,
         started: capture.started, stopped: new Date().toISOString(), truncated: capture.truncated,
         records: capture.records }, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob), link = document.createElement('a');
@@ -15653,6 +15667,25 @@ function startSNAI() {
       const rect = element.getBoundingClientRect();
       if (!rect.width || !rect.height) return;
       const css = element.ownerDocument.defaultView.getComputedStyle(element);
+      // Capture-only ancestry walk: normal theme operation never runs this audit.
+      const ancestors = [];
+      let effectiveBackground = null, backgroundImagePresent = false, current = element;
+      for (let depth = 0; current && depth < 40; depth += 1) {
+        const currentStyle = current.ownerDocument.defaultView.getComputedStyle(current);
+        backgroundImagePresent ||= currentStyle.backgroundImage !== 'none';
+        if (ancestors.length < 6) ancestors.push({ tag:current.localName, classes:current.getAttribute('class'), background:currentStyle.backgroundColor, color:currentStyle.color });
+        const components = currentStyle.backgroundColor.match(/[\d.]+/g)?.map(Number);
+        if (components?.length >= 3 && (components.length === 3 || components[3] === 1)) { effectiveBackground = currentStyle.backgroundColor; break; }
+        current = current.assignedSlot || current.parentElement || current.getRootNode().host;
+      }
+      const luminance = value => {
+        const rgb = value?.match(/[\d.]+/g)?.slice(0,3).map(Number);
+        if (rgb?.length !== 3) return null;
+        return rgb.map(channel => { const v = channel / 255; return v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }).reduce((sum,v,i) => sum + v * [.2126,.7152,.0722][i],0);
+      };
+      const foregroundLum = luminance(css.color), backgroundLum = luminance(effectiveBackground);
+      const contrast = !backgroundImagePresent && foregroundLum !== null && backgroundLum !== null
+        ? (Math.max(foregroundLum,backgroundLum)+.05)/(Math.min(foregroundLum,backgroundLum)+.05) : null;
       // Keep unique visual states, not repeated rows or whole descendant trees.
       const signature = JSON.stringify([path, element.localName, element.getAttribute('class'),
         css.color, css.backgroundColor, css.backgroundImage, css.borderColor, css.fill, css.stroke, css.opacity, css.boxShadow]);
@@ -15661,7 +15694,10 @@ function startSNAI() {
       const openingTag = '<' + element.localName + [...element.attributes].map(attribute =>
         ' ' + attribute.name + '=' + JSON.stringify(attribute.value)).join('') + '>';
       record({ kind: 'element', path, tag: element.localName, classes: element.getAttribute('class'),
-        html: openingTag.slice(0, 2000), styles: { color: css.color, background: css.backgroundColor,
+        html: openingTag.slice(0, 2000), ancestors, effectiveBackground, contrastEstimate:contrast,
+        contrastUncertain:backgroundImagePresent || css.opacity !== '1',
+        hasDirectText:[...element.childNodes].some(node => node.nodeType === 3 && node.textContent.trim()),
+        styles: { color: css.color, background: css.backgroundColor,
           backgroundImage: css.backgroundImage, border: css.borderColor, fill: css.fill, stroke: css.stroke,
           opacity: css.opacity, boxShadow: css.boxShadow, font: css.font, textFill: css.webkitTextFillColor,
           outline: css.outlineColor, caret: css.caretColor, accent: css.accentColor },
