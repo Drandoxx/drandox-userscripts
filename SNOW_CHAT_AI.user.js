@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.151
+// @version      2.36.152
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -516,6 +516,33 @@
     '--sn-theme-now-color--primary-1':'45,72,67','--sn-theme-now-color--primary-2':'128,213,182',
     '--sn-theme-now-color--primary-3':'157,226,205'
   });
+  // Complete role-based palettes: semantic success/error colors remain intact.
+  // Gradients stay on content surfaces, never on the tab/curve join surfaces.
+  const extraThemeSpecs = {
+    graphite:{base:'#141516',panel:'#1b1d1f',card:'#24272a',input:'#1a1c1e',raised:'#303439',line:'#42484f',border:'#606a75',accent:'#c0c8d2',cool:'#aabccb',text:'#f0f1f3',muted:'#adb4be',gradient:'none'},
+    ocean:{base:'#0b1421',panel:'#101e30',card:'#172b40',input:'#102235',raised:'#203c55',line:'#2d4961',border:'#486c87',accent:'#73c7ed',cool:'#86a8ff',text:'#e5f2ff',muted:'#a4bfd5',gradient:'radial-gradient(ellipse at 12% 15%,#214d6866,transparent 65%),radial-gradient(ellipse at 90% 85%,#283c7066,transparent 65%)'},
+    ember:{base:'#1b1211',panel:'#241a18',card:'#342421',input:'#271b18',raised:'#463029',line:'#614139',border:'#86604f',accent:'#edb17f',cool:'#e8c995',text:'#fff0e4',muted:'#ceb5a4',gradient:'radial-gradient(ellipse at 10% 15%,#743c2466,transparent 65%),radial-gradient(ellipse at 90% 90%,#62343e55,transparent 60%)'},
+    rose:{base:'#1a101b',panel:'#241824',card:'#322233',input:'#251925',raised:'#463047',line:'#5f405e',border:'#855d80',accent:'#e4a7cd',cool:'#bcb1ef',text:'#ffedf8',muted:'#cbb0c6',gradient:'radial-gradient(ellipse at 15% 10%,#67365366,transparent 65%),radial-gradient(ellipse at 85% 85%,#43346666,transparent 60%)'},
+    midnight:{base:'#0e1220',panel:'#151b2c',card:'#202840',input:'#171f32',raised:'#303c59',line:'#404e70',border:'#617298',accent:'#a7b8f5',cool:'#83d2d0',text:'#ecf0ff',muted:'#b0bbd6',gradient:'radial-gradient(ellipse at 20% 15%,#3e467566,transparent 65%),radial-gradient(ellipse at 90% 80%,#24585b55,transparent 65%)'}
+  };
+  const themeRGB = hex => [1,3,5].map(offset => parseInt(hex.slice(offset,offset + 2),16)).join(',');
+  for (const [name,spec] of Object.entries(extraThemeSpecs)) {
+    const palette = { ...SN_THEME_PALETTES.space };
+    const roles = {
+      base:['14121c','26203e'],panel:['1c1827','221d30'],card:['251f31','292331','202c38'],
+      input:['191621'],raised:['302951','392e48','35243c','49365a','343055','534775'],
+      line:['423750'],border:['655573','9e83b2','806493','65538f'],
+      accent:['ac94ec'],cool:['9de2f5','93cfea'],
+      text:['e6edf9','e3d9ff','dcd1ff','eee4ff'],muted:['a8b8d1','c2b9d4','b9c9e3','c8d7ef']
+    };
+    for (const [role,keys] of Object.entries(roles)) for (const key of keys) palette[`--sn-theme-${key}`] = spec[role];
+    for (const [index,role] of ['base','panel','card','line','border','muted','muted','muted','text','text','text'].entries()) {
+      palette[`--sn-theme-now-color--neutral-${index}`] = themeRGB(spec[role]);
+    }
+    for (const [index,role] of ['panel','raised','accent','cool'].entries()) palette[`--sn-theme-now-color--primary-${index}`] = themeRGB(spec[role]);
+    palette['--sn-theme-ambient-background'] = spec.gradient;
+    SN_THEME_PALETTES[name] = palette;
+  }
   function themeText() {
     const palette = { ...SN_THEME_PALETTES.space, ...SN_THEME_PALETTES[selectedSpaceTheme] };
     // A filled extension masks the native straight border below the curve.
@@ -526,7 +553,8 @@
     palette['--sn-tab-corner'] = `url("data:image/svg+xml,${encodeURIComponent(corner)}")`;
     palette['--sn-tab-sub-corner'] = `url("data:image/svg+xml,${encodeURIComponent(corner.replace(palette['--sn-theme-14121c'], palette['--sn-theme-251f31']))}")`;
     palette['--sn-tab-corner'] = `url("data:image/svg+xml,${encodeURIComponent(corner.replace(palette['--sn-theme-14121c'], palette['--sn-theme-191621']))}")`;
-    return ":host,html{" + Object.entries(palette).map(([key,value]) => key + ":" + value + ";").join("") + '--sn-chat-background:' + chatBackgrounds[selectedChatBackground] + ';--sn-chat-background-size:' + (selectedChatBackground === 'stars' ? '233px 271px,349px 307px,100% 100%' : '100% 100%') + ';--sn-chat-background-repeat:' + (selectedChatBackground === 'stars' ? 'repeat,repeat,no-repeat' : 'no-repeat') + ';}' + spaceCSS;
+    const ambient = palette['--sn-theme-ambient-background'] || 'none';
+    return ":host,html{" + Object.entries(palette).map(([key,value]) => key + ":" + value + ";").join("") + '--sn-theme-ambient-background:' + ambient + ';--sn-chat-background:' + (selectedChatBackground === 'plain' ? ambient : chatBackgrounds[selectedChatBackground]) + ';--sn-chat-background-size:' + (selectedChatBackground === 'stars' ? '233px 271px,349px 307px,100% 100%' : '100% 100%') + ';--sn-chat-background-repeat:' + (selectedChatBackground === 'stars' ? 'repeat,repeat,no-repeat' : 'no-repeat') + ';}' + spaceCSS;
   }
   const spaceCSS = `
     :host,html {
@@ -943,6 +971,8 @@
     .sn-workspace-form-layout-contents {
       /* The sidebar starts below the form tab row; fill its otherwise exposed strip. */
       background-color:var(--sn-theme-251f31)!important;
+      background-image:var(--sn-theme-ambient-background,none)!important;
+      background-size:100% 100%!important;background-repeat:no-repeat!important;
     }
     .now-tab.is-selected,.now-tab.is-selected:hover,.now-tab.is-selected:focus {
       background:color-mix(in srgb,var(--sn-theme-251f31) 68%,var(--sn-theme-ac94ec) 32%)!important;
@@ -12117,7 +12147,7 @@ function startSNAI() {
       chatBackgroundRow.style.cssText = paletteRow.style.cssText;
       const chatBackgroundSelect = document.createElement('select');
       chatBackgroundSelect.setAttribute('aria-label','Chat background');
-      for (const [value,label] of [['plain','Plain'],['nebula','Nebula'],['violet','Purple space'],['stars','Starfield']]) {
+      for (const [value,label] of [['plain','Theme default'],['nebula','Nebula'],['violet','Purple space'],['stars','Starfield']]) {
         const option = document.createElement('option'); option.value=value;option.textContent=label;chatBackgroundSelect.append(option);
       }
       gmGetValue('sn-ai-chat-background-v1','plain').then(value => { chatBackgroundSelect.value = ['plain','nebula','violet','stars'].includes(value) ? value : 'plain'; });
@@ -15813,7 +15843,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.151' });
+    addLog('info', 'helper-version', { version: '2.36.152' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
