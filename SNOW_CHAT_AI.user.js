@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.173
+// @version      2.36.174
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -20,6 +20,8 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_info
 // @grant        GM_setClipboard
+// @grant        GM_getTab
+// @grant        GM_saveTab
 // @connect      drandox.cc
 // @connect      raw.githubusercontent.com
 // @connect      api.openai.com
@@ -332,20 +334,22 @@
 (() => {
   if (location.hostname !== 'kingfisher.service-now.com'
     || !(/\/new_call\.do$/.test(location.pathname) || location.pathname.includes('/target/new_call.do'))) return;
-  const palettes = {
-    space:['#151122','#241c33','#49355f','#eee6ff','#a78bfa'],aurora:['#182828','#203434','#3d5b5b','#e4fff2','#80d5b6'],
-    graphite:['#1b1d1f','#24272a','#42484f','#f0f1f3','#c0c8d2'],ocean:['#101e30','#172b40','#2d4961','#e5f2ff','#73c7ed'],
-    ember:['#241a18','#342421','#614139','#fff0e4','#edb17f'],rose:['#241824','#322233','#5f405e','#ffedf8','#e4a7cd'],
-    midnight:['#151b2c','#202840','#404e70','#ecf0ff','#a7b8f5']
-  };
   const documents = new WeakSet();
-  let colors = palettes.space;
-  Promise.resolve(GM_getValue('sn-ai-theme-palette-v1','space')).then(name => { colors = palettes[name] || palettes.space;scan(document); });
+  function nativeColors(doc) {
+    const field = doc.getElementById('new_call.short_description') || doc.getElementById('new_call.description');
+    const nativeButton = doc.querySelector('.form_header .btn-default,button.btn-default,input.form-control');
+    const fieldStyle = field && doc.defaultView.getComputedStyle(field);
+    const buttonStyle = nativeButton && doc.defaultView.getComputedStyle(nativeButton);
+    const opaque = (value, fallback) => value && value !== 'transparent' && value !== 'rgba(0, 0, 0, 0)' ? value : fallback;
+    return [opaque(fieldStyle?.backgroundColor,'#08090b'),opaque(buttonStyle?.backgroundColor,'#17191d'),
+      opaque(fieldStyle?.borderTopColor,'#727986'),opaque(fieldStyle?.color,'#ffffff'),opaque(buttonStyle?.color,fieldStyle?.color || '#dce0e8')];
+  }
   function install(doc) {
     if (documents.has(doc)) return;documents.add(doc);
     const style = doc.createElement('style');style.id = 'sn-ai-stack-kb-style';
-    style.textContent = `#dynamic_search_box,#dyn_search,#dyn_search th,#dyn_search td{background:var(--sn-stack-kb-bg)!important;color:var(--sn-stack-kb-text)!important;border-color:var(--sn-stack-kb-line)!important}#dynamic_search_box{border:1px solid var(--sn-stack-kb-line)!important;border-radius:6px;overflow:auto}#dynamic_search_box a{color:var(--sn-stack-kb-accent)!important}#dyn_search tr:hover td{background:var(--sn-stack-kb-hover)!important}#dynamic_search_box .sn-ai-copy-kb{border:0;background:transparent;color:var(--sn-stack-kb-accent);font:inherit;padding:0;cursor:pointer;text-decoration:underline;text-underline-offset:3px}.sn-ai-kb-copied{position:fixed;z-index:2147483647;padding:4px 8px;border:1px solid var(--sn-stack-kb-line);border-radius:5px;background:var(--sn-stack-kb-hover);color:var(--sn-stack-kb-text);font:12px system-ui;pointer-events:none;box-shadow:0 3px 10px #0004}`;
+    style.textContent = `#dynamic_search_box,#dyn_search,#dyn_search th,#dyn_search td{background:var(--sn-stack-kb-bg)!important;color:var(--sn-stack-kb-text)!important;border-color:var(--sn-stack-kb-line)!important}#dynamic_search_box{border:1px solid var(--sn-stack-kb-line)!important;border-radius:4px;overflow:auto}#dynamic_search_box a{color:var(--sn-stack-kb-text)!important}#dyn_search tr:hover td{background:var(--sn-stack-kb-hover)!important}#dynamic_search_box .sn-ai-copy-kb{display:inline-block;border:1px solid var(--sn-stack-kb-line)!important;border-radius:4px;background:var(--sn-stack-kb-hover)!important;color:var(--sn-stack-kb-text)!important;font:inherit;padding:3px 9px;margin:3px 4px 3px 0;cursor:pointer;text-decoration:none!important;line-height:1.3}#dynamic_search_box .sn-ai-copy-kb:hover{filter:brightness(1.2)}#dynamic_search_box .sn-ai-copy-kb:focus-visible{outline:2px solid var(--sn-stack-kb-accent);outline-offset:2px}.sn-ai-kb-copied{position:fixed;z-index:2147483647;padding:4px 8px;border:1px solid var(--sn-stack-kb-line);border-radius:5px;background:var(--sn-stack-kb-hover);color:var(--sn-stack-kb-text);font:12px system-ui;pointer-events:none;box-shadow:0 3px 10px #0004}`;
     (doc.head || doc.documentElement).append(style);
+    style.textContent += '#dyn_search td span,#dyn_search td em,#dyn_search td i,#dynamic_search_box #overlay{color:var(--sn-stack-kb-text)!important}';
     doc.addEventListener('click',async event => {
       const button = event.target.closest?.('.sn-ai-copy-kb');if (!button) return;
       event.preventDefault();event.stopPropagation();
@@ -363,6 +367,7 @@
   }
   function scan(doc) {
     install(doc);
+    const colors = nativeColors(doc);
     ['bg','hover','line','text','accent'].forEach((role,index) => doc.documentElement.style.setProperty('--sn-stack-kb-' + role,colors[index]));
     for (const cell of doc.querySelectorAll('#dyn_search td')) for (const node of [...cell.childNodes]) {
       if (node.nodeType !== 3) continue;const match = node.textContent.match(/\bKB\d{7}\b/);if (!match) continue;
@@ -3005,12 +3010,19 @@ function installChatSnippets() {
 
 }
 
-function startSNAI() {
-  // The classic STACK new-call route receives only the scoped KB formatter
-  // above, not Workspace automation or an extra launcher.
-  if (/\/new_call\.do$/.test(location.pathname) || location.pathname.includes('/target/new_call.do')) return;
+function startSNAI(tabIdentity) {
+  // Classic navigation shells and their form iframe must not both create UI.
+  // The actual form owns Settings/Stack; the shell only installs KB styling.
+  if (location.pathname.startsWith('/now/nav/ui/classic/')) {
+    document.getElementById('local-sn-inspector-root')?.remove();
+    return;
+  }
+  const newCallPage = /^\/new_call\.do$/i.test(location.pathname);
   const workspacePage = location.hostname === 'kingfisher.service-now.com'
     && location.pathname.startsWith('/now/workspace/');
+  if (!workspacePage && !newCallPage && !/^\/incident\.do$/i.test(location.pathname)) return;
+  const pageMode = workspacePage ? 'workspace-chat' : newCallPage ? 'classic-new-call' : 'classic-stack';
+  const positionScope = `${pageMode}:${tabIdentity}`;
   'use strict';
 
   const ROOT_ID = 'local-sn-inspector-root';
@@ -3018,8 +3030,8 @@ function startSNAI() {
   const CHAT_CACHE_KEY = 'local-sn-inspector-chat-cache-v1';
   const CHAT_CACHE_READER_VERSION = 4;
   const COMMAND_STATUS_KEY = 'local-sn-inspector-command-status-v1';
-  const LAUNCHER_POSITION_KEY = 'local-sn-inspector-launcher-position-v1';
-  const TICKET_WINDOWS_KEY = 'local-sn-inspector-ticket-windows-v1';
+  const LAUNCHER_POSITION_KEY = `local-sn-inspector-launcher-position-v2:${positionScope}`;
+  const TICKET_WINDOWS_KEY = `local-sn-inspector-ticket-windows-v2:${positionScope}`;
   const AI_ENABLED_KEY = 'local-sn-inspector-ai-enabled-v1';
   const CMD_ENABLED_KEY = 'local-sn-inspector-cmd-enabled-v1';
   const TEST_ENABLED_KEY = 'local-sn-inspector-test-enabled-v1';
@@ -12540,6 +12552,15 @@ function startSNAI() {
     };
 
     const settingsAction = host.querySelector('[data-action="open-ai-settings"]');
+    if (newCallPage) {
+      // Keep the shared settings implementation, but expose no AI/Stack launcher
+      // or ticket actions on this form. The only visible control is Settings.
+      host.dataset.pageMode = pageMode;
+      host.querySelector('header').append(settingsAction);
+      const settingsOnlyStyle = document.createElement('style');
+      settingsOnlyStyle.textContent = `#${ROOT_ID}[data-page-mode="classic-new-call"] .local-sn-panel-toggle,#${ROOT_ID}[data-page-mode="classic-new-call"] .local-sn-action-menu{display:none!important}#${ROOT_ID}[data-page-mode="classic-new-call"] header .local-sn-settings-action{position:relative!important;left:auto!important;top:auto!important;opacity:1!important;pointer-events:auto!important;transform:none!important;background:#17191d!important;border:1px solid #727986!important;color:#fff!important;border-radius:6px!important}`;
+      host.append(settingsOnlyStyle);
+    }
     const cpcAction = host.querySelector('[data-action="open-cpc-dialog"]');
     const cpcActionAIIcon = cpcAction.querySelector('[data-action-ai-icon]');
     const ilsPrntAction = host.querySelector('[data-action="open-ils-prnt-dialog"]');
@@ -13536,6 +13557,7 @@ function startSNAI() {
       toggleActionMenu();
     });
     panelHeader.addEventListener('pointerdown', (event) => {
+      if (newCallPage && event.target.closest?.('[data-action="open-ai-settings"]')) return;
       if (event.button !== 0 || launcherTransitioning) return;
       const rect = host.getBoundingClientRect();
       const menuWasOpen = host.classList.contains('menu-open');
@@ -16317,7 +16339,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.173' });
+    addLog('info', 'helper-version', { version: '2.36.174' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -17667,5 +17689,26 @@ function startSNAI() {
     readOfficialUpdateState().then(renderOfficialUpdateState).catch(error => console.warn('[SN AI update]', error.message));
   }, 1000);
 }
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startSNAI, { once: true });
-else startSNAI();
+function startSNAIForCurrentTab() {
+  const launch = tab => {
+    if (!tab.snAiPositionIdentity) {
+      tab.snAiPositionIdentity = crypto.randomUUID();
+      if (typeof GM_saveTab === 'function') GM_saveTab(tab);
+    }
+    startSNAI(tab.snAiPositionIdentity);
+  };
+  // Tampermonkey's tab object is shared by this tab's frames, survives refresh,
+  // and is separate even for duplicated tabs. Preferences remain shared; UI
+  // positions and restored bubbles do not.
+  if (typeof GM_getTab === 'function') GM_getTab(launch);
+  else {
+    let identity;
+    try {
+      identity = window.top.sessionStorage.getItem('sn-ai-position-tab-v2') || crypto.randomUUID();
+      window.top.sessionStorage.setItem('sn-ai-position-tab-v2', identity);
+    } catch { identity = crypto.randomUUID(); }
+    launch({ snAiPositionIdentity: identity });
+  }
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startSNAIForCurrentTab, { once: true });
+else startSNAIForCurrentTab();
