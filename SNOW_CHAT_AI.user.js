@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.174
+// @version      2.36.175
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -6728,6 +6728,21 @@ function startSNAI(tabIdentity) {
     const started = performance.now();
     let moves = 0;
     let bottomStalls = 0;
+    // ServiceNow mounts a deferred reference host before its inner input.
+    // The host is already a precise scroll target; do not scan from the top
+    // looking for an input which cannot exist until that host enters view.
+    const deferredHost = findDeferredActiveEventFieldHost(fieldLabel);
+    if (deferredHost) {
+      deferredHost.dataset.snAiScrollTarget = wanted.replace(/ /g, '-');
+      await scrollActiveEventTargetIntoView(deferredHost);
+      while (performance.now() - started < timeoutMs) {
+        assertAutomationNotStopped();
+        if (findControlByLabel(fieldLabel)) return true;
+        await sleep(100);
+      }
+      addLog('warn', 'deferred-field-hydration-timeout', { field: fieldLabel, host: deferredHost.tagName });
+      return false;
+    }
     // A prior step may have left the viewport at the bottom. Search from the
     // top once so an unmounted field above us is discoverable too.
     if (scroller instanceof HTMLElement && !findControlByLabel(fieldLabel) && scroller.scrollTop > 0) {
@@ -7213,11 +7228,42 @@ function startSNAI(tabIdentity) {
   async function smoothActiveFormScroll(scroller, top) {
     const target = Math.max(0, Math.min(scroller.scrollHeight - scroller.clientHeight, top));
     assertAutomationNotStopped();
-    // Animated page-by-page scrolling exhausted the virtual-field timeout
-    // before reaching Attached Knowledge. Jump, then allow hydration to run.
-    scroller.scrollTo({ top: target, behavior: 'instant' });
-    scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
-    await sleep(80);
+    scroller.scrollTo({ top: target, behavior: 'smooth' });
+    const started = performance.now();
+    let last = scroller.scrollTop, stable = 0;
+    while (performance.now() - started < 1600) {
+      assertAutomationNotStopped();
+      await sleep(40);
+      const current = scroller.scrollTop;
+      stable = Math.abs(current - last) < 0.5 ? stable + 1 : 0;
+      if (Math.abs(current - target) < 2 || (stable >= 4 && performance.now() - started > 200)) break;
+      last = current;
+    }
+  }
+
+  function findDeferredActiveEventFieldHost(label) {
+    if (comparableLabel(label) !== 'attached knowledge') return null;
+    return activeEventElements(allPageElements()).find(element =>
+      element.matches('sn-record-reference-connected[name="u_attached_knowledge"]') && isVisible(element)) || null;
+  }
+
+  async function scrollActiveEventTargetIntoView(target) {
+    target.style.scrollMarginTop = '80px';
+    target.style.scrollMarginBottom = '48px';
+    // Use the target's actual shadow-aware ancestor, not an unrelated first
+    // form column. This also works before the deferred input is hydrated.
+    let ancestor = deepParentElement(target);
+    while (ancestor instanceof Element) {
+      if (ancestor.clientHeight > 0 && ancestor.scrollHeight > ancestor.clientHeight + 2
+        && /(auto|scroll)/.test(getComputedStyle(ancestor).overflowY)) {
+        const viewport = ancestor.getBoundingClientRect(), rect = target.getBoundingClientRect();
+        await smoothActiveFormScroll(ancestor, ancestor.scrollTop + rect.top + rect.height / 2 - viewport.top - ancestor.clientHeight / 2);
+        return;
+      }
+      ancestor = deepParentElement(ancestor);
+    }
+    target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    await sleep(500);
   }
 
   async function waitForControlByLabel(label, timeoutMs = 6000) {
@@ -7234,7 +7280,7 @@ function startSNAI(tabIdentity) {
         field.dataset.snAiScrollTarget = comparableLabel(label).replace(/ /g,'-');
         field.style.scrollMarginTop = '80px';
         field.style.scrollMarginBottom = '48px';
-        field.scrollIntoView({behavior:'instant',block:'center',inline:'nearest'});
+        await scrollActiveEventTargetIntoView(field);
         await sleep(150);
         const anchoredField = findControlByLabel(label);
         if (!anchoredField || !anchoredField.isConnected) { searched = false;continue; }
@@ -7255,7 +7301,7 @@ function startSNAI(tabIdentity) {
             continue;
           }
         } else {
-          field.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'nearest' });
+          await scrollActiveEventTargetIntoView(field);
           await sleep(150);
           const current = findControlByLabel(label);
           if (current) return current;
@@ -9283,7 +9329,7 @@ function startSNAI(tabIdentity) {
         // Scrolling already-visible routing fields forces avoidable layout work
         // and makes the Workspace animation feel slower than a real click.
         if (fieldLabel === 'Attached Knowledge') {
-          field.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
+          await scrollActiveEventTargetIntoView(field);
           await sleep(260);
         }
         addLog('info', 'auto-lookup-field-revealed', { field: fieldLabel, attempt });
@@ -16339,7 +16385,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.174' });
+    addLog('info', 'helper-version', { version: '2.36.175' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
