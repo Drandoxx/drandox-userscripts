@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.125
+// @version      2.36.126
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -524,6 +524,7 @@
     // overlaps the tab's border instead of leaving an antialiased seam.
     const corner = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 10 10"><path fill="${palette['--sn-theme-191621']}" d="M0 0H10V10H0Z"/><path d="M8.5 0V.5A8 8 0 0 1 .5 8.5H0V10H10V0Z" fill="${palette['--sn-theme-14121c']}"/><path d="M8.5 0V.5A8 8 0 0 1 .5 8.5H0" fill="none" stroke="${palette['--sn-theme-ac94ec']}" stroke-width="1"/></svg>`;
     palette['--sn-tab-corner'] = `url("data:image/svg+xml,${encodeURIComponent(corner)}")`;
+    palette['--sn-tab-corner-over-tab'] = `url("data:image/svg+xml,${encodeURIComponent(corner.replace(palette['--sn-theme-191621'], palette['--sn-theme-251f31']))}")`;
     return ":host,html{" + Object.entries(palette).map(([key,value]) => key + ":" + value + ";").join("") + '--sn-chat-background:' + chatBackgrounds[selectedChatBackground] + ';--sn-chat-background-size:' + (selectedChatBackground === 'stars' ? '233px 271px,349px 307px,100% 100%' : '100% 100%') + ';--sn-chat-background-repeat:' + (selectedChatBackground === 'stars' ? 'repeat,repeat,no-repeat' : 'no-repeat') + ';}' + spaceCSS;
   }
   const spaceCSS = `
@@ -897,11 +898,13 @@
       border:0!important;box-shadow:none!important;outline:0!important;transform:none!important;
     }
     .sn-chrome-one-tab.is-selected::before {
-      left:-9px!important;right:auto!important;background:var(--sn-tab-corner) 0 0/10px 10px no-repeat!important;
+      left:-8.75px!important;right:auto!important;background:var(--sn-tab-left-corner,var(--sn-tab-corner-over-tab)) 0 0/10px 10px no-repeat!important;
     }
     .sn-chrome-one-tab.is-selected::after {
-      right:-9px!important;left:auto!important;background:var(--sn-tab-corner) 0 0/10px 10px no-repeat!important;transform:scaleX(-1)!important;
+      right:-8.75px!important;left:auto!important;background:var(--sn-tab-right-corner,var(--sn-tab-corner)) 0 0/10px 10px no-repeat!important;transform:scaleX(-1)!important;
     }
+    :host(sn-workspace-tab:first-child) { --sn-tab-left-corner:var(--sn-tab-corner); }
+    :host(sn-workspace-tab:not(:last-child)) { --sn-tab-right-corner:var(--sn-tab-corner-over-tab); }
     #chrome-add-new-button.sn-chrome-tabs-btn,
     #chrome-add-new-button.sn-chrome-tabs-btn:focus,
     #chrome-add-new-button.sn-chrome-tabs-btn:focus-visible {
@@ -1042,14 +1045,16 @@
     }
     .sn-chrome-one-tab-close {
       background:transparent!important;border:0!important;box-shadow:none!important;
-      position:relative;border-radius:50%!important;
+      position:absolute!important;top:50%!important;right:8px!important;left:auto!important;bottom:auto!important;
+      transform:translateY(-50%)!important;margin:0!important;padding:0!important;
+      width:20px!important;height:20px!important;z-index:5!important;border-radius:50%!important;
       color:var(--sn-theme-ac94ec)!important;opacity:1!important;visibility:visible!important;
       display:inline-flex!important;min-width:20px!important;min-height:20px!important;
     }
     .sn-chrome-one-tab-close > * { visibility:hidden!important; }
     .sn-chrome-one-tab-close::after {
-      content:''!important;position:absolute!important;inset:50% auto auto 50%!important;width:14px!important;height:14px!important;
-      transform:translate(-50%,-50%)!important;background:var(--sn-theme-ac94ec)!important;pointer-events:none;
+      content:''!important;position:absolute!important;inset:3px!important;width:14px!important;height:14px!important;
+      transform:none!important;background:var(--sn-theme-ac94ec)!important;pointer-events:none;
       visibility:visible!important;opacity:1!important;
       mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 6 6 18M6 6l12 12'/%3E%3C/svg%3E") center/contain no-repeat;
     }
@@ -15591,7 +15596,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.125' });
+    addLog('info', 'helper-version', { version: '2.36.126' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
