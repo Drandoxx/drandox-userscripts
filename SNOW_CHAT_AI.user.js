@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.180
+// @version      2.36.181
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -335,7 +335,6 @@
   if (location.hostname !== 'kingfisher.service-now.com'
     || !(/\/new_call\.do$/.test(location.pathname) || location.pathname.includes('/target/new_call.do'))) return;
   const documents = new WeakSet();
-  const resultBoxHeights = new WeakMap();
   function nativeColors(doc) {
     // Native focus/hover styles briefly turn blue. Never sample those transient
     // states: this New Ticket results area always uses the classic black palette.
@@ -348,7 +347,7 @@
     (doc.head || doc.documentElement).append(style);
     style.textContent += '#dyn_search td span,#dyn_search td em,#dyn_search td i,#dynamic_search_box #overlay{color:var(--sn-stack-kb-text)!important}';
     style.textContent += `
-      #dynamic_search_box{height:var(--sn-new-ticket-kb-height,169px)!important;min-height:169px!important;box-sizing:border-box;outline:none!important;box-shadow:none!important}
+      #dynamic_search_box{height:auto!important;min-height:0!important;box-sizing:border-box;outline:none!important;box-shadow:none!important}
       #dynamic_search_box #overlay,#dynamic_search_box #collapse_search,#dynamic_search_box #expand_search{display:none!important}
       #dynamic_search_box #dyn_search{display:table!important;visibility:visible!important;border-collapse:separate!important;border-spacing:0 2px!important}
       #dynamic_search_box #dyn_search td{padding-top:0!important;padding-bottom:0!important}
@@ -381,11 +380,6 @@
     ['bg','hover','line','text','accent'].forEach((role,index) => doc.documentElement.style.setProperty('--sn-stack-kb-' + role,colors[index]));
     const box = doc.getElementById('dynamic_search_box');
     if (box) {
-      if (!resultBoxHeights.has(box)) {
-        const originalHeight = parseFloat(box.style.height) || 135;
-        resultBoxHeights.set(box,Math.ceil(Math.max(135,originalHeight) * 1.25));
-      }
-      box.style.setProperty('--sn-new-ticket-kb-height',resultBoxHeights.get(box) + 'px');
       if (!box.querySelector('.sn-ai-kb-copy-hint')) {
         const hint = doc.createElement('div');hint.className = 'sn-ai-kb-copy-hint';
         hint.textContent = 'Click a KB button to copy its KB number';
@@ -1463,9 +1457,27 @@
       border:1px solid var(--sn-theme-655573)!important;border-radius:12px!important;
       box-shadow:0 16px 48px #0008!important;
     }
-    .now-modal-header { background:linear-gradient(110deg,var(--sn-theme-221d30),var(--sn-theme-26203e))!important; }
+    .now-modal-header { background:var(--sn-theme-1c1827)!important; }
     .now-modal-body,.now-modal-footer { background:var(--sn-theme-1c1827)!important;color:var(--sn-theme-e6edf9)!important; }
     .now-modal-heading,.now-modal-body p,.now-modal-body slot { color:var(--sn-theme-e6edf9)!important; }
+    :host(sn-form-internal-attachments-list) .sn-card,
+    :host(sn-form-internal-attachments-list) .sn-attachment-list-wrapper,
+    :host(sn-form-internal-attachments-list) .sn-card-list{background:var(--sn-theme-14121c)!important}
+    :host-context(sn-form-internal-attachments-list) .now-checkbox,
+    :host-context(sn-form-internal-attachments-list) .now-checkbox-input,
+    :host-context(sn-form-internal-attachments-list) .now-checkbox-input-container{background:transparent!important;box-shadow:none!important}
+    :host-context(sn-form-internal-attachments-list) .now-checkbox-visual-input{background:var(--sn-theme-251f31)!important;border-color:var(--sn-theme-655573)!important;box-shadow:none!important}
+    :host-context(.sn-single-attachment-preview-modal) input,
+    :host-context(.sn-single-attachment-preview-modal) input:focus{border:0!important;outline:none!important;box-shadow:none!important;background:transparent!important}
+    :host-context(.sn-single-attachment-preview-modal) .now-input-field{border:1px solid var(--sn-theme-655573)!important;box-shadow:none!important}
+    :host-context(.sn-single-attachment-preview-modal) .now-input-field:focus-within{border-color:var(--sn-theme-ac94ec)!important;outline:none!important;box-shadow:none!important}
+    :host(now-button-iconic#now-modal-close-button) button{width:32px!important;height:32px!important;border:1px solid var(--sn-theme-655573)!important;border-radius:7px!important;background:var(--sn-theme-251f31)!important;color:var(--sn-theme-e6edf9)!important;box-shadow:none!important;outline:none!important}
+    :host(now-button-iconic#now-modal-close-button) button:hover{background:var(--sn-theme-49365a)!important}
+    :host(now-button-iconic#now-modal-close-button) button:focus-visible{outline:2px solid var(--sn-theme-ac94ec)!important;outline-offset:2px!important}
+    button.now-button[data-tooltip="Cancel"]{background:var(--sn-theme-251f31)!important;color:var(--sn-theme-b9c9e3)!important;border:1px solid var(--sn-theme-655573)!important;border-radius:6px!important;box-shadow:none!important}
+    button.now-button[data-tooltip="Upload"]{background:var(--sn-theme-ac94ec)!important;color:var(--sn-theme-14121c)!important;border:1px solid var(--sn-theme-ac94ec)!important;border-radius:6px!important;font-weight:600!important;box-shadow:none!important}
+    button.now-button[data-tooltip="Upload"]:disabled{opacity:.45!important}
+    button.now-button[data-tooltip="Cancel"]:focus-visible,button.now-button[data-tooltip="Upload"]:focus-visible{outline:2px solid var(--sn-theme-ac94ec)!important;outline-offset:2px!important}
     .sn-action-menu-container,.sn-action-menu,.sn-action-menu-scroll-container,.sn-popover {
       background:var(--sn-theme-251f31)!important;color:var(--sn-theme-e6edf9)!important;
       border-color:var(--sn-theme-655573)!important;
@@ -16435,7 +16447,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.180' });
+    addLog('info', 'helper-version', { version: '2.36.181' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
