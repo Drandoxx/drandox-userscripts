@@ -1550,6 +1550,12 @@
     return element;
   }
   function captureIncomingPreview(element) {
+    if (!element.matches?.('sn-inbox-card')) {
+      let host = element.getRootNode?.().host;
+      for (let depth = 0; host && depth < 6; depth++,host = host.getRootNode()?.host) {
+        if (host.matches('sn-inbox-card')) { element = host;break; }
+      }
+    }
     if (!element.matches?.('sn-inbox-card') || !element.shadowRoot || capturedPreviewCards.has(element)) return;
     const snapshot = snapshotIncomingNode(element);
     if (!snapshot?.shadow?.length || !element.shadowRoot.querySelector('.sn-card,now-card')) return;
