@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.93
+// @version      2.36.94
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -15038,7 +15038,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.93' });
+    addLog('info', 'helper-version', { version: '2.36.94' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -15381,7 +15381,7 @@ function startSNAI() {
   const INBOX_ACCEPT_DELAY_KEY = 'sn-ai-inbox-accept-delay-seconds-v1';
   function normaliseInboxAcceptDelay(value) {
     const seconds = Number(value);
-    return Number.isFinite(seconds) && seconds >= 0 ? Math.min(3600, Math.floor(seconds)) : 12;
+    return Number.isFinite(seconds) && seconds >= 0 ? Math.min(25, Math.floor(seconds)) : 12;
   }
   function inboxCountdownSeconds(text) {
     const value = String(text || '').trim();
@@ -15692,11 +15692,11 @@ function startSNAI() {
     delayLabel.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px';
     const delayInput = document.createElement('input');
     delayInput.type = 'number';
-    delayInput.min = '0'; delayInput.max = '3600'; delayInput.step = '1';
+    delayInput.min = '0'; delayInput.max = '25'; delayInput.step = '1';
     delayInput.setAttribute('aria-label', 'Automatic chat acceptance delay in seconds');
     delayInput.value = String(inboxPolicy.acceptDelaySeconds);
     delayInput.style.cssText = 'width:54px;min-width:0;box-sizing:border-box;padding:7px 2px;border:0;border-radius:0;background:transparent;color:var(--sn-theme-e6edf9,#e2f5ef);text-align:center';
-    delayInput.title = '0 = immediate. Applies to new incoming chats.';
+    delayInput.title = '0–25 seconds. 0 = immediate. Applies to new incoming chats.';
     delayInput.addEventListener('change', () => {
       inboxPolicy.acceptDelaySeconds = normaliseInboxAcceptDelay(delayInput.value);
       delayInput.value = String(inboxPolicy.acceptDelaySeconds);
@@ -15711,7 +15711,7 @@ function startSNAI() {
       button.style.cssText = 'width:32px;min-width:32px;padding:6px 0;border:0;border-radius:0;background:transparent;color:var(--sn-theme-a8b8d1,#a9d7c5);font:18px system-ui;cursor:pointer;box-shadow:none';
       button.addEventListener('click', event => {
         event.preventDefault();
-        delayInput.value = String(Math.max(0, Math.min(3600, normaliseInboxAcceptDelay(delayInput.value) + amount)));
+        delayInput.value = String(Math.max(0, Math.min(25, normaliseInboxAcceptDelay(delayInput.value) + amount)));
         delayInput.dispatchEvent(new Event('change', { bubbles: true }));
       });
       return button;
