@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.171
+// @version      2.36.172
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -6588,7 +6588,7 @@ function startSNAI() {
     const candidates = allPageElements().filter((element) =>
       element instanceof HTMLElement
       && isWithinDeepRoot(element, panel)
-      && element.classList.contains('sn-form-column-layout-sections')
+      && element.matches('.sn-form-column-layout-sections,.sn-form-column-layout-container,.sn-form-column-layout-col,.sn-workspace-form-layout-contents')
     );
     // Multiple columns can be mounted; an empty/non-scrolling first column
     // must not consume the reveal budget while the real viewport stays put.
@@ -6653,21 +6653,25 @@ function startSNAI() {
   // New Event virtualizes lower groups, including Short Description and the
   // fields below Description. Waiting for an unmounted target cannot reveal
   // it, so scroll only the active Event form viewport in bounded real steps.
-  async function revealVirtualisedActiveEventField(fieldLabel, timeoutMs = 2600) {
+  async function revealVirtualisedActiveEventField(fieldLabel, timeoutMs = 6000) {
     const wanted = comparableLabel(fieldLabel);
-    const scroller = activeEventFormScroller();
+    let scroller = activeEventFormScroller();
     const started = performance.now();
     let moves = 0;
+    let bottomStalls = 0;
     // A prior step may have left the viewport at the bottom. Search from the
     // top once so an unmounted field above us is discoverable too.
     if (scroller instanceof HTMLElement && !findControlByLabel(fieldLabel) && scroller.scrollTop > 0) {
       await smoothActiveFormScroll(scroller, 0);
     }
     while (performance.now() - started < timeoutMs) {
+      assertAutomationNotStopped();
       if (findControlByLabel(fieldLabel, allPageElements())) {
         if (moves) addLog('info', 'virtualised-field-auto-scroll-mounted', { field: fieldLabel, moves });
         return true;
       }
+      // Template hydration can replace the viewport during the scan.
+      scroller = activeEventFormScroller();
       // ILS can render a compact form without the normal
       // sn-form-column-layout-sections host. Use the active Event panel's
       // bounded scroller discovery in that layout rather than merely waiting
@@ -6681,7 +6685,7 @@ function startSNAI() {
         continue;
       }
       const before = scroller.scrollTop;
-      const step = Math.max(180, Math.round(scroller.clientHeight * 0.82));
+      const step = Math.max(240, Math.round(scroller.clientHeight * 0.9));
       const bottom = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
       await smoothActiveFormScroll(scroller, Math.min(bottom, before + step));
       moves += 1;
@@ -6689,8 +6693,11 @@ function startSNAI() {
       await sleep(150);
       if (scroller.scrollTop === before && before >= bottom) {
         const moved = revealNextActiveEventFormSection();
-        if (!moved) break;
-      }
+        if (!moved && ++bottomStalls >= 4) break;
+        // Virtual forms can grow only after a bottom scroll hydrates the next
+        // section. Do not declare a missing field on the first bottom frame.
+        if (!moved) await sleep(250);
+      } else bottomStalls = 0;
     }
     const mounted = Boolean(findControlByLabel(fieldLabel, allPageElements()));
     addLog(mounted ? 'info' : 'warn', 'virtualised-field-auto-scroll-finished', { field: fieldLabel, moves, mounted });
@@ -7145,12 +7152,23 @@ function startSNAI() {
   }
 
   async function waitForControlByLabel(label, timeoutMs = 6000) {
+    if (comparableLabel(label) === 'attached knowledge') timeoutMs = Math.max(timeoutMs,12000);
     const started = performance.now();
     let searched = false;
     while (performance.now() - started < timeoutMs) {
       assertAutomationNotStopped();
       const field = findControlByLabel(label);
       if (field) {
+        // Stable page marker, without changing ServiceNow's own IDs or URL.
+        // scrollIntoView traverses ALL nested scrollports and shadow hosts,
+        // unlike adjusting only the first visible form column's scrollTop.
+        field.dataset.snAiScrollTarget = comparableLabel(label).replace(/ /g,'-');
+        field.style.scrollMarginTop = '80px';
+        field.style.scrollMarginBottom = '48px';
+        field.scrollIntoView({behavior:'instant',block:'center',inline:'nearest'});
+        await sleep(150);
+        const anchoredField = findControlByLabel(label);
+        if (!anchoredField || !anchoredField.isConnected) { searched = false;continue; }
         const scroller = activeEventFormScroller();
         if (scroller instanceof HTMLElement) {
           const viewport = scroller.getBoundingClientRect();
@@ -7181,7 +7199,7 @@ function startSNAI() {
       }
       if (!searched) {
         searched = true;
-        await revealVirtualisedActiveEventField(label, Math.min(2600, Math.max(0, timeoutMs - (performance.now() - started))));
+        await revealVirtualisedActiveEventField(label, Math.min(8000, Math.max(0, timeoutMs - (performance.now() - started))));
       } else await sleep(100);
     }
     return null;
@@ -16241,7 +16259,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.171' });
+    addLog('info', 'helper-version', { version: '2.36.172' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
