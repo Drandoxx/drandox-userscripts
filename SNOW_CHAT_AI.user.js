@@ -3006,6 +3006,9 @@ function installChatSnippets() {
 }
 
 function startSNAI() {
+  // The classic STACK new-call route receives only the scoped KB formatter
+  // above, not Workspace automation or an extra launcher.
+  if (/\/new_call\.do$/.test(location.pathname) || location.pathname.includes('/target/new_call.do')) return;
   const workspacePage = location.hostname === 'kingfisher.service-now.com'
     && location.pathname.startsWith('/now/workspace/');
   'use strict';
