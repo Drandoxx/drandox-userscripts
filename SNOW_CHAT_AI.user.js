@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.181
+// @version      2.36.182
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -1530,9 +1530,17 @@
       background:transparent!important;position:relative;z-index:2;
     }
     :host(sn-agent-inbox) {
-      background:radial-gradient(ellipse at 30% 70%,color-mix(in srgb,var(--sn-theme-ac94ec) 15%,transparent),transparent 65%),var(--sn-theme-1c1827)!important;
-      background-size:130% 140%!important;
-      animation:sn-ai-inbox-nebula 32s ease-in-out infinite alternate;
+      background-color:var(--sn-theme-1c1827)!important;
+      background-image:var(--sn-chat-background)!important;
+      background-size:var(--sn-chat-background-size)!important;
+      background-repeat:var(--sn-chat-background-repeat)!important;
+      animation:var(--sn-chat-background-animation);
+    }
+    :host(sn-agent-inbox) .sn-inbox,
+    :host(sn-agent-inbox) .sn-presence--header,
+    :host(sn-agent-inbox) .sn-presence--header.is-uxf,
+    :host(sn-agent-presence-state) .sn-presence-state-container {
+      background:transparent!important;
     }
     @keyframes sn-ai-inbox-nebula { from { background-position:0% 0%; } to { background-position:100% 65%; } }
     @media (prefers-reduced-motion:reduce) { :host(sn-agent-inbox) { animation:none!important; } }
@@ -1543,10 +1551,11 @@
       margin:0!important;width:100%!important;height:100%!important;box-sizing:border-box!important;
       box-shadow:inset 0 0 18px #00000028!important;
       background-color:transparent!important;
-      background-image:radial-gradient(ellipse at 30% 62%,color-mix(in srgb,var(--sn-theme-ac94ec) 17%,transparent),transparent 58%),radial-gradient(ellipse at 80% 78%,color-mix(in srgb,var(--sn-theme-9de2f5) 8%,transparent),transparent 46%)!important;
+      background-image:none!important;
     }
     .sn-inbox-empty-state-content { visibility:hidden!important; }
     .sn-inbox-empty-state::before {
+      display:none!important;
       content:'';position:absolute;inset:0;pointer-events:none;opacity:.5;
       background-image:radial-gradient(circle at 20% 30%,var(--sn-theme-c8d7ef) 0 .7px,transparent 1.2px),radial-gradient(circle at 80% 70%,var(--sn-theme-ac94ec) 0 .6px,transparent 1.1px),radial-gradient(circle at 40% 60%,var(--sn-theme-c8d7ef) 0 .5px,transparent 1px);
       background-size:173px 229px,257px 313px,127px 347px;
@@ -16447,7 +16456,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.181' });
+    addLog('info', 'helper-version', { version: '2.36.182' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
