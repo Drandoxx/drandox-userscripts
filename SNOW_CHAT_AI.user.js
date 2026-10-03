@@ -1397,7 +1397,7 @@
     }
     @keyframes sn-ai-inbox-stars { to { background-position:5px -6px,-4px 5px; } }
     .sn-ai-inbox-standby {
-      position:absolute;left:12px;right:12px;top:58%;display:flex;align-items:center;justify-content:center;gap:8px;
+      position:absolute;left:12px;right:12px;top:58%;display:flex!important;align-items:center;justify-content:center;gap:8px;
       color:var(--sn-theme-a8b8d1);font-size:12px;line-height:1.5;pointer-events:none;
     }
     .sn-ai-inbox-standby-dot { width:6px;height:6px;border-radius:50%;background:var(--sn-theme-a8b8d1); }
@@ -1470,6 +1470,7 @@
   function installInboxStandby(element) {
     if (!element.matches?.('.sn-inbox-empty-state') || element.querySelector('.sn-ai-inbox-standby')) return;
     const standby = document.createElement('div');standby.className = 'sn-ai-inbox-standby';
+    standby.style.display = 'none'; // Remains hidden when theme styles are disabled.
     standby.setAttribute('role','status');
     const dot = document.createElement('span');dot.className = 'sn-ai-inbox-standby-dot';dot.setAttribute('aria-hidden','true');
     const text = document.createElement('span');text.className = 'sn-ai-inbox-standby-text';
