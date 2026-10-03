@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.103
+// @version      2.36.104
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -722,6 +722,23 @@
     .now-tab.is-selected .now-tab-icon { color:var(--sn-theme-dcd1ff)!important; }
     .now-tab:focus-visible,.now-tab-dropdown:focus-visible {
       outline-color:var(--sn-theme-ac94ec)!important;
+    }
+    #local-sn-ai-update-notification,#local-sn-ai-update-reload-notification,
+    [data-sn-ai-notification="accepted"],#local-sn-ai-notification-settings-error,
+    #local-sn-chatgpt-web-iframe-status {
+      background:var(--sn-theme-251f31)!important;color:var(--sn-theme-e6edf9)!important;
+      border-color:var(--sn-theme-655573)!important;
+    }
+    #local-sn-ai-update-notification,#local-sn-ai-update-reload-notification,
+    [data-sn-ai-notification="accepted"] { border-left:3px solid var(--sn-theme-ac94ec)!important; }
+    #local-sn-ai-notification-settings-error,#local-sn-chatgpt-web-iframe-status {
+      border-left:3px solid var(--sn-theme-fa99aa)!important;
+    }
+    #local-sn-ai-update-notification strong,#local-sn-ai-update-notification span,
+    #local-sn-ai-update-notification a,#local-sn-ai-update-notification button,
+    #local-sn-ai-update-reload-notification button,[data-sn-ai-notification] button,
+    #local-sn-ai-notification-settings-error button,#local-sn-chatgpt-web-iframe-status button {
+      color:inherit!important;
     }
     .sn-inbox,.sn-inbox .sn-card-list { border-color:var(--sn-theme-423750)!important; }
     .sn-inbox .sn-presence--header,.sn-inbox .sn-presence--header.is-uxf,
@@ -15190,7 +15207,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.103' });
+    addLog('info', 'helper-version', { version: '2.36.104' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -15966,6 +15983,7 @@ function startSNAI() {
     };
     const notice = () => {
       const box = document.createElement('div');
+      box.dataset.snAiNotification = 'accepted';
       box.setAttribute('role', 'status');
       box.style.cssText = 'position:fixed;right:20px;bottom:100px;z-index:2147483647;max-width:calc(100vw - 40px);width:440px;box-sizing:border-box;padding:24px 48px 24px 24px;border:1px solid #62b99d;border-radius:10px;background:#16392e;color:#e5fff5;font:17px/1.5 system-ui;box-shadow:0 5px 24px #0005';
       box.textContent = 'New chat has been automatically accepted. Click on X to clear this notification';
