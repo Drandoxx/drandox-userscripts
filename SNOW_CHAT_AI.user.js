@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.209
+// @version      2.36.210
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -2422,10 +2422,62 @@
     }
     :host(sn-knowledge-detail) .sn-card { border:0!important;margin:0!important;padding:16px!important; }
     :host(sn-kb-content) article { margin:0!important;padding:0!important; }
+    :host(sn-kb-content) article img,
+    :host(sn-knowledge-detail) article img {
+      max-width:100%!important;height:auto!important;box-sizing:border-box!important;
+      object-fit:contain!important;
+    }
   `;
-  const kbSearchPages = new Map();
+  const kbNumberCache = new Map();
+  const kbMetadataFetch = window.fetch.bind(window);
+  let kbLookupBusy = false;
+  let kbLookupPausedUntil = 0;
   const normalizeKBTitle = text => String(text || '').replace(/\s+/g,' ').trim();
+  function kbSessionToken() {
+    // Read the bootstrap token locally; never persist it, log it or expose it
+    // to another origin. DOM access avoids unsafeWindow and page-world hooks.
+    for (const script of document.scripts) {
+      if (script.src) continue;
+      const match = script.textContent.match(/\bg_ck\s*=\s*["']([^"']+)["']/);
+      if (match) return match[1];
+    }
+    return '';
+  }
+  async function lookupKBMetadata(titles) {
+    if (kbLookupBusy || Date.now() < kbLookupPausedUntil || !titles.length) return;
+    const token = kbSessionToken();
+    if (!token) { kbLookupPausedUntil = Date.now() + 30000;return; }
+    kbLookupBusy = true;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(),8000);
+    try {
+      const query = titles.map(title => 'short_description=' + title).join('^OR');
+      const params = new URLSearchParams({sysparm_query:query,
+        sysparm_fields:'number,short_description',sysparm_limit:'200'});
+      const response = await kbMetadataFetch('/api/now/table/kb_knowledge?' + params,
+        {method:'GET',credentials:'same-origin',signal:controller.signal,
+          headers:{Accept:'application/json','X-UserToken':token}});
+      if (!response.ok) throw new Error('KB metadata HTTP ' + response.status);
+      const payload = await response.json();
+      if (!Array.isArray(payload.result) || payload.result.length >= 200) throw new Error('KB metadata incomplete');
+      for (const title of titles) {
+        const key = normalizeKBTitle(title);
+        const numbers = new Set(payload.result.filter(item => normalizeKBTitle(item.short_description) === key)
+          .map(item => item.number).filter(number => /^KB\d+$/.test(number || '')));
+        // Versions of one article share a number. Different articles with an
+        // identical title are ambiguous: never guess which search result it is.
+        kbNumberCache.set(key,{number:numbers.size === 1 ? [...numbers][0] : '',expires:Date.now()+300000});
+      }
+      if (kbNumberCache.size > 300) kbNumberCache.delete(kbNumberCache.keys().next().value);
+      scheduleKBSearchDecoration();
+    } catch {
+      // Metadata is optional: fail quietly, never delay native record/presence
+      // requests, and prevent repeated retries on every DOM mutation.
+      kbLookupPausedUntil = Date.now() + 60000;
+    } finally { clearTimeout(timeout);kbLookupBusy = false; }
+  }
   function decorateKBSearchResults() {
+    const missing = new Set();
     for (const root of spaceRoots) {
       if (!root.host?.matches('sn-aa-results-list')) continue;
       const cards = [...root.querySelectorAll('sn-aa-result-list-item')]
@@ -2434,23 +2486,23 @@
       const headings = cards.map(card => card.querySelector('now-card-header')?.shadowRoot?.querySelector('.now-card-header-headings'));
       if (headings.some(heading => !heading)) continue;
       const titles = headings.map(heading => normalizeKBTitle(heading.querySelector('h3')?.textContent));
-      // Match the entire ordered page, not a title-only lookup: duplicate
-      // article titles can belong to different KB records.
-      const page = [...kbSearchPages.values()].reverse().find(items => items.length === cards.length
-        && items.every((item,index) => normalizeKBTitle(item.title) === titles[index]));
-      if (!page) continue;
       headings.forEach((heading,index) => {
         let badge = heading.querySelector('.sn-ai-search-kb-number');
-        const number = page[index].number;
+        const title = titles[index];
+        let entry = kbNumberCache.get(title);
+        if (entry?.expires <= Date.now()) { kbNumberCache.delete(title);entry = null; }
+        // Encoded-query separators must never be accepted from article titles.
+        if (!entry && title && title.length <= 240 && !/[\^\r\n]/.test(title)) missing.add(title);
+        const number = entry?.number;
         if (!/^KB\d+$/.test(number || '')) { badge?.remove();return; }
         if (!badge) { badge = document.createElement('span');badge.className = 'sn-ai-search-kb-number';heading.prepend(badge); }
         if (badge.textContent !== number) badge.textContent = number;
       });
     }
+    void lookupKBMetadata([...missing].slice(0,10));
   }
-  // Do not replace the page's fetch/XHR functions. Cross-sandbox request hooks
-  // can break native Workspace hydration and presence requests. KB metadata
-  // enrichment stays dormant until it has a non-intercepting data source.
+  // Separate read-only requests only: never replace page fetch/XHR or consume
+  // any native Request/Response body.
   let kbDecorationFrame = 0;
   function scheduleKBSearchDecoration() {
     if (kbDecorationFrame) return;
@@ -16908,7 +16960,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.209' });
+    addLog('info', 'helper-version', { version: '2.36.210' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
