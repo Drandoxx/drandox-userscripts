@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.148
+// @version      2.36.149
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -932,7 +932,7 @@
     }
     :host(sn-workspace-tab) { position:relative;z-index:4; }
     :host(sn-workspace-tab:has(.is-selected)) { z-index:2; }
-    :host(sn-workspace-tab[component-id="module"]) { z-index:auto;margin-inline-end:-4px; }
+    :host(sn-workspace-tab[component-id="module"]) { z-index:auto;margin-inline-end:4px; }
     .sn-chrome-one-tab[aria-label="Inbox"],.sn-chrome-one-tab.is-module {
       --sn-inbox-surface:color-mix(in srgb,var(--sn-theme-251f31) 84%,var(--sn-theme-ac94ec) 16%);
       background:var(--sn-inbox-surface)!important;border-radius:0!important;
@@ -1492,6 +1492,23 @@
       border-radius: 6px !important;
       min-height: 32px;
     }
+    select[data-sn-ai-presence] {
+      --sn-status-color:#c5bdd6;
+      background:color-mix(in srgb,var(--sn-theme-191621) 88%,var(--sn-status-color) 12%)!important;
+      color:var(--sn-status-color)!important;
+      border-color:color-mix(in srgb,var(--sn-status-color) 48%,var(--sn-theme-423750))!important;
+      box-shadow:none!important;
+    }
+    select[data-sn-ai-presence][data-sn-ai-status="Available"] { --sn-status-color:#91d9b2; }
+    select[data-sn-ai-presence][data-sn-ai-status="Away"] { --sn-status-color:#e7ca87; }
+    select[data-sn-ai-presence] + span { color:var(--sn-status-color,#c5bdd6)!important; }
+    select[data-sn-ai-presence][data-sn-ai-status="Available"] + span { color:#91d9b2!important; }
+    select[data-sn-ai-presence][data-sn-ai-status="Away"] + span { color:#e7ca87!important; }
+    select[data-sn-ai-presence] option {
+      background:var(--sn-theme-191621)!important;color:#c5bdd6!important;
+    }
+    select[data-sn-ai-presence] option[value="Available"] { color:#91d9b2!important; }
+    select[data-sn-ai-presence] option[value="Away"] { color:#e7ca87!important; }
     sn-agent-presence-state {
       display: block !important;
       width: 100% !important;
@@ -15793,7 +15810,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.148' });
+    addLog('info', 'helper-version', { version: '2.36.149' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -16297,6 +16314,7 @@ function startSNAI() {
       }
       // Always show actual server-reported state, not merely the preference.
       if (current) select.value = current;
+      select.dataset.snAiStatus = current || 'Offline';
       if (!presencePreference.desired) message.textContent = 'Using ServiceNow status · unlocked';
       else if (current === presencePreference.desired) message.textContent = 'Your selection is held until reload';
       else if (presencePreference.failures >= 3) message.textContent = `ServiceNow reports ${current}. Could not restore ${presencePreference.desired}; select it again to retry.`;
