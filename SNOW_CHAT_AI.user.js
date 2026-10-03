@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.168
+// @version      2.36.169
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -1528,6 +1528,18 @@
   let inboxPreviewEnabled = false;
   let inboxPreviewSnapshot = null;
   const capturedPreviewCards = new WeakSet();
+  function isInboxPreviewList(list) {
+    return list.matches?.('.sn-card-list') && list.getRootNode()?.host?.matches('sn-agent-inbox,sn-inbox')
+      && list.getRootNode().querySelector('.sn-card-list') === list;
+  }
+  function isRejectedPreviewNode(spec) {
+    const attributes = Object.fromEntries(spec.attributes || []);
+    if (attributes['data-sn-ai-inbox-proxy'] === 'Reject' || 'data-sn-ai-inbox-reject-hidden' in attributes) return true;
+    const label = attributes['aria-label'] || attributes['data-tooltip'] || '';
+    if (/^(reject|decline)\b/i.test(label)) return true;
+    if (spec.tag === 'button' && /^(reject|decline)$/i.test((spec.children || []).map(c => c.text || '').join('').trim())) return true;
+    return spec.tag === 'now-button' && (spec.shadow || []).some(isRejectedPreviewNode);
+  }
   function snapshotIncomingNode(node) {
     if (node.nodeType === 3) return { text:node.textContent };
     if (!(node instanceof Element) || node.matches('[data-sn-ai-space-theme],script')) return null;
@@ -1537,6 +1549,7 @@
   }
   function restoreIncomingNode(spec) {
     if ('text' in spec) return document.createTextNode(spec.text);
+    if (isRejectedPreviewNode(spec)) return document.createDocumentFragment();
     // Never instantiate ServiceNow controllers or clone event handlers.
     const element = document.createElement(spec.tag.includes('-') ? 'div' : spec.tag);
     for (const [name,value] of spec.attributes || []) element.setAttribute(name,value);
@@ -1565,6 +1578,11 @@
     for (const root of spaceRoots) for (const list of root.querySelectorAll?.('.sn-card-list') || []) updateInboxPreview(list);
   }
   function updateInboxPreview(list) {
+    if (!isInboxPreviewList(list)) {
+      list.querySelector('.sn-ai-preview-toggle')?.remove();
+      list.querySelector('.sn-ai-incoming-preview')?.remove();
+      delete list.dataset.snAiPreview;return;
+    }
     list.dataset.snAiPreview = String(inboxPreviewEnabled);
     const card = list.querySelector('.sn-ai-incoming-preview');
     if (card) card.hidden = !inboxPreviewEnabled;
@@ -1575,7 +1593,7 @@
     list.querySelector('.sn-ai-preview-toggle')?.setAttribute('aria-pressed',String(inboxPreviewEnabled));
   }
   function installInboxPreview(list) {
-    if (!list.matches?.('.sn-card-list') || list.querySelector('.sn-ai-preview-toggle')) return;
+    if (!isInboxPreviewList(list) || list.querySelector('.sn-ai-preview-toggle')) return;
     const toggle = document.createElement('button');toggle.type = 'button';toggle.className = 'sn-ai-preview-toggle';
     toggle.style.display = 'none';
     toggle.textContent = 'Preview chat';toggle.title = 'Toggle a simulated incoming chat for styling. No real chat is created.';
@@ -1584,7 +1602,7 @@
     card.setAttribute('aria-label','Simulated incoming chat preview');
     // Local-only fixture, deliberately NOT a sn-inbox-card: acceptance code
     // cannot treat this as a server-assigned incoming interaction.
-    card.innerHTML = '<div class="sn-card-header"><strong>Incoming chat</strong><span class="sn-card-timer">00:12</span></div><div class="sn-card-body"><strong>PREVIEW01</strong><p>Alex Morgan · Service Desk</p><p>I need help signing in to my device.</p><small>Design preview · not a real interaction</small></div><div class="sn-card-footer"><button type="button" disabled>Decline</button><button type="button" disabled>Accept</button></div>';
+    card.innerHTML = '<div class="sn-card-header"><strong>Incoming chat</strong><span class="sn-card-timer">00:12</span></div><div class="sn-card-body"><strong>PREVIEW01</strong><p>Alex Morgan · Service Desk</p><p>I need help signing in to my device.</p><small>Design preview · not a real interaction</small></div><div class="sn-card-footer"><button type="button" disabled>Accept</button></div>';
     toggle.addEventListener('click',() => {
       inboxPreviewEnabled = !inboxPreviewEnabled;
       Promise.resolve(GM_setValue('sn-ai-inbox-preview-v1',inboxPreviewEnabled)).catch(console.warn);
@@ -16158,7 +16176,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.168' });
+    addLog('info', 'helper-version', { version: '2.36.169' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
