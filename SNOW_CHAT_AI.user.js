@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.182
+// @version      2.36.183
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -1460,6 +1460,21 @@
     .now-modal-header { background:var(--sn-theme-1c1827)!important; }
     .now-modal-body,.now-modal-footer { background:var(--sn-theme-1c1827)!important;color:var(--sn-theme-e6edf9)!important; }
     .now-modal-heading,.now-modal-body p,.now-modal-body slot { color:var(--sn-theme-e6edf9)!important; }
+    :host(sn-knowledge-detail) .sn-agent-assist,:host(sn-knowledge-detail) .sn-card,
+    :host(sn-knowledge-detail) .kb-header,:host(sn-knowledge-detail) .kb-content,
+    :host(sn-kb-content) article{background:var(--sn-theme-14121c)!important;color:var(--sn-theme-e6edf9)!important;border-color:var(--sn-theme-423750)!important}
+    :host(sn-knowledge-detail) .kb-title,:host(sn-knowledge-detail) .kb-title span,
+    :host(sn-knowledge-detail) .kb-breadcrumb,:host(sn-knowledge-detail) .kb-breadcrumb span,
+    :host(sn-knowledge-detail) .sn-meta-list-item,:host(sn-knowledge-detail) .sn-meta-list-item span,
+    :host(sn-kb-content) article *{color:var(--sn-theme-e6edf9)!important;border-color:var(--sn-theme-423750)!important}
+    :host(sn-kb-content) article :is(p,div,span,h1,h2,h3,h4,li,td,th){background-color:transparent!important}
+    :host(sn-kb-content) article .head{background:var(--sn-theme-49365a)!important;color:var(--sn-theme-e6edf9)!important;border-radius:4px;padding:2px 6px}
+    :host(sn-kb-content) article a:link,:host(sn-kb-content) article a:visited{color:var(--sn-theme-ac94ec)!important;text-decoration-color:var(--sn-theme-ac94ec)!important}
+    :host(sn-kb-content) article a:hover,:host(sn-kb-content) article a:active{color:var(--sn-theme-e6edf9)!important;text-decoration:underline!important}
+    :host(sn-kb-content) article a:focus-visible{outline:2px solid var(--sn-theme-ac94ec)!important;outline-offset:2px}
+    .sn-ai-workspace-kb-copy{font:inherit;padding:3px 8px;border:1px solid var(--sn-theme-655573,#665184)!important;border-radius:6px!important;background:var(--sn-theme-251f31,#241c33)!important;color:var(--sn-theme-ac94ec,#a78bfa)!important;text-decoration:none!important;cursor:pointer;box-shadow:none!important}
+    .sn-ai-workspace-kb-copy:hover{background:var(--sn-theme-49365a,#382b50)!important}
+    .sn-ai-workspace-kb-copy:focus-visible{outline:2px solid var(--sn-theme-ac94ec,#a78bfa)!important;outline-offset:2px}
     :host(sn-form-internal-attachments-list) .sn-card,
     :host(sn-form-internal-attachments-list) .sn-attachment-list-wrapper,
     :host(sn-form-internal-attachments-list) .sn-card-list{background:var(--sn-theme-14121c)!important}
@@ -2249,6 +2264,24 @@
     ensureSpaceRoot(root);
     if (roots.has(root)) return;
     roots.add(root);
+    const convertKBNumber = element => {
+      if (!element.matches?.('a.now-text-link') || !/^KB\d{7}$/.test(element.textContent.trim())) return;
+      let ancestor = element;
+      while (ancestor && ancestor.localName !== 'sn-knowledge-detail') ancestor = ancestor.parentElement || ancestor.getRootNode()?.host;
+      if (!ancestor) return;
+      const number = element.textContent.trim();
+      const button = document.createElement('button');button.type = 'button';button.className = 'sn-ai-workspace-kb-copy';button.textContent = number;button.title = 'Copy ' + number;button.setAttribute('aria-label','Copy ' + number);
+      button.addEventListener('click',async event => {
+        event.preventDefault();event.stopImmediatePropagation();
+        try {
+          if (typeof GM_setClipboard === 'function') await GM_setClipboard(number,'text');
+          else await navigator.clipboard.writeText(number);
+          button.textContent = 'Copied KB';setTimeout(() => { if (button.isConnected) button.textContent = number; },1400);
+        } catch(error) { console.warn('[SN AI KB copy]',error); }
+      });
+      element.replaceWith(button);
+    };
+    root.querySelectorAll?.('a.now-text-link').forEach(convertKBNumber);
     // Capture inside each shadow root before native Inbox toggle handlers.
     // Only block collapsing an open Inbox; opening a hidden one stays native.
     const inboxControl = '.sn-workspace-toolbar-button[aria-label="Inbox"],.sn-chrome-one-tab[aria-label="Inbox"]';
@@ -2273,7 +2306,10 @@
       // Workspace sometimes clears a mounted root's children, including our
       // style. Restore only this changed root; never rescan the whole page.
       ensureSpaceRoot(root);
-      for (const record of records) for (const node of record.addedNodes) discover(node);
+      for (const record of records) for (const node of record.addedNodes) {
+        if (node.nodeType === 1) { convertKBNumber(node);node.querySelectorAll?.('a.now-text-link').forEach(convertKBNumber); }
+        discover(node);
+      }
     });
     observer.observe(root, { childList: true, subtree: true });
     discover(root);
@@ -16456,7 +16492,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.182' });
+    addLog('info', 'helper-version', { version: '2.36.183' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
