@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.210
+// @version      2.36.211
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -2392,6 +2392,65 @@
       display:inline-block;margin:0 0 6px;color:var(--sn-theme-ac94ec)!important;
       font:600 12px/1.4 system-ui,sans-serif;background:transparent!important;
     }
+    .aa-card-list { position:relative; }
+    .aa-card-list[data-sn-ai-kb-loading] { min-height:180px; }
+    .aa-card-list[data-sn-ai-kb-loading] > sn-aa-result-list-item { visibility:hidden!important; }
+    .sn-ai-kb-loading {
+      position:absolute;inset:0;z-index:20;display:grid;place-content:center;justify-items:center;
+      gap:14px;border-radius:10px;background:var(--sn-record-form-background);
+      color:var(--sn-theme-c8d7ef);font:14px/1.5 system-ui;
+    }
+    .sn-ai-kb-loading-spinner {
+      width:28px;height:28px;border:2px solid var(--sn-theme-423750);
+      border-top-color:var(--sn-theme-ac94ec);border-radius:50%;animation:sn-ai-kb-spin .85s linear infinite;
+    }
+    @keyframes sn-ai-kb-spin { to { transform:rotate(360deg); } }
+    @media(prefers-reduced-motion:reduce){.sn-ai-kb-loading-spinner{animation:none}}
+    now-card.aa-card[data-sn-ai-kb-copy-card] { position:relative;cursor:copy; }
+    now-card-header.aa-card-header[data-sn-ai-kb-copy-header] { display:block;padding-right:42px!important; }
+    .sn-ai-kb-open.sn-ai-kb-open {
+      position:absolute;right:12px;top:12px;z-index:5;width:32px;height:32px;display:grid;place-items:center;
+      padding:6px;border:1px solid var(--sn-theme-655573)!important;border-radius:8px;
+      background:var(--sn-theme-191621)!important;color:var(--sn-theme-ac94ec)!important;cursor:pointer;
+      transition:background .15s,border-color .15s;
+    }
+    .sn-ai-kb-open.sn-ai-kb-open:hover { background:var(--sn-theme-302951)!important;border-color:var(--sn-theme-ac94ec)!important; }
+    .sn-ai-kb-open:focus-visible { outline:2px solid var(--sn-theme-ac94ec);outline-offset:2px; }
+    .sn-ai-kb-open svg { width:20px;height:20px;pointer-events:none; }
+    #sn-ai-kb-toast {
+      position:fixed;z-index:2147483647;
+      padding:12px 20px;border:1px solid var(--sn-theme-655573);border-radius:12px;
+      background:var(--sn-theme-251f31);color:var(--sn-theme-e6edf9);font:14px/1.5 system-ui;
+      box-shadow:0 8px 30px #0004;pointer-events:none;
+    }
+    button.now-dropdown.now-dropdown[aria-label="More Actions"] {
+      min-width:36px;border:1px solid var(--sn-theme-655573)!important;border-radius:8px!important;
+      background:var(--sn-theme-251f31)!important;color:var(--sn-theme-c8d7ef)!important;
+      box-shadow:none!important;transition:background .15s,border-color .15s;
+    }
+    button.now-dropdown.now-dropdown[aria-label="More Actions"]:is(:hover,.is-opened) {
+      background:var(--sn-theme-302951)!important;border-color:var(--sn-theme-ac94ec)!important;
+      color:var(--sn-theme-e6edf9)!important;
+    }
+    button.now-dropdown.now-dropdown[aria-label="More Actions"]:focus-visible {
+      outline:2px solid var(--sn-theme-ac94ec)!important;outline-offset:2px!important;
+      box-shadow:none!important;
+    }
+    .now-dropdown-list:has([role="menu"][aria-label="More Actions"]) {
+      padding:5px!important;border:1px solid var(--sn-theme-655573)!important;border-radius:12px!important;
+      background:var(--sn-theme-251f31)!important;box-shadow:0 10px 30px #0004!important;
+    }
+    [role="menu"][aria-label="More Actions"] .now-dropdown-list-item {
+      margin:2px 0!important;padding:10px 12px!important;border-radius:7px!important;
+      border:0!important;background:transparent!important;color:var(--sn-theme-e6edf9)!important;
+    }
+    [role="menu"][aria-label="More Actions"] .now-dropdown-list-item:is(:hover,:focus-visible,.is-focused) {
+      background:var(--sn-theme-49365a)!important;outline:none!important;
+    }
+    [role="menu"][aria-label="More Actions"] .now-dropdown-list-divider {
+      margin:5px 10px!important;height:1px!important;border:0!important;
+      background:var(--sn-theme-423750)!important;opacity:.65!important;
+    }
     /* KB CARD SURFACE GROUP: title strips and card shells share one token. */
     :host,:root { --sn-kb-card-surface:var(--sn-theme-251f31); }
     :host(now-card.aa-card) .nowCardContainer,
@@ -2432,6 +2491,77 @@
   const kbMetadataFetch = window.fetch.bind(window);
   let kbLookupBusy = false;
   let kbLookupPausedUntil = 0;
+  const kbCopyCards = new WeakSet();
+  const kbOpeningCards = new WeakSet();
+  let kbToastTimer = 0;
+  const kbOpenIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-book-open-text preview-icon"><path d="M12 5v16"/><path d="M16 13h2"/><path d="M16 9h2"/><path d="M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z"/><path d="M6 13h2"/><path d="M6 9h2"/></svg>';
+  function showKBCopyNotice(text,point) {
+    clearTimeout(kbToastTimer);
+    let toast = document.getElementById('sn-ai-kb-toast');
+    if (!toast) { toast=document.createElement('div');toast.id='sn-ai-kb-toast';toast.setAttribute('role','status');document.body.append(toast); }
+    toast.textContent=text;
+    const bounds=toast.getBoundingClientRect();
+    const x=point?.x ?? window.innerWidth/2;
+    const y=point?.y ?? window.innerHeight/2;
+    toast.style.left=Math.max(8,Math.min(x-bounds.width/2,window.innerWidth-bounds.width-8))+'px';
+    toast.style.top=Math.max(8,Math.min(y-bounds.height-14,window.innerHeight-bounds.height-8))+'px';
+    kbToastTimer=setTimeout(()=>toast.remove(),3000);
+  }
+  async function copySearchKB(card,event) {
+    const rect=card.getBoundingClientRect();
+    const point=event?.type==='click' && event.detail>0 ? {x:event.clientX,y:event.clientY}
+      : {x:rect.left+rect.width/2,y:rect.top};
+    const number=card.dataset.snAiKbNumber;
+    if (!/^KB\d+$/.test(number || '')) { showKBCopyNotice('KB number unavailable · use the open button',point);return; }
+    try {
+      if (typeof GM_setClipboard === 'function') await GM_setClipboard(number,'text');
+      else await navigator.clipboard.writeText(number);
+      showKBCopyNotice(number + ' copied to clipboard',point);
+    } catch { showKBCopyNotice('Could not copy ' + number,point); }
+  }
+  function installKBCardActions(card,title,number) {
+    if (card.dataset.snAiKbNumber !== (number || '')) card.dataset.snAiKbNumber=number || '';
+    if (!card.hasAttribute('data-sn-ai-kb-copy-card')) card.setAttribute('data-sn-ai-kb-copy-card','');
+    const header=card.querySelector('now-card-header');
+    if (header && !header.hasAttribute('data-sn-ai-kb-copy-header')) header.setAttribute('data-sn-ai-kb-copy-header','');
+    let open=card.querySelector('.sn-ai-kb-open');
+    if (!open) {
+      open=document.createElement('button');open.type='button';open.className='sn-ai-kb-open';open.innerHTML=kbOpenIcon;card.append(open);
+    }
+    const label='Open KB · ' + title;
+    if (open.getAttribute('aria-label') !== label) { open.setAttribute('aria-label',label);open.title=label; }
+    if (kbCopyCards.has(card)) return;
+    kbCopyCards.add(card);
+    const scope=card.getRootNode();
+    scope.addEventListener('click',event=>{
+      if (kbOpeningCards.has(card) || !event.composedPath().includes(card)) return;
+      event.preventDefault();event.stopImmediatePropagation();
+      if (event.composedPath().some(element=>element.matches?.('.sn-ai-kb-open'))) {
+        // Forward through the existing native card event path only for preview.
+        kbOpeningCards.add(card);
+        try { (card.shadowRoot?.querySelector('[role="button"],button') || card).click(); }
+        finally { kbOpeningCards.delete(card); }
+      } else void copySearchKB(card,event);
+    },true);
+    scope.addEventListener('keydown',event=>{
+      if (!event.composedPath().includes(card) || event.composedPath().some(element=>element.matches?.('.sn-ai-kb-open'))
+        || !['Enter',' '].includes(event.key)) return;
+      event.preventDefault();event.stopImmediatePropagation();void copySearchKB(card,event);
+    },true);
+  }
+  function setKBListLoading(root,loading) {
+    const list=root.querySelector('.aa-card-list');
+    if (!list) return;
+    if (list.hasAttribute('data-sn-ai-kb-loading') !== loading) list.toggleAttribute('data-sn-ai-kb-loading',loading);
+    if (list.getAttribute('aria-busy') !== String(loading)) list.setAttribute('aria-busy',String(loading));
+    let overlay=list.querySelector('.sn-ai-kb-loading');
+    if (!loading) { overlay?.remove();return; }
+    if (!overlay) {
+      overlay=document.createElement('div');overlay.className='sn-ai-kb-loading';overlay.setAttribute('role','status');
+      overlay.innerHTML='<span class="sn-ai-kb-loading-spinner" aria-hidden="true"></span><span>Preparing knowledge articles…</span>';
+      list.append(overlay);
+    }
+  }
   const normalizeKBTitle = text => String(text || '').replace(/\s+/g,' ').trim();
   function kbSessionToken() {
     // Read the bootstrap token locally; never persist it, log it or expose it
@@ -2446,7 +2576,7 @@
   async function lookupKBMetadata(titles) {
     if (kbLookupBusy || Date.now() < kbLookupPausedUntil || !titles.length) return;
     const token = kbSessionToken();
-    if (!token) { kbLookupPausedUntil = Date.now() + 30000;return; }
+    if (!token) { kbLookupPausedUntil = Date.now() + 30000;scheduleKBSearchDecoration();return; }
     kbLookupBusy = true;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(),8000);
@@ -2474,7 +2604,7 @@
       // Metadata is optional: fail quietly, never delay native record/presence
       // requests, and prevent repeated retries on every DOM mutation.
       kbLookupPausedUntil = Date.now() + 60000;
-    } finally { clearTimeout(timeout);kbLookupBusy = false; }
+    } finally { clearTimeout(timeout);kbLookupBusy = false;scheduleKBSearchDecoration(); }
   }
   function decorateKBSearchResults() {
     const missing = new Set();
@@ -2482,22 +2612,25 @@
       if (!root.host?.matches('sn-aa-results-list')) continue;
       const cards = [...root.querySelectorAll('sn-aa-result-list-item')]
         .map(item => item.shadowRoot?.querySelector('now-card.aa-card')).filter(Boolean);
-      if (!cards.length) continue;
+      if (!cards.length) { setKBListLoading(root,false);continue; }
       const headings = cards.map(card => card.querySelector('now-card-header')?.shadowRoot?.querySelector('.now-card-header-headings'));
       if (headings.some(heading => !heading)) continue;
       const titles = headings.map(heading => normalizeKBTitle(heading.querySelector('h3')?.textContent));
+      let pending=false;
       headings.forEach((heading,index) => {
         let badge = heading.querySelector('.sn-ai-search-kb-number');
         const title = titles[index];
         let entry = kbNumberCache.get(title);
         if (entry?.expires <= Date.now()) { kbNumberCache.delete(title);entry = null; }
         // Encoded-query separators must never be accepted from article titles.
-        if (!entry && title && title.length <= 240 && !/[\^\r\n]/.test(title)) missing.add(title);
+        if (!entry && title && title.length <= 240 && !/[\^\r\n]/.test(title)) { missing.add(title);pending=true; }
         const number = entry?.number;
+        installKBCardActions(cards[index],title,number);
         if (!/^KB\d+$/.test(number || '')) { badge?.remove();return; }
         if (!badge) { badge = document.createElement('span');badge.className = 'sn-ai-search-kb-number';heading.prepend(badge); }
         if (badge.textContent !== number) badge.textContent = number;
       });
+      setKBListLoading(root,pending && Date.now() >= kbLookupPausedUntil);
     }
     void lookupKBMetadata([...missing].slice(0,10));
   }
@@ -16960,7 +17093,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.210' });
+    addLog('info', 'helper-version', { version: '2.36.211' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
