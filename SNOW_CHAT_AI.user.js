@@ -1426,12 +1426,14 @@
     .sn-ai-inbox-standby[data-status="Away"] .sn-ai-inbox-standby-dot { background:#e7ca87; }
     @media (prefers-reduced-motion:reduce) { .sn-inbox-empty-state::before { animation:none!important; } }
     .sn-ai-preview-toggle {
+      display:block!important;
       position:absolute;top:8px;right:8px;z-index:4;padding:5px 9px;border-radius:6px;
       border:1px solid var(--sn-theme-655573);background:var(--sn-theme-191621);
       color:var(--sn-theme-c8d7ef);font:11px system-ui;cursor:pointer;
     }
     .sn-ai-preview-toggle[aria-pressed="true"] { border-color:var(--sn-theme-ac94ec);color:var(--sn-theme-ac94ec); }
     .sn-ai-incoming-preview {
+      display:block!important;
       position:absolute;top:44px;left:12px;right:12px;z-index:3;padding:14px;box-sizing:border-box;
       border:1px solid var(--sn-theme-655573);border-radius:9px;background:var(--sn-theme-1c1827);
       color:var(--sn-theme-e6edf9);font:13px/1.5 system-ui;box-shadow:0 4px 18px #0003;
@@ -1502,8 +1504,10 @@
   function installInboxPreview(list) {
     if (!list.matches?.('.sn-card-list') || list.querySelector('.sn-ai-preview-toggle')) return;
     const toggle = document.createElement('button');toggle.type = 'button';toggle.className = 'sn-ai-preview-toggle';
+    toggle.style.display = 'none';
     toggle.textContent = 'Preview chat';toggle.title = 'Toggle a simulated incoming chat for styling. No real chat is created.';
     const card = document.createElement('article');card.className = 'sn-ai-incoming-preview sn-card';
+    card.style.display = 'none';
     card.setAttribute('aria-label','Simulated incoming chat preview');
     // Local-only fixture, deliberately NOT a sn-inbox-card: acceptance code
     // cannot treat this as a server-assigned incoming interaction.
