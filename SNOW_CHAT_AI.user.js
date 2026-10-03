@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.170
+// @version      2.36.171
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -1461,6 +1461,8 @@
       border:1px solid var(--sn-theme-655573);background:var(--sn-theme-191621);
       color:var(--sn-theme-c8d7ef);font:11px system-ui;cursor:pointer;
     }
+    .sn-card-list:not([data-sn-ai-developer="true"]) .sn-ai-preview-toggle,
+    .sn-card-list:not([data-sn-ai-developer="true"]) .sn-ai-incoming-preview { display:none!important; }
     .sn-ai-preview-toggle[aria-pressed="true"] { border-color:var(--sn-theme-ac94ec);color:var(--sn-theme-ac94ec); }
     .sn-ai-incoming-preview {
       display:block!important;
@@ -1526,6 +1528,61 @@
   Promise.resolve(GM_getValue('sn-ai-space-theme-v1', false)).then(value => setSpaceTheme(value === true))
     .catch(error => console.warn('[SN AI theme]', error));
   let inboxPreviewEnabled = false;
+  let inboxDeveloperEnabled = false;
+  const incomingLogKey = 'sn-ai-incoming-log-session-v1';
+  let incomingLogState = {running:false,records:[]};
+  let incomingLogReady = false;
+  const incomingLogPending = [];
+  let incomingLogSaveChain = Promise.resolve();
+  function publishIncomingLogState() {
+    document.dispatchEvent(new CustomEvent('sn-ai-incoming-log-state',{detail:{running:incomingLogState.running,count:incomingLogState.records.length}}));
+  }
+  function persistIncomingLogs() {
+    const saved = JSON.parse(JSON.stringify(incomingLogState));
+    incomingLogSaveChain = incomingLogSaveChain.catch(console.warn).then(() => GM_setValue(incomingLogKey,saved));
+    publishIncomingLogState();return incomingLogSaveChain;
+  }
+  function recordIncomingChat(element) {
+    if (!incomingLogReady) { incomingLogPending.push(element);return; }
+    if (!incomingLogState.running || !element?.matches?.('sn-inbox-card') || !element.shadowRoot
+      || !element.shadowRoot.querySelector('.sn-card,now-card')) return;
+    const id = element.getAttribute('interaction-id') || element.getAttribute('sys-id') || element.getAttribute('component-id') || element.getAttribute('now-id');
+    if (!id) return;
+    const record = {kind:'incoming-chat',id,at:new Date().toISOString(),html:element.outerHTML,
+      shadowHTML:element.shadowRoot.innerHTML,snapshot:snapshotIncomingNode(element),theme:selectedSpaceTheme};
+    const index = incomingLogState.records.findIndex(item => item.id === id);
+    if (index < 0) incomingLogState.records.push(record);else incomingLogState.records[index] = record;
+    persistIncomingLogs().catch(console.warn);
+  }
+  function scanIncomingChats() {
+    for (const root of spaceRoots) for (const card of root.querySelectorAll?.('sn-inbox-card') || []) recordIncomingChat(card);
+  }
+  const incomingLogLoaded = Promise.resolve(GM_getValue(incomingLogKey,null)).then(saved => {
+    if (saved && Array.isArray(saved.records)) incomingLogState = {running:saved.running === true,records:saved.records};
+    incomingLogReady = true;publishIncomingLogState();
+    for (const element of incomingLogPending.splice(0)) recordIncomingChat(element);
+    if (incomingLogState.running) scanIncomingChats();
+  });
+  document.addEventListener('sn-ai-incoming-log-controller',event => {
+    if (typeof event.detail !== 'function') return;
+    event.detail({
+      state:() => ({running:incomingLogState.running,count:incomingLogState.records.length}),
+      toggle:async () => { await incomingLogLoaded;incomingLogState.running = !incomingLogState.running;await persistIncomingLogs();if (incomingLogState.running) scanIncomingChats(); },
+      clear:async () => { await incomingLogLoaded;incomingLogState.records = [];await persistIncomingLogs(); },
+      download:async () => {
+        await incomingLogLoaded;incomingLogState.running = false;await persistIncomingLogs();
+        const count = incomingLogState.records.length;
+        const url = URL.createObjectURL(new Blob([incomingLogState.records.map(record => JSON.stringify(record)).join('\n')],{type:'application/x-ndjson'}));
+        const link = document.createElement('a');link.href = url;link.download = `Incoming_${count}_chat_data.jsonl`;link.click();
+        setTimeout(() => URL.revokeObjectURL(url),1000);
+      }
+    });
+  });
+  function refreshInboxDeveloperMode() {
+    for (const root of spaceRoots) for (const list of root.querySelectorAll?.('.sn-card-list') || []) updateInboxPreview(list);
+  }
+  document.addEventListener('sn-ai-developer-mode',event => { inboxDeveloperEnabled = event.detail === true;refreshInboxDeveloperMode(); });
+  Promise.resolve(GM_getValue('sn-ai-developer-mode-v1',false)).then(value => { inboxDeveloperEnabled = value === true;refreshInboxDeveloperMode(); });
   let inboxPreviewSnapshot = null;
   const capturedPreviewCards = new WeakSet();
   function isInboxPreviewList(list) {
@@ -1544,7 +1601,7 @@
     if (node.nodeType === 3) return { text:node.textContent };
     if (!(node instanceof Element) || node.matches('[data-sn-ai-space-theme],script')) return null;
     const attributes = [...node.attributes].filter(a => !/^on|^(id|now-id|component-id|href|tabindex)$/i.test(a.name)).map(a => [a.name,a.value]);
-    return { tag:node.localName,attributes,children:[...node.childNodes].map(snapshotIncomingNode).filter(Boolean),
+    return { tag:node.localName,attributes,shadowHTML:node.shadowRoot?.innerHTML,children:[...node.childNodes].map(snapshotIncomingNode).filter(Boolean),
       shadow:node.shadowRoot ? [...node.shadowRoot.childNodes].map(snapshotIncomingNode).filter(Boolean) : null };
   }
   function restoreIncomingNode(spec) {
@@ -1578,6 +1635,9 @@
     const snapshot = snapshotIncomingNode(element);
     if (!snapshot?.shadow?.length || !element.shadowRoot.querySelector('.sn-card,now-card')) return;
     capturedPreviewCards.add(element);inboxPreviewSnapshot = snapshot;
+    // Allow the native component and our normal incoming-card presentation
+    // to finish mounting before persisting its complete nested DOM/styles.
+    setTimeout(() => recordIncomingChat(element),500);
     Promise.resolve(GM_setValue('sn-ai-inbox-preview-snapshot-v1',snapshot)).catch(console.warn);
     for (const root of spaceRoots) for (const list of root.querySelectorAll?.('.sn-card-list') || []) updateInboxPreview(list);
   }
@@ -1588,6 +1648,7 @@
       delete list.dataset.snAiPreview;return;
     }
     list.dataset.snAiPreview = String(inboxPreviewEnabled);
+    list.dataset.snAiDeveloper = String(inboxDeveloperEnabled);
     const card = list.querySelector('.sn-ai-incoming-preview');
     if (card) card.hidden = !inboxPreviewEnabled;
     if (card && inboxPreviewSnapshot && card._snPreviewSnapshot !== inboxPreviewSnapshot) {
@@ -16180,7 +16241,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.170' });
+    addLog('info', 'helper-version', { version: '2.36.171' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -16921,19 +16982,42 @@ function startSNAI() {
       document.dispatchEvent(new CustomEvent('sn-ai-inbox-reject-setting', { detail: rejectCheckbox.checked }));
     });
     rejectLabel.append('Show Reject Button', rejectCheckbox);
+    const developerLabel = document.createElement('label');developerLabel.className = 'sn-ai-general-toggle';
+    const developerSwitch = document.createElement('input');developerSwitch.type = 'checkbox';developerSwitch.setAttribute('role','switch');
+    gmGetValue('sn-ai-developer-mode-v1',false).then(value => { developerSwitch.checked = value === true; });
+    developerSwitch.addEventListener('change',() => {
+      gmSetValue('sn-ai-developer-mode-v1',developerSwitch.checked).catch(console.warn);
+      document.dispatchEvent(new CustomEvent('sn-ai-developer-mode',{detail:developerSwitch.checked}));
+    });
+    developerLabel.append('Developer mode',developerSwitch);
+    let incomingController;
+    document.dispatchEvent(new CustomEvent('sn-ai-incoming-log-controller',{detail:controller => { incomingController = controller; }}));
+    const logStatus = document.createElement('div');logStatus.setAttribute('role','status');logStatus.style.fontSize = '12px';
+    const logControls = document.createElement('div');logControls.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap';
+    const playPause = document.createElement('button');playPause.type = 'button';
+    function renderLogStatus(status) {
+      logStatus.textContent = `${status.running ? 'Collecting logs...' : 'Logs paused.'} ${status.count} incoming chat data collected`;
+      playPause.setAttribute('aria-label',status.running ? 'Pause incoming chat logging' : 'Start incoming chat logging');
+      playPause.title = playPause.getAttribute('aria-label');
+      // Lucide play/pause, ISC license: https://lucide.dev/icons/play
+      const shape = status.running ? '<rect x="14" y="3" width="5" height="18" rx="1"/><rect x="5" y="3" width="5" height="18" rx="1"/>' : '<polygon points="6 3 20 12 6 21 6 3"/>';
+      playPause.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${shape}</svg>`;
+    }
+    renderLogStatus(incomingController?.state() || {running:false,count:0});
+    document.addEventListener('sn-ai-incoming-log-state',event => renderLogStatus(event.detail));
+    playPause.addEventListener('click',() => incomingController?.toggle().catch(console.warn));
+    const clearLogs = document.createElement('button');clearLogs.type = 'button';clearLogs.textContent = 'Clear logs';
+    clearLogs.addEventListener('click',() => incomingController?.clear().catch(console.warn));
     const download = document.createElement('button');
     download.type = 'button';
     download.textContent = 'Download logs';
     download.title = 'Page diagnostics may contain customer data. Review before sharing.';
     download.style.cssText = 'display:block;padding:8px 12px;border:1px solid var(--sn-theme-655573,#48695d);background:var(--sn-theme-251f31,#203e32);color:var(--sn-theme-e6edf9,#ddf3e8);border-radius:7px;cursor:pointer';
     download.addEventListener('click', () => {
-      const url = URL.createObjectURL(new Blob([inboxPolicy.logs.map(entry => JSON.stringify(entry)).join('\n')], { type: 'application/x-ndjson' }));
-      const link = document.createElement('a');
-      link.href = url; link.download = 'SN_AI_inbox_diagnostics.jsonl'; link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      incomingController?.download().catch(console.warn);
     });
     const help = document.createElement('small');
-    help.textContent = 'Diagnostics stay in this page until reload (up to 5 MB). The download may contain customer data; review before sharing.';
+    help.textContent = 'Incoming chats and logging state are saved locally across reloads. Preview chats are excluded. Download pauses collection; Clear logs removes saved data. Logs may contain customer data.';
     help.style.display = 'block';
     const acceptRow = document.createElement('div');
     acceptRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap';
@@ -16945,7 +17029,8 @@ function startSNAI() {
     secondsUnit.style.cssText = 'padding-right:8px;color:#a9c7ba;font-size:12px';
     delayControl.append(secondsUnit);
     acceptRow.append(label, delayLabel);
-    row.append(acceptRow, rejectLabel, download);
+    logControls.append(playPause,clearLogs,download);
+    row.append(acceptRow,rejectLabel,developerLabel,logStatus,logControls,help);
     content.append(row);
   }
   function installInboxMonitor() {
