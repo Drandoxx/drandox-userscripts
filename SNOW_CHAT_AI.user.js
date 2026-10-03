@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.214
+// @version      2.36.215
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -2500,6 +2500,12 @@
   const kbCopyCards = new WeakSet();
   const kbOpeningCards = new WeakSet();
   let kbToastTimer = 0;
+  let kbNoticeGeneration = 0;
+  function dismissKBCopyNotice() {
+    kbNoticeGeneration++;
+    clearTimeout(kbToastTimer);
+    document.getElementById('sn-ai-kb-toast')?.remove();
+  }
   const kbOpenIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-book-open-text preview-icon"><path d="M12 5v16"/><path d="M16 13h2"/><path d="M16 9h2"/><path d="M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z"/><path d="M6 13h2"/><path d="M6 9h2"/></svg>';
   function showKBCopyNotice(text,point) {
     clearTimeout(kbToastTimer);
@@ -2514,16 +2520,16 @@
     kbToastTimer=setTimeout(()=>toast.remove(),3000);
   }
   async function copySearchKB(card,event) {
+    const generation=++kbNoticeGeneration;
     const rect=card.getBoundingClientRect();
-    const point=event?.type==='click' && event.detail>0 ? {x:event.clientX,y:event.clientY}
-      : {x:rect.left+rect.width/2,y:rect.top};
+    const point={x:rect.left+rect.width/2,y:rect.top};
     const number=card.dataset.snAiKbNumber;
     if (!/^KB\d+$/.test(number || '')) { showKBCopyNotice('KB number unavailable · use the open button',point);return; }
     try {
       if (typeof GM_setClipboard === 'function') await GM_setClipboard(number,'text');
       else await navigator.clipboard.writeText(number);
-      showKBCopyNotice(number + ' copied to clipboard',point);
-    } catch { showKBCopyNotice('Could not copy ' + number,point); }
+      if (generation===kbNoticeGeneration) showKBCopyNotice(number + ' copied to clipboard',point);
+    } catch { if (generation===kbNoticeGeneration) showKBCopyNotice('Could not copy ' + number,point); }
   }
   function installKBCardActions(card,title,number) {
     if (card.dataset.snAiKbNumber !== (number || '')) card.dataset.snAiKbNumber=number || '';
@@ -2543,6 +2549,7 @@
       if (kbOpeningCards.has(card) || !event.composedPath().includes(card)) return;
       event.preventDefault();event.stopImmediatePropagation();
       if (event.composedPath().some(element=>element.matches?.('.sn-ai-kb-open'))) {
+        dismissKBCopyNotice();
         // Forward through the existing native card event path only for preview.
         kbOpeningCards.add(card);
         try { (card.shadowRoot?.querySelector('[role="button"],button') || card).click(); }
@@ -2636,7 +2643,8 @@
         const numbers=new Set(matches.map(item=>item.meta?.number).filter(number=>/^KB\d+$/.test(number || '')));
         // Title + substantial preview passage distinguishes duplicate titles.
         // If that signature maps to different numbers, never choose by order.
-        kbNumberCache.set(card.key,{number:numbers.size===1?[...numbers][0]:'',expires:Date.now()+300000});
+        const number=numbers.size===1?[...numbers][0]:'';
+        kbNumberCache.set(card.key,{number,expires:Date.now()+(number?86400000:300000)});
       }
       if (kbNumberCache.size > 300) kbNumberCache.delete(kbNumberCache.keys().next().value);
       scheduleKBSearchDecoration();
@@ -17140,7 +17148,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.214' });
+    addLog('info', 'helper-version', { version: '2.36.215' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
