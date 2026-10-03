@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.88
+// @version      2.36.89
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -815,6 +815,7 @@
     }
   `;
   function discover(node) {
+    if (node.matches?.('.sn-workspace-header')) document.dispatchEvent(new CustomEvent('sn-ai-header-mounted', { detail: node }));
     const inspectFrame = element => {
       if (element.localName !== 'iframe' || watchedFrames.has(element)) return;
       watchedFrames.add(element);
@@ -1244,25 +1245,54 @@ function installChatSnippets() {
 
     const toolbar = document.createElement('div');
     toolbar.id = 'tm-toolbar';
-    // Reserve the actual header controls, not a full-width overlay. Resize
-    // events only; no ongoing full-page layout scans.
-    const fitSnippetHeader = () => {
-      const roots = [document];
-      let header;
-      for (let i = 0; i < roots.length && !header; i += 1) {
-        header = roots[i].querySelector('.sn-workspace-header');
-        if (!header) for (const element of roots[i].querySelectorAll('*')) if (element.shadowRoot) roots.push(element.shadowRoot);
-      }
-      let reserve = 160;
-      if (header) {
-        const buttons = [...header.querySelectorAll('button')].map(button => button.getBoundingClientRect())
-          .filter(rect => rect.width > 0 && rect.left > window.innerWidth / 2);
-        if (buttons.length) reserve = Math.max(12, window.innerWidth - Math.min(...buttons.map(rect => rect.left)) + 12);
-      }
-      document.documentElement.style.setProperty('--sn-snippet-right', `${reserve}px`);
+    let snippetHeader = null;
+    let fitFrame = 0;
+    const measuredControls = new Set();
+    const headerRoots = new WeakSet();
+    const scheduleSnippetFit = () => {
+      if (!fitFrame) fitFrame = requestAnimationFrame(() => { fitFrame = 0; fitSnippetHeader(); });
     };
-    window.addEventListener('resize', fitSnippetHeader);
-    setTimeout(fitSnippetHeader, 1500);
+    const headerResize = new ResizeObserver(scheduleSnippetFit);
+    const trackHeaderRoot = root => {
+      if (!headerRoots.has(root)) {
+        headerRoots.add(root);
+        const observer = new MutationObserver(scheduleSnippetFit);
+        observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'hidden', 'style'] });
+      }
+      const elements = [...root.querySelectorAll('*')];
+      for (const element of elements) {
+        if (element.matches('button,now-button-iconic,now-avatar,[role="button"]') && !measuredControls.has(element)) {
+          measuredControls.add(element); headerResize.observe(element);
+        }
+        if (element.shadowRoot) trackHeaderRoot(element.shadowRoot);
+      }
+    };
+    const fitSnippetHeader = () => {
+      if (!snippetHeader?.isConnected) return;
+      trackHeaderRoot(snippetHeader);
+      let reserve = 160;
+      const buttons = [];
+      for (const control of measuredControls) {
+        if (!control.isConnected) { headerResize.unobserve(control); measuredControls.delete(control); continue; }
+        const rect = control.getBoundingClientRect();
+        if (rect.width > 0 && rect.left > window.innerWidth / 2 && rect.top < 70) buttons.push(rect);
+      }
+      if (buttons.length) reserve = Math.max(12, window.innerWidth - Math.min(...buttons.map(rect => rect.left)) + 12);
+      const value = `${Math.ceil(reserve)}px`;
+      if (document.documentElement.style.getPropertyValue('--sn-snippet-right') !== value) document.documentElement.style.setProperty('--sn-snippet-right', value);
+    };
+    const bindSnippetHeader = header => {
+      snippetHeader = header; headerResize.observe(header); scheduleSnippetFit();
+    };
+    document.addEventListener('sn-ai-header-mounted', event => bindSnippetHeader(event.detail));
+    // One startup discovery only. Later work is restricted to the header.
+    const roots = [document];
+    for (let i = 0; i < roots.length; i += 1) {
+      const header = roots[i].querySelector('.sn-workspace-header');
+      if (header) { bindSnippetHeader(header); break; }
+      for (const element of roots[i].querySelectorAll('*')) if (element.shadowRoot) roots.push(element.shadowRoot);
+    }
+    window.addEventListener('resize', scheduleSnippetFit);
 
     const addButton = document.createElement('button');
     addButton.id = 'tm-add-btn';
@@ -14932,7 +14962,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.88' });
+    addLog('info', 'helper-version', { version: '2.36.89' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
