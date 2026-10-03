@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.101
+// @version      2.36.102
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -455,6 +455,13 @@
   }
 };
   let selectedSpaceTheme = "space";
+  const chatBackgrounds = {
+    plain:'none',
+    nebula:'radial-gradient(ellipse at 15% 20%,color-mix(in srgb,var(--sn-theme-ac94ec) 13%,transparent),transparent 60%),radial-gradient(ellipse at 90% 75%,color-mix(in srgb,var(--sn-theme-9de2f5) 9%,transparent),transparent 55%)',
+    violet:'radial-gradient(ellipse at 25% 10%,color-mix(in srgb,var(--sn-theme-534775) 60%,transparent),transparent 65%),radial-gradient(ellipse at 80% 80%,color-mix(in srgb,var(--sn-theme-ac94ec) 14%,transparent),transparent 65%)',
+    stars:'radial-gradient(circle at 18% 22%,var(--sn-theme-a8b8d1) 0 1px,transparent 1.4px),radial-gradient(circle at 70% 65%,var(--sn-theme-a8b8d1) 0 .6px,transparent 1px),radial-gradient(ellipse at top,color-mix(in srgb,var(--sn-theme-534775) 35%,transparent),transparent 65%)'
+  };
+  let selectedChatBackground = 'plain';
   // Every structural/accent shade follows Aurora; semantic success/error colours remain distinct.
   Object.assign(SN_THEME_PALETTES.aurora, {
     '--sn-theme-221d30':'#192d2b','--sn-theme-35243c':'#24443c','--sn-theme-202c38':'#20383b',
@@ -470,7 +477,7 @@
   });
   function themeText() {
     const palette = { ...SN_THEME_PALETTES.space, ...SN_THEME_PALETTES[selectedSpaceTheme] };
-    return ":host,html{" + Object.entries(palette).map(([key,value]) => key + ":" + value + ";").join("") + "}" + spaceCSS;
+    return ":host,html{" + Object.entries(palette).map(([key,value]) => key + ":" + value + ";").join("") + '--sn-chat-background:' + chatBackgrounds[selectedChatBackground] + ';}' + spaceCSS;
   }
   const spaceCSS = `
     :host,html {
@@ -680,6 +687,23 @@
     :host(now-chat-window)::-webkit-scrollbar { width:8px; }
     :host(now-chat-window)::-webkit-scrollbar-track { background:var(--sn-theme-1c1827); }
     :host(now-chat-window)::-webkit-scrollbar-thumb { background:var(--sn-theme-655573);border-radius:8px; }
+    :host(now-chat-window) {
+      background-color:var(--sn-theme-14121c)!important;
+      background-image:var(--sn-chat-background)!important;
+      background-size:233px 271px,349px 307px,100% 100%;
+    }
+    .now-chat-window,.message-window { background:transparent!important; }
+    .now-chat-message-bubble.left,.now-chat-message-bubble.right {
+      border:1px solid var(--sn-theme-655573)!important;
+      box-shadow:0 0 7px color-mix(in srgb,var(--sn-theme-ac94ec) 12%,transparent);
+    }
+    .now-chat-timestamp,.now-chat-timestamp time,.now-chat-timestamp span,
+    :host(now-chat-timestamp) time,:host(now-chat-timestamp) span {
+      color:var(--sn-theme-b9c9e3)!important;opacity:1!important;
+    }
+    .now-button.is-disabled,.now-button:disabled { color:var(--sn-theme-a8b8d1)!important;opacity:1!important; }
+    .now-button.is-disabled .now-button-label,.now-button:disabled .now-button-label { color:inherit!important; }
+    :host(now-chat-message) .typing-indicator span { background-color:var(--sn-theme-a8b8d1)!important; }
     .now-tab.is-selected::after,.now-tab.is-selected:hover::after,
     .now-tab-dropdown.is-selected::after,.now-tab-dropdown.is-selected:hover::after {
       background-color:var(--sn-theme-ac94ec)!important;
@@ -722,6 +746,15 @@
     selectedSpaceTheme = event.detail;
     for (const style of spaceStyles.values()) style.textContent = themeText();
   });
+  document.addEventListener('sn-ai-chat-background', event => {
+    if (!Object.hasOwn(chatBackgrounds, event.detail)) return;
+    selectedChatBackground = event.detail;
+    for (const style of spaceStyles.values()) style.textContent = themeText();
+  });
+  Promise.resolve(GM_getValue('sn-ai-chat-background-v1', 'plain')).then(value => {
+    if (Object.hasOwn(chatBackgrounds, value)) selectedChatBackground = value;
+    for (const style of spaceStyles.values()) style.textContent = themeText();
+  }).catch(() => {});
   Promise.resolve(GM_getValue('sn-ai-theme-palette-v1', 'space')).then(value => {
     if (SN_THEME_PALETTES[value]) selectedSpaceTheme = value;
     for (const style of spaceStyles.values()) style.textContent = themeText();
@@ -11447,6 +11480,19 @@ function startSNAI() {
         document.dispatchEvent(new CustomEvent('sn-ai-theme-palette', { detail: paletteSelect.value }));
       });
       paletteRow.append('Theme', paletteSelect); generalPanel.append(paletteRow);
+      const chatBackgroundRow = document.createElement('label');
+      chatBackgroundRow.style.cssText = paletteRow.style.cssText;
+      const chatBackgroundSelect = document.createElement('select');
+      chatBackgroundSelect.setAttribute('aria-label','Chat background');
+      for (const [value,label] of [['plain','Plain'],['nebula','Nebula'],['violet','Purple space'],['stars','Starfield']]) {
+        const option = document.createElement('option'); option.value=value;option.textContent=label;chatBackgroundSelect.append(option);
+      }
+      gmGetValue('sn-ai-chat-background-v1','plain').then(value => { chatBackgroundSelect.value = ['plain','nebula','violet','stars'].includes(value) ? value : 'plain'; });
+      chatBackgroundSelect.addEventListener('change', () => {
+        gmSetValue('sn-ai-chat-background-v1',chatBackgroundSelect.value).catch(console.warn);
+        document.dispatchEvent(new CustomEvent('sn-ai-chat-background',{detail:chatBackgroundSelect.value}));
+      });
+      chatBackgroundRow.append('Chat background',chatBackgroundSelect);generalPanel.append(chatBackgroundRow);
       const captureButton = document.createElement('button');
       captureButton.type = 'button'; captureButton.textContent = 'Start style capture';
       captureButton.addEventListener('click', () => toggleStyleCapture(captureButton));
@@ -15134,7 +15180,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.101' });
+    addLog('info', 'helper-version', { version: '2.36.102' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
