@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.212
+// @version      2.36.213
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -2569,6 +2569,32 @@
     }
   }
   const normalizeKBTitle = text => String(text || '').replace(/\s+/g,' ').trim();
+  function kbAssistAncestor(element) {
+    for (let node=element;node;node=node.parentElement || node.getRootNode()?.host) {
+      if (node.matches?.('now-agent-assist')) return node;
+    }
+    return null;
+  }
+  function kbSearchPhrase(root) {
+    const panel=kbAssistAncestor(root.host);
+    for (const scope of spaceRoots) for (const input of scope.querySelectorAll('input[name="sn-aa-search-box"]')) {
+      if (panel && kbAssistAncestor(input) === panel) return normalizeKBTitle(input.value || input.placeholder);
+    }
+    return '';
+  }
+  function normalizeKBSnippet(html) {
+    const template=document.createElement('template');template.innerHTML=String(html || '');
+    return normalizeKBTitle(template.content.textContent);
+  }
+  function kbMetadataKey(query,title,snippet) { return JSON.stringify([query,title,snippet]); }
+  function kbSnippetsMatch(nativeSnippet,searchSnippet) {
+    if (nativeSnippet===searchSnippet) return true;
+    // The search engine abbreviates its snippet, whereas the card shows a
+    // 500-character preview. Require a substantial identical opening passage;
+    // all matching search records must still agree on a single KB number.
+    return nativeSnippet.length>=160 && searchSnippet.length>=160
+      && nativeSnippet.slice(0,160)===searchSnippet.slice(0,160);
+  }
   function kbSessionToken() {
     // Read the bootstrap token locally; never persist it, log it or expose it
     // to another origin. DOM access avoids unsafeWindow and page-world hooks.
@@ -2579,30 +2605,38 @@
     }
     return '';
   }
-  async function lookupKBMetadata(titles) {
-    if (kbLookupBusy || Date.now() < kbLookupPausedUntil || !titles.length) return;
+  async function lookupKBMetadata(cards) {
+    if (kbLookupBusy || Date.now() < kbLookupPausedUntil || !cards.length) return;
     const token = kbSessionToken();
     if (!token) { kbLookupPausedUntil = Date.now() + 30000;scheduleKBSearchDecoration();return; }
     kbLookupBusy = true;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(),8000);
     try {
-      const query = titles.map(title => 'short_description=' + title).join('^OR');
-      const params = new URLSearchParams({sysparm_query:query,
-        sysparm_fields:'number,short_description',sysparm_limit:'200'});
-      const response = await kbMetadataFetch('/api/now/table/kb_knowledge?' + params,
-        {method:'GET',credentials:'same-origin',signal:controller.signal,
-          headers:{Accept:'application/json','X-UserToken':token}});
+      const search=cards[0].query;
+      // Instance Agent Assist configuration, verified against its native query.
+      // This independent query contains no customer/form data and logs no search.
+      const query='query KBCardMetadata($query:String!,$tableConfig:String!,$context:String!,$resources:[String]){GlideContextualSearch_Query(query:$query,tableConfig:$tableConfig,context:$context,resources:$resources,pagination:{limit:100,offset:0},maxLimit:100,logSearch:false,uiType:"workspace"){results{id title snippet meta{...on GlideContextualSearch_KnowledgeArticleMetaType{number}...on GlideContextualSearch_PinnedArticleMetaType{number}}}meta{has_more_results}}}';
+      const variables={query:search,tableConfig:'3afcf3441b03ed50ea26b455464bcb7e',
+        context:'091fa3d3c37221003d2ae219cdba8f0e',resources:['adba8d70c39102006f333b0ac3d3aefa']};
+      const response = await kbMetadataFetch('/api/now/graphql',
+        {method:'POST',credentials:'same-origin',signal:controller.signal,
+          headers:{'Content-Type':'application/json','X-UserToken':token},body:JSON.stringify({query,variables})});
       if (!response.ok) throw new Error('KB metadata HTTP ' + response.status);
       const payload = await response.json();
-      if (!Array.isArray(payload.result) || payload.result.length >= 200) throw new Error('KB metadata incomplete');
-      for (const title of titles) {
-        const key = normalizeKBTitle(title);
-        const numbers = new Set(payload.result.filter(item => normalizeKBTitle(item.short_description) === key)
-          .map(item => item.number).filter(number => /^KB\d+$/.test(number || '')));
-        // Versions of one article share a number. Different articles with an
-        // identical title are ambiguous: never guess which search result it is.
-        kbNumberCache.set(key,{number:numbers.size === 1 ? [...numbers][0] : '',expires:Date.now()+300000});
+      const results=payload.data?.GlideContextualSearch_Query?.results;
+      if (payload.errors?.length || !Array.isArray(results)) throw new Error('KB metadata incomplete');
+      for (const card of cards.filter(card=>card.query===search)) {
+        const sameTitle=results.filter(item=>/^kb_knowledge:[a-f0-9]{32}$/i.test(item.id || '') && normalizeKBTitle(item.title)===card.title);
+        let matches=sameTitle.filter(item=>kbSnippetsMatch(card.snippet,normalizeKBSnippet(item.snippet)));
+        // A differently abbreviated snippet is safe to accept only when the
+        // complete contextual result set has one KB number for that title.
+        if (!matches.length && payload.data.GlideContextualSearch_Query.meta?.has_more_results===false
+          && new Set(sameTitle.map(item=>item.meta?.number)).size===1) matches=sameTitle;
+        const numbers=new Set(matches.map(item=>item.meta?.number).filter(number=>/^KB\d+$/.test(number || '')));
+        // Title + substantial preview passage distinguishes duplicate titles.
+        // If that signature maps to different numbers, never choose by order.
+        kbNumberCache.set(card.key,{number:numbers.size===1?[...numbers][0]:'',expires:Date.now()+300000});
       }
       if (kbNumberCache.size > 300) kbNumberCache.delete(kbNumberCache.keys().next().value);
       scheduleKBSearchDecoration();
@@ -2613,23 +2647,26 @@
     } finally { clearTimeout(timeout);kbLookupBusy = false;scheduleKBSearchDecoration(); }
   }
   function decorateKBSearchResults() {
-    const missing = new Set();
+    const missing = new Map();
     for (const root of spaceRoots) {
       if (!root.host?.matches('sn-aa-results-list')) continue;
       const cards = [...root.querySelectorAll('sn-aa-result-list-item')]
         .map(item => item.shadowRoot?.querySelector('now-card.aa-card')).filter(Boolean);
       if (!cards.length) { setKBListLoading(root,false);continue; }
+      if (!cards.some(card=>card.getBoundingClientRect().width)) { setKBListLoading(root,false);continue; }
       const headings = cards.map(card => card.querySelector('now-card-header')?.shadowRoot?.querySelector('.now-card-header-headings'));
       if (headings.some(heading => !heading)) continue;
       const titles = headings.map(heading => normalizeKBTitle(heading.querySelector('h3')?.textContent));
+      const query=kbSearchPhrase(root);
       let pending=false;
       headings.forEach((heading,index) => {
         let badge = heading.querySelector('.sn-ai-search-kb-number');
         const title = titles[index];
-        let entry = kbNumberCache.get(title);
-        if (entry?.expires <= Date.now()) { kbNumberCache.delete(title);entry = null; }
-        // Encoded-query separators must never be accepted from article titles.
-        if (!entry && title && title.length <= 240 && !/[\^\r\n]/.test(title)) { missing.add(title);pending=true; }
+        const snippet=normalizeKBTitle(cards[index].querySelector('sn-aa-article-body')?.shadowRoot?.querySelector('.aa-card-body-snippet')?.textContent);
+        const key=kbMetadataKey(query,title,snippet);
+        let entry = kbNumberCache.get(key);
+        if (entry?.expires <= Date.now()) { kbNumberCache.delete(key);entry = null; }
+        if (!entry && query && title) { missing.set(key,{key,query,title,snippet});pending=true; }
         const number = entry?.number;
         installKBCardActions(cards[index],title,number);
         if (!/^KB\d+$/.test(number || '')) { badge?.remove();return; }
@@ -2638,7 +2675,7 @@
       });
       setKBListLoading(root,pending && Date.now() >= kbLookupPausedUntil);
     }
-    void lookupKBMetadata([...missing].slice(0,10));
+    void lookupKBMetadata([...missing.values()].slice(0,100));
   }
   // Separate read-only requests only: never replace page fetch/XHR or consume
   // any native Request/Response body.
@@ -17099,7 +17136,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.212' });
+    addLog('info', 'helper-version', { version: '2.36.213' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
