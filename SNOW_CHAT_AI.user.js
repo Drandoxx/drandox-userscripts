@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.189
+// @version      2.36.190
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -407,6 +407,18 @@
   const roots = new WeakSet();
   const spaceRoots = new Set();
   const spaceStyles = new Map();
+  let acceptedIMS = new Set();
+  try { acceptedIMS = new Set(JSON.parse(sessionStorage.getItem('sn-ai-unseen-accepted-ims-v1') || '[]')); } catch {}
+  const saveAcceptedIMS = () => { try { sessionStorage.setItem('sn-ai-unseen-accepted-ims-v1',JSON.stringify([...acceptedIMS])); } catch {} };
+  function markAcceptedTab(element) {
+    if (!element.matches?.('.sn-chrome-one-tab[aria-label^="IMS"]')) return;
+    element.toggleAttribute('data-sn-ai-unseen-accepted',acceptedIMS.has(element.getAttribute('aria-label')));
+  }
+  document.addEventListener('sn-ai-autoaccepted-ims',event => {
+    if (!/^IMS\d+$/.test(event.detail?.ims || '')) return;
+    acceptedIMS.add(event.detail.ims);saveAcceptedIMS();
+    for (const root of spaceRoots) root.querySelectorAll?.('.sn-chrome-one-tab').forEach(markAcceptedTab);
+  });
   let spaceEnabled = false;
   function ensureSpaceRoot(root) {
     spaceRoots.add(root);
@@ -1134,6 +1146,31 @@
       background:color-mix(in srgb,var(--sn-theme-251f31) 84%,var(--sn-theme-ac94ec) 16%)!important;
     }
     :host(sn-workspace-tab) { position:relative;z-index:4; }
+    .sn-chrome-one-tab[data-sn-ai-unseen-accepted],
+    .sn-chrome-one-tab[data-sn-ai-unseen-accepted]>.sn-chrome-one-tab-content {
+      background:color-mix(in srgb,var(--sn-theme-ac94ec) 40%,var(--sn-theme-251f31))!important;
+      color:var(--sn-theme-e6edf9)!important;
+    }
+    .sn-chrome-one-tab.is-updated:not([data-sn-ai-unseen-accepted]),
+    .sn-chrome-one-tab.is-updated:not([data-sn-ai-unseen-accepted])>.sn-chrome-one-tab-content {
+      background:color-mix(in srgb,var(--sn-theme-ac94ec) 22%,var(--sn-theme-251f31))!important;
+      box-shadow:inset 0 -3px var(--sn-theme-ac94ec)!important;
+      color:var(--sn-theme-e6edf9)!important;
+    }
+    .sn-chrome-one-tab.sn-chrome-one-tab.sn-chrome-one-tab.is-updated:not([data-sn-ai-unseen-accepted])>.sn-chrome-one-tab-content {
+      background:color-mix(in srgb,#e7ca87 32%,var(--sn-theme-251f31))!important;
+      color:var(--sn-theme-e6edf9)!important;
+      box-shadow:inset 0 -3px #e7ca87!important;
+      animation:sn-ai-unread-tab-pulse 2.2s ease-in-out infinite!important;
+    }
+    .sn-chrome-one-tab.sn-chrome-one-tab.sn-chrome-one-tab[data-sn-ai-unseen-accepted]>.sn-chrome-one-tab-content {
+      background:color-mix(in srgb,#91d9b2 32%,var(--sn-theme-251f31))!important;
+      box-shadow:inset 0 -3px #91d9b2!important;
+    }
+    .sn-chrome-one-tab.is-updated>.sn-chrome-one-tab-content span,
+    .sn-chrome-one-tab[data-sn-ai-unseen-accepted]>.sn-chrome-one-tab-content span{color:var(--sn-theme-e6edf9)!important}
+    @keyframes sn-ai-unread-tab-pulse{0%,100%{filter:brightness(1)}50%{filter:brightness(1.4)}}
+    @media(prefers-reduced-motion:reduce){.sn-chrome-one-tab.is-updated>.sn-chrome-one-tab-content{animation:none!important}}
     :host(sn-workspace-tab:has(.is-selected)) { z-index:2; }
     :host(sn-workspace-tab[component-id="module"]) { z-index:auto;margin-inline-end:4px; }
     .sn-chrome-one-tab[aria-label="Inbox"],.sn-chrome-one-tab.is-module {
@@ -2228,6 +2265,7 @@
     element.style.setProperty('opacity','1','important');
   }
   function discover(node) {
+    markAcceptedTab(node);
     styleLoadingText(node.nodeType === 3 ? node.parentElement : node);
     const installStickyState = element => {
       if (!element.matches?.('.sn-form-column-layout-sections') || stickyFormScrollers.has(element)) return;
@@ -2317,6 +2355,7 @@
     styleInboxElement(node);
     if (node.nodeType === 1 && node.shadowRoot) watch(node.shadowRoot);
     for (const element of node.querySelectorAll?.('*') || []) {
+      markAcceptedTab(element);
       styleLoadingText(element);
       installStickyState(element);
       measureTab(element);
@@ -2333,6 +2372,16 @@
     ensureSpaceRoot(root);
     if (roots.has(root)) return;
     roots.add(root);
+    root.addEventListener('pointerdown',event => {
+      if (!event.composedPath().some(element => element.matches?.('now-chat-window,.now-chat-message-container,.now-chat-message-bubble,now-chat-input,sn-chat-input'))) return;
+      for (const scope of spaceRoots) {
+        const tab = scope.querySelector?.('.sn-chrome-one-tab[aria-label^="IMS"][aria-selected="true"]');
+        if (!tab) continue;
+        acceptedIMS.delete(tab.getAttribute('aria-label'));saveAcceptedIMS();
+        for (const tabsRoot of spaceRoots) tabsRoot.querySelectorAll?.('.sn-chrome-one-tab').forEach(markAcceptedTab);
+        break;
+      }
+    },true);
     const convertKBNumber = element => {
       if (!element.matches?.('a.now-text-link') || !/^KB\d{7}$/.test(element.textContent.trim())) return;
       let ancestor = element;
@@ -16561,7 +16610,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.189' });
+    addLog('info', 'helper-version', { version: '2.36.190' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -17363,12 +17412,13 @@ function startSNAI(tabIdentity) {
       for (const element of [...elements]) if (element.shadowRoot) elements.push(...deep(element.shadowRoot));
       return elements;
     };
-    const notice = () => {
+    const notice = (ims = '') => {
       const box = document.createElement('div');
       box.dataset.snAiNotification = 'accepted';
       box.setAttribute('role', 'status');
       box.style.cssText = 'position:fixed;right:20px;bottom:100px;z-index:2147483647;max-width:calc(100vw - 40px);width:440px;box-sizing:border-box;padding:24px 48px 24px 24px;border:1px solid #62b99d;border-radius:10px;background:#16392e;color:#e5fff5;font:17px/1.5 system-ui;box-shadow:0 5px 24px #0005';
-      box.textContent = 'New chat has been automatically accepted. Click on X to clear this notification';
+      box.textContent = `New chat has been automatically accepted${ims ? ' - ' + ims : ''}`;
+      if (ims) document.dispatchEvent(new CustomEvent('sn-ai-autoaccepted-ims',{detail:{ims}}));
       const close = document.createElement('button');
       close.type = 'button'; close.textContent = '×'; close.setAttribute('aria-label', 'Dismiss automatic chat acceptance notification');
       close.style.cssText = 'position:absolute;right:10px;top:10px;background:transparent;border:0;color:inherit;font:22px system-ui;cursor:pointer';
@@ -17415,11 +17465,23 @@ function startSNAI(tabIdentity) {
           clearInterval(inboxPolicy.timers.get(button)); inboxPolicy.timers.delete(button);
           inboxLog('auto-accept-click', { html: button.outerHTML, delayMs: acceptDelayMs,
             trigger: countdownReached ? 'native-countdown' : 'local-timer', remainingSeconds: remaining ?? null });
+          const previousIMS = new Set(allPageElements().filter(element => element.matches?.('.sn-chrome-one-tab[aria-label^="IMS"]')).map(element => element.getAttribute('aria-label')));
+          const offeredIMS = normalise([card?.textContent || '',...(card?.shadowRoot ? deep(card.shadowRoot).map(element => element.textContent || '') : [])].join(' ')).match(/\bIMS\d+\b/)?.[0];
           button.click();
           // Confirm the offer action disappears, rather than claiming success
           // immediately after dispatch. Retained buttons report a failed click.
           setTimeout(() => {
-            if (!button.isConnected) { inboxLog('auto-accept-offer-removed', {}); notice(); }
+            if (!button.isConnected) {
+              inboxLog('auto-accept-offer-removed', {});
+              let checks = 0;
+              const resolveAcceptedIMS = () => {
+                const newIMS = [...new Set(allPageElements().filter(element => element.matches?.('.sn-chrome-one-tab[aria-label^="IMS"]')).map(element => element.getAttribute('aria-label')))].filter(ims => !previousIMS.has(ims));
+                const ims = offeredIMS || (newIMS.length === 1 ? newIMS[0] : '');
+                if (ims || ++checks >= 15) notice(ims);
+                else setTimeout(resolveAcceptedIMS,200);
+              };
+              resolveAcceptedIMS();
+            }
             else inboxLog('auto-accept-unconfirmed', { html: button.outerHTML });
           }, 1500);
         };
