@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.192
+// @version      2.36.193
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -2226,8 +2226,8 @@
     button.now-button.now-button[aria-label="Create a new Event"],
     button.now-button.now-button[aria-label="Save & Reassign"] {
       background:linear-gradient(115deg,var(--sn-theme-9de2f5),var(--sn-theme-ac94ec))!important;
-      color:var(--sn-theme-14121c)!important;border:1px solid var(--sn-theme-ac94ec)!important;
-      border-radius:6px!important;font-weight:700!important;
+      color:var(--sn-theme-14121c)!important;border:0!important;
+      border-radius:6px!important;font-weight:600!important;
       box-shadow:none!important;outline:none!important;
     }
     button.now-button[aria-label="Create a new Event"] *,
@@ -2240,6 +2240,52 @@
     button.now-button[aria-label="Save & Reassign"]:focus-visible {
       outline:2px solid var(--sn-theme-ac94ec)!important;outline-offset:3px!important;
     }
+    /* Labels are text, not another painted strip above the control. */
+    .now-form-field-label.now-form-field-label,
+    .now-form-field-label.now-form-field-label *,
+    .form-field-label-wrap.form-field-label-wrap {
+      background:transparent!important;box-shadow:none!important;
+    }
+    .now-form-field.now-form-field.is-readonly,
+    .now-form-field.now-form-field.is-disabled,
+    .now-form-field.now-form-field:has(input[readonly],input:disabled,textarea[readonly],textarea:disabled),
+    .now-textarea-field.now-textarea-field.is-readonly,
+    .now-textarea-field.now-textarea-field.is-disabled {
+      background:color-mix(in srgb,var(--sn-theme-ac94ec) 18%,var(--sn-theme-14121c))!important;
+      border:1px dashed var(--sn-theme-655573)!important;box-shadow:none!important;
+      color:var(--sn-theme-b9c9e3)!important;
+    }
+    input.now-input-native[readonly],input.now-input-native:disabled,
+    textarea.now-textarea-native[readonly],textarea.now-textarea-native:disabled {
+      color:var(--sn-theme-b9c9e3)!important;-webkit-text-fill-color:var(--sn-theme-b9c9e3)!important;
+      background:transparent!important;opacity:1!important;
+    }
+    /* Keep the native duration controls and values; only change presentation. */
+    .sn-section-form-column:has(>sn-record-duration[name="wait_time"]):has(>sn-record-duration[name="duration"]) {
+      display:grid!important;grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;
+      gap:16px!important;align-items:start!important;
+    }
+    .sn-section-form-column:has(>sn-record-duration[name="wait_time"]):has(>sn-record-duration[name="duration"]) > * {
+      grid-column:1 / -1;min-width:0!important;
+    }
+    .sn-section-form-column:has(>sn-record-duration[name="duration"]) > sn-record-duration[name="wait_time"] {
+      grid-column:1!important;grid-row:1!important;
+    }
+    .sn-section-form-column:has(>sn-record-duration[name="wait_time"]) > sn-record-duration[name="duration"] {
+      grid-column:2!important;grid-row:1!important;
+    }
+    sn-record-duration[name="wait_time"],sn-record-duration[name="duration"] {
+      box-sizing:border-box!important;padding:12px!important;margin:0!important;
+      border:1px solid var(--sn-theme-423750)!important;border-radius:10px!important;
+      background:var(--sn-theme-1c1827)!important;
+    }
+    :host(sn-record-duration[name="wait_time"]) .sn-control-group > slot,
+    :host(sn-record-duration[name="duration"]) .sn-control-group > slot {
+      display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:8px!important;
+    }
+    :host(sn-record-duration) .sn-control-group now-popover { min-width:0!important;width:100%!important; }
+    :host-context(sn-record-duration) .now-input-field { min-width:0!important; }
+    :host-context(sn-record-duration) input.now-input-native { min-width:0!important;text-align:center!important;font-variant-numeric:tabular-nums; }
   `;
   let tabGeometryFrame = 0;
   const observedTabGeometry = new WeakSet();
@@ -16652,7 +16698,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.192' });
+    addLog('info', 'helper-version', { version: '2.36.193' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
