@@ -7157,7 +7157,7 @@ function startSNAI() {
     let searched = false;
     while (performance.now() - started < timeoutMs) {
       assertAutomationNotStopped();
-      const field = findControlByLabel(label);
+      let field = findControlByLabel(label);
       if (field) {
         // Stable page marker, without changing ServiceNow's own IDs or URL.
         // scrollIntoView traverses ALL nested scrollports and shadow hosts,
@@ -7169,6 +7169,7 @@ function startSNAI() {
         await sleep(150);
         const anchoredField = findControlByLabel(label);
         if (!anchoredField || !anchoredField.isConnected) { searched = false;continue; }
+        field = anchoredField;
         const scroller = activeEventFormScroller();
         if (scroller instanceof HTMLElement) {
           const viewport = scroller.getBoundingClientRect();
