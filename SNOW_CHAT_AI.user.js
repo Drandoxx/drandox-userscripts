@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.90
+// @version      2.36.91
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -566,6 +566,20 @@
     .sn-component-card .header,.sn-pagination span,.sn-list-header-title { color:var(--sn-theme-c8d7ef)!important; }
     :host(now-chart-bar) svg text,:host(now-chart-single-score) svg text { fill:var(--sn-theme-e6edf9)!important; }
     .loading { background-color:var(--sn-theme-423750)!important; }
+    .sn-inbox,.sn-inbox .sn-card-list { border-color:var(--sn-theme-423750)!important; }
+    .sn-inbox .sn-presence--header,.sn-inbox .sn-presence--header.is-uxf,
+    .sn-presence-state-container { background:var(--sn-theme-1c1827)!important;border-color:var(--sn-theme-423750)!important; }
+    .sn-panel.mod-inbox .sn-panel--header,
+    :host(sn-inbox) .sn-panel--header,:host(sn-agent-inbox) .sn-panel--header,
+    :host(sn-inbox-empty) .sn-panel--header,:host(sn-agent-inbox-empty) .sn-panel--header {
+      background:linear-gradient(110deg,var(--sn-theme-221d30),var(--sn-theme-26203e))!important;
+      color:var(--sn-theme-e6edf9)!important;border-bottom:1px solid var(--sn-theme-423750)!important;
+    }
+    .sn-panel.mod-inbox .sn-panel--title,
+    :host(sn-inbox) .sn-panel--title,:host(sn-agent-inbox) .sn-panel--title,
+    :host(sn-inbox-empty) .sn-panel--title,:host(sn-agent-inbox-empty) .sn-panel--title {
+      color:var(--sn-theme-e6edf9)!important;
+    }
     #local-sn-ai-settings-template [data-inbox-settings],#local-sn-ai-settings-template [data-update-check-controls],
     #local-sn-ai-settings-template .local-sn-settings-tabs { background:var(--sn-theme-251f31)!important;border-color:var(--sn-theme-423750)!important;color:var(--sn-theme-e6edf9)!important; }
   `;
@@ -2126,6 +2140,12 @@ function startSNAI() {
     const websiteName = heartbeat.provider === 'gemini' ? 'Gemini' : 'ChatGPT';
     const statusKey = ready ? 'ready' : heartbeat.requiresLogin ? 'login' : 'connecting';
     let toast = document.getElementById(CHATGPT_WEB_IFRAME_STATUS_ID);
+    // Healthy/connecting heartbeats are silent. Only actionable sign-in errors notify.
+    if (!heartbeat.requiresLogin) {
+      if (toast?._snAiHideTimer) clearTimeout(toast._snAiHideTimer);
+      toast?.remove();
+      return;
+    }
     if (chatGPTWebIframeDismissedStatus === statusKey) return;
     // Heartbeats arrive every few seconds. Do not restart the ready toast's
     // five-second timer on each heartbeat or it can remain visible forever.
@@ -14991,7 +15011,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.90' });
+    addLog('info', 'helper-version', { version: '2.36.91' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -15349,13 +15369,8 @@ function startSNAI() {
   function showNotificationSettingsConfirmed() {
     if (notificationSettingsConfirmedNoticeShown || inboxPolicy.disposed) return;
     notificationSettingsConfirmedNoticeShown = true;
-    const box = document.createElement('div');
-    box.id = 'local-sn-ai-notification-settings-confirmed';
-    box.setAttribute('role', 'status');
-    box.style.cssText = 'position:fixed;right:20px;bottom:20px;z-index:2147483647;max-width:calc(100vw - 40px);box-sizing:border-box;padding:12px 16px;border:1px solid #448a70;border-radius:8px;background:#183329;color:#d6f9e4;font:14px/1.4 system-ui;box-shadow:0 4px 16px #0004';
-    box.textContent = 'All settings are properly set.';
-    document.body.append(box);
-    setTimeout(() => box.remove(), 5000);
+    // Successful background verification stays silent; retain diagnostics and errors.
+    inboxLog('notification-settings-confirmed', { allEnabled: true });
   }
   function showNotificationSettingsMissingError() {
     if (notificationSettingsAvailable || inboxPolicy.disposed) return;
