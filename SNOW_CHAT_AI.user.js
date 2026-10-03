@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.176
+// @version      2.36.177
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -337,13 +337,9 @@
   const documents = new WeakSet();
   const resultBoxHeights = new WeakMap();
   function nativeColors(doc) {
-    const field = doc.getElementById('new_call.short_description') || doc.getElementById('new_call.description');
-    const nativeButton = doc.querySelector('.form_header .btn-default,button.btn-default,input.form-control');
-    const fieldStyle = field && doc.defaultView.getComputedStyle(field);
-    const buttonStyle = nativeButton && doc.defaultView.getComputedStyle(nativeButton);
-    const opaque = (value, fallback) => value && value !== 'transparent' && value !== 'rgba(0, 0, 0, 0)' ? value : fallback;
-    return [opaque(fieldStyle?.backgroundColor,'#08090b'),opaque(buttonStyle?.backgroundColor,'#17191d'),
-      opaque(fieldStyle?.borderTopColor,'#727986'),opaque(fieldStyle?.color,'#ffffff'),opaque(buttonStyle?.color,fieldStyle?.color || '#dce0e8')];
+    // Native focus/hover styles briefly turn blue. Never sample those transient
+    // states: this New Ticket results area always uses the classic black palette.
+    return ['#08090b','#08090b','#727986','#ffffff','#dce0e8'];
   }
   function install(doc) {
     if (documents.has(doc)) return;documents.add(doc);
@@ -356,7 +352,10 @@
       #dynamic_search_box #overlay,#dynamic_search_box #collapse_search,#dynamic_search_box #expand_search{display:none!important}
       #dynamic_search_box #dyn_search{display:table!important;visibility:visible!important}
       #dynamic_search_box .sn-ai-kb-copy-hint{font-size:11px;line-height:16px;padding:2px 8px;color:var(--sn-stack-kb-text);opacity:.75}
-      #dynamic_search_box .sn-ai-copy-kb{font-size:.85em!important;line-height:1.15!important;padding:0 4px!important;margin:0 3px 0 0!important;min-height:0!important;height:auto!important;vertical-align:baseline;outline:none!important;box-shadow:none!important}
+      #dynamic_search_box{--sn-stack-kb-bg:#08090b;--sn-stack-kb-hover:#08090b;--sn-stack-kb-line:#727986;--sn-stack-kb-text:#fff;--sn-stack-kb-accent:#dce0e8}
+      #dynamic_search_box #dyn_search tr:has(>th),#dynamic_search_box #dyn_search td:nth-child(3){display:none!important}
+      #dynamic_search_box .sn-ai-copy-kb{font-size:.85em!important;line-height:1.15!important;padding:1px 4px!important;margin:0 3px 0 0!important;min-height:0!important;height:auto!important;vertical-align:baseline;outline:none!important;box-shadow:none!important;background:#08090b!important;border-color:#727986!important;color:#fff!important;transition:none!important}
+      #dynamic_search_box .sn-ai-copy-kb:hover,#dynamic_search_box .sn-ai-copy-kb:active{background:#08090b!important;border-color:#727986!important;color:#fff!important;filter:none!important}
       #dynamic_search_box .sn-ai-copy-kb:focus{outline:none!important;box-shadow:none!important;border-color:var(--sn-stack-kb-line)!important}
       #dynamic_search_box .sn-ai-copy-kb:focus-visible{outline:1px solid var(--sn-stack-kb-text)!important;outline-offset:1px!important;box-shadow:none!important}
     `;
@@ -16408,7 +16407,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.176' });
+    addLog('info', 'helper-version', { version: '2.36.177' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
