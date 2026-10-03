@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.95
+// @version      2.36.96
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -609,6 +609,18 @@
     .sn-pagination-btn { color:var(--sn-theme-c8d7ef)!important; }
     .now-highlighted-value.-positive { background:var(--sn-theme-184c3d)!important;color:var(--sn-theme-c5f6dd)!important; }
     .now-highlighted-value.-negative { background:var(--sn-theme-542a3b)!important;color:var(--sn-theme-ffd5de)!important; }
+    :host(now-grid) th { background:var(--sn-theme-251f31)!important; }
+    :host(now-grid) td span,:host(now-grid) td div,:host(now-grid) .now-grid { color:var(--sn-theme-e6edf9)!important; }
+    :host(now-grid) a,:host(now-text-link) a,.sn-text-link a { color:var(--sn-theme-9de2f5)!important; }
+    :host(sn-nlq) .nlq-welcome-screen-inner {
+      background:linear-gradient(120deg,var(--sn-theme-14121c),var(--sn-theme-221d30))!important;
+    }
+    .nlq-search-box-container,.widget-header-container,.icons-container {
+      background:var(--sn-theme-251f31)!important;color:var(--sn-theme-e6edf9)!important;border-color:var(--sn-theme-423750)!important;
+    }
+    .nlq-search-box-heading-main,.nlq-search-box-heading-second { color:var(--sn-theme-e6edf9)!important; }
+    .nlq-search-box-footer-container { color:var(--sn-theme-a8b8d1)!important; }
+    .now-input-native::placeholder,.now-typeahead-native-input::placeholder { color:var(--sn-theme-a8b8d1)!important;opacity:1!important; }
     .sn-inbox,.sn-inbox .sn-card-list { border-color:var(--sn-theme-423750)!important; }
     .sn-inbox .sn-presence--header,.sn-inbox .sn-presence--header.is-uxf,
     .sn-presence-state-container { background:var(--sn-theme-1c1827)!important;border-color:var(--sn-theme-423750)!important; }
@@ -15054,7 +15066,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.95' });
+    addLog('info', 'helper-version', { version: '2.36.96' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -15651,11 +15663,23 @@ function startSNAI() {
       record({ kind: 'element', path, tag: element.localName, classes: element.getAttribute('class'),
         html: openingTag.slice(0, 2000), styles: { color: css.color, background: css.backgroundColor,
           backgroundImage: css.backgroundImage, border: css.borderColor, fill: css.fill, stroke: css.stroke,
-          opacity: css.opacity, boxShadow: css.boxShadow }, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
+          opacity: css.opacity, boxShadow: css.boxShadow, font: css.font, textFill: css.webkitTextFillColor,
+          outline: css.outlineColor, caret: css.caretColor, accent: css.accentColor },
+        pseudo: Object.fromEntries(['::before','::after','::placeholder'].map(pseudo => {
+          const style = element.ownerDocument.defaultView.getComputedStyle(element, pseudo);
+          return [pseudo, { color:style.color, background:style.backgroundColor, content:style.content, backgroundImage:style.backgroundImage }];
+        })), rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
     };
     const visit = (element, path) => {
       if (element.nodeType !== 1 || capture.elements.has(element)) return;
       capture.elements.add(element); snapshot(element, path);
+      // Newly mounted component styles are also captured, not just startup sheets.
+      if ((element.localName === 'style' || element.localName === 'link') && element.sheet && !capture.sheets.has(element.sheet)) {
+        capture.sheets.add(element.sheet);
+        try { record({ kind:'stylesheet', path, href:element.sheet.href,
+          css:[...element.sheet.cssRules].map(rule => rule.cssText).join('\n').slice(0,200000) }); }
+        catch { record({ kind:'inaccessible-stylesheet', path, href:element.sheet.href }); }
+      }
       if (element.shadowRoot) observe(element.shadowRoot, `${path}/shadow:${element.localName}`);
       if (element.localName === 'iframe' && !capture.frames.has(element)) {
         capture.frames.add(element);
