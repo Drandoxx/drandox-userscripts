@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.525.0
+// @version      1.526.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -493,7 +493,11 @@
       table.gbs-board.gbs-custom-columns thead th .header-container>.label-container{position:static!important;inset:auto!important;flex:1 1 auto!important;min-width:0!important;display:flex!important;justify-content:inherit!important;text-align:inherit!important}
       table.gbs-board.gbs-custom-columns thead th .column-header-components{position:static!important;flex:0 0 auto!important}
       table.gbs-board.gbs-custom-columns tbody td.column-agent>.hyperlink-cell{display:flex!important;align-items:center!important;flex:1 1 auto!important;width:100%!important;min-width:0!important;max-width:none!important;gap:6px!important}
-      table.gbs-board.gbs-custom-columns tbody td.column-agent .hyperlink-cell>a{display:block!important;flex:1 1 auto!important;width:auto!important;min-width:0!important;max-width:none!important;white-space:nowrap!important;-webkit-line-clamp:unset!important;overflow:hidden!important;text-overflow:ellipsis!important}
+      table.gbs-board.gbs-custom-columns tbody td.column-agent .hyperlink-cell>a{display:-webkit-box!important;flex:1 1 auto!important;width:auto!important;min-width:0!important;max-width:100%!important;white-space:normal!important;overflow-wrap:anywhere!important;-webkit-box-orient:vertical!important;-webkit-line-clamp:2!important;overflow:hidden!important;text-overflow:clip!important}
+      table.gbs-board.gbs-custom-columns tbody tr>td{height:auto!important;min-height:${height}px!important}
+      table.gbs-board.gbs-custom-columns tbody tr.gbs-name-wrapped>td{padding-top:0!important;padding-bottom:0!important;min-height:0!important}
+      table.gbs-board.gbs-custom-columns tbody tr.gbs-current-agent:has(.gbs-current-agent-badge) td.column-agent>.hyperlink-cell{flex-wrap:wrap!important;gap:3px!important}
+      table.gbs-board.gbs-custom-columns tbody tr.gbs-current-agent:has(.gbs-current-agent-badge)>td{padding-top:2px!important;padding-bottom:2px!important}
       table.gbs-board.gbs-custom-columns tbody td.column-agent .gbs-current-agent-badge{flex:0 0 auto!important;display:inline-flex!important;width:max-content!important;margin:0!important}
       table.gbs-board.gbs-custom-columns tbody td:not(.column-agent)>div{min-width:0!important;max-width:100%!important;flex:1 1 auto!important}
       ${boardEdgeCSS(settings).replaceAll('table.gbs-board', 'table.gbs-board.gbs-custom-columns')}
