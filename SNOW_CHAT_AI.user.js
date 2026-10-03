@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.87
+// @version      2.36.88
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -339,8 +339,8 @@
     // creating a self-sustaining mutation loop in detached Workspace roots.
     if (!spaceEnabled || spaceStyles.get(root)?.getRootNode() === root) return;
     const style = document.createElement('style');
-    style.dataset.snAiSpaceTheme = 'true'; style.textContent = spaceCSS;
-    (root === document ? (document.head || document.documentElement) : root)?.append(style);
+    style.dataset.snAiSpaceTheme = 'true'; style.textContent = themeText();
+    (root.nodeType === 9 ? (root.head || root.documentElement) : root)?.append(style);
     spaceStyles.set(root, style);
   }
   // Add future themes here. Every colour in the shared CSS is a token.
@@ -456,7 +456,7 @@
 };
   let selectedSpaceTheme = "space";
   function themeText() {
-    const palette = SN_THEME_PALETTES[selectedSpaceTheme] || SN_THEME_PALETTES.space;
+    const palette = { ...SN_THEME_PALETTES.space, ...SN_THEME_PALETTES[selectedSpaceTheme] };
     return ":host,html{" + Object.entries(palette).map(([key,value]) => key + ":" + value + ";").join("") + "}" + spaceCSS;
   }
   const spaceCSS = `
@@ -538,7 +538,8 @@
     .sn-chat-message,.sn-chat-message-bubble { background-color:var(--sn-theme-1c1827)!important;color:var(--sn-theme-e6edf9)!important; }
     a:not([data-official-update]) { color:var(--sn-theme-9de2f5); }
     ::selection { background:var(--sn-theme-534775);color:#fff; }
-    #tm-toolbar,.tm-snippet { background-color:var(--sn-theme-251f31)!important;color:var(--sn-theme-e6edf9)!important;border-color:var(--sn-theme-423750)!important; }
+    #tm-toolbar { background:transparent!important; }
+    .tm-snippet { background-color:var(--sn-theme-251f31)!important;color:var(--sn-theme-e6edf9)!important;border-color:var(--sn-theme-423750)!important; }
     #local-sn-ai-settings-template .local-sn-cpc-card { background:var(--sn-theme-1c1827)!important;color:var(--sn-theme-e6edf9)!important;border-color:var(--sn-theme-65538f)!important; }
     #local-sn-ai-settings-template .local-sn-cpc-drag { background:linear-gradient(110deg,var(--sn-theme-35243c),var(--sn-theme-26203e))!important; }
     #local-sn-ai-settings-template [data-inbox-settings],#local-sn-ai-settings-template [data-update-check-controls],
@@ -552,9 +553,19 @@
     }
   }
   document.addEventListener('sn-ai-space-theme', event => setSpaceTheme(event.detail === true));
+  document.addEventListener('sn-ai-theme-palette', event => {
+    if (!SN_THEME_PALETTES[event.detail]) return;
+    selectedSpaceTheme = event.detail;
+    for (const style of spaceStyles.values()) style.textContent = themeText();
+  });
+  Promise.resolve(GM_getValue('sn-ai-theme-palette-v1', 'space')).then(value => {
+    if (SN_THEME_PALETTES[value]) selectedSpaceTheme = value;
+    for (const style of spaceStyles.values()) style.textContent = themeText();
+  });
   Promise.resolve(GM_getValue('sn-ai-space-theme-v1', false)).then(value => setSpaceTheme(value === true))
     .catch(error => console.warn('[SN AI theme]', error));
   const announcedPresence = new WeakSet();
+  const watchedFrames = new WeakSet();
   // Incoming-card autofocus must not interrupt any editable field.
   // Keep only the focused control and selection, never a copy of its value.
   let protectedChat = null;
@@ -801,6 +812,16 @@
     }
   `;
   function discover(node) {
+    const inspectFrame = element => {
+      if (element.localName !== 'iframe' || watchedFrames.has(element)) return;
+      watchedFrames.add(element);
+      const attachFrame = () => {
+        try { if (element.contentDocument?.documentElement) watch(element.contentDocument); }
+        catch { /* Cross-origin frames remain protected by browser policy. */ }
+      };
+      element.addEventListener('load', attachFrame);
+      attachFrame();
+    };
     const styleInboxElement = element => {
       if (!(element instanceof Element)) return;
       if (element.hasAttribute('data-sn-ai-inbox-proxy')) return;
@@ -850,10 +871,12 @@
       document.dispatchEvent(new CustomEvent('sn-ai-presence-mounted', { detail: element }));
     };
     announce(node);
+    inspectFrame(node);
     styleInboxElement(node);
     if (node.nodeType === 1 && node.shadowRoot) watch(node.shadowRoot);
     for (const element of node.querySelectorAll?.('*') || []) {
       announce(element);
+      inspectFrame(element);
       styleInboxElement(element);
       if (element.shadowRoot) watch(element.shadowRoot);
     }
@@ -974,8 +997,9 @@ function installChatSnippets() {
             top:7px;
             left:100px;
             z-index:99999;
-            right:12px;
-            max-width:calc(100vw - 112px);
+            right:var(--sn-snippet-right,160px);
+            max-width:calc(100vw - 100px - var(--sn-snippet-right,160px));
+            background:transparent!important;
             display:flex;
             align-items:center;
             gap:10px;
@@ -1197,7 +1221,7 @@ function installChatSnippets() {
 
     style.textContent += `
       #tm-add-btn, #tm-export-btn, #tm-theme-btn { flex:0 0 auto; }
-      @media(max-width:600px) { #tm-toolbar { left:8px;right:8px;max-width:calc(100vw - 16px);gap:6px; } }
+      @media(max-width:600px) { #tm-toolbar { left:8px;right:var(--sn-snippet-right,160px);max-width:calc(100vw - 8px - var(--sn-snippet-right,160px));gap:6px; } }
     `;
     document.head.appendChild(style);
 
@@ -1217,6 +1241,25 @@ function installChatSnippets() {
 
     const toolbar = document.createElement('div');
     toolbar.id = 'tm-toolbar';
+    // Reserve the actual header controls, not a full-width overlay. Resize
+    // events only; no ongoing full-page layout scans.
+    const fitSnippetHeader = () => {
+      const roots = [document];
+      let header;
+      for (let i = 0; i < roots.length && !header; i += 1) {
+        header = roots[i].querySelector('.sn-workspace-header');
+        if (!header) for (const element of roots[i].querySelectorAll('*')) if (element.shadowRoot) roots.push(element.shadowRoot);
+      }
+      let reserve = 160;
+      if (header) {
+        const buttons = [...header.querySelectorAll('button')].map(button => button.getBoundingClientRect())
+          .filter(rect => rect.width > 0 && rect.left > window.innerWidth / 2);
+        if (buttons.length) reserve = Math.max(12, window.innerWidth - Math.min(...buttons.map(rect => rect.left)) + 12);
+      }
+      document.documentElement.style.setProperty('--sn-snippet-right', `${reserve}px`);
+    };
+    window.addEventListener('resize', fitSnippetHeader);
+    setTimeout(fitSnippetHeader, 1500);
 
     const addButton = document.createElement('button');
     addButton.id = 'tm-add-btn';
@@ -11183,6 +11226,23 @@ function startSNAI() {
         document.dispatchEvent(new CustomEvent('sn-ai-space-theme', { detail: themeSwitch.checked }));
       });
       generalPanel.append(themeRow);
+      const paletteRow = document.createElement('label');
+      paletteRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 16px';
+      const paletteSelect = document.createElement('select');
+      paletteSelect.setAttribute('aria-label', 'Colour theme');
+      for (const [value, name] of [['space', 'Space'], ['aurora', 'Aurora']]) {
+        const option = document.createElement('option'); option.value = value; option.textContent = name; paletteSelect.append(option);
+      }
+      gmGetValue('sn-ai-theme-palette-v1', 'space').then(value => { paletteSelect.value = value; });
+      paletteSelect.addEventListener('change', () => {
+        gmSetValue('sn-ai-theme-palette-v1', paletteSelect.value).catch(console.warn);
+        document.dispatchEvent(new CustomEvent('sn-ai-theme-palette', { detail: paletteSelect.value }));
+      });
+      paletteRow.append('Theme', paletteSelect); generalPanel.append(paletteRow);
+      const captureButton = document.createElement('button');
+      captureButton.type = 'button'; captureButton.textContent = 'Start style capture';
+      captureButton.addEventListener('click', () => toggleStyleCapture(captureButton));
+      generalPanel.append(captureButton);
     }
     tabList.after(generalPanel);
     const settingsTabs = [...settingsDialog.querySelectorAll('[data-settings-tab]')];
@@ -14866,7 +14926,7 @@ function startSNAI() {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.87' });
+    addLog('info', 'helper-version', { version: '2.36.88' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -15420,6 +15480,87 @@ function startSNAI() {
     inboxPolicy.logs.push(entry);
     inboxPolicy.bytes += bytes;
     while (inboxPolicy.bytes > 5000000 && inboxPolicy.logs.length > 1) inboxPolicy.bytes -= JSON.stringify(inboxPolicy.logs.shift()).length;
+  }
+  let styleCapture = null;
+  function toggleStyleCapture(button) {
+    if (styleCapture) {
+      const capture = styleCapture;
+      capture.active = false;
+      for (const observer of capture.observers) observer.disconnect();
+      for (const cleanup of capture.cleanups) cleanup();
+      clearTimeout(capture.deadline);
+      const blob = new Blob([JSON.stringify({ kind: 'SN AI style capture', version: 1,
+        started: capture.started, stopped: new Date().toISOString(), truncated: capture.truncated,
+        records: capture.records }, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob), link = document.createElement('a');
+      link.href = url; link.download = 'SN_AI_style_capture.json'; link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      styleCapture = null; button.textContent = 'Start style capture'; return;
+    }
+    const capture = { active: true, started: new Date().toISOString(), records: [], bytes: 0,
+      truncated: false, observers: [], cleanups: [], roots: new WeakSet(), elements: new WeakSet(), frames: new WeakSet(), sheets: new WeakSet() };
+    styleCapture = capture;
+    button.textContent = 'Stop & download';
+    button.title = 'May contain customer data. Capture stops after 5 minutes. Review before sharing.';
+    const record = item => {
+      if (!capture.active) return;
+      const size = JSON.stringify(item).length;
+      if (capture.bytes + size > 10000000) { capture.truncated = true; return; }
+      capture.bytes += size; capture.records.push({ at: new Date().toISOString(), ...item });
+    };
+    const snapshot = (element, path) => {
+      if (!element?.getBoundingClientRect || element.closest?.('#local-sn-inspector-root')) return;
+      const rect = element.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const css = element.ownerDocument.defaultView.getComputedStyle(element);
+      record({ kind: 'element', path, tag: element.localName, classes: element.getAttribute('class'),
+        html: element.outerHTML.slice(0, 12000), styles: { color: css.color, background: css.backgroundColor,
+          backgroundImage: css.backgroundImage, border: css.borderColor, fill: css.fill, stroke: css.stroke,
+          opacity: css.opacity, boxShadow: css.boxShadow }, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
+    };
+    const visit = (element, path) => {
+      if (element.nodeType !== 1 || capture.elements.has(element)) return;
+      capture.elements.add(element); snapshot(element, path);
+      if (element.shadowRoot) observe(element.shadowRoot, `${path}/shadow:${element.localName}`);
+      if (element.localName === 'iframe' && !capture.frames.has(element)) {
+        capture.frames.add(element);
+        const frame = () => {
+          if (!capture.active) return;
+          try {
+            if (element.contentDocument) observe(element.contentDocument, `${path}/iframe`);
+            else record({ kind: 'inaccessible-frame', src: element.src });
+          } catch { record({ kind: 'inaccessible-frame', src: element.src }); }
+        };
+        element.addEventListener('load', frame); capture.cleanups.push(() => element.removeEventListener('load', frame)); frame();
+      }
+    };
+    const observe = (root, path) => {
+      if (capture.roots.has(root)) return;
+      capture.roots.add(root);
+      for (const sheet of [...(root.styleSheets || []), ...(root.adoptedStyleSheets || [])]) {
+        if (capture.sheets.has(sheet)) continue;
+        capture.sheets.add(sheet);
+        try { record({ kind: 'stylesheet', path, href: sheet.href, css: [...sheet.cssRules].map(rule => rule.cssText).join('\n').slice(0, 200000) }); }
+        catch { record({ kind: 'inaccessible-stylesheet', path, href: sheet.href }); }
+      }
+      for (const element of root.querySelectorAll('*')) visit(element, path);
+      const observer = new MutationObserver(records => {
+        if (!capture.active) return;
+        const changed = new Set();
+        for (const mutation of records) {
+          if (mutation.type === 'attributes') changed.add(mutation.target);
+          for (const added of mutation.addedNodes || []) {
+            visit(added, path);
+            for (const child of added.querySelectorAll?.('*') || []) visit(child, path);
+          }
+        }
+        for (const element of changed) snapshot(element, path);
+      });
+      observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'aria-selected', 'aria-disabled', 'aria-invalid'] });
+      capture.observers.push(observer);
+    };
+    observe(document, 'workspace');
+    capture.deadline = setTimeout(() => { if (styleCapture === capture) toggleStyleCapture(button); }, 300000);
   }
   function renderInboxSettings(content) {
     if (content.querySelector('[data-inbox-settings]')) return;
