@@ -553,6 +553,9 @@
     }
   }
   document.addEventListener('sn-ai-space-theme', event => setSpaceTheme(event.detail === true));
+  document.addEventListener('sn-ai-theme-catalog', event => {
+    if (typeof event.detail === 'function') event.detail(Object.keys(SN_THEME_PALETTES));
+  });
   document.addEventListener('sn-ai-theme-palette', event => {
     if (!SN_THEME_PALETTES[event.detail]) return;
     selectedSpaceTheme = event.detail;
@@ -888,7 +891,7 @@
     const style = document.createElement('style');
     style.dataset.snAiActionStyle = 'true';
     style.textContent = css;
-    (root === document ? (document.head || document.documentElement) : root)?.prepend(style);
+    (root.nodeType === 9 ? (root.head || root.documentElement) : root)?.prepend(style);
     const observer = new MutationObserver(records => {
       // Workspace sometimes clears a mounted root's children, including our
       // style. Restore only this changed root; never rescan the whole page.
@@ -11230,9 +11233,12 @@ function startSNAI() {
       paletteRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 16px';
       const paletteSelect = document.createElement('select');
       paletteSelect.setAttribute('aria-label', 'Colour theme');
-      for (const [value, name] of [['space', 'Space'], ['aurora', 'Aurora']]) {
-        const option = document.createElement('option'); option.value = value; option.textContent = name; paletteSelect.append(option);
-      }
+      document.dispatchEvent(new CustomEvent('sn-ai-theme-catalog', { detail: names => {
+        for (const value of names) {
+          const option = document.createElement('option'); option.value = value;
+          option.textContent = value.charAt(0).toUpperCase() + value.slice(1); paletteSelect.append(option);
+        }
+      } }));
       gmGetValue('sn-ai-theme-palette-v1', 'space').then(value => { paletteSelect.value = value; });
       paletteSelect.addEventListener('change', () => {
         gmSetValue('sn-ai-theme-palette-v1', paletteSelect.value).catch(console.warn);
