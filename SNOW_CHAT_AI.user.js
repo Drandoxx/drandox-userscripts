@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.179
+// @version      2.36.180
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -415,16 +415,6 @@
   const spaceStyles = new Map();
   let spaceEnabled = false;
   function ensureSpaceRoot(root) {
-    // Attachment cards span several shadow roots. Mark only their descendants
-    // so the inner header cannot pick up the darker generic card background.
-    let attachmentAncestor = root.host;
-    while (attachmentAncestor) {
-      if (attachmentAncestor.tagName === 'NOW-RECORD-COMMON-ATTACHMENT-CARD') {
-        root.host?.setAttribute('data-sn-ai-attachment-surface','true');
-        break;
-      }
-      attachmentAncestor = attachmentAncestor.parentElement || attachmentAncestor.getRootNode()?.host;
-    }
     spaceRoots.add(root);
     // A temporarily detached component still owns its stylesheet. Checking
     // isConnected here appended another style for every observer callback,
@@ -710,16 +700,32 @@
     .now-form-field-label,.now-form-field-label-text,.sn-section-header-content,
     .sn-panel-header-heading,.sn-header-layout-content { color:var(--sn-theme-c8d7ef)!important; }
     :host(now-record-common-attachments-connected) .sn-panel {
-      padding-left:12px!important;padding-right:8px!important;box-sizing:border-box!important;
+      padding:0!important;width:100%!important;max-width:none!important;box-sizing:border-box!important;
     }
-    :host([data-sn-ai-attachment-surface]) .sn-attachments,
-    :host([data-sn-ai-attachment-surface]) .now-card,
-    :host([data-sn-ai-attachment-surface]) .now-card-header,
-    :host([data-sn-ai-attachment-surface]) .now-card-header-content,
-    :host([data-sn-ai-attachment-surface]) .now-card-header-heading,
-    :host([data-sn-ai-attachment-surface]) .now-card-header-caption {
+    :host(sn-form-internal-attachments-header) .sn-panel-header{padding-left:12px!important;padding-right:10px!important;box-sizing:border-box!important;width:100%!important}
+    :host(sn-form-internal-attachments-header) .sn-panel-header-search{display:flex!important;gap:8px!important;min-width:0!important}
+    :host(sn-form-internal-attachments-header) .sn-panel-header-search>.sn-panel-header-content:first-child{flex:1 1 0!important;min-width:0!important}
+    :host(sn-form-internal-attachments-header) .sn-panel-header-search>.sn-panel-header-content:last-child{flex:0 0 32px!important}
+    :host(sn-form-internal-attachments-list) .sn-attachment-list-wrapper{padding:0 10px 0 12px!important;box-sizing:border-box!important;width:100%!important}
+    :host(sn-form-internal-attachments-list) .sn-card-list{padding:0!important;width:100%!important}
+    :host(sn-form-internal-attachments-list) .sn-card{display:flex!important;gap:8px!important;width:100%!important;box-sizing:border-box!important}
+    :host(sn-form-internal-attachments-list) now-record-common-attachment-card{flex:1 1 0!important;min-width:0!important}
+    :host(now-button-iconic[icon="plusOutline"]) button{border:1px solid var(--sn-theme-655573)!important;border-radius:7px!important;background:var(--sn-theme-251f31)!important;color:var(--sn-theme-e6edf9)!important;box-shadow:none!important;outline:none!important}
+    :host(now-button-iconic[icon="plusOutline"]) button:hover{background:var(--sn-theme-49365a)!important}
+    :host(now-button-iconic[icon="plusOutline"]) button:focus-visible{outline:2px solid var(--sn-theme-ac94ec)!important;outline-offset:2px!important}
+    :host-context(now-record-common-attachment-card) .sn-attachments,
+    :host-context(now-record-common-attachment-card) .now-card,
+    :host-context(now-record-common-attachment-card) .now-card-header,
+    :host-context(now-record-common-attachment-card) .now-card-header-content,
+    :host-context(now-record-common-attachment-card) .now-card-header-heading,
+    :host-context(now-record-common-attachment-card) .now-card-header-caption {
       background:var(--sn-theme-251f31)!important;
     }
+    .sn-single-attachment-preview-modal,.sn-attachment-upload-preview,.sn-attachment-preview-title{background:var(--sn-theme-251f31)!important;color:var(--sn-theme-e6edf9)!important;border-color:var(--sn-theme-423750)!important}
+    .sn-single-attachment-preview-modal .text-content,.sn-attachment-preview-title .extension{color:var(--sn-theme-e6edf9)!important}
+    :host-context(.sn-single-attachment-preview-modal) .now-message{background:var(--sn-theme-251f31)!important;color:var(--sn-theme-e6edf9)!important;border-color:var(--sn-theme-423750)!important}
+    :host-context(.sn-single-attachment-preview-modal) input{background:var(--sn-theme-191621)!important;color:var(--sn-theme-e6edf9)!important;border:1px solid var(--sn-theme-655573)!important;border-radius:6px!important;box-shadow:none!important}
+    :host-context(.sn-single-attachment-preview-modal) input:focus{outline:2px solid var(--sn-theme-ac94ec)!important;outline-offset:1px!important}
     .now-input-field,.now-textarea-field,.now-select-field,.now-select-trigger,.now-select-input,.now-typeahead-field,
     .now-input-native,.now-typeahead-native-input,.now-input-date-time-input,.now-textarea-field-backdrop,.sn-global-typeahead-input {
       background-color:var(--sn-theme-191621)!important;color:var(--sn-theme-e6edf9)!important;border-color:var(--sn-theme-655573)!important;caret-color:var(--sn-theme-9de2f5);
@@ -16429,7 +16435,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.179' });
+    addLog('info', 'helper-version', { version: '2.36.180' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
