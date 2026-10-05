@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.224
+// @version      2.36.225
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -3022,6 +3022,40 @@
     element.style.setProperty('-webkit-text-fill-color','currentColor','important');
     element.style.setProperty('opacity','1','important');
   }
+  // ServiceNow can attach a shadow root AFTER inserting its empty host. The
+  // page's attachShadow call need not pass through our isolated-world hook.
+  // Retry only newly discovered custom hosts, finitely, rather than polling
+  // the entire Workspace forever.
+  const lateShadowHosts=new Map();
+  const lateShadowDelays=[100,300,700,1500,3000,5000];
+  let lateShadowTimer=0;
+  function queueLateShadowHost(element) {
+    if(!element?.localName?.includes('-') || element.shadowRoot || lateShadowHosts.has(element))return;
+    lateShadowHosts.set(element,0);
+    if(!lateShadowTimer)lateShadowTimer=setTimeout(checkLateShadowHosts,lateShadowDelays[0]);
+  }
+  function checkLateShadowHosts() {
+    lateShadowTimer=0;
+    let delay=Infinity;
+    for(const [host,attempt] of lateShadowHosts) {
+      if(!host.isConnected || attempt>=lateShadowDelays.length) {lateShadowHosts.delete(host);continue;}
+      if(host.shadowRoot) {lateShadowHosts.delete(host);watch(host.shadowRoot);continue;}
+      const next=attempt+1;
+      if(next>=lateShadowDelays.length)lateShadowHosts.delete(host);
+      else {lateShadowHosts.set(host,next);delay=Math.min(delay,lateShadowDelays[next]);}
+    }
+    if(lateShadowHosts.size)lateShadowTimer=setTimeout(checkLateShadowHosts,delay);
+  }
+  function reconcileMountedThemeRoots() {
+    for(const root of spaceRoots) {
+      if(root.host && !root.host.isConnected)continue;
+      ensureSpaceRoot(root);
+      for(const host of root.querySelectorAll?.('*') || []) {
+        if(host.shadowRoot)watch(host.shadowRoot);
+        else queueLateShadowHost(host);
+      }
+    }
+  }
   function discover(node) {
     removeWorkspaceTabMenus(node);
     installDurationSummary(node.host || node);
@@ -3114,6 +3148,7 @@
     inspectFrame(node);
     styleInboxElement(node);
     if (node.nodeType === 1 && node.shadowRoot) watch(node.shadowRoot);
+    else queueLateShadowHost(node);
     for (const element of node.querySelectorAll?.('*') || []) {
       installDurationSummary(element);
       markAcceptedTab(element);
@@ -3127,6 +3162,7 @@
       inspectFrame(element);
       styleInboxElement(element);
       if (element.shadowRoot) watch(element.shadowRoot);
+      else queueLateShadowHost(element);
     }
   }
   function watch(root) {
@@ -3191,6 +3227,13 @@
       // Workspace sometimes clears a mounted root's children, including our
       // style. Restore only this changed root; never rescan the whole page.
       ensureSpaceRoot(root);
+      if(style.getRootNode()!==root)(root.nodeType===9?(root.head || root.documentElement):root)?.prepend(style);
+      if(records.some(record=>[...record.addedNodes].some(node=>node.nodeType===1
+        && node.matches?.('style,link[rel="stylesheet"]') && !node.hasAttribute('data-sn-ai-space-theme')
+        && !node.hasAttribute('data-sn-ai-action-style')))) {
+        const theme=spaceStyles.get(root);
+        if(theme)(root.nodeType===9?(root.head || root.documentElement):root)?.append(theme);
+      }
       scheduleKBSearchDecoration();
       installDurationSummary(root.host || root);
       // Closing the last extra tab removes nodes rather than adding them.
@@ -3223,6 +3266,11 @@
     });
     observer.observe(document, { childList: true });
   }
+  document.addEventListener('DOMContentLoaded',reconcileMountedThemeRoots,{once:true});
+  window.addEventListener('load',reconcileMountedThemeRoots,{once:true});
+  window.addEventListener('pageshow',reconcileMountedThemeRoots);
+  // Covers warm-cache hydration and scripts that start after DOM readiness.
+  for(const delay of [0,1000,4000,10000])setTimeout(reconcileMountedThemeRoots,delay);
 })();
 
 function installChatSnippets() {
@@ -17385,7 +17433,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.224' });
+    addLog('info', 'helper-version', { version: '2.36.225' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
