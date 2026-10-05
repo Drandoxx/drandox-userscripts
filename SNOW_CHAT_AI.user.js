@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.230
+// @version      2.36.231
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -627,6 +627,8 @@
   // Complete role-based palettes: semantic success/error colors remain intact.
   // Gradients stay on content surfaces, never on the tab/curve join surfaces.
   const extraThemeSpecs = {
+    spaceLight:{light:true,base:'#faf9fd',panel:'#f2eff8',card:'#ffffff',input:'#ffffff',raised:'#e6def3',line:'#d8cee7',border:'#9585ac',accent:'#7050a5',cool:'#267a91',text:'#292235',muted:'#6a6078',gradient:'none'},
+    auroraLight:{light:true,base:'#f7fbf9',panel:'#edf5f1',card:'#ffffff',input:'#ffffff',raised:'#dceee5',line:'#cbded3',border:'#7f9e8f',accent:'#24765a',cool:'#247983',text:'#20362c',muted:'#5b7568',gradient:'none'},
     original:{base:'#ffffff',panel:'#f6f7f8',card:'#ffffff',input:'#ffffff',raised:'#eef1f4',line:'#dce1e6',border:'#87919c',accent:'#536b77',cool:'#167568',text:'#20252b',muted:'#606b76',gradient:'none'},
     snowDark:{base:'#181b1f',panel:'#202429',card:'#282e34',input:'#22272d',raised:'#333b44',line:'#434c56',border:'#788592',accent:'#a5bac5',cool:'#83c9b9',text:'#e8edf2',muted:'#aeb9c3',gradient:'none'},
     pearl:{light:true,base:'#faf9fc',panel:'#f2eff7',card:'#ffffff',input:'#ffffff',raised:'#e9e3f2',line:'#ddd5e8',border:'#9c8dad',accent:'#69469a',cool:'#196f75',text:'#292334',muted:'#665d73',gradient:'none'},
@@ -699,7 +701,7 @@
     select[data-sn-ai-presence] option{background:#fff!important;color:#20252b!important;}
     select[data-sn-ai-presence] option[value="Available"]{color:#246447!important;}
     select[data-sn-ai-presence] option[value="Away"]{color:#785f21!important;}
-    ::selection{background:color-mix(in srgb,var(--sn-theme-ac94ec) 25%,white)!important;color:var(--sn-theme-e6edf9)!important;}
+    ::selection{background:#2457a7!important;color:#ffffff!important;-webkit-text-fill-color:#ffffff!important;}
   `;
   const structuralCSSCache=new Map();
   function structureOnlyCSS(source) {
@@ -1242,9 +1244,11 @@
       -webkit-text-fill-color:var(--sn-theme-a8b8d1)!important;opacity:1!important;
     }
     .sn-messaging-unread-message-indicator.new-messages-separator {
+      flex-wrap:nowrap!important;
       color:var(--sn-theme-ac94ec)!important;background:transparent!important;
     }
     .new-messages-separator .sn-messaging-unread-message-indicator-message {
+      white-space:nowrap!important;flex:0 0 auto!important;
       color:var(--sn-theme-ac94ec)!important;-webkit-text-fill-color:var(--sn-theme-ac94ec)!important;
       background:color-mix(in srgb,var(--sn-theme-ac94ec) 14%,var(--sn-theme-251f31))!important;
       border:1px solid color-mix(in srgb,var(--sn-theme-ac94ec) 45%,transparent)!important;
@@ -2018,7 +2022,7 @@
   }
   document.addEventListener('sn-ai-space-theme', event => setSpaceTheme(event.detail === true));
   document.addEventListener('sn-ai-theme-catalog', event => {
-    if (typeof event.detail === 'function') event.detail(['original','snowDark','pearl','daylight','sage',...Object.keys(SN_THEME_PALETTES).filter(name=>!['original','snowDark','pearl','daylight','sage'].includes(name))]);
+    if (typeof event.detail === 'function') event.detail(['original','snowDark','spaceLight','space','auroraLight','aurora']);
   });
   document.addEventListener('sn-ai-theme-palette', event => {
     if (!SN_THEME_PALETTES[event.detail]) return;
@@ -13800,6 +13804,9 @@ function startSNAI(tabIdentity) {
       }
       #local-sn-ai-settings-template .sn-ai-delay-stepper input::-webkit-inner-spin-button,
       #local-sn-ai-settings-template .sn-ai-delay-stepper input::-webkit-outer-spin-button { appearance:none;margin:0; }
+      #local-sn-ai-settings-template .sn-ai-mode-selector{display:flex;margin:0 16px;border:1px solid var(--sn-theme-655573);border-radius:999px;padding:4px;gap:4px;}
+      #local-sn-ai-settings-template .sn-ai-mode-selector button.sn-ai-mode-option{flex:1;border:0!important;border-radius:999px!important;padding:8px 18px;background:transparent!important;color:var(--sn-theme-a8b8d1)!important;}
+      #local-sn-ai-settings-template .sn-ai-mode-selector button.sn-ai-mode-option[aria-checked="true"]{background:var(--sn-theme-302951)!important;color:var(--sn-theme-e6edf9)!important;}
     `;
     settingsDialog.append(generalStyle);
     if (workspacePage) {
@@ -13820,17 +13827,34 @@ function startSNAI(tabIdentity) {
       paletteRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 16px';
       const paletteSelect = document.createElement('select');
       paletteSelect.setAttribute('aria-label', 'Colour theme');
-      document.dispatchEvent(new CustomEvent('sn-ai-theme-catalog', { detail: names => {
-        for (const value of names) {
-          const option = document.createElement('option'); option.value = value;
-          option.textContent = ({original:'SNOW Original',snowDark:'SNOW Dark',pearl:'Pearl Light',daylight:'Daylight',sage:'Sage Light'})[value] || value.charAt(0).toUpperCase() + value.slice(1); paletteSelect.append(option);
-        }
-      } }));
-      gmGetValue('sn-ai-theme-palette-v1', 'original').then(value => { paletteSelect.value = value; });
-      paletteSelect.addEventListener('change', () => {
-        gmSetValue('sn-ai-theme-palette-v1', paletteSelect.value).catch(console.warn);
-        document.dispatchEvent(new CustomEvent('sn-ai-theme-palette', { detail: paletteSelect.value }));
+      const variants={snow:{light:'original',dark:'snowDark'},space:{light:'spaceLight',dark:'space'},aurora:{light:'auroraLight',dark:'aurora'}};
+      let colourMode='light',themeChoiceReady=false;
+      const modeSelector=document.createElement('div');modeSelector.className='sn-ai-mode-selector';
+      modeSelector.setAttribute('role','radiogroup');modeSelector.setAttribute('aria-label','Theme appearance');
+      const modeButtons=[];
+      function renderMode(){for(const button of modeButtons)button.setAttribute('aria-checked',String(button.dataset.mode===colourMode));}
+      function applyThemeChoice(){
+        if(!themeChoiceReady)return;
+        const value=variants[paletteSelect.value][colourMode];
+        gmSetValue('sn-ai-theme-palette-v1',value).catch(console.warn);
+        document.dispatchEvent(new CustomEvent('sn-ai-theme-palette',{detail:value}));
+      }
+      for(const mode of ['light','dark']){
+        const button=document.createElement('button');button.type='button';button.className='sn-ai-mode-option';button.dataset.mode=mode;
+        button.textContent=mode==='light'?'Light':'Dark';button.setAttribute('role','radio');
+        button.addEventListener('click',()=>{colourMode=mode;renderMode();applyThemeChoice();});
+        modeButtons.push(button);modeSelector.append(button);
+      }
+      for(const [value,label] of [['snow','SNOW'],['space','Space'],['aurora','Aurora']]){
+        const option=document.createElement('option');option.value=value;option.textContent=label;paletteSelect.append(option);
+      }
+      renderMode();generalPanel.append(modeSelector);
+      gmGetValue('sn-ai-theme-palette-v1','original').then(value=>{
+        const match=Object.entries(variants).find(([,modes])=>Object.values(modes).includes(value));
+        paletteSelect.value=match?.[0]||'snow';colourMode=match && match[1].dark===value?'dark':'light';
+        themeChoiceReady=true;renderMode();if(!match)applyThemeChoice();
       });
+      paletteSelect.addEventListener('change',applyThemeChoice);
       paletteRow.append('Theme', paletteSelect); generalPanel.append(paletteRow);
       const chatBackgroundRow = document.createElement('label');
       chatBackgroundRow.style.cssText = paletteRow.style.cssText;
@@ -17533,7 +17557,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.230' });
+    addLog('info', 'helper-version', { version: '2.36.231' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
