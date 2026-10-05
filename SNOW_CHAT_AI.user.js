@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.240
+// @version      2.36.241
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -841,6 +841,7 @@
     .sn-chrome-one-tab.sn-chrome-one-tab.sn-chrome-one-tab.is-selected:not(.is-module)::after{display:none!important;}
     .sn-ai-tab-outline{position:absolute;left:-12px;top:0;width:calc(100% + 24px);height:100%;overflow:visible;pointer-events:none;z-index:0;}
     .sn-ai-tab-outline path{fill:var(--sn-tab-notice-surface,var(--sn-tab-active-surface));stroke:var(--sn-theme-ac94ec);stroke-linecap:round;stroke-linejoin:round;}
+    .sn-ai-tab-border-mask{fill:var(--sn-tab-notice-surface,var(--sn-tab-active-surface));stroke:none;}
     .sn-chrome-one-tab.is-selected>.sn-chrome-one-tab-content{z-index:1;}
     /* Shared component geometry: Original filters only the paint below. */
     .now-button:not(.is-bare),.now-button-iconic:not(.is-bare),.now-dropdown{
@@ -3113,7 +3114,12 @@
     const w=bounds.width+24,h=outlineBar?.matches?.('.sn-chrome-tabs')?outlineBar.getBoundingClientRect().bottom-bounds.top:bounds.height;
     if(w<=24||h<=0)return;
     if(!outline){outline=document.createElementNS('http://www.w3.org/2000/svg','svg');outline.classList.add('sn-ai-tab-outline');outline.setAttribute('aria-hidden','true');outline.append(document.createElementNS('http://www.w3.org/2000/svg','path'));element.prepend(outline);}
-    const path=outline.firstElementChild;
+    const path=outline.querySelector('path');
+    // Cover the native bar stroke before drawing the curved continuous outline.
+    // Extend below the baseline to cover fractional-zoom antialiasing too.
+    let mask=outline.querySelector('.sn-ai-tab-border-mask');
+    if(!mask){mask=document.createElementNS('http://www.w3.org/2000/svg','rect');mask.classList.add('sn-ai-tab-border-mask');outline.prepend(mask);}
+    for(const [name,value] of Object.entries({x:0,y:h-stroke*2,width:w,height:stroke*4}))if(mask.getAttribute(name)!==String(value))mask.setAttribute(name,String(value));
     const sizing=`position:absolute;left:${-12-stroke}px;top:${-stroke}px;width:${w}px;height:${h}px`;
     if(outline.getAttribute('style')!==sizing)outline.setAttribute('style',sizing);
     const d=`M ${half} ${h-half} H 3 Q 12 ${h-half} 12 ${h-r} V ${r+half} Q 12 ${half} ${12+r} ${half} H ${w-12-r} Q ${w-12} ${half} ${w-12} ${r+half} V ${h-r} Q ${w-12} ${h-half} ${w-3} ${h-half} H ${w-half}`;
@@ -17623,7 +17629,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.240' });
+    addLog('info', 'helper-version', { version: '2.36.241' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
