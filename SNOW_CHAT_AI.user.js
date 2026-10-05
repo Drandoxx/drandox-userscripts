@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.299
+// @version      2.36.300
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -329,6 +329,36 @@
  * the same snapshot via normal page inspection.
  */
 
+// Shared by Workspace tabs and AI bubbles. Storage is parsed only on first
+// use or a cross-tab storage update; normal rendering is a Map lookup.
+const snAIChatDisplayNames=(()=>{
+  const key='sn-ai-chat-display-names-v1',limit=10000;
+  let cache=null;
+  const persist=()=>{try{localStorage.setItem(key,JSON.stringify(Object.fromEntries(cache)));}catch{}};
+  const trim=()=>{while(cache.size>limit)cache.delete(cache.keys().next().value);};
+  const load=raw=>{
+    let data={};try{data=JSON.parse(raw||'{}')||{};}catch{}
+    if(typeof data!=='object'||Array.isArray(data))data={};
+    cache=new Map(Object.entries(data));const oversized=cache.size>limit;trim();
+    if(oversized)persist();
+  };
+  const ensure=()=>{if(cache===null){let raw=null;try{raw=localStorage.getItem(key);}catch{}load(raw);}};
+  window.addEventListener('storage',event=>{
+    if(event.key!==key && event.key!==null)return;
+    load(event.key===null?null:event.newValue);
+    document.dispatchEvent(new CustomEvent('sn-ai-chat-display-name-changed'));
+  });
+  return {
+    get(ims){ensure();return cache.get(ims)||ims;},
+    set(ims,name){
+      ensure();if((cache.get(ims)||ims)===name)return;
+      if(name===ims)cache.delete(ims);else cache.set(ims,name);
+      trim();persist();
+      document.dispatchEvent(new CustomEvent('sn-ai-chat-display-name-changed',{detail:{ims,name}}));
+    }
+  };
+})();
+
 // Install presentation rules before Workspace builds its action bars. Observe
 // SNOW New Ticket mode's KB formatter only. Article-title links retain their
 // native popup behavior; the separate KB-number button only copies text.
@@ -412,23 +442,7 @@
   const lastTypedIMS = new Map();
   try { acceptedIMS = new Set(JSON.parse(sessionStorage.getItem('sn-ai-unseen-accepted-ims-v1') || '[]')); } catch {}
   const saveAcceptedIMS = () => { try { sessionStorage.setItem('sn-ai-unseen-accepted-ims-v1',JSON.stringify([...acceptedIMS])); } catch {} };
-  const chatDisplayNameKey='sn-ai-chat-display-names-v1';
   const namedChatLabels=new WeakSet();
-  function trimChatDisplayNames(names) {
-    // IMS keys are nonnumeric, so JSON/object insertion order preserves the
-    // first-save age across reloads. Editing an existing name keeps its age.
-    const keys=Object.keys(names);
-    while(keys.length>500)delete names[keys.shift()];
-    return names;
-  }
-  function readChatDisplayNames() {
-    try {
-      const data=JSON.parse(localStorage.getItem(chatDisplayNameKey)||'{}');
-      if(!data || typeof data!=='object' || Array.isArray(data))return {};
-      if(Object.keys(data).length>500){trimChatDisplayNames(data);localStorage.setItem(chatDisplayNameKey,JSON.stringify(data));}
-      return data;
-    } catch { return {}; }
-  }
   function installChatDisplayName(tab) {
     const ims=tab?.getAttribute?.('aria-label');
     if (!tab?.matches?.('.sn-chrome-one-tab') || !/^IMS\d+$/i.test(ims||'')) return;
@@ -436,12 +450,12 @@
     if (!label || namedChatLabels.has(label)) return;
     namedChatLabels.add(label);label.dataset.snAiIms=ims;
     let editing=false;
-    const render=()=>{if(!editing){const name=readChatDisplayNames()[ims]||ims;if(label.textContent!==name)label.textContent=name;label.title=name;}};
+    const render=()=>{if(!editing){const name=snAIChatDisplayNames.get(ims);if(label.textContent!==name)label.textContent=name;label.title=name;}};
     const finish=save=>{
       if(!editing)return;
       const name=Array.from(label.textContent.replace(/[\r\n]/g,' ').trim()).slice(0,30).join('')||ims;
       editing=false;label.removeAttribute('contenteditable');label.removeAttribute('tabindex');
-      if(save){const names=readChatDisplayNames();if(name===ims)delete names[ims];else names[ims]=name;trimChatDisplayNames(names);try{localStorage.setItem(chatDisplayNameKey,JSON.stringify(names));}catch{}document.dispatchEvent(new CustomEvent('sn-ai-chat-display-name-changed',{detail:{ims,name}}));}
+      if(save)snAIChatDisplayNames.set(ims,name);
       render();
     };
     // The native anchor handles double-click before descendant listeners and
@@ -467,7 +481,6 @@
     label.addEventListener('blur',()=>finish(true));
     new MutationObserver(render).observe(label,{childList:true,characterData:true,subtree:true});
     document.addEventListener('sn-ai-chat-display-name-changed',render);
-    window.addEventListener('storage',event=>{if(event.key===chatDisplayNameKey)render();});
     render();
   }
   function markAcceptedTab(element) {
@@ -16532,8 +16545,7 @@ function startSNAI(tabIdentity) {
       const refreshDisplayName=()=>{
         if(refs.titleMain.textContent!==paintedTitle)canonicalTitle=refs.titleMain.textContent;
         const ims=refs.dialog.dataset.pinnedIms;
-        let names={};try{names=JSON.parse(localStorage.getItem('sn-ai-chat-display-names-v1')||'{}')||{};}catch{}
-        const name=/^IMS\d+$/i.test(ims||'')?String(names[ims]||ims):'';
+        const name=/^IMS\d+$/i.test(ims||'')?snAIChatDisplayNames.get(ims):'';
         refs.dialog.dataset.chatDisplayName=name;
         paintedTitle=name?canonicalTitle.replace(new RegExp(ims,'g'),()=>name):canonicalTitle;
         if(refs.titleMain.textContent!==paintedTitle)refs.titleMain.textContent=paintedTitle;
@@ -16543,8 +16555,8 @@ function startSNAI(tabIdentity) {
       nameObserver.observe(dialog,{attributes:true,attributeFilter:['data-pinned-ims']});
       const onNameChange=()=>refreshDisplayName();
       document.addEventListener('sn-ai-chat-display-name-changed',onNameChange);
-      const nameCleanup=new MutationObserver(()=>{if(!dialog.isConnected){nameObserver.disconnect();nameCleanup.disconnect();document.removeEventListener('sn-ai-chat-display-name-changed',onNameChange);window.removeEventListener('storage',onNameChange);}});
-      nameCleanup.observe(host,{childList:true});window.addEventListener('storage',onNameChange);
+      const nameCleanup=new MutationObserver(()=>{if(!dialog.isConnected){nameObserver.disconnect();nameCleanup.disconnect();document.removeEventListener('sn-ai-chat-display-name-changed',onNameChange);}});
+      nameCleanup.observe(host,{childList:true});
       refreshDisplayName();
       refs.userLine.textContent = user || '';
       makeWindowDraggable(dialog, refs.dragHandle);
@@ -18380,7 +18392,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.299' });
+    addLog('info', 'helper-version', { version: '2.36.300' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
