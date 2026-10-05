@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.260
+// @version      2.36.261
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -873,6 +873,7 @@
     `;
   }
   const spaceCSS = `
+    figure.now-illustration.c__dg:has(svg[viewBox="0 0 216 168"]) { display:none!important; }
     /* Button captions/icons are interaction targets, never selectable text.
        This shared sheet is also installed into component shadow roots. */
     :is(button,[role="button"],input[type="button"],input[type="submit"],input[type="reset"],now-button,now-button-iconic),
@@ -17792,7 +17793,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.260' });
+    addLog('info', 'helper-version', { version: '2.36.261' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -18146,12 +18147,13 @@ function startSNAI(tabIdentity) {
   const inboxPolicy = { autoAccept: true, acceptDelaySeconds: 12, logs: [], bytes: 0, observers: [], timers: new Map(), seen: new WeakSet(), disposed: false };
   const INBOX_ACCEPT_DELAY_KEY = 'sn-ai-inbox-accept-delay-seconds-v1';
   function normaliseInboxAcceptDelay(value) {
+    if (value == null || String(value).trim() === '') return 12;
     const seconds = Number(value);
     return Number.isFinite(seconds) && seconds >= 0 ? Math.min(25, Math.floor(seconds)) : 12;
   }
   function inboxCountdownSeconds(text) {
     const value = String(text || '').trim();
-    const clock = value.match(/\b(\d{1,2}):(\d{2})\b/);
+    const clock = value.match(/^(?:Time to accept:\s*)?(\d{1,2}):(\d{2})$/i);
     if (clock && Number(clock[2]) < 60) return Number(clock[1]) * 60 + Number(clock[2]);
     const seconds = value.match(/^\s*(\d+)\s*(?:s|sec|seconds)?\s*$/i);
     return seconds ? Number(seconds[1]) : null;
@@ -18714,12 +18716,15 @@ function startSNAI(tabIdentity) {
           for (let i=0;i<currentRoots.length;i++) {
             for (const element of currentRoots[i].querySelectorAll('*')) if (element.shadowRoot) currentRoots.push(element.shadowRoot);
           }
-          const values = currentRoots.map(root => inboxCountdownSeconds(root.textContent)).filter(value => value !== null && value >= 0 && value <= 30);
+          // Only native timer labels: root textContent includes injected CSS,
+          // which must never be interpreted as a countdown.
+          const timerLabels = currentRoots.flatMap(root => [...root.querySelectorAll('.now-highlighted-value-label')]);
+          const values = timerLabels.filter(isVisible).map(label => inboxCountdownSeconds(label.textContent)).filter(value => value !== null && value >= 0 && value <= 30);
           const remaining = values.length ? Math.max(...values) : null;
           if (remaining !== lastCountdown) { lastCountdown = remaining;countdownChangedAt = Date.now(); }
           const countdownStalled = remaining != null && Date.now()-countdownChangedAt >= 5000;
           const setting=inboxPolicy.delayInput?.isConnected ? inboxPolicy.delayInput : null;
-          const acceptDelayMs=normaliseInboxAcceptDelay(setting?.value ?? inboxPolicy.acceptDelaySeconds)*1000;
+          const acceptDelayMs=normaliseInboxAcceptDelay(setting?.value?.trim() ? setting.value : inboxPolicy.acceptDelaySeconds)*1000;
           const countdownReached = remaining != null && remaining <= 30-acceptDelayMs/1000;
           // Native countdown is authoritative, including offers detected late.
           // Only absent/invalid or demonstrably frozen timers allow fallback.
