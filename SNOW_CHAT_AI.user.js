@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.289
+// @version      2.36.290
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -3150,29 +3150,41 @@
   const kbCopyCards = new WeakSet();
   const kbOpeningCards = new WeakSet();
   let kbToastTimer = 0;
+  let kbToastResizeObserver=null;
   let kbNoticeGeneration = 0;
   function dismissKBCopyNotice() {
     kbNoticeGeneration++;
     clearTimeout(kbToastTimer);
+    kbToastResizeObserver?.disconnect();kbToastResizeObserver=null;
     document.getElementById('sn-ai-kb-toast')?.remove();
   }
   const kbOpenIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-book-open-text preview-icon"><path d="M12 5v16"/><path d="M16 13h2"/><path d="M16 9h2"/><path d="M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z"/><path d="M6 13h2"/><path d="M6 9h2"/></svg>';
   function showKBCopyNotice(text,point) {
     clearTimeout(kbToastTimer);
+    kbToastResizeObserver?.disconnect();kbToastResizeObserver=null;
     let toast = document.getElementById('sn-ai-kb-toast');
     if (!toast) { toast=document.createElement('div');toast.id='sn-ai-kb-toast';toast.setAttribute('role','status');document.body.append(toast); }
     toast.textContent=text;
-    const bounds=toast.getBoundingClientRect();
-    const x=point?.x ?? window.innerWidth/2;
-    const y=point?.y ?? window.innerHeight/2;
-    toast.style.left=Math.max(8,Math.min(x-bounds.width/2,window.innerWidth-bounds.width-8))+'px';
-    toast.style.top=Math.max(8,Math.min(y-bounds.height-14,window.innerHeight-bounds.height-8))+'px';
-    kbToastTimer=setTimeout(()=>toast.remove(),3000);
+    const layout=()=>{
+      const card=point?.card?.isConnected?point.card.getBoundingClientRect():null;
+      const panel=point?.card?kbAssistAncestor(point.card)?.getBoundingClientRect():null;
+      const left=Math.max(4,card?.left??4),right=Math.min(window.innerWidth-4,card?.right??window.innerWidth-4);
+      const available=Math.max(1,right-left);
+      Object.assign(toast.style,{boxSizing:'border-box',width:'max-content',maxWidth:`${available}px`,whiteSpace:'normal',overflowWrap:'anywhere',textAlign:'center',fontSize:`${Math.max(10,Math.min(14,available/18))}px`,padding:`6px ${Math.max(3,Math.min(12,available/25))}px`});
+      const bounds=toast.getBoundingClientRect();
+      const x=card?card.left+card.width/2:point?.x??window.innerWidth/2;
+      const y=card?.top??point?.y??window.innerHeight/2;
+      toast.style.left=Math.max(left,Math.min(x-bounds.width/2,right-bounds.width))+'px';
+      toast.style.top=Math.max(Math.max(4,panel?.top??4),Math.min(y-bounds.height-8,window.innerHeight-bounds.height-4))+'px';
+    };
+    layout();
+    if (point?.card) { kbToastResizeObserver=new ResizeObserver(layout);kbToastResizeObserver.observe(point.card); }
+    kbToastTimer=setTimeout(()=>{toast.remove();kbToastResizeObserver?.disconnect();kbToastResizeObserver=null;},3000);
   }
   async function copySearchKB(card,event) {
     const generation=++kbNoticeGeneration;
     const rect=card.getBoundingClientRect();
-    const point={x:rect.left+rect.width/2,y:rect.top};
+    const point={x:rect.left+rect.width/2,y:rect.top,card};
     const number=card.dataset.snAiKbNumber;
     if (!/^KB\d+$/.test(number || '')) { showKBCopyNotice('KB number unavailable · use the open button',point);return; }
     try {
@@ -18270,7 +18282,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.289' });
+    addLog('info', 'helper-version', { version: '2.36.290' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
