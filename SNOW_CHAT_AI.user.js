@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.232
+// @version      2.36.233
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -2014,6 +2014,7 @@
     #local-sn-ai-settings-template .local-sn-settings-tabs { background:var(--sn-theme-251f31)!important;border-color:var(--sn-theme-423750)!important;color:var(--sn-theme-e6edf9)!important; }
   `;
   function setSpaceTheme(enabled) {
+    enabled = true; // Custom styling is permanent; old saved OFF values are ignored.
     spaceEnabled = enabled;
     for (const root of spaceRoots) {
       if (!enabled) { spaceStyles.get(root)?.remove(); spaceStyles.delete(root); }
@@ -2052,8 +2053,7 @@
     for (const style of spaceStyles.values()) style.textContent = themeText();
     scheduleTabGeometryRefresh();
   });
-  Promise.resolve(GM_getValue('sn-ai-space-theme-v1', true)).then(value => setSpaceTheme(value === true))
-    .catch(error => console.warn('[SN AI theme]', error));
+  setSpaceTheme(true);
   let inboxPreviewEnabled = false;
   let inboxDeveloperEnabled = false;
   const incomingLogKey = 'sn-ai-incoming-log-session-v1';
@@ -13815,19 +13815,6 @@ function startSNAI(tabIdentity) {
     `;
     settingsDialog.append(generalStyle);
     if (workspacePage) {
-      const themeRow = document.createElement('label');
-      themeRow.className = 'sn-ai-general-toggle';
-      themeRow.style.cssText = 'padding:14px 16px;border:1px solid var(--sn-theme-655573,#36564c);border-radius:12px';
-      const themeSwitch = document.createElement('input');
-      themeSwitch.type = 'checkbox'; themeSwitch.setAttribute('role', 'switch');
-      themeSwitch.setAttribute('aria-label', 'Custom styling');
-      themeRow.append('Custom styling', themeSwitch);
-      gmGetValue('sn-ai-space-theme-v1', true).then(value => { themeSwitch.checked = value === true; });
-      themeSwitch.addEventListener('change', () => {
-        gmSetValue('sn-ai-space-theme-v1', themeSwitch.checked).catch(error => console.warn('[SN AI theme]', error));
-        document.dispatchEvent(new CustomEvent('sn-ai-space-theme', { detail: themeSwitch.checked }));
-      });
-      generalPanel.append(themeRow);
       const paletteRow = document.createElement('label');
       paletteRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 16px';
       const paletteSelect = document.createElement('select');
@@ -13876,6 +13863,11 @@ function startSNAI(tabIdentity) {
       chatBackgroundRow.append('Chat background',chatBackgroundSelect);generalPanel.append(chatBackgroundRow);
       const captureButton = document.createElement('button');
       captureButton.type = 'button'; captureButton.textContent = 'Start style capture';
+      let captureDeveloperChanged=false;
+      const showCapture=enabled=>{captureButton.hidden=!enabled;captureButton.style.display=enabled?'':'none';};
+      showCapture(false);
+      document.addEventListener('sn-ai-developer-mode',event=>{captureDeveloperChanged=true;showCapture(event.detail===true);});
+      gmGetValue('sn-ai-developer-mode-v1',false).then(value=>{if(!captureDeveloperChanged)showCapture(value===true);}).catch(console.warn);
       captureButton.addEventListener('click', () => toggleStyleCapture(captureButton));
       generalPanel.append(captureButton);
     }
@@ -17564,7 +17556,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.232' });
+    addLog('info', 'helper-version', { version: '2.36.233' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
