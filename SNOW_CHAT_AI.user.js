@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.226
+// @version      2.36.227
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -673,6 +673,11 @@
     palette['--sn-tab-corner'] = `url("data:image/svg+xml,${encodeURIComponent(corner)}")`;
     palette['--sn-tab-sub-corner'] = `url("data:image/svg+xml,${encodeURIComponent(corner.replace(palette['--sn-theme-14121c'], palette['--sn-theme-251f31']))}")`;
     palette['--sn-tab-corner'] = `url("data:image/svg+xml,${encodeURIComponent(corner.replace(palette['--sn-theme-14121c'], palette['--sn-theme-191621']))}")`;
+    if (selectedSpaceTheme === 'original') {
+      // Explicit surfaces: identical white tokens must not replace the outer backing.
+      const originalCorner = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="-1 -1 12 12"><path fill="${palette['--sn-theme-1c1827']}" d="M-1 -1H11V11H-1Z"/><path fill="#ffffff" d="M8.5 -1V.5A8 8 0 0 1 .5 8.5H-1V11H11V-1Z"/><path d="M8.5 -1V.5A8 8 0 0 1 .5 8.5H-1" fill="none" stroke="${palette['--sn-theme-655573']}" stroke-width="1"/></svg>`;
+      palette['--sn-tab-corner'] = palette['--sn-tab-sub-corner'] = `url("data:image/svg+xml,${encodeURIComponent(originalCorner)}")`;
+    }
     // Keep the curved active-tab backing in the same notification shade.
     for (const [state,weight] of [['updated',.38],['accepted',.48]]) {
       const channels = hex => hex.replace('#','').match(/../g).map(value=>parseInt(value,16));
@@ -722,6 +727,29 @@
   function snowOriginalCSS() {
     return structureOnlyCSS(spaceCSS)+`
       /* Neutral presentation of our geometry; native form/content fills stay untouched. */
+      /* SN AI keeps its base interface, independently of native SNOW colors. */
+      #local-sn-inspector-root,#local-sn-ai-settings-template{
+        --sn-theme-14121c:#102723;--sn-theme-26203e:#102723;
+        --sn-theme-1c1827:#172923;--sn-theme-221d30:#172923;
+        --sn-theme-251f31:#203e32;--sn-theme-292331:#203e32;--sn-theme-202c38:#203e32;
+        --sn-theme-191621:#151f1d;
+        --sn-theme-302951:#25483d;--sn-theme-392e48:#25483d;--sn-theme-35243c:#25483d;--sn-theme-49365a:#25483d;--sn-theme-343055:#25483d;--sn-theme-534775:#25483d;
+        --sn-theme-423750:#36564c;
+        --sn-theme-655573:#48695d;--sn-theme-9e83b2:#48695d;--sn-theme-806493:#48695d;--sn-theme-65538f:#48695d;
+        --sn-theme-ac94ec:#68e5a1;--sn-theme-9de2f5:#82f6e3;--sn-theme-93cfea:#82f6e3;
+        --sn-theme-e6edf9:#eafffb;--sn-theme-e3d9ff:#eafffb;--sn-theme-dcd1ff:#eafffb;--sn-theme-eee4ff:#eafffb;
+        --sn-theme-a8b8d1:#b9d3c7;--sn-theme-c2b9d4:#b9d3c7;--sn-theme-b9c9e3:#b9d3c7;--sn-theme-c8d7ef:#b9d3c7;
+        color-scheme:dark;color:#eafffb;
+      }
+      #local-sn-ai-settings-template{background:#172923!important;color:#eafffb!important;border:1px solid #48695d!important;border-radius:16px!important;overflow:hidden;}
+      #local-sn-inspector-root .local-sn-action-button,#local-sn-inspector-root .local-sn-ai-action{color:#fff!important;}
+      select[data-sn-ai-presence]{background:#eef1f4!important;color:#53616b!important;border-color:#87919c!important;box-shadow:none!important;color-scheme:light;}
+      select[data-sn-ai-presence][data-sn-ai-status="Available"]{background:#e7f3ec!important;color:#246447!important;border-color:#81a692!important;}
+      select[data-sn-ai-presence][data-sn-ai-status="Away"]{background:#faf3df!important;color:#785f21!important;border-color:#b2a071!important;}
+      select[data-sn-ai-presence]+span{color:#53616b!important;}
+      select[data-sn-ai-presence][data-sn-ai-status="Available"]+span{color:#246447!important;}
+      select[data-sn-ai-presence][data-sn-ai-status="Away"]+span{color:#785f21!important;}
+      select[data-sn-ai-presence] option{background:#fff!important;color:#20252b!important;}
       .sn-chrome-tabs,.sn-chrome-tabs-group{border-color:var(--sn-theme-423750)!important;}
       .sn-chrome-one-tab.sn-chrome-one-tab:not(.is-module){
         box-sizing:border-box!important;border:1px solid var(--sn-theme-655573)!important;
@@ -17482,7 +17510,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.226' });
+    addLog('info', 'helper-version', { version: '2.36.227' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
