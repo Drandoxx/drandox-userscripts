@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.227
+// @version      2.36.228
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -13775,6 +13775,12 @@ function startSNAI(tabIdentity) {
       #local-sn-ai-settings-template [data-inbox-settings] button { justify-self:start; }
       #local-sn-ai-settings-template .sn-ai-delay-stepper { display:flex;align-items:center;border:1px solid var(--sn-theme-655573,#48695d);border-radius:9px;background:var(--sn-theme-191621,#0d2019);overflow:hidden; }
       #local-sn-ai-settings-template .sn-ai-delay-stepper input { appearance:textfield;-moz-appearance:textfield; }
+      /* One continuous timer surface, including Original and all interaction states. */
+      #local-sn-ai-settings-template .sn-ai-delay-stepper.sn-ai-delay-stepper input,
+      #local-sn-ai-settings-template .sn-ai-delay-stepper.sn-ai-delay-stepper button:not(.local-sn-settings-tab):not(.local-sn-toggle):not(.danger),
+      #local-sn-ai-settings-template .sn-ai-delay-stepper.sn-ai-delay-stepper button:not(.local-sn-settings-tab):not(.local-sn-toggle):not(.danger):is(:hover,:focus,:active){
+        background:var(--sn-theme-191621,#0d2019)!important;border:0!important;border-radius:0!important;box-shadow:none!important;
+      }
       #local-sn-ai-settings-template .sn-ai-delay-stepper input::-webkit-inner-spin-button,
       #local-sn-ai-settings-template .sn-ai-delay-stepper input::-webkit-outer-spin-button { appearance:none;margin:0; }
     `;
@@ -17510,7 +17516,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.227' });
+    addLog('info', 'helper-version', { version: '2.36.228' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
