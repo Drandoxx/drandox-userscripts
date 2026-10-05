@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.270
+// @version      2.36.271
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -10626,14 +10626,17 @@ function startSNAI(tabIdentity) {
     return ROUTING_DEPENDENCIES[comparableLabel(fieldLabel)] || '';
   }
 
-  async function waitForRoutingDependency(previousField, nextField, attempt) {
+  async function waitForRoutingDependency(previousField, nextField, attempt, nativeParentId = '') {
     // ServiceNow re-queries and sometimes replaces dependent reference
     // controls after Category/Sub Category commits. Seeing the next label is
     // not enough: wait until its current rendered instance has stayed enabled
     // for a continuous window before entering a query into it.
-    await sleep(900);
+    // Native matrix commits can prove that the child's reference qualifier
+    // already points at the new parent. Keep the old wait for other callers.
+    if (!nativeParentId) await sleep(900);
     let candidate = null;
     let stableSince = 0;
+    const started=performance.now();
     const settled = await waitUntil(() => {
       const control = findControlByLabel(nextField);
       const enabled = control && isVisible(control)
@@ -10643,20 +10646,28 @@ function startSNAI(tabIdentity) {
         stableSince = 0;
         return null;
       }
+      const props=nativeParentId?matrixReferenceHost(control)?.dAProps:null;
+      const dependencyConfirmed=Boolean(nativeParentId && props?.dependentValue===nativeParentId);
+      if (dependencyConfirmed) return control;
+      // When native dependency metadata is unavailable, retain the original
+      // 900ms guard plus continuous 450ms stability, rather than guessing.
+      if (nativeParentId && !dependencyConfirmed && performance.now()-started<900) {
+        candidate=null;stableSince=0;return null;
+      }
       if (control !== candidate) {
         candidate = control;
         stableSince = performance.now();
         return null;
       }
       return performance.now() - stableSince >= 450 ? control : null;
-    }, 7600, 100);
+    }, 7600, nativeParentId?35:100);
     addLog(settled ? 'info' : 'warn', 'routing-dependent-control-settle', {
       previousField,
       nextField,
       attempt,
       settled: Boolean(settled),
-      minimumWaitMs: 900,
-      stableWindowMs: 450,
+      minimumWaitMs: nativeParentId?0:900,
+      stableWindowMs: nativeParentId?'0 when parent verified; otherwise 450':450,
     });
     return settled;
   }
@@ -10717,13 +10728,18 @@ function startSNAI(tabIdentity) {
     const callback=host?.onValueChange || props?.onValueChange;
     if (props?.fieldName!==matrixFieldNames[label] || typeof callback!=='function' || field.disabled || field.readOnly) throw new Error(`MATRIX_NATIVE_UNAVAILABLE: ${fieldLabel}`);
     callback.call(host,{value:row.id,displayValue:row.code});
-    const result=await waitStableReferenceValue(fieldLabel,row.code,'exact',5000,450,field);
+    const next=routingDependentField(fieldLabel);
+    // Observe commit and dependent rebuild concurrently; do not pay two
+    // serial settling windows for the same ServiceNow render cycle.
+    const [result,dependent]=await Promise.all([
+      waitStableReferenceValue(fieldLabel,row.code,'exact',5000,0,field),
+      next?waitForRoutingDependency(fieldLabel,next,1,row.id):Promise.resolve(true),
+    ]);
     const current=await waitForControlByLabel(fieldLabel,1000);
     const currentHost=current?matrixReferenceHost(current):null;
     const committedId=currentHost?.dAProps?.value || currentHost?.selectedItem;
     if (!result.stable || committedId!==row.id) throw new Error(`MATRIX_COMMIT_FAILED: ${fieldLabel}`);
-    const next=routingDependentField(fieldLabel);
-    if (next && !await waitForRoutingDependency(fieldLabel,next,1)) throw new Error(`MATRIX_DEPENDENCY_FAILED: ${next}`);
+    if (!dependent) throw new Error(`MATRIX_DEPENDENCY_FAILED: ${next}`);
     return result.actual;
   }
 
@@ -17955,7 +17971,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.270' });
+    addLog('info', 'helper-version', { version: '2.36.271' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
