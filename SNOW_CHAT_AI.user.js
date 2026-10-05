@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.244
+// @version      2.36.245
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -3066,10 +3066,22 @@
     if(!host.matches?.('sn-record-reference-connected[name="caller"]') || emailReferenceHosts.has(host))return;
     emailReferenceHosts.add(host);
     const row=document.createElement('div');row.className='sn-ai-user-email';row.hidden=true;
-    row.style.cssText='font:inherit;color:var(--sn-theme-a8b8d1,#606b76);margin:12px 0 0';
-    row.innerHTML='<label style="display:block;margin-bottom:5px">Email</label><div style="display:flex;align-items:center;border:1px solid var(--sn-theme-423750);border-radius:6px;background:var(--sn-theme-191621);padding:0 10px;min-height:36px"><input aria-label="User email" readonly style="flex:1;min-width:0;border:0;background:transparent;color:inherit;font:inherit;outline:none"><button type="button" aria-label="Copy email" title="Copy email" style="border:0;background:transparent;color:inherit;padding:6px;cursor:pointer"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>';
-    const emailInput=row.querySelector('input'),copyButton=row.querySelector('button');
-    copyButton.addEventListener('click',async()=>{if(!emailInput.value)return;try{if(typeof GM_setClipboard==='function')GM_setClipboard(emailInput.value);else await navigator.clipboard.writeText(emailInput.value);copyButton.title='Email copied';}catch{copyButton.title='Could not copy email';}});
+    row.style.cssText='display:block;width:100%;min-width:0;margin:12px 0 0;font-family:"Source Sans Pro",arial,sans-serif';
+    const emailRoot=row.attachShadow({mode:'open'});
+    emailRoot.innerHTML='<style>:host([hidden]){display:none!important}.now-form-field-label{display:block;margin:0 0 4px;font:12px/16px "Source Sans Pro",arial,sans-serif;color:var(--sn-theme-e6edf9)}.now-input-field{display:flex;align-items:center;box-sizing:border-box;height:32px;padding:0 0 0 8px;border-radius:6px}.now-input-native{flex:1;min-width:0;width:0;height:30px;box-sizing:border-box;border:0;padding:0 2px 0 0;margin:0;font:16px/16px "Source Sans Pro",arial,sans-serif;outline:none;background:transparent}.sn-ai-email-copy{flex:0 0 30px;width:30px;height:30px;display:grid;place-items:center;border:0;border-radius:5px;background:transparent;color:var(--sn-theme-a8b8d1);padding:0;cursor:pointer}.sn-ai-email-copy:hover:not(:disabled){background:color-mix(in srgb,var(--sn-theme-ac94ec) 15%,transparent);color:var(--sn-theme-e6edf9)}.sn-ai-email-copy:focus-visible{outline:2px solid var(--sn-theme-ac94ec);outline-offset:-3px}.sn-ai-email-copy:disabled{opacity:.45;cursor:default}</style><div class="now-input -md now-form-field-layout -vertical"><div class="now-form-field-label"><label><span class="now-form-field-label-text">Email</span></label></div><div class="now-input-field now-form-field is-readonly -start"><input class="now-input-native" aria-label="User email" readonly><button class="sn-ai-email-copy" type="button" aria-label="Copy email" title="Copy email"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div></div>';
+    ensureSpaceRoot(emailRoot);
+    const emailInput=emailRoot.querySelector('input'),copyButton=emailRoot.querySelector('button');
+    let copiedTimer;
+    copyButton.addEventListener('click',async()=>{
+      if(!emailInput.value)return;
+      try{
+        if(typeof GM_setClipboard==='function')await GM_setClipboard(emailInput.value);else await navigator.clipboard.writeText(emailInput.value);
+        copyButton.title='Email copied';clearTimeout(copiedTimer);emailRoot.querySelector('.sn-ai-email-copied')?.remove();
+        const toast=document.createElement('span'),box=copyButton.getBoundingClientRect();toast.className='sn-ai-email-copied';toast.setAttribute('role','status');toast.textContent='Email copied';
+        toast.style.cssText=`position:fixed;left:${box.left+box.width/2}px;top:${box.top-6}px;transform:translate(-50%,-100%);z-index:2147483647;white-space:nowrap;pointer-events:none;padding:5px 9px;border:1px solid var(--sn-theme-655573);border-radius:6px;background:var(--sn-theme-251f31);color:var(--sn-theme-e6edf9);font:12px/16px "Source Sans Pro",arial,sans-serif;box-shadow:0 3px 10px #0003`;
+        emailRoot.append(toast);copiedTimer=setTimeout(()=>{toast.remove();copyButton.title='Copy email';},3000);
+      }catch{copyButton.title='Could not copy email';}
+    });
     host.after(row);
     let timer,request,lastCommitted='',generation=0,disposed=false;
     const roots=new Set();
@@ -5866,7 +5878,7 @@ function startSNAI(tabIdentity) {
     const name = String(readableControlValue('Name') || '').trim();
     const location = profile === 'CPC' ? '' : String(readableControlValue('Location') || '').trim();
     const userId = String(readableControlValue('User ID') || readableControlValue('Opened For') || '').trim();
-    const email = String(await waitUntil(()=>allPageElements().find(element=>element.matches?.('.sn-ai-user-email')&&!element.hidden&&element.dataset.userId===userId)?.querySelector('input')?.value || null,8500,100)||'').trim();
+    const email = String(await waitUntil(()=>allPageElements().find(element=>element.matches?.('.sn-ai-user-email')&&!element.hidden&&element.dataset.userId===userId)?.shadowRoot?.querySelector('input')?.value || null,8500,100)||'').trim();
     const lines = ['User information:', `Name: ${name || 'Not available'}`];
     if (profile !== 'CPC' && location) lines.push(`Location: ${location}`);
     if (email) lines.push(`Email: ${email}`);
@@ -17069,7 +17081,7 @@ function startSNAI(tabIdentity) {
       fields.forEach((field) => field.addEventListener('blur', () => { field.value = field.value.trim(); }));
       const emailField=fields.find(field=>field.dataset.hpField==='email');
       const currentUserId=String(readableControlValue('User ID')||readableControlValue('Opened For')||'').trim();
-      const verifiedEmail=allPageElements().find(element=>element.matches?.('.sn-ai-user-email')&&!element.hidden&&element.dataset.userId===currentUserId)?.querySelector('input')?.value;
+      const verifiedEmail=allPageElements().find(element=>element.matches?.('.sn-ai-user-email')&&!element.hidden&&element.dataset.userId===currentUserId)?.shadowRoot?.querySelector('input')?.value;
       if(emailField&&!emailField.value&&verifiedEmail)emailField.value=verifiedEmail;
       const suppliedValues = () => Object.fromEntries(fields
         .filter((field) => issueType === 'Toner order' || field.dataset.hpField !== 'ink-colors')
@@ -17655,7 +17667,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.244' });
+    addLog('info', 'helper-version', { version: '2.36.245' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
