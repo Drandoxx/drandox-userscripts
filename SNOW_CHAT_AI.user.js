@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.267
+// @version      2.36.268
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -12053,6 +12053,31 @@ function startSNAI(tabIdentity) {
       state.lastAction = `Returned ${Math.min(100, state.logs.length)} recent helper log entries.`;
       return;
     }
+    if (/^matrix\s+test\s+ftf$/i.test(raw)) {
+      if (!checkCurrentEvent().isNewEventPage) throw new Error('MATRIX_TEST_REQUIRES_NEW_EVENT: Open the intended unsaved New Event first.');
+      const committed=[];
+      for (const label of ['Category','Sub Category','Symptom']) {
+        const expected=TICKET_PROFILES.FTF.fixed[label];
+        const field=await waitForControlByLabel(label,3000);
+        if (!field) throw new Error(`MATRIX_TEST_FIELD_MISSING: ${label}`);
+        if (fieldMatchesExpected(committedReferenceValue(field),expected,label)) { committed.push(label);continue; }
+        // No text input, no navigation, no templates and no ticket runner.
+        if (field.getAttribute('aria-expanded')!=='true') field.click();
+        state.automationDropdowns.add(comparableLabel(label));
+        const option=await waitUntil(()=>popupOptionsFor(field,false).find(item=>normalisedFieldValue(item.textContent)===normalisedFieldValue(expected)),4000,60);
+        if (!option) { await closeAutomationDropdown(label,field);throw new Error(`MATRIX_TEST_OPTION_NOT_AVAILABLE: ${label} = ${expected}. No typing fallback was used.`); }
+        option.click();
+        const result=await waitStableReferenceValue(label,expected,'exact',4400,450,field);
+        await closeAutomationDropdown(label,field);
+        if (!result.stable) throw new Error(`MATRIX_TEST_COMMIT_FAILED: ${label}`);
+        committed.push(label);
+        const dependent=routingDependentField(label);
+        if (dependent && !await waitForRoutingDependency(label,dependent,1)) throw new Error(`MATRIX_TEST_DEPENDENCY_FAILED: ${dependent}`);
+      }
+      state.commandResult={kind:'matrix-test',ok:true,method:'native-option-click-without-typing',fields:committed,saved:false};
+      state.lastAction='FTF matrix test completed. Only Category, Sub Category and Symptom were selected; Event remains unsaved.';
+      return;
+    }
     const benchmarkMatch = raw.match(/^bench\s+(safe|native|typeahead|focus|exec)\s+(.+?)\s*=\s*([\s\S]+)$/i);
     if (benchmarkMatch) {
       const [, rawMethod, rawField, rawValue] = benchmarkMatch;
@@ -17858,7 +17883,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.267' });
+    addLog('info', 'helper-version', { version: '2.36.268' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
