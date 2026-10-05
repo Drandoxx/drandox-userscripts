@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.272
+// @version      2.36.273
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -3457,6 +3457,43 @@
       }
     }
   }
+  const modalActionProxies=new WeakMap();
+  function installPlainModalAction(host) {
+    if (!host?.matches?.('now-button.now-modal-footer-button') || !host.shadowRoot) return;
+    const root=host.shadowRoot;
+    const native=root.querySelector('button.now-button');
+    if (!native) return;
+    const existing=modalActionProxies.get(host);
+    if (existing?.native===native && existing.proxy.isConnected) return;
+    existing?.observer.disconnect();existing?.proxy.remove();
+    const proxy=document.createElement('button');
+    proxy.type='button';proxy.className='sn-ai-plain-modal-action';
+    let style=root.querySelector('style[data-sn-ai-modal-action]');
+    if (!style) {
+      style=document.createElement('style');style.dataset.snAiModalAction='true';
+      style.textContent='.sn-ai-plain-modal-action{appearance:none!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;box-sizing:border-box!important;height:auto!important;min-height:34px!important;padding:6px 16px!important;margin:0!important;border:1px solid var(--sn-theme-655573)!important;border-radius:6px!important;background:transparent!important;color:var(--sn-theme-e6edf9)!important;font:inherit!important;line-height:20px!important;overflow:visible!important;transform:none!important;animation:none!important;transition:none!important;box-shadow:none!important;user-select:none!important;cursor:pointer}.sn-ai-plain-modal-action:hover:not(:disabled){background:var(--sn-theme-49365a)!important}.sn-ai-plain-modal-action[data-primary]{background:linear-gradient(115deg,var(--sn-theme-9de2f5),var(--sn-theme-ac94ec))!important;color:var(--sn-theme-14121c)!important;border-color:transparent!important}.sn-ai-plain-modal-action[data-primary]:hover:not(:disabled){filter:brightness(1.08)}.sn-ai-plain-modal-action:focus-visible{outline:2px solid var(--sn-theme-ac94ec)!important;outline-offset:2px!important}.sn-ai-plain-modal-action:disabled{opacity:.55!important;cursor:default}';
+      root.append(style);
+    }
+    const sync=()=>{
+      const label=(native.textContent||'').trim();
+      if (proxy.textContent!==label) proxy.textContent=label;
+      proxy.disabled=native.disabled || native.getAttribute('aria-disabled')==='true';
+      proxy.toggleAttribute('data-primary',native.classList.contains('-primary'));
+      proxy.setAttribute('aria-label',native.getAttribute('aria-label')||label);
+      native.style.setProperty('display','none','important');
+    };
+    proxy.addEventListener('click',event=>{
+      // The original remains mounted with its native listeners/business logic.
+      // Do not synthesize a form submit or reimplement confirmation actions.
+      event.preventDefault();event.stopPropagation();
+      if (!native.isConnected || native.disabled || native.getAttribute('aria-disabled')==='true') return;
+      native.click();
+    });
+    native.after(proxy);
+    const observer=new MutationObserver(sync);
+    observer.observe(native,{attributes:true,attributeFilter:['disabled','aria-disabled','aria-label','class'],childList:true,subtree:true,characterData:true});
+    modalActionProxies.set(host,{native,proxy,observer});sync();
+  }
   const elevatedImageViewers=new WeakSet();
   function elevateImageViewer(element) {
     if (!element.matches?.('.sn-image-message-lightbox') || elevatedImageViewers.has(element)) return;
@@ -3473,6 +3510,7 @@
     catch (error) { element.removeAttribute('popover');style.remove();elevatedImageViewers.delete(element);console.warn('[SN AI image viewer]',error); }
   }
   function discover(node) {
+    installPlainModalAction(node.host || node);
     elevateImageViewer(node);
     for (const caption of node.querySelectorAll?.('.now-dropdown-list-label,.now-button-label,.now-line-height-crop') || []) {
       if (caption.textContent.trim()==='Send incident details to chat') caption.textContent='Send to Chat';
@@ -3576,6 +3614,7 @@
     if (node.nodeType === 1 && node.shadowRoot) watch(node.shadowRoot);
     else queueLateShadowHost(node);
     for (const element of node.querySelectorAll?.('*') || []) {
+      installPlainModalAction(element);
       elevateImageViewer(element);
       installDurationSummary(element);
       installUserReferenceEmail(element);
@@ -17997,7 +18036,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.272' });
+    addLog('info', 'helper-version', { version: '2.36.273' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
