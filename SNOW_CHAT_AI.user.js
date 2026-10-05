@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.218
+// @version      2.36.219
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -408,16 +408,36 @@
   const spaceRoots = new Set();
   const spaceStyles = new Map();
   let acceptedIMS = new Set();
+  const lastTypedIMS = new Map();
   try { acceptedIMS = new Set(JSON.parse(sessionStorage.getItem('sn-ai-unseen-accepted-ims-v1') || '[]')); } catch {}
   const saveAcceptedIMS = () => { try { sessionStorage.setItem('sn-ai-unseen-accepted-ims-v1',JSON.stringify([...acceptedIMS])); } catch {} };
   function markAcceptedTab(element) {
     if (!element.matches?.('.sn-chrome-one-tab[aria-label^="IMS"]')) return;
+    const unread=element.classList.contains('is-updated');
+    if (!unread) element.removeAttribute('data-sn-ai-read');
     element.toggleAttribute('data-sn-ai-unseen-accepted',acceptedIMS.has(element.getAttribute('aria-label')));
   }
+  function acknowledgeAcceptedIMS(ims) {
+    if (!acceptedIMS.delete(ims)) return;
+    saveAcceptedIMS();
+    for (const scope of spaceRoots) scope.querySelectorAll?.('.sn-chrome-one-tab').forEach(markAcceptedTab);
+    document.dispatchEvent(new CustomEvent('sn-ai-accepted-ims-read',{detail:{ims}}));
+  }
+  document.addEventListener('sn-ai-focus-ims',event=>{
+    const ims=event.detail?.ims;
+    if (!/^IMS\d+$/.test(ims || '')) return;
+    for (const scope of spaceRoots) {
+      const tab=scope.querySelector?.(`.sn-chrome-one-tab[aria-label="${ims}"]`);
+      if (tab?.isConnected) { tab.click();tab.focus();break; }
+    }
+  });
   document.addEventListener('sn-ai-autoaccepted-ims',event => {
     if (!/^IMS\d+$/.test(event.detail?.ims || '')) return;
     acceptedIMS.add(event.detail.ims);saveAcceptedIMS();
     for (const root of spaceRoots) root.querySelectorAll?.('.sn-chrome-one-tab').forEach(markAcceptedTab);
+    if ((lastTypedIMS.get(event.detail.ims) || 0)>=event.detail.acceptedAt) {
+      queueMicrotask(()=>acknowledgeAcceptedIMS(event.detail.ims));
+    }
   });
   let spaceEnabled = false;
   function ensureSpaceRoot(root) {
@@ -644,7 +664,7 @@
     // Keep the curved active-tab backing in the same notification shade.
     for (const [state,weight] of [['updated',.38],['accepted',.48]]) {
       const channels = hex => hex.replace('#','').match(/../g).map(value=>parseInt(value,16));
-      const accent=channels(palette['--sn-theme-ac94ec']),base=channels(palette['--sn-theme-251f31']);
+      const accent=channels(state==='accepted'?palette['--sn-theme-9de2f5']:palette['--sn-theme-ac94ec']),base=channels(palette['--sn-theme-251f31']);
       const surface='#'+base.map((value,index)=>Math.round(value*(1-weight)+accent[index]*weight).toString(16).padStart(2,'0')).join('');
       palette[`--sn-tab-${state}-surface`]=surface;
       palette[`--sn-tab-${state}-corner`]=`url("data:image/svg+xml,${encodeURIComponent(corner.replace(palette['--sn-theme-14121c'],surface))}")`;
@@ -1187,7 +1207,7 @@
     }
     :host(sn-workspace-tab) { position:relative;z-index:4; }
     /* Paint and pulse the complete tab, never the individual icon/label cells. */
-    .sn-chrome-one-tab.sn-chrome-one-tab.sn-chrome-one-tab.is-updated,
+    .sn-chrome-one-tab.sn-chrome-one-tab.sn-chrome-one-tab.is-updated:not([data-sn-ai-read]),
     .sn-chrome-one-tab.sn-chrome-one-tab.sn-chrome-one-tab[data-sn-ai-unseen-accepted] {
       --sn-tab-notice-surface:var(--sn-tab-updated-surface);
       --sn-tab-notice-corner:var(--sn-tab-updated-corner);
@@ -1200,18 +1220,28 @@
       --sn-tab-notice-surface:var(--sn-tab-accepted-surface);
       --sn-tab-notice-corner:var(--sn-tab-accepted-corner);
     }
-    .sn-chrome-one-tab.sn-chrome-one-tab.is-selected:is(.is-updated,[data-sn-ai-unseen-accepted]) {
+    .sn-chrome-one-tab.sn-chrome-one-tab.sn-chrome-one-tab[data-sn-ai-read]:not([data-sn-ai-unseen-accepted]) {
+      animation:none!important;text-decoration:none!important;color:var(--sn-theme-e6edf9)!important;
+      background:color-mix(in srgb,var(--sn-theme-251f31) 84%,var(--sn-theme-ac94ec) 16%)!important;
+    }
+    .sn-chrome-one-tab.sn-chrome-one-tab.sn-chrome-one-tab.is-selected[data-sn-ai-read]:not([data-sn-ai-unseen-accepted]) {
+      background:var(--sn-tab-active-surface)!important;
+    }
+    .sn-chrome-one-tab[data-sn-ai-read]:not([data-sn-ai-unseen-accepted])>.sn-chrome-one-tab-content * {
+      background:transparent!important;color:var(--sn-theme-e6edf9)!important;text-decoration:none!important;
+    }
+    .sn-chrome-one-tab.sn-chrome-one-tab.is-selected:is(.is-updated:not([data-sn-ai-read]),[data-sn-ai-unseen-accepted]) {
       border-bottom:1px solid var(--sn-tab-notice-surface)!important;
       box-shadow:0 2px 0 var(--sn-tab-notice-surface)!important;
       text-decoration:none!important;
     }
-    .sn-chrome-one-tab.sn-chrome-one-tab.is-selected:is(.is-updated,[data-sn-ai-unseen-accepted])::before,
-    .sn-chrome-one-tab.sn-chrome-one-tab.is-selected:is(.is-updated,[data-sn-ai-unseen-accepted])::after {
+    .sn-chrome-one-tab.sn-chrome-one-tab.is-selected:is(.is-updated:not([data-sn-ai-read]),[data-sn-ai-unseen-accepted])::before,
+    .sn-chrome-one-tab.sn-chrome-one-tab.is-selected:is(.is-updated:not([data-sn-ai-read]),[data-sn-ai-unseen-accepted])::after {
       background:var(--sn-tab-notice-corner) 0 0/12px 12px no-repeat!important;
     }
-    .sn-chrome-one-tab.sn-chrome-one-tab.is-updated>.sn-chrome-one-tab-content,
+    .sn-chrome-one-tab.sn-chrome-one-tab.is-updated:not([data-sn-ai-read])>.sn-chrome-one-tab-content,
     .sn-chrome-one-tab.sn-chrome-one-tab[data-sn-ai-unseen-accepted]>.sn-chrome-one-tab-content,
-    .sn-chrome-one-tab.sn-chrome-one-tab.is-updated>.sn-chrome-one-tab-content *,
+    .sn-chrome-one-tab.sn-chrome-one-tab.is-updated:not([data-sn-ai-read])>.sn-chrome-one-tab-content *,
     .sn-chrome-one-tab.sn-chrome-one-tab[data-sn-ai-unseen-accepted]>.sn-chrome-one-tab-content * {
       background:transparent!important;box-shadow:none!important;
       text-decoration:none!important;color:var(--sn-theme-e6edf9)!important;
@@ -1219,7 +1249,7 @@
     }
     @keyframes sn-ai-unread-tab-pulse{0%,100%{filter:brightness(1)}50%{filter:brightness(1.18)}}
     @media(prefers-reduced-motion:reduce){
-      .sn-chrome-one-tab.sn-chrome-one-tab.sn-chrome-one-tab.is-updated,
+      .sn-chrome-one-tab.sn-chrome-one-tab.sn-chrome-one-tab.is-updated:not([data-sn-ai-read]),
       .sn-chrome-one-tab.sn-chrome-one-tab.sn-chrome-one-tab[data-sn-ai-unseen-accepted]{animation:none!important}
     }
     :host(sn-workspace-tab:has(.is-selected)) { z-index:2; }
@@ -1879,7 +1909,8 @@
   }
   document.addEventListener('sn-ai-developer-mode',event => { inboxDeveloperEnabled = event.detail === true;refreshInboxDeveloperMode(); });
   Promise.resolve(GM_getValue('sn-ai-developer-mode-v1',false)).then(value => { inboxDeveloperEnabled = value === true;refreshInboxDeveloperMode(); });
-  let inboxPreviewSnapshot = null;
+  // Inert fixture from the supplied two-chat log: native fields and 0:29 timer.
+  let inboxPreviewSnapshot = {"tag":"sn-inbox-card","attributes":[["class","sn-inbox-card-legacy "],["icon","chat-outline"]],"children":[],"shadow":[{"tag":"now-card","attributes":[["class","sn-card"],["dir","ltr"]],"children":[{"tag":"now-card-header","attributes":[["dir","ltr"]],"children":[],"shadow":[{"tag":"div","attributes":[["class","now-card-tagline -tertiary"]],"children":[{"tag":"now-icon","attributes":[["class","now-card-tagline-icon now-m-inline-end--xs"],["icon","chat-outline"],["dir","ltr"]],"children":[],"shadow":[{"tag":"svg","attributes":[["class","now-icon -sm"]],"children":[{"tag":"path","attributes":[],"children":[],"shadow":null}],"shadow":null}]},{"tag":"p","attributes":[["class","now-card-tagline-p"]],"children":[{"tag":"span","attributes":[["class","now-line-height-crop"]],"children":[{"tag":"span","attributes":[["class","now-card-tagline-label"]],"children":[{"text":"Chat IMS0000000"}],"shadow":null}],"shadow":null}],"shadow":null},{"tag":"div","attributes":[["class","now-card-header-metadata"]],"children":[{"tag":"slot","attributes":[],"children":[],"shadow":null}],"shadow":null}],"shadow":null},{"tag":"div","attributes":[["class","now-card-header -block-center now-m-block-start--sm"]],"children":[{"tag":"div","attributes":[["class","now-card-header-identifier"]],"children":[{"tag":"slot","attributes":[],"children":[],"shadow":null}],"shadow":null},{"tag":"div","attributes":[["class","now-card-header-headings"]],"children":[{"tag":"h3","attributes":[["class","now-card-header-heading -md -primary show-one-line"]],"children":[{"tag":"span","attributes":[["class","now-line-height-crop"]],"children":[{"tag":"span","attributes":[["class","now-card-header-heading-label"]],"children":[{"text":"PREVIEW"}],"shadow":null}],"shadow":null}],"shadow":null}],"shadow":null}],"shadow":null}]},{"tag":"div","attributes":[["class","sn-card-row"]],"children":[{"tag":"sn-truncated-text","attributes":[],"children":[],"shadow":[{"tag":"div","attributes":[["class","text"]],"children":[{"text":"Service Desk UK"}],"shadow":null}]},{"tag":"sn-truncated-text","attributes":[],"children":[],"shadow":[{"tag":"div","attributes":[["class","text"]],"children":[{"text":"05/10/2026 10:31:46"}],"shadow":null}]}],"shadow":null},{"tag":"now-card-divider","attributes":[["dir","ltr"]],"children":[],"shadow":[{"tag":"hr","attributes":[["class","now-card-divider -lg"]],"children":[],"shadow":null}]},{"tag":"div","attributes":[["class","sn-card-footer -meta"]],"children":[{"tag":"div","attributes":[["class","test-timer sn-card-timer"]],"children":[{"tag":"span","attributes":[],"children":[{"text":"Time to accept: "}],"shadow":null},{"tag":"now-highlighted-value","attributes":[["dir","ltr"]],"children":[],"shadow":[{"tag":"span","attributes":[["class","now-highlighted-value -info -tertiary -sm"]],"children":[{"tag":"span","attributes":[["class","now-highlighted-value-label will-truncate"]],"children":[{"text":"0:29"}],"shadow":null}],"shadow":null}]}],"shadow":null}],"shadow":null},{"tag":"now-card-actions","attributes":[["dir","ltr"]],"children":[],"shadow":[{"tag":"div","attributes":[["class","now-card-actions"]],"children":[{"tag":"now-button","attributes":[["class","now-card-actions-button"],["dir","ltr"]],"children":[],"shadow":[{"tag":"button","attributes":[["class","now-button -secondary -negative -sm should-animate has-ripple"]],"children":[{"tag":"slot","attributes":[],"children":[{"tag":"span","attributes":[["class","now-line-height-crop"]],"children":[{"text":"Reject"}],"shadow":null}],"shadow":null}],"shadow":null}]},{"tag":"now-button","attributes":[["class","now-card-actions-button"],["dir","ltr"]],"children":[],"shadow":[{"tag":"button","attributes":[["class","now-button -secondary -positive -sm should-animate has-ripple"]],"children":[{"tag":"slot","attributes":[],"children":[{"tag":"span","attributes":[["class","now-line-height-crop"]],"children":[{"text":"Accept"}],"shadow":null}],"shadow":null}],"shadow":null}]}],"shadow":null}]}],"shadow":[{"tag":"div","attributes":[["class","now-card now-card-slot now-card-article -lg -initial-variant hide-shadow"]],"children":[{"tag":"slot","attributes":[],"children":[],"shadow":null}],"shadow":null}]}]};
   const capturedPreviewCards = new WeakSet();
   function isInboxPreviewList(list) {
     return list.matches?.('.sn-card-list') && list.getRootNode()?.host?.matches('sn-agent-inbox,sn-inbox')
@@ -1906,15 +1937,19 @@
       const userID = /^[A-Z][A-Z0-9]{3,11}\d{1,3}$/.test(value) && !/^(IMS|INC|REQ|RITM|KB)\d+$/i.test(value);
       return document.createTextNode(userID ? spec.text.replace(value,'PREVIEW') : spec.text);
     }
-    if (isRejectedPreviewNode(spec)) return document.createDocumentFragment();
+    // Both native actions remain visible but inert in the preview.
     // Never instantiate ServiceNow controllers or clone event handlers.
     const element = document.createElement(spec.tag.includes('-') ? 'div' : spec.tag);
+    element.setAttribute('data-sn-ai-preview-tag',spec.tag);
     for (const [name,value] of spec.attributes || []) element.setAttribute(name,value);
     if (element.matches('button,input,select,textarea')) element.disabled = true;
     if (element.matches('a')) element.removeAttribute('href');
     for (const child of spec.children || []) element.append(restoreIncomingNode(child));
     if (spec.shadow) {
       const shadow = element.attachShadow({mode:'open'});
+      const layout=document.createElement('style');
+      layout.textContent='.now-card-tagline,.now-card-header,.sn-card-row,.now-card-actions{display:flex;align-items:center;gap:10px}.now-card-tagline-p{margin:0}.now-card-header{margin-top:10px}.now-card-header-heading{margin:0;font-size:18px}.sn-card-row{justify-content:space-between;margin:14px 0;font-size:13px}.sn-card-footer.-meta{margin:12px 0}.sn-card-timer{display:flex;justify-content:space-between;gap:10px}.now-card-actions>*{flex:1}.now-card-divider{border:0;border-top:1px solid var(--sn-theme-423750)}:host([data-sn-ai-preview-tag="sn-inbox-card"]){display:block}:host([data-sn-ai-preview-tag="sn-inbox-card"])>.sn-card{display:block;padding:16px;border:1px solid var(--sn-theme-655573);border-radius:10px;background:var(--sn-theme-251f31)}';
+      shadow.append(layout);
       for (const child of spec.shadow) shadow.append(restoreIncomingNode(child));
       ensureSpaceRoot(shadow);
     }
@@ -2939,13 +2974,19 @@
     ensureSpaceRoot(root);
     if (roots.has(root)) return;
     roots.add(root);
-    root.addEventListener('pointerdown',event => {
-      if (!event.composedPath().some(element => element.matches?.('now-chat-window,.now-chat-message-container,.now-chat-message-bubble,now-chat-input,sn-chat-input'))) return;
+    root.addEventListener('click',event=>{
+      const tab=event.composedPath().find(element=>element.matches?.('.sn-chrome-one-tab[aria-label^="IMS"]'));
+      if (tab && !event.composedPath().some(element=>element.matches?.('.sn-chrome-one-tab-close,button[aria-label^="Close"]'))) {
+        if (tab.classList.contains('is-updated')) tab.setAttribute('data-sn-ai-read','');
+      }
+    },true);
+    root.addEventListener('input',event => {
+      if (!event.isTrusted || !event.composedPath().some(element => element.matches?.('now-chat-input,sn-chat-input,sn-chat-input-shell,now-chat-input-field,.now-chat-input,now-textarea.sn-chat-textarea'))) return;
       for (const scope of spaceRoots) {
-        const tab = scope.querySelector?.('.sn-chrome-one-tab[aria-label^="IMS"][aria-selected="true"]');
+        const tab = scope.querySelector?.('.sn-chrome-one-tab[aria-label^="IMS"].is-selected,.sn-chrome-one-tab[aria-label^="IMS"][aria-selected="true"]');
         if (!tab) continue;
-        acceptedIMS.delete(tab.getAttribute('aria-label'));saveAcceptedIMS();
-        for (const tabsRoot of spaceRoots) tabsRoot.querySelectorAll?.('.sn-chrome-one-tab').forEach(markAcceptedTab);
+        lastTypedIMS.set(tab.getAttribute('aria-label'),Date.now());
+        acknowledgeAcceptedIMS(tab.getAttribute('aria-label'));
         break;
       }
     },true);
@@ -2996,6 +3037,7 @@
       // Closing the last extra tab removes nodes rather than adding them.
       // Refresh on removal/selection too, after native layout has settled.
       if (root.host?.matches('sn-workspace-tab,sn-workspace-tab-bar,sn-workspace-sub-tabs')) scheduleTabGeometryRefresh();
+      for (const record of records) if (record.type==='attributes') markAcceptedTab(record.target);
       for (const record of records) for (const node of record.addedNodes) {
         if (node.nodeType === 1) { convertKBNumber(node);node.querySelectorAll?.('a.now-text-link').forEach(convertKBNumber); }
         discover(node);
@@ -17184,7 +17226,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.218' });
+    addLog('info', 'helper-version', { version: '2.36.219' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -17908,13 +17950,14 @@ function startSNAI(tabIdentity) {
     const delayLabel = document.createElement('label');
     delayLabel.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px';
     const delayInput = document.createElement('input');
+    inboxPolicy.delayInput=delayInput;
     delayInput.type = 'number';
     delayInput.min = '0'; delayInput.max = '25'; delayInput.step = '1';
     delayInput.setAttribute('aria-label', 'Automatic chat acceptance delay in seconds');
     delayInput.value = String(inboxPolicy.acceptDelaySeconds);
     delayInput.style.cssText = 'width:27px;min-width:0;box-sizing:border-box;padding:7px 0;border:0;border-radius:0;background:transparent;color:var(--sn-theme-e6edf9,#e2f5ef);text-align:right;transform:translateX(-3px)';
     delayInput.title = '0–25 seconds. 0 = immediate. Applies to new incoming chats.';
-    delayInput.addEventListener('change', () => {
+    delayInput.addEventListener('input', () => {
       inboxPolicy.acceptDelaySeconds = normaliseInboxAcceptDelay(delayInput.value);
       delayInput.value = String(inboxPolicy.acceptDelaySeconds);
       gmSetValue(INBOX_ACCEPT_DELAY_KEY, inboxPolicy.acceptDelaySeconds).catch(error => console.warn('[SN AI inbox]', error));
@@ -17929,7 +17972,7 @@ function startSNAI(tabIdentity) {
       button.addEventListener('click', event => {
         event.preventDefault();
         delayInput.value = String(Math.max(0, Math.min(25, normaliseInboxAcceptDelay(delayInput.value) + amount)));
-        delayInput.dispatchEvent(new Event('change', { bubbles: true }));
+        delayInput.dispatchEvent(new Event('input', { bubbles: true }));
       });
       return button;
     };
@@ -18008,22 +18051,39 @@ function startSNAI(tabIdentity) {
     const monitored = new WeakSet();
     const inboxRoots = new WeakMap();
     const discoveredWidgets = [];
+    document.addEventListener('sn-ai-accepted-ims-read',event=>{
+      for (const box of document.querySelectorAll('[data-sn-ai-notification="accepted"]')) {
+        if (box.dataset.ims===event.detail?.ims) box.remove();
+      }
+    });
     const deep = root => {
       const elements = [...root.querySelectorAll('*')];
       for (const element of [...elements]) if (element.shadowRoot) elements.push(...deep(element.shadowRoot));
       return elements;
     };
-    const notice = (ims = '') => {
+    const notice = (ims = '', acceptedAt = Date.now()) => {
+      let stack=document.getElementById('sn-ai-accepted-notifications');
+      if (!stack) {
+        stack=document.createElement('div');stack.id='sn-ai-accepted-notifications';
+        stack.style.cssText='position:fixed;right:20px;bottom:100px;z-index:2147483647;display:flex;flex-direction:column;gap:10px;max-height:calc(100vh - 140px);overflow:auto;width:440px;max-width:calc(100vw - 40px)';
+        document.body.append(stack);
+      }
+      if (ims && [...stack.children].some(box=>box.dataset.ims===ims)) return;
       const box = document.createElement('div');
       box.dataset.snAiNotification = 'accepted';
+      box.dataset.ims=ims;
       box.setAttribute('role', 'status');
-      box.style.cssText = 'position:fixed;right:20px;bottom:100px;z-index:2147483647;max-width:calc(100vw - 40px);width:440px;box-sizing:border-box;padding:24px 48px 24px 24px;border:1px solid #62b99d;border-radius:10px;background:#16392e;color:#e5fff5;font:17px/1.5 system-ui;box-shadow:0 5px 24px #0005';
+      box.style.cssText = 'position:relative;flex:0 0 auto;width:100%;box-sizing:border-box;padding:20px 48px 20px 20px;border:1px solid var(--sn-theme-9de2f5,#9de2f5);border-radius:10px;background:var(--sn-theme-251f31,#251f31);color:var(--sn-theme-e6edf9,#e6edf9);font:17px/1.5 system-ui;box-shadow:0 5px 24px #0005;cursor:pointer';
       box.textContent = `New chat has been automatically accepted${ims ? ' - ' + ims : ''}`;
-      if (ims) document.dispatchEvent(new CustomEvent('sn-ai-autoaccepted-ims',{detail:{ims}}));
       const close = document.createElement('button');
       close.type = 'button'; close.textContent = '×'; close.setAttribute('aria-label', 'Dismiss automatic chat acceptance notification');
       close.style.cssText = 'position:absolute;right:10px;top:10px;background:transparent;border:0;color:inherit;font:22px system-ui;cursor:pointer';
-      close.onclick = () => box.remove(); box.append(close); document.body.append(box);
+      close.onclick = event => { event.stopPropagation();box.remove(); };box.append(close);
+      const focus=()=>{ if (ims) document.dispatchEvent(new CustomEvent('sn-ai-focus-ims',{detail:{ims}})); };
+      box.tabIndex=0;box.addEventListener('click',focus);
+      box.addEventListener('keydown',event=>{if(event.target===box&&['Enter',' '].includes(event.key)){event.preventDefault();focus();}});
+      stack.append(box);
+      if (ims) document.dispatchEvent(new CustomEvent('sn-ai-autoaccepted-ims',{detail:{ims,acceptedAt}}));
     };
     const inspectButtons = list => {
       // Recorded native selector: Accept is the positive card action; Reject
@@ -18042,8 +18102,7 @@ function startSNAI(tabIdentity) {
         inboxPolicy.seen.add(button);
         inboxLog('accept-button-found', { html: button.outerHTML, enabled: !button.disabled, autoAccept: inboxPolicy.autoAccept });
         if (!inboxPolicy.autoAccept) continue;
-        const acceptDelayMs = inboxPolicy.acceptDelaySeconds * 1000;
-        const detectedAt = performance.now();
+        const detectedAt = Date.now();
         let card = button;
         while (card instanceof Element && !card.matches('sn-inbox-card')) card = deepParentElement(card);
         // Cache this offer's timer roots once; no page-wide polling/scanning.
@@ -18053,6 +18112,7 @@ function startSNAI(tabIdentity) {
           for (const element of countdownRoots[i].querySelectorAll('*')) if (element.shadowRoot) countdownRoots.push(element.shadowRoot);
         }
         let accepted = false;
+        const initialRemaining = countdownRoots.map(root=>inboxCountdownSeconds(root.textContent)).find(value=>value!==null);
         const checkAcceptance = () => {
           if (accepted) return;
           if (!inboxPolicy.autoAccept || !button.isConnected || !list.isConnected || button.disabled || button.getAttribute('aria-disabled') === 'true' || !isVisible(button)) {
@@ -18060,9 +18120,14 @@ function startSNAI(tabIdentity) {
             inboxLog('auto-accept-cancelled', { reason: 'Original incoming control is no longer actionable' }); return;
           }
           const remaining = countdownRoots.map(root => inboxCountdownSeconds(root.textContent)).find(value => value !== null);
-          const countdownReached = remaining != null && remaining <= 30 - acceptDelayMs / 1000;
-          if (!countdownReached && performance.now() - detectedAt < acceptDelayMs) return;
+          const setting=inboxPolicy.delayInput?.isConnected ? inboxPolicy.delayInput : null;
+          const acceptDelayMs=normaliseInboxAcceptDelay(setting?.value ?? inboxPolicy.acceptDelaySeconds)*1000;
+          const countdownReached = remaining != null && initialRemaining != null && initialRemaining-remaining >= acceptDelayMs/1000;
+          // Countdown updates and background scheduling may jump. Neither is
+          // allowed to shorten the configured minimum delay for this offer.
+          if (Date.now()-detectedAt < acceptDelayMs) return;
           accepted = true;
+          const acceptedAt=Date.now();
           clearInterval(inboxPolicy.timers.get(button)); inboxPolicy.timers.delete(button);
           inboxLog('auto-accept-click', { html: button.outerHTML, delayMs: acceptDelayMs,
             trigger: countdownReached ? 'native-countdown' : 'local-timer', remainingSeconds: remaining ?? null });
@@ -18078,7 +18143,7 @@ function startSNAI(tabIdentity) {
               const resolveAcceptedIMS = () => {
                 const newIMS = [...new Set(allPageElements().filter(element => element.matches?.('.sn-chrome-one-tab[aria-label^="IMS"]')).map(element => element.getAttribute('aria-label')))].filter(ims => !previousIMS.has(ims));
                 const ims = offeredIMS || (newIMS.length === 1 ? newIMS[0] : '');
-                if (ims || ++checks >= 15) notice(ims);
+                if (ims || ++checks >= 15) notice(ims,acceptedAt);
                 else setTimeout(resolveAcceptedIMS,200);
               };
               resolveAcceptedIMS();
