@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.265
+// @version      2.36.266
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -19,6 +19,7 @@
 // @grant        GM_removeValueChangeListener
 // @grant        GM_xmlhttpRequest
 // @grant        GM_info
+// @grant        unsafeWindow
 // @grant        GM_setClipboard
 // @grant        GM_getTab
 // @grant        GM_saveTab
@@ -2885,6 +2886,11 @@
       padding:5px!important;border:1px solid var(--sn-theme-655573)!important;border-radius:12px!important;
       background:var(--sn-theme-251f31)!important;box-shadow:0 10px 30px #0004!important;
     }
+    :host(now-popover.now-dropdown-popover) .now-popover,
+    :host(now-popover.now-dropdown-popover) .now-popover-content,
+    :host(now-dropdown-list) {
+      background:transparent!important;border-radius:12px!important;overflow:hidden!important;
+    }
     /* The hoisted component host must not paint a square behind the rounded
        menu. Offset the complete menu, rather than padding inside its border. */
     now-dropdown-list:has([role="menu"][aria-label="More Actions"]),
@@ -2971,7 +2977,8 @@
   }
   // This verified read-only operation alone is normalized; no responses,
   // record writes, presence requests or visible field values are changed.
-  const knowledgeOriginalFetch=window.fetch;
+  const knowledgePage=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
+  const knowledgeOriginalFetch=knowledgePage.fetch;
   const knowledgeWildcardFetch=function(input,init) {
     try {
       const url=new URL(typeof input==='string'?input:input.url,location.href);
@@ -2983,7 +2990,7 @@
     } catch { /* Preserve all unrelated requests unchanged. */ }
     return Reflect.apply(knowledgeOriginalFetch,this,[input,init]);
   };
-  window.fetch=knowledgeWildcardFetch;
+  knowledgePage.fetch=knowledgeWildcardFetch;
   let kbLookupBusy = false;
   let kbLookupPausedUntil = 0;
   const kbCopyCards = new WeakSet();
@@ -3419,6 +3426,9 @@
     }
   }
   function discover(node) {
+    for (const caption of node.querySelectorAll?.('.now-dropdown-list-label,.now-button-label,.now-line-height-crop') || []) {
+      if (caption.textContent.trim()==='Send incident details to chat') caption.textContent='Send to Chat';
+    }
     for (const button of node.querySelectorAll?.('button[aria-label="Send incident details to chat"]') || []) {
       const caption=button.querySelector('.now-button-label,.now-line-height-crop');
       if (caption) caption.textContent='Send to Chat';
@@ -17842,7 +17852,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.265' });
+    addLog('info', 'helper-version', { version: '2.36.266' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
