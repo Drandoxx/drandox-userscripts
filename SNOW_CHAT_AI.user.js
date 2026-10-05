@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.301
+// @version      2.36.302
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -472,8 +472,22 @@ const snAIChatDisplayNames=(()=>{
     // Workspace handles arrows on ancestors during capture, before the label
     // receives keydown. Stop tab navigation there, but leave the browser's
     // default text-caret movement intact (including Shift + arrow selection).
-    window.addEventListener('keydown',event=>{
-      if(editing && ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key) && event.composedPath().includes(label))event.stopImmediatePropagation();
+    for(const type of ['keydown','keyup'])window.addEventListener(type,event=>{
+      if(editing && ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key) && event.composedPath().includes(tab))event.stopImmediatePropagation();
+    },true);
+    // Keep native tab activation/focus handlers out of clicks during editing.
+    // Text clicks retain their default caret placement; tab padding clicks
+    // explicitly place the caret at the nearest text edge without blurring.
+    for(const type of ['pointerdown','mousedown','click'])window.addEventListener(type,event=>{
+      if(!editing || !event.composedPath().includes(tab))return;
+      event.stopImmediatePropagation();
+      if(event.composedPath().includes(label))return;
+      event.preventDefault();
+      if(type==='pointerdown'){
+        label.focus();const range=document.createRange();range.selectNodeContents(label);
+        range.collapse(event.clientX<label.getBoundingClientRect().left);
+        const selection=document.getSelection();selection.removeAllRanges();selection.addRange(range);
+      }
     },true);
     label.addEventListener('keydown',event=>{if(!editing)return;event.stopPropagation();if(event.key==='Enter'||event.key==='Escape'){event.preventDefault();finish(event.key==='Enter');label.blur();}},true);
     label.addEventListener('beforeinput',event=>{if(!editing)return;if(event.inputType==='insertParagraph'||event.inputType==='insertLineBreak'){event.preventDefault();return;}if(event.data){const selected=document.getSelection()?.toString()||'';if(Array.from(label.textContent).length-Array.from(selected).length+Array.from(event.data).length>30)event.preventDefault();}});
@@ -18423,7 +18437,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.301' });
+    addLog('info', 'helper-version', { version: '2.36.302' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
