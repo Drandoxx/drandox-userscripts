@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.268
+// @version      2.36.269
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -10644,7 +10644,74 @@ function startSNAI(tabIdentity) {
     return settled;
   }
 
+  const matrixFieldNames = {category:'u_matrix_category','sub category':'u_matrix_subcategory',symptom:'u_matrix_symptom'};
+  let matrixOptionsPromise;
+  async function loadMatrixOptions() {
+    if (matrixOptionsPromise) return matrixOptionsPromise;
+    matrixOptionsPromise = (async () => {
+      const key='sn-ai-matrix-options-v1';
+      const cached=await GM_getValue(key,null);
+      if (cached?.origin===location.origin && Date.now()-cached.savedAt<86400000 && Array.isArray(cached.rows) && cached.rows.length) return cached.rows;
+      const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
+      const token=page.g_ck || [...page.document.scripts].filter(s=>!s.src).map(s=>s.textContent.match(/\bg_ck\s*=\s*["']([^"']+)["']/)?.[1]).find(Boolean);
+      if (!token) throw new Error('MATRIX_SESSION_UNAVAILABLE');
+      const rows=[];
+      const limit=1000;
+      for (let offset=0;offset<50000;offset+=limit) {
+        const params=new URLSearchParams({sysparm_query:'u_active=true^ORDERBYsys_id',sysparm_fields:'sys_id,u_code,u_parent,u_type,u_restrict_visibility,u_confidential',sysparm_exclude_reference_link:'true',sysparm_limit:String(limit),sysparm_offset:String(offset)});
+        const response=await page.fetch(`/api/now/table/u_matrix?${params}`,{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':token}});
+        if (!response.ok) throw new Error(`MATRIX_READ_FAILED: ${response.status}`);
+        const body=await response.json();
+        if (!Array.isArray(body.result)) throw new Error('MATRIX_RESPONSE_INVALID');
+        for (const row of body.result) {
+          if (!/^[a-f0-9]{32}$/i.test(row.sys_id) || typeof row.u_code!=='string') throw new Error('MATRIX_RECORD_INVALID');
+          rows.push({id:row.sys_id,code:row.u_code,parent:typeof row.u_parent==='object'?row.u_parent?.value||'':row.u_parent||'',type:row.u_type,restricted:String(row.u_restrict_visibility)==='true'||String(row.u_confidential)==='true'});
+        }
+        const total=Number(response.headers.get('X-Total-Count'));
+        if (body.result.length<limit || (total>0 && rows.length>=total)) {
+          if (!rows.length) throw new Error('MATRIX_EMPTY');
+          await GM_setValue(key,{origin:location.origin,savedAt:Date.now(),rows});
+          return rows;
+        }
+      }
+      throw new Error('MATRIX_TOO_LARGE: Incomplete lists are not cached.');
+    })().catch(error=>{matrixOptionsPromise=null;throw error;});
+    return matrixOptionsPromise;
+  }
+  function matrixReferenceHost(field) {
+    for (let node=field;node;node=deepParentElement(node)) if (node.localName==='now-record-typeahead') return node;
+    return null;
+  }
+  async function commitMatrixOption(fieldLabel, expected) {
+    const label=comparableLabel(fieldLabel);
+    const field=await waitForControlByLabel(fieldLabel,3000);
+    if (!field) throw new Error(`MATRIX_FIELD_MISSING: ${fieldLabel}`);
+    const rows=await loadMatrixOptions();
+    const parentLabel=label==='sub category'?'Category':label==='symptom'?'Sub Category':null;
+    const parentField=parentLabel?findControlByLabel(parentLabel,currentFormElements()):null;
+    const parentHost=parentField?matrixReferenceHost(parentField):null;
+    const parentId=parentHost?.dAProps?.value || parentHost?.selectedItem;
+    if (parentLabel && !/^[a-f0-9]{32}$/i.test(String(parentId||''))) throw new Error(`MATRIX_PARENT_UNCOMMITTED: ${parentLabel}`);
+    const matches=rows.filter(row=>!row.restricted && normalisedFieldValue(row.code)===normalisedFieldValue(expected) && (!parentLabel || row.parent===parentId));
+    if (matches.length!==1) throw new Error(`MATRIX_OPTION_NOT_UNIQUE: ${fieldLabel} = ${expected}`);
+    const row=matches[0];
+    const host=matrixReferenceHost(field);
+    const props=host?.dAProps;
+    const callback=host?.onValueChange || props?.onValueChange;
+    if (props?.fieldName!==matrixFieldNames[label] || typeof callback!=='function' || field.disabled || field.readOnly) throw new Error(`MATRIX_NATIVE_UNAVAILABLE: ${fieldLabel}`);
+    callback.call(host,{value:row.id,displayValue:row.code});
+    const result=await waitStableReferenceValue(fieldLabel,row.code,'exact',5000,450,field);
+    const current=await waitForControlByLabel(fieldLabel,1000);
+    const currentHost=current?matrixReferenceHost(current):null;
+    const committedId=currentHost?.dAProps?.value || currentHost?.selectedItem;
+    if (!result.stable || committedId!==row.id) throw new Error(`MATRIX_COMMIT_FAILED: ${fieldLabel}`);
+    const next=routingDependentField(fieldLabel);
+    if (next && !await waitForRoutingDependency(fieldLabel,next,1)) throw new Error(`MATRIX_DEPENDENCY_FAILED: ${next}`);
+    return result.actual;
+  }
+
   async function autoLookup(fieldLabel, searchValue, options = {}) {
+    if (matrixFieldNames[comparableLabel(fieldLabel)]) return commitMatrixOption(fieldLabel,options.expected||searchValue);
     const expected = options.expected || searchValue;
     const match = options.match || 'exact';
     const routingNext = routingDependentField(fieldLabel);
@@ -10704,6 +10771,7 @@ function startSNAI(tabIdentity) {
   // Conservative compatibility route: retained as the verified fallback for
   // slow, rebuilding, or unusually configured Workspace reference controls.
   async function autoLookupSafe(fieldLabel, searchValue, options = {}) {
+    if (matrixFieldNames[comparableLabel(fieldLabel)]) return commitMatrixOption(fieldLabel,options.expected||searchValue);
     const expected = options.expected || searchValue;
     const match = options.match || 'exact';
     const code = options.code || `LOOKUP_${comparableLabel(fieldLabel).toUpperCase().replace(/ /g, '_')}_FAILED`;
@@ -12058,23 +12126,10 @@ function startSNAI(tabIdentity) {
       const committed=[];
       for (const label of ['Category','Sub Category','Symptom']) {
         const expected=TICKET_PROFILES.FTF.fixed[label];
-        const field=await waitForControlByLabel(label,3000);
-        if (!field) throw new Error(`MATRIX_TEST_FIELD_MISSING: ${label}`);
-        if (fieldMatchesExpected(committedReferenceValue(field),expected,label)) { committed.push(label);continue; }
-        // No text input, no navigation, no templates and no ticket runner.
-        if (field.getAttribute('aria-expanded')!=='true') field.click();
-        state.automationDropdowns.add(comparableLabel(label));
-        const option=await waitUntil(()=>popupOptionsFor(field,false).find(item=>normalisedFieldValue(item.textContent)===normalisedFieldValue(expected)),4000,60);
-        if (!option) { await closeAutomationDropdown(label,field);throw new Error(`MATRIX_TEST_OPTION_NOT_AVAILABLE: ${label} = ${expected}. No typing fallback was used.`); }
-        option.click();
-        const result=await waitStableReferenceValue(label,expected,'exact',4400,450,field);
-        await closeAutomationDropdown(label,field);
-        if (!result.stable) throw new Error(`MATRIX_TEST_COMMIT_FAILED: ${label}`);
+        await commitMatrixOption(label,expected);
         committed.push(label);
-        const dependent=routingDependentField(label);
-        if (dependent && !await waitForRoutingDependency(label,dependent,1)) throw new Error(`MATRIX_TEST_DEPENDENCY_FAILED: ${dependent}`);
       }
-      state.commandResult={kind:'matrix-test',ok:true,method:'native-option-click-without-typing',fields:committed,saved:false};
+      state.commandResult={kind:'matrix-test',ok:true,method:'cached-matrix-native-callback',fields:committed,saved:false};
       state.lastAction='FTF matrix test completed. Only Category, Sub Category and Symptom were selected; Event remains unsaved.';
       return;
     }
@@ -17883,7 +17938,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.268' });
+    addLog('info', 'helper-version', { version: '2.36.269' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
