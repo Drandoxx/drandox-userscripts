@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.221
+// @version      2.36.222
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -1883,6 +1883,34 @@
   let incomingLogReady = false;
   const incomingLogPending = [];
   let incomingLogSaveChain = Promise.resolve();
+  const incomingScreenshotRequests = new Map();
+  const incomingScreenshotJobs = new Map();
+  let incomingScreenshotEpoch = 0;
+  document.addEventListener('sn-ai-incoming-screenshot-result-v1',event=>{
+    let result;
+    try { result=JSON.parse(event.detail); } catch { return; }
+    const pending=incomingScreenshotRequests.get(result?.requestId);
+    if (!pending) return;
+    if (result.status==='captured' && (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(result.dataUrl || '')
+        || result.dataUrl.length>3*1024*1024 || !Number.isFinite(result.width) || !Number.isFinite(result.height))) {
+      result={status:'unavailable',reason:'invalid-companion-image'};
+    }
+    clearTimeout(pending.timer);incomingScreenshotRequests.delete(result.requestId || pending.requestId);
+    pending.resolve(result.status==='captured'
+      ? {status:'captured',format:'png',dataUrl:result.dataUrl,width:result.width,height:result.height,capturedAt:result.capturedAt}
+      : {status:'unavailable',reason:String(result.reason || 'capture-failed').slice(0,160)});
+  });
+  function requestIncomingScreenshot(id) {
+    const requestId=crypto.randomUUID();
+    return new Promise(resolve=>{
+      const timer=setTimeout(()=>{
+        incomingScreenshotRequests.delete(requestId);
+        resolve({status:'unavailable',reason:'companion-not-installed-or-not-responding'});
+      },8000);
+      incomingScreenshotRequests.set(requestId,{requestId,timer,resolve});
+      document.dispatchEvent(new CustomEvent('sn-ai-incoming-screenshot-request-v1',{detail:JSON.stringify({requestId,id})}));
+    });
+  }
   function publishIncomingLogState() {
     document.dispatchEvent(new CustomEvent('sn-ai-incoming-log-state',{detail:{running:incomingLogState.running,count:incomingLogState.records.length}}));
   }
@@ -1900,8 +1928,19 @@
     const record = {kind:'incoming-chat',id,at:new Date().toISOString(),html:element.outerHTML,
       shadowHTML:element.shadowRoot.innerHTML,snapshot:snapshotIncomingNode(element),theme:selectedSpaceTheme};
     const index = incomingLogState.records.findIndex(item => item.id === id);
+    const previous=index<0?null:incomingLogState.records[index];
+    record.screenshot=previous?.screenshot || {status:'pending'};
     if (index < 0) incomingLogState.records.push(record);else incomingLogState.records[index] = record;
     persistIncomingLogs().catch(console.warn);
+    if ((!previous?.screenshot || previous.screenshot.status==='pending') && !incomingScreenshotJobs.has(id)) {
+      const epoch=incomingScreenshotEpoch;
+      const job=requestIncomingScreenshot(id).then(screenshot=>{
+        if (epoch!==incomingScreenshotEpoch) return;
+        const current=incomingLogState.records.find(item=>item.id===id);
+        if (current) { current.screenshot=screenshot;return persistIncomingLogs(); }
+      }).catch(console.warn).finally(()=>{if(incomingScreenshotJobs.get(id)===job)incomingScreenshotJobs.delete(id);});
+      incomingScreenshotJobs.set(id,job);
+    }
   }
   function scanIncomingChats() {
     for (const root of spaceRoots) for (const card of root.querySelectorAll?.('sn-inbox-card') || []) recordIncomingChat(card);
@@ -1917,9 +1956,10 @@
     event.detail({
       state:() => ({running:incomingLogState.running,count:incomingLogState.records.length}),
       toggle:async () => { await incomingLogLoaded;incomingLogState.running = !incomingLogState.running;await persistIncomingLogs();if (incomingLogState.running) scanIncomingChats(); },
-      clear:async () => { await incomingLogLoaded;incomingLogState.records = [];await persistIncomingLogs(); },
+      clear:async () => { await incomingLogLoaded;incomingScreenshotEpoch++;incomingScreenshotJobs.clear();incomingLogState.records = [];await persistIncomingLogs(); },
       download:async () => {
         await incomingLogLoaded;incomingLogState.running = false;await persistIncomingLogs();
+        await Promise.allSettled([...incomingScreenshotJobs.values()]);
         const count = incomingLogState.records.length;
         const url = URL.createObjectURL(new Blob([incomingLogState.records.map(record => JSON.stringify(record)).join('\n')],{type:'application/x-ndjson'}));
         const link = document.createElement('a');link.href = url;link.download = `Incoming_${count}_chat_data.jsonl`;link.click();
@@ -17266,7 +17306,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.221' });
+    addLog('info', 'helper-version', { version: '2.36.222' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -18064,7 +18104,7 @@ function startSNAI(tabIdentity) {
       incomingController?.download().catch(console.warn);
     });
     const help = document.createElement('small');
-    help.textContent = 'Incoming chats and logging state are saved locally across reloads. Preview chats are excluded. Download pauses collection; Clear logs removes saved data. Logs may contain customer data.';
+    help.textContent = 'Incoming chats and logging state are saved locally across reloads. The optional screenshot companion adds a PNG of visible incoming cards; unavailable captures include a reason. Preview chats are excluded. Download pauses collection and waits for pending captures. Logs and images may contain customer data.';
     help.style.display = 'block';
     const acceptRow = document.createElement('div');
     acceptRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap';
