@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.236
+// @version      2.36.237
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -9214,7 +9214,7 @@ function startSNAI(tabIdentity) {
           stableSince = performance.now();
         }
       }
-      if (scroller && scroller.scrollTop !== lastScrollTop) {
+      if (scroller) {
         lastScrollTop = scroller.scrollTop;
         const next = Math.min(scroller.scrollHeight, scroller.scrollTop + Math.max(180, Math.round(scroller.clientHeight * 0.78)));
         if (next > scroller.scrollTop) {
@@ -9224,8 +9224,12 @@ function startSNAI(tabIdentity) {
           continue;
         }
       }
-      if (schema && performance.now() - stableSince >= stableMs) break;
+      if (schema && (!scroller || scroller.scrollTop>=scroller.scrollHeight-scroller.clientHeight-2) && performance.now() - stableSince >= stableMs) break;
       await new Promise((resolve) => setTimeout(resolve, 60));
+    }
+    if (scroller && scroller.scrollTop<scroller.scrollHeight-scroller.clientHeight-2) {
+      addLog('warn','description-schema-scan-incomplete',{fields:mergedFields.length});
+      schema=null;
     }
     if (scroller) {
       scroller.scrollTop = Math.min(originalScrollTop, scroller.scrollHeight);
@@ -9682,7 +9686,8 @@ function startSNAI(tabIdentity) {
         issueType,
         shortDescription: text('short-description', 'Short Description') || `HP printer ${issueType === 'Toner order' ? 'toner order' : 'generic issue'}`,
         configurationItem: text('Configuration Item', 'configuration-item'),
-        values: Object.fromEntries(HP_VALUE_KEYS.map((key) => [key, key === 'no-other-working-printer' ? values[key] === true : text(key)])),
+        values: { ...Object.fromEntries(HP_VALUE_KEYS.map((key) => [key, key === 'no-other-working-printer' ? values[key] === true : text(key)])),
+          ...Object.fromEntries(Object.entries(values).filter(([key])=>key.startsWith('extrafield-'))) },
         fieldsUnderDescription: Object.fromEntries(fieldsUnderDescriptionSpecification(state.autoSession?.genericSchema || state.wizard?.genericSchema)
           .map((field) => [field.label, text(field.key)])),
         skipDescriptionFields: Array.isArray(data['Skip Fields Under Description'])
@@ -11447,6 +11452,12 @@ function startSNAI(tabIdentity) {
     try {
       state.autoSession.skipDescriptionFields = data.skipDescriptionFields;
       const { templateName, genericSchema } = await prepareHPBaseForm(data.issueType);
+      // Template application rebuilds subordinate controls. Map against THIS schema,
+      // not the stale pre-template session, retaining AI keys for cached retries.
+      const hpExtras=fieldsUnderDescriptionSpecification(genericSchema);
+      const unmappedExtras=Object.keys(data.values).filter(key=>key.startsWith('extrafield-') && !hpExtras.some(field=>field.key===key));
+      if(unmappedExtras.length) automationFailure('HP_EXTRA_FIELDS_NOT_DISCOVERED','HP template controls were not fully discovered; retry without AI after the form is ready.',{keys:unmappedExtras});
+      for(const field of hpExtras)if(Object.prototype.hasOwnProperty.call(data.values,field.key))data.fieldsUnderDescription[field.label]=String(data.values[field.key]??'').trim();
       const priority = data.values['no-other-working-printer'] === true ? '3 - Moderate' : '4 - Low';
       await autoSelect('Priority', priority, 'HP_PRIORITY_COMMIT_FAILED');
       if (data.configurationItem) {
@@ -12464,13 +12475,21 @@ function startSNAI(tabIdentity) {
         // ServiceNow reflow on every animation frame.
         await scrollChatCaptureSmoothly(scroller, 0, 500);
         mergeCurrent();
-        const bottom = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-        let lastMergeAt = 0;
-        await scrollChatCaptureSmoothly(scroller, bottom, Math.max(700, Math.min(2600, bottom / 1.25)), (now) => {
-          if (now - lastMergeAt >= 120) { lastMergeAt = now; mergeCurrent(); }
-        });
-        mergeCurrent();
-      } catch { /* The mounted chat slice is used below if capture is unavailable. */ }
+        let reachedBottom=false,bottomPasses=0;
+        // Overlapping viewport steps survive virtual-list resets and mount every slice.
+        for(let step=0;step<100;step++){
+          const bottom=Math.max(0,scroller.scrollHeight-scroller.clientHeight);
+          const from=scroller.scrollTop;
+          const target=Math.min(bottom,from+Math.max(120,scroller.clientHeight*.65));
+          await scrollChatCaptureSmoothly(scroller,target,400,mergeCurrent);
+          mergeCurrent();
+          const actual=scroller.scrollTop,newBottom=Math.max(0,scroller.scrollHeight-scroller.clientHeight);
+          if(actual>=newBottom-2){if(++bottomPasses>=2){reachedBottom=true;break;}}
+          else bottomPasses=0;
+          if(actual<target-2)addLog('warn','chat-capture-scroll-interrupted',{step,target,actual});
+        }
+        if(!reachedBottom)automationFailure('CHAT_CAPTURE_INCOMPLETE','Chat scrolling was interrupted before the full history was collected. No partial transcript will be sent to AI.');
+      } catch(error) { throw error; }
     }
     if (boundary.afterJoin && merged.length) return merged;
 
@@ -17560,7 +17579,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.236' });
+    addLog('info', 'helper-version', { version: '2.36.237' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
