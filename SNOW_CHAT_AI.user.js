@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.295
+// @version      2.36.296
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -412,6 +412,36 @@
   const lastTypedIMS = new Map();
   try { acceptedIMS = new Set(JSON.parse(sessionStorage.getItem('sn-ai-unseen-accepted-ims-v1') || '[]')); } catch {}
   const saveAcceptedIMS = () => { try { sessionStorage.setItem('sn-ai-unseen-accepted-ims-v1',JSON.stringify([...acceptedIMS])); } catch {} };
+  const chatDisplayNameKey='sn-ai-chat-display-names-v1';
+  const namedChatLabels=new WeakSet();
+  function readChatDisplayNames() {
+    try { const data=JSON.parse(localStorage.getItem(chatDisplayNameKey)||'{}');return data&&typeof data==='object'?data:{}; } catch { return {}; }
+  }
+  function installChatDisplayName(tab) {
+    const ims=tab?.getAttribute?.('aria-label');
+    if (!tab?.matches?.('.sn-chrome-one-tab') || !/^IMS\d+$/i.test(ims||'')) return;
+    const label=tab.querySelector('.sn-chrome-one-tab-content:not(.has-icon):not(.has-presence) > span');
+    if (!label || namedChatLabels.has(label)) return;
+    namedChatLabels.add(label);label.dataset.snAiIms=ims;
+    let editing=false;
+    const render=()=>{if(!editing){const name=readChatDisplayNames()[ims]||ims;if(label.textContent!==name)label.textContent=name;label.title=name;}};
+    const finish=save=>{
+      if(!editing)return;
+      const name=Array.from(label.textContent.replace(/[\r\n]/g,' ').trim()).slice(0,30).join('')||ims;
+      editing=false;label.removeAttribute('contenteditable');
+      if(save){const names=readChatDisplayNames();if(name===ims)delete names[ims];else names[ims]=name;try{localStorage.setItem(chatDisplayNameKey,JSON.stringify(names));}catch{}document.dispatchEvent(new CustomEvent('sn-ai-chat-display-name-changed',{detail:{ims,name}}));}
+      render();
+    };
+    label.addEventListener('dblclick',event=>{event.preventDefault();event.stopPropagation();editing=true;label.setAttribute('contenteditable','plaintext-only');label.focus();const range=document.createRange();range.selectNodeContents(label);const selection=document.getSelection();selection.removeAllRanges();selection.addRange(range);},true);
+    label.addEventListener('keydown',event=>{if(!editing)return;event.stopPropagation();if(event.key==='Enter'||event.key==='Escape'){event.preventDefault();finish(event.key==='Enter');label.blur();}},true);
+    label.addEventListener('beforeinput',event=>{if(!editing)return;if(event.inputType==='insertParagraph'||event.inputType==='insertLineBreak'){event.preventDefault();return;}if(event.data){const selected=document.getSelection()?.toString()||'';if(Array.from(label.textContent).length-Array.from(selected).length+Array.from(event.data).length>30)event.preventDefault();}});
+    label.addEventListener('input',()=>{if(Array.from(label.textContent).length>30){label.textContent=Array.from(label.textContent).slice(0,30).join('');const range=document.createRange();range.selectNodeContents(label);range.collapse(false);const selection=document.getSelection();selection.removeAllRanges();selection.addRange(range);}});
+    label.addEventListener('blur',()=>finish(true));
+    new MutationObserver(render).observe(label,{childList:true,characterData:true,subtree:true});
+    document.addEventListener('sn-ai-chat-display-name-changed',render);
+    window.addEventListener('storage',event=>{if(event.key===chatDisplayNameKey)render();});
+    render();
+  }
   function markAcceptedTab(element) {
     if (!element.matches?.('.sn-chrome-one-tab[aria-label^="IMS"]')) return;
     const unread=element.classList.contains('is-updated');
@@ -3043,9 +3073,15 @@
     :host(now-card-header.aa-card-header) .now-line-height-crop::after { content:none!important; }
     /* Panel-local responsive tokens shrink spacing before typography. */
     :host(now-agent-assist) .aa-panel {
-      padding-inline:calc(var(--sn-kb-outer,24px) + var(--sn-kb-scrollbar,9px))!important;
+      padding-inline:var(--sn-kb-outer,6%)!important;
       width:100%!important;min-width:0!important;box-sizing:border-box!important;
+      display:flex!important;flex-direction:column!important;overflow:hidden!important;min-height:0!important;
     }
+    :host(now-agent-assist) .aa-panel-body-container { display:flex!important;flex-direction:column!important;flex:1 1 0!important;min-height:0!important;min-width:0!important;overflow:hidden!important; }
+    :host-context(now-agent-assist) sn-aa-results-container { flex:1 1 0!important;min-height:0!important;overflow-y:auto!important;overflow-x:hidden!important;scrollbar-width:none!important; }
+    :host-context(now-agent-assist) sn-aa-results-container::-webkit-scrollbar { width:0!important;height:0!important; }
+    .sn-chrome-one-tab[aria-label^="IMS"] .has-icon { display:none!important; }
+    [data-sn-ai-ims] { outline:none!important;background:transparent!important;font:inherit!important;color:inherit!important;white-space:nowrap!important; }
     :host-context(now-agent-assist) :is(.aa-panel-header,.aa-panel-search,.aa-card-list) {
       padding:6px 0!important;margin:0!important;box-sizing:border-box!important;min-width:0!important;width:100%!important;max-width:100%!important;
     }
@@ -3054,10 +3090,10 @@
     :host-context(now-agent-assist) .aa-card-list {
       padding:4px 0 6px!important;display:grid!important;grid-template-columns:minmax(0,1fr)!important;
       gap:10px!important;overflow-x:hidden!important;
-      width:calc(100% + var(--sn-kb-scrollbar,9px))!important;max-width:none!important;
+      width:100%!important;max-width:100%!important;overflow-y:visible!important;
     }
     :host-context(now-agent-assist) sn-aa-result-list-item,:host(sn-aa-result-list-item) { padding:0!important;margin:0!important; }
-    :host-context(now-agent-assist) :is(sn-aa-results-container,sn-aa-results-list) { overflow:visible!important;min-width:0!important;width:100%!important; }
+    :host-context(now-agent-assist) sn-aa-results-list { overflow:visible!important;min-width:0!important;width:100%!important; }
     :host-context(now-agent-assist) :is(.aa-panel-search-content,.aa-results-container,.aa-control,.aa-card-list) { min-width:0!important;max-width:100%!important; }
     :host-context(now-agent-assist) sn-aa-result-list-item,
     :host(sn-aa-result-list-item),:host(now-card.aa-card) {
@@ -3340,7 +3376,7 @@
   }
   const responsiveKBPanels=new WeakSet();
   function kbResponsiveMetrics(width) {
-    const outer=Math.max(4,Math.min(24,24-(320-width)/2));
+    const outer=Math.max(width*.06,Math.min(24,24-(320-width)/2));
     const inner=Math.max(3,Math.min(10,10-(280-width)/2));
     const font=Math.max(10,Math.min(13,13-(266-width)/30));
     return {outer,inner,font,title:Math.max(10,Math.min(20,20-(266-width)/12)),button:Math.max(22,Math.min(32,32-(280-width)/12))};
@@ -3760,6 +3796,8 @@
     catch (error) { element.removeAttribute('popover');style.remove();elevatedImageViewers.delete(element);console.warn('[SN AI image viewer]',error); }
   }
   function discover(node) {
+    installChatDisplayName(node.nodeType===3?node.parentElement?.closest('.sn-chrome-one-tab'):(node.closest?.('.sn-chrome-one-tab')||node));
+    for(const tab of node.querySelectorAll?.('.sn-chrome-one-tab')||[])installChatDisplayName(tab);
     if (node.nodeType===3 && node.textContent.trim()==='Related Search Results' && kbAssistAncestor(node.parentElement)) node.textContent='Search Results';
     installResponsiveKBPanel(node.host || node);
     markActionPopover(node.host || node);
@@ -16460,6 +16498,26 @@ function startSNAI(tabIdentity) {
         }
       });
       refs.titleMain.textContent = title;
+      // Presentation is separate from pinnedIms: all navigation and commands
+      // continue to use the canonical record number, even after a rename.
+      let canonicalTitle=title,paintedTitle=title;
+      const refreshDisplayName=()=>{
+        if(refs.titleMain.textContent!==paintedTitle)canonicalTitle=refs.titleMain.textContent;
+        const ims=refs.dialog.dataset.pinnedIms;
+        let names={};try{names=JSON.parse(localStorage.getItem('sn-ai-chat-display-names-v1')||'{}')||{};}catch{}
+        const name=/^IMS\d+$/i.test(ims||'')?String(names[ims]||ims):'';
+        refs.dialog.dataset.chatDisplayName=name;
+        paintedTitle=name?canonicalTitle.replace(new RegExp(ims,'g'),()=>name):canonicalTitle;
+        if(refs.titleMain.textContent!==paintedTitle)refs.titleMain.textContent=paintedTitle;
+      };
+      const nameObserver=new MutationObserver(refreshDisplayName);
+      nameObserver.observe(refs.titleMain,{childList:true,characterData:true,subtree:true});
+      nameObserver.observe(dialog,{attributes:true,attributeFilter:['data-pinned-ims']});
+      const onNameChange=()=>refreshDisplayName();
+      document.addEventListener('sn-ai-chat-display-name-changed',onNameChange);
+      const nameCleanup=new MutationObserver(()=>{if(!dialog.isConnected){nameObserver.disconnect();nameCleanup.disconnect();document.removeEventListener('sn-ai-chat-display-name-changed',onNameChange);window.removeEventListener('storage',onNameChange);}});
+      nameCleanup.observe(host,{childList:true});window.addEventListener('storage',onNameChange);
+      refreshDisplayName();
       refs.userLine.textContent = user || '';
       makeWindowDraggable(dialog, refs.dragHandle);
       const finishFeedback = () => {
@@ -18294,7 +18352,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.295' });
+    addLog('info', 'helper-version', { version: '2.36.296' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
