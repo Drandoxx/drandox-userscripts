@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.243
+// @version      2.36.244
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -835,6 +835,7 @@
     `;
   }
   const spaceCSS = `
+    .now-dropdown-list-item.now-dropdown-list-item.is-focused{background:color-mix(in srgb,var(--sn-theme-ac94ec) 28%,var(--sn-theme-251f31))!important;color:var(--sn-theme-e6edf9)!important;}
     /* One continuous active-tab outline replaces CSS/SVG stroke seams. */
     .sn-chrome-one-tab.sn-chrome-one-tab.sn-chrome-one-tab.is-selected:not(.is-module){border-color:transparent!important;}
     .sn-chrome-one-tab.sn-chrome-one-tab.sn-chrome-one-tab.is-selected:not(.is-module)::before,
@@ -978,7 +979,7 @@
     .now-dropdown-list-item.is-focused:not(:hover):not([aria-selected="true"]),
     .now-dropdown-list-item:focus:not(:hover):not([aria-selected="true"]),
     .now-dropdown-list-item:focus-visible:not(:hover):not([aria-selected="true"]) {
-      background:var(--sn-theme-251f31)!important;color:var(--sn-theme-e6edf9)!important;
+      background:color-mix(in srgb,var(--sn-theme-ac94ec) 28%,var(--sn-theme-251f31))!important;color:var(--sn-theme-e6edf9)!important;
     }
     .now-dropdown-list-item.is-focused,.now-dropdown-list-item:focus,
     .now-dropdown-list-item:focus-visible,.now-dropdown-list-item-container:focus,
@@ -1862,7 +1863,8 @@
       color:var(--sn-theme-e6edf9)!important;border-color:var(--sn-theme-423750)!important;
     }
     .sn-action-menu-value,.sn-action-menu-shortcut { color:var(--sn-theme-c8d7ef)!important; }
-    .sn-action-menu-item:hover,.sn-action-menu-item[aria-selected="true"] {
+    .sn-action-menu-item:hover,.sn-action-menu-item[aria-selected="true"],
+    .sn-action-menu-item.is-focused,.sn-action-menu-item:focus,.sn-action-menu-item:focus-visible {
       background:var(--sn-theme-302951)!important;
     }
     .sn-inbox,.sn-inbox .sn-card-list { border-color:var(--sn-theme-423750)!important; }
@@ -3064,7 +3066,10 @@
     if(!host.matches?.('sn-record-reference-connected[name="caller"]') || emailReferenceHosts.has(host))return;
     emailReferenceHosts.add(host);
     const row=document.createElement('div');row.className='sn-ai-user-email';row.hidden=true;
-    row.style.cssText='font:inherit;font-size:12px;color:var(--sn-theme-a8b8d1,#606b76);margin:5px 0 0;overflow-wrap:anywhere';
+    row.style.cssText='font:inherit;color:var(--sn-theme-a8b8d1,#606b76);margin:12px 0 0';
+    row.innerHTML='<label style="display:block;margin-bottom:5px">Email</label><div style="display:flex;align-items:center;border:1px solid var(--sn-theme-423750);border-radius:6px;background:var(--sn-theme-191621);padding:0 10px;min-height:36px"><input aria-label="User email" readonly style="flex:1;min-width:0;border:0;background:transparent;color:inherit;font:inherit;outline:none"><button type="button" aria-label="Copy email" title="Copy email" style="border:0;background:transparent;color:inherit;padding:6px;cursor:pointer"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>';
+    const emailInput=row.querySelector('input'),copyButton=row.querySelector('button');
+    copyButton.addEventListener('click',async()=>{if(!emailInput.value)return;try{if(typeof GM_setClipboard==='function')GM_setClipboard(emailInput.value);else await navigator.clipboard.writeText(emailInput.value);copyButton.title='Email copied';}catch{copyButton.title='Could not copy email';}});
     host.after(row);
     let timer,request,lastCommitted='',generation=0,disposed=false;
     const roots=new Set();
@@ -3081,9 +3086,9 @@
       const id=host.getAttribute('value')||'',label=reference?.getAttribute('value')||'';
       const valid=/^[a-f0-9]{32}$/i.test(id)&&label&&input&&input.value===label
         &&!nodes.some(e=>e.getAttribute('aria-expanded')==='true'||e.getAttribute('aria-invalid')==='true'||e.classList.contains('is-invalid'));
-      if(!valid){generation++;request?.abort();lastCommitted='';row.hidden=true;row.textContent='';return;}
+      if(!valid){generation++;request?.abort();lastCommitted='';row.hidden=true;emailInput.value='';delete row.dataset.userId;return;}
       const key=id+'|'+label;if(key===lastCommitted)return;
-      lastCommitted=key;const current=++generation;request?.abort();request=new AbortController();row.hidden=true;row.textContent='';
+      lastCommitted=key;const current=++generation;request?.abort();request=new AbortController();row.hidden=true;emailInput.value='';row.dataset.userId=label;
       const controller=request;const deadline=setTimeout(()=>controller.abort(),8000);
       try{
         const token=kbSessionToken();if(!token)throw new Error('Session unavailable');
@@ -3091,8 +3096,8 @@
         if(!response.ok)throw new Error('Email lookup unavailable');
         const data=await response.json();const email=String(data.result?.email||'').trim();
         if(current!==generation||host.getAttribute('value')!==id||!host.isConnected)return;
-        row.textContent=email?'Email: '+email:'No email address recorded';row.hidden=false;
-      }catch{if(current===generation){row.textContent='Email unavailable';row.hidden=false;}}
+        emailInput.value=email;emailInput.placeholder=email?'':'No email address recorded';copyButton.disabled=!email;row.hidden=false;
+      }catch{if(current===generation){emailInput.value='';emailInput.placeholder='Email unavailable';copyButton.disabled=true;row.hidden=false;}}
       finally{clearTimeout(deadline);}
     }
     observer.observe(host,{attributes:true,attributeFilter:['value'],childList:true});
@@ -5861,36 +5866,7 @@ function startSNAI(tabIdentity) {
     const name = String(readableControlValue('Name') || '').trim();
     const location = profile === 'CPC' ? '' : String(readableControlValue('Location') || '').trim();
     const userId = String(readableControlValue('User ID') || readableControlValue('Opened For') || '').trim();
-    let email = '';
-    const userField = findControlByLabel('User ID') || findControlByLabel('Opened For');
-    const localOpenRecord = allPageElements().find((element) => {
-      if (!isVisible(element) || isInspectorNode(element)) return false;
-      if (!labelParts(element).some((label) => label === 'open record')) return false;
-      if (!userField) return true;
-      const scopes = [];
-      for (let scope = userField; scope && scopes.length < 6; scope = scope.parentElement) scopes.push(scope);
-      return scopes.some((scope) => scope.contains(element));
-    }) || null;
-    if (localOpenRecord) {
-      try {
-        clickableAncestor(localOpenRecord).click();
-        email = String(await waitUntil(() => readableControlValue('Email') || null, 2200, 60) || '').trim();
-        const userTab = allPageElements().find((element) => isVisible(element)
-          && element.getAttribute('role') === 'tab'
-          && userId
-          && labelParts(element).some((label) => label.includes(normalise(userId).toLowerCase())));
-        const close = userTab && allPageElements().find((element) => {
-          if (!isVisible(element) || !labelParts(element).some((label) => /^close(\s|$)/.test(label))) return false;
-          const tabScope = userTab.closest('li, div, now-tab, now-tab-item') || userTab.parentElement;
-          return Boolean(tabScope?.contains(element));
-        });
-        if (close) clickableAncestor(close).click();
-        await reopenMatchingNewEvent(ims);
-      } catch (error) {
-        addLog('warn', 'ai-user-email-unavailable', { ims, message: error?.message || String(error) });
-        await reopenMatchingNewEvent(ims);
-      }
-    }
+    const email = String(await waitUntil(()=>allPageElements().find(element=>element.matches?.('.sn-ai-user-email')&&!element.hidden&&element.dataset.userId===userId)?.querySelector('input')?.value || null,8500,100)||'').trim();
     const lines = ['User information:', `Name: ${name || 'Not available'}`];
     if (profile !== 'CPC' && location) lines.push(`Location: ${location}`);
     if (email) lines.push(`Email: ${email}`);
@@ -17091,6 +17067,10 @@ function startSNAI(tabIdentity) {
         if (shell.caseInstruction && instruction) shell.caseInstruction.value = instruction.value;
       }
       fields.forEach((field) => field.addEventListener('blur', () => { field.value = field.value.trim(); }));
+      const emailField=fields.find(field=>field.dataset.hpField==='email');
+      const currentUserId=String(readableControlValue('User ID')||readableControlValue('Opened For')||'').trim();
+      const verifiedEmail=allPageElements().find(element=>element.matches?.('.sn-ai-user-email')&&!element.hidden&&element.dataset.userId===currentUserId)?.querySelector('input')?.value;
+      if(emailField&&!emailField.value&&verifiedEmail)emailField.value=verifiedEmail;
       const suppliedValues = () => Object.fromEntries(fields
         .filter((field) => issueType === 'Toner order' || field.dataset.hpField !== 'ink-colors')
         .map((field) => [field.dataset.hpField, field.value.trim()])
@@ -17675,7 +17655,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.243' });
+    addLog('info', 'helper-version', { version: '2.36.244' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
