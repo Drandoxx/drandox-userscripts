@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.238
+// @version      2.36.239
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -2826,6 +2826,11 @@
     }
   `;
   const kbNumberCache = new Map();
+  const kbVerifiedCacheKey='sn-ai-kb-verified-numbers-v1';
+  try{for(const [key,entry] of JSON.parse(sessionStorage.getItem(kbVerifiedCacheKey)||'[]'))if(/^KB\d+$/.test(entry?.number||'')&&entry.expires>Date.now())kbNumberCache.set(key,entry);}catch{}
+  function persistVerifiedKBNumbers(){try{sessionStorage.setItem(kbVerifiedCacheKey,JSON.stringify([...kbNumberCache].filter(([,entry])=>/^KB\d+$/.test(entry.number||'')&&entry.expires>Date.now()).slice(-300)));}catch{}}
+  const kbCardIdentity=new WeakMap();
+  const kbListIdentity=new WeakMap();
   const kbMetadataFetch = window.fetch.bind(window);
   let kbLookupBusy = false;
   let kbLookupPausedUntil = 0;
@@ -2925,7 +2930,8 @@
     const template=document.createElement('template');template.innerHTML=String(html || '');
     return normalizeKBTitle(template.content.textContent);
   }
-  function kbMetadataKey(query,title,snippet) { return JSON.stringify([query,title,snippet]); }
+  // Query is not article identity. The engine varies abbreviation after rerender.
+  function kbMetadataKey(query,title,snippet) { return JSON.stringify([title,snippet.slice(0,160)]); }
   function kbSnippetsMatch(nativeSnippet,searchSnippet) {
     if (nativeSnippet===searchSnippet) return true;
     // The search engine abbreviates its snippet, whereas the card shows a
@@ -2976,9 +2982,11 @@
         // Title + substantial preview passage distinguishes duplicate titles.
         // If that signature maps to different numbers, never choose by order.
         const number=numbers.size===1?[...numbers][0]:'';
-        kbNumberCache.set(card.key,{number,expires:Date.now()+(number?86400000:300000)});
+        const previous=kbNumberCache.get(card.key);
+        if(number || !previous?.number)kbNumberCache.set(card.key,{number,expires:Date.now()+(number?86400000:300000)});
       }
       if (kbNumberCache.size > 300) kbNumberCache.delete(kbNumberCache.keys().next().value);
+      persistVerifiedKBNumbers();
       scheduleKBSearchDecoration();
     } catch {
       // Metadata is optional: fail quietly, never delay native record/presence
@@ -2997,21 +3005,31 @@
       const headings = cards.map(card => card.querySelector('now-card-header')?.shadowRoot?.querySelector('.now-card-header-headings'));
       if (headings.some(heading => !heading)) continue;
       const titles = headings.map(heading => normalizeKBTitle(heading.querySelector('h3')?.textContent));
+      const snippets=cards.map(card=>normalizeKBTitle(card.querySelector('sn-aa-article-body')?.shadowRoot?.querySelector('.aa-card-body-snippet')?.textContent));
+      const signature=JSON.stringify(titles.map((title,index)=>[title,snippets[index].slice(0,160)]));
+      if(snippets.every(Boolean) && kbListIdentity.get(root)!==signature){
+        kbListIdentity.set(root,signature);
+        // Retry unresolved entries only when actual displayed articles change.
+        titles.forEach((title,index)=>{const key=kbMetadataKey('',title,snippets[index]);if(kbNumberCache.get(key)?.number==='')kbNumberCache.delete(key);});
+      }
       const query=kbSearchPhrase(root);
       let pending=false;
       headings.forEach((heading,index) => {
         let badge = heading.querySelector('.sn-ai-search-kb-number');
         const title = titles[index];
-        const snippet=normalizeKBTitle(cards[index].querySelector('sn-aa-article-body')?.shadowRoot?.querySelector('.aa-card-body-snippet')?.textContent);
-        const key=kbMetadataKey(query,title,snippet);
+        const snippet=snippets[index];
+        const previous=kbCardIdentity.get(cards[index]);
+        // A temporarily unmounted body must not erase a verified card's identity.
+        const key=!snippet && previous?.title===title ? previous.key : kbMetadataKey(query,title,snippet);
+        if(snippet)kbCardIdentity.set(cards[index],{title,key});
         const entry = kbNumberCache.get(key);
         // Renew expired metadata silently. Keep the last verified number and
         // never cover an already-resolved result set with the initial loader.
-        if ((!entry || entry.expires <= Date.now()) && query && title) {
+        if (!entry && query && title && snippet) {
           missing.set(key,{key,query,title,snippet});
           if (!entry) pending=true;
         }
-        const number = entry?.number;
+        const number = entry?.number || (previous?.title===title && (!snippet || previous.key===key) ? cards[index].dataset.snAiKbNumber : '');
         installKBCardActions(cards[index],title,number);
         if (!/^KB\d+$/.test(number || '')) { badge?.remove();return; }
         if (!badge) { badge = document.createElement('span');badge.className = 'sn-ai-search-kb-number';heading.prepend(badge); }
@@ -17580,7 +17598,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.238' });
+    addLog('info', 'helper-version', { version: '2.36.239' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
