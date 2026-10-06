@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.526.0
+// @version      1.527.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -5709,6 +5709,7 @@
     }).format(new Date(value));
   }
   function syncLastCallDataPopup(doc, wrapup) {
+    if (window !== window.top) { doc.getElementById('gbs-last-call-data')?.remove(); return; }
     let popup = doc.getElementById('gbs-last-call-data');
     if (!lastCallSummary) { popup?.remove(); return; }
     const liveDuration = wrapup?.querySelector('[data-testid="wrapup-header-message-duration"]')?.textContent?.trim();
@@ -5748,6 +5749,11 @@
   }
 
   function syncCallInformationPopup(doc) {
+    if (window !== window.top) {
+      doc.getElementById('gbs-last-call-data')?.remove();
+      doc.getElementById('gbs-call-information')?.remove();
+      return;
+    }
     // Customer details stay in the live DOM only; never persist or transmit them.
     const visible = element => element && element.getBoundingClientRect().width > 0
       && element.getBoundingClientRect().height > 0;
@@ -5762,7 +5768,7 @@
     const wrapup = [...doc.querySelectorAll('[data-testid="wrapup-main-container"]')].find(visible);
     let popup = doc.getElementById('gbs-call-information');
     if ((!selected || wrapup) && !incoming) {
-      if (activeCallSummary?.connectedAt) {
+      if (false && activeCallSummary?.connectedAt) {
         lastCallSummary = {
           startedAt: activeCallSummary.connectedAt,
           endedAt: Date.now(),
@@ -5826,7 +5832,15 @@
       else seenValues.add(key);
     }
     if (!activeCallSummary) activeCallSummary = { ringingAt: Date.now(), connectedAt: null, details: [] };
-    if (!incoming && !activeCallSummary.connectedAt) activeCallSummary.connectedAt = Date.now();
+    if (/^disconnected$/i.test(state)) {
+      if (activeCallSummary.connectedAt) {
+        lastCallSummary = { startedAt: activeCallSummary.connectedAt, endedAt: Date.now(),
+          details: details.size ? [...details] : activeCallSummary.details, wrapupSeconds: null, wrapupObservedAt: Date.now() };
+        activeCallSummary = null;
+      }
+      popup?.remove(); syncLastCallDataPopup(doc, wrapup); return;
+    }
+    if (!incoming && /^connected$/i.test(state) && !activeCallSummary.connectedAt) activeCallSummary.connectedAt = Date.now();
     activeCallSummary.details = [...details];
     doc.getElementById('gbs-last-call-data')?.remove();
     if (!popup) {
@@ -5953,7 +5967,7 @@
       row.append(title, content);
       body.appendChild(row);
     }
-    if (snowAction || callTestEnabled(doc)) {
+    if (incoming || snowAction || callTestEnabled(doc)) {
       const button = doc.createElement('button');
       button.type = 'button';
       button.textContent = 'Open in SNOW';
@@ -5990,7 +6004,7 @@
       if (snow) { snow.style.marginLeft = 'auto'; controls.appendChild(snow); }
       const ringingStartedAt = testCallSession?.startedMs || activeCallSummary?.ringingAt || Date.now();
       const timer = doc.createElement('div'); timer.textContent = `${Math.max(0, 29 - Math.floor((Date.now() - ringingStartedAt) / 1000))}s to answer`;
-      timer.style.cssText = 'width:100%;color:#a0a8b0;font-size:12px'; controls.prepend(timer);
+      timer.style.cssText = 'width:100%;color:#a0a8b0;font-size:12px;user-select:none'; controls.prepend(timer);
     }
     for (const control of incoming ? [] : callControls) {
       const button = doc.createElement('button');
