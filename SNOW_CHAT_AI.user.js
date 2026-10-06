@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.308
+// @version      2.36.309
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -2359,6 +2359,9 @@ const snAIChatDisplayNames=(()=>{
   // Defer until synchronous startup completes, without restoring an OFF option.
   queueMicrotask(() => setSpaceTheme(true));
   let inboxPreviewEnabled = false;
+  let inboxPreviewButtonEnabled=true;
+  Promise.resolve(GM_getValue('sn-ai-display-preview-button-v1',true)).then(value=>{inboxPreviewButtonEnabled=value!==false;refreshInboxDeveloperMode();});
+  document.addEventListener('sn-ai-display-preview-button',event=>{inboxPreviewButtonEnabled=event.detail===true;refreshInboxDeveloperMode();});
   let inboxDeveloperEnabled = false;
   const incomingLogKey = 'sn-ai-incoming-log-session-v1';
   let incomingLogState = {running:false,records:[]};
@@ -2559,6 +2562,8 @@ const snAIChatDisplayNames=(()=>{
       card.replaceChildren(restoreIncomingNode(inboxPreviewSnapshot));
     }
     list.querySelector('.sn-ai-preview-toggle')?.setAttribute('aria-pressed',String(inboxPreviewEnabled));
+    const previewToggle=list.querySelector('.sn-ai-preview-toggle');
+    if(previewToggle)previewToggle.style.display=inboxDeveloperEnabled&&inboxPreviewButtonEnabled?'':'none';
   }
   function installInboxPreview(list) {
     if(list.matches?.('.sn-card-list'))document.dispatchEvent(new CustomEvent('sn-ai-inbox-mounted',{detail:list}));
@@ -12628,7 +12633,11 @@ function startSNAI(tabIdentity) {
       return;
     }
     if (/^matrix\s+test\s+ftf$/i.test(raw)) {
-      if (!checkCurrentEvent().isNewEventPage) throw new Error('MATRIX_TEST_REQUIRES_NEW_EVENT: Open the intended unsaved New Event first.');
+      if (!checkCurrentEvent().isNewEventPage) {
+        const existing=await revealOpenNewEventTab();
+        if(existing)clickableAncestor(existing).click();
+        if(!existing || !await waitUntil(()=>checkCurrentEvent().isNewEventPage,1800,45))await createNewEventFromWorkspace();
+      }
       const committed=[];
       for (const label of ['Category','Sub Category','Symptom']) {
         const expected=TICKET_PROFILES.FTF.fixed[label];
@@ -14203,8 +14212,10 @@ function startSNAI(tabIdentity) {
       try {
         const saved = JSON.parse(localStorage.getItem(LAUNCHER_POSITION_KEY) || 'null');
         if (!saved || !Number.isFinite(saved.left) || !Number.isFinite(saved.top)) return false;
-        const left = Math.min(Math.max(0, window.innerWidth - host.offsetWidth), Math.max(0, saved.left));
-        const top = Math.min(Math.max(0, window.innerHeight - host.offsetHeight), Math.max(0, saved.top));
+        // Restore against the compact pill, not startup/settings content that
+        // may temporarily expand the host before the collapsed class mounts.
+        const left = Math.min(Math.max(0, window.innerWidth - 64), Math.max(0, saved.left));
+        const top = Math.min(Math.max(0, window.innerHeight - 38), Math.max(0, saved.top));
         host.style.right = 'auto';
         host.style.bottom = 'auto';
         host.style.left = `${left}px`;
@@ -14659,6 +14670,22 @@ function startSNAI(tabIdentity) {
     const tabList = settingsDialog.querySelector('.local-sn-settings-tabs');
     tabList.style.gridTemplateColumns = 'repeat(3,minmax(0,1fr))';
     tabList.prepend(generalTab);
+    const developerTab=document.createElement('button');
+    developerTab.type='button';developerTab.className='local-sn-settings-tab';
+    developerTab.setAttribute('role','tab');developerTab.setAttribute('aria-selected','false');
+    developerTab.dataset.settingsTab='developer';developerTab.textContent='Developer settings';developerTab.hidden=true;
+    tabList.append(developerTab);
+    const developerPanel=document.createElement('section');developerPanel.className='local-sn-settings-panel';
+    developerPanel.dataset.settingsPanel='developer';developerPanel.hidden=true;tabList.after(developerPanel);
+    let developerModeChanged=false;
+    const showDeveloperSettings=enabled=>{
+      developerTab.hidden=!enabled;developerTab.style.display=enabled?'':'none';
+      tabList.style.gridTemplateColumns=`repeat(${enabled?4:3},minmax(0,1fr))`;
+      tabList.style.setProperty('--sn-settings-count',enabled?'4':'3');
+      if(!enabled && developerTab.getAttribute('aria-selected')==='true')selectSettingsTab('general');
+    };
+    document.addEventListener('sn-ai-developer-mode',event=>{developerModeChanged=true;showDeveloperSettings(event.detail===true);});
+    gmGetValue('sn-ai-developer-mode-v1',false).then(value=>{if(!developerModeChanged)showDeveloperSettings(value===true);});
     const generalPanel = document.createElement('section');
     generalPanel.className = 'local-sn-settings-panel';
     generalPanel.dataset.settingsPanel = 'general';
@@ -14690,7 +14717,10 @@ function startSNAI(tabIdentity) {
       #local-sn-ai-settings-template .sn-ai-delay-stepper input::-webkit-outer-spin-button { appearance:none;margin:0; }
       #local-sn-ai-settings-template :is(.sn-ai-mode-selector,.local-sn-settings-tabs){position:relative;isolation:isolate;display:grid;gap:6px;padding:4px;border:1px solid var(--sn-theme-423750,#36564c);border-radius:9px;background:var(--sn-theme-251f31,#142923);}
       #local-sn-ai-settings-template .sn-ai-mode-selector{grid-template-columns:repeat(2,minmax(0,1fr));margin:0 16px;}
-      #local-sn-ai-settings-template :is(.sn-ai-mode-selector,.local-sn-settings-tabs)::before{content:'';position:absolute;z-index:0;pointer-events:none;left:4px;top:4px;bottom:4px;width:calc((100% - 20px)/3);border-radius:6px;background:linear-gradient(115deg,var(--sn-theme-9de2f5,#82f6e3),var(--sn-theme-ac94ec,#68e5a1));transform:translateX(calc(var(--sn-segment-index,0) * (100% + 6px)));transition:transform .25s cubic-bezier(.22,1,.36,1);}
+      #local-sn-ai-settings-template :is(.sn-ai-mode-selector,.local-sn-settings-tabs)::before{content:'';position:absolute;z-index:0;pointer-events:none;left:4px;top:4px;bottom:4px;width:calc((100% - 8px - (var(--sn-settings-count,3) - 1)*6px)/var(--sn-settings-count,3));border-radius:6px;background:linear-gradient(115deg,var(--sn-theme-9de2f5,#82f6e3),var(--sn-theme-ac94ec,#68e5a1));transform:translateX(calc(var(--sn-segment-index,0) * (100% + 6px)));transition:transform .25s cubic-bezier(.22,1,.36,1);}
+      #local-sn-ai-settings-template [data-settings-panel="developer"]{display:grid;gap:12px;padding:12px;}
+      #local-sn-ai-settings-template [data-settings-panel="developer"][hidden]{display:none!important;}
+      #local-sn-ai-settings-template [data-settings-panel="developer"] button{display:inline-flex!important;align-items:center;justify-content:center;min-height:34px;padding:7px 12px!important;border:1px solid var(--sn-theme-655573)!important;border-radius:7px!important;background:var(--sn-theme-251f31)!important;color:var(--sn-theme-e6edf9)!important;font:inherit!important;cursor:pointer;}
       #local-sn-ai-settings-template .sn-ai-mode-selector::before{width:calc((100% - 14px)/2);}
       #local-sn-ai-settings-template :is(.sn-ai-mode-selector,.local-sn-settings-tabs) button:is(.sn-ai-mode-option,.local-sn-settings-tab){position:relative;z-index:1;border:0!important;border-radius:6px!important;padding:7px 10px;background:transparent!important;box-shadow:none!important;color:var(--sn-theme-a8b8d1,#b9d3c7)!important;transition:color .2s;}
       #local-sn-ai-settings-template :is(.sn-ai-mode-selector,.local-sn-settings-tabs) button:is(.sn-ai-mode-option,.local-sn-settings-tab):is([aria-checked="true"],[aria-selected="true"]){background:transparent!important;color:var(--sn-theme-14121c,#102723)!important;}
@@ -14753,7 +14783,19 @@ function startSNAI(tabIdentity) {
       document.addEventListener('sn-ai-developer-mode',event=>{captureDeveloperChanged=true;showCapture(event.detail===true);});
       gmGetValue('sn-ai-developer-mode-v1',false).then(value=>{if(!captureDeveloperChanged)showCapture(value===true);}).catch(console.warn);
       captureButton.addEventListener('click', () => toggleStyleCapture(captureButton));
-      generalPanel.append(captureButton);
+      developerPanel.append(captureButton);
+      const previewSetting=document.createElement('label');previewSetting.className='sn-ai-general-toggle';
+      const previewSwitch=document.createElement('input');previewSwitch.type='checkbox';previewSwitch.setAttribute('role','switch');
+      previewSetting.append('Display Preview Chat button',previewSwitch);developerPanel.append(previewSetting);
+      gmGetValue('sn-ai-display-preview-button-v1',true).then(value=>{previewSwitch.checked=value!==false;});
+      previewSwitch.addEventListener('change',()=>{gmSetValue('sn-ai-display-preview-button-v1',previewSwitch.checked);document.dispatchEvent(new CustomEvent('sn-ai-display-preview-button',{detail:previewSwitch.checked}));});
+      const matrixButton=document.createElement('button');matrixButton.type='button';matrixButton.textContent='Test matrix selection (FTF)';
+      const matrixStatus=document.createElement('div');matrixStatus.setAttribute('role','status');
+      matrixButton.addEventListener('click',async()=>{
+        matrixButton.disabled=true;matrixStatus.textContent='Selecting Category, Sub Category and Symptom…';
+        try{const input=document.createElement('input');input.value='matrix test ftf';const result=await runCommandInput(input);matrixStatus.textContent=result?.status==='error'?(result.result?.message||state.lastAction):'Three fields selected. Event remains unsaved.';}
+        catch(error){matrixStatus.textContent=error?.message||String(error);}finally{matrixButton.disabled=false;}
+      });developerPanel.append(matrixButton,matrixStatus);
     }
     tabList.after(generalPanel);
     const settingsTabs = [...settingsDialog.querySelectorAll('[data-settings-tab]')];
@@ -14773,6 +14815,7 @@ function startSNAI(tabIdentity) {
       <div class="local-sn-cmd-colour-row local-sn-test-setting-row"><input aria-label="Enable FIELD TEST button" type="checkbox"/><span>Enable FIELD TEST button</span></div>`);
     const testEnabledSwitch = settingsDialog.querySelector('[aria-label="Enable TEST button"]');
     const fieldTestEnabledSwitch = settingsDialog.querySelector('[aria-label="Enable FIELD TEST button"]');
+    developerPanel.append(...settingsDialog.querySelectorAll('.local-sn-test-setting-row'));
     const feedbackEnableSwitch = settingsDialog.querySelector('[aria-label="Provide feedback"]');
     const aiPowerSwitch = settingsDialog.querySelector('[aria-label="Turn on AI power"]');
     const aiToggleText = settingsDialog.querySelector('[data-ai-toggle-text]');
@@ -15274,7 +15317,7 @@ function startSNAI(tabIdentity) {
       button.addEventListener('click', () => closeWindowToAction(settingsDialog, 'close-button'));
     }
     const selectSettingsTab = (name) => {
-      tabList.style.setProperty('--sn-segment-index',String([...settingsTabs].findIndex(tab=>tab.dataset.settingsTab===name)));
+      tabList.style.setProperty('--sn-segment-index',String(settingsTabs.filter(tab=>!tab.hidden).findIndex(tab=>tab.dataset.settingsTab===name)));
       for (const tab of settingsTabs) tab.setAttribute('aria-selected', String(tab.dataset.settingsTab === name));
       for (const panel of settingsPanels) panel.hidden = panel.dataset.settingsPanel !== name;
     };
@@ -18439,6 +18482,7 @@ function startSNAI(tabIdentity) {
       document.removeEventListener('sn-ai-ticket-window-state', persistOpenTicketWindows);
       clearTimeout(ticketWindowPersistTimer);
     }, { once: true });
+    host.classList.add('collapsed');
     restoreLauncherPosition();
     if (workspacePage) restorePersistedTicketWindows();
     // With no restored/open ticket bubble there is no valid IMS owner. Remove
@@ -18463,7 +18507,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.308' });
+    addLog('info', 'helper-version', { version: '2.36.309' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -19299,8 +19343,10 @@ function startSNAI(tabIdentity) {
     acceptDescription.append(label,delayLabel);
     acceptRow.append(acceptDescription,acceptSwitch);
     logControls.append(playPause,clearLogs,download);
-    developerLogs.append(logStatus,logControls,help);
-    row.append(acceptRow,rejectLabel,developerLabel,developerLogs);
+    developerLogs.append(logStatus,logControls);
+    row.append(acceptRow,rejectLabel,developerLabel);
+    const devPanel=document.querySelector('[data-settings-panel="developer"]');
+    (devPanel||row).append(developerLogs);
     content.append(row);
   }
   function installInboxMonitor() {
