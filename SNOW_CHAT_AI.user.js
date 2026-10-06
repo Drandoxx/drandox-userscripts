@@ -11281,14 +11281,17 @@ function startSNAI(tabIdentity) {
     // The same read-only GraphQL resolver used by sn-record-reference-connected:
     // serialized changes and encoded record preserve scripted qualifiers.
     const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
-    const query=`query ($table:String!,$field:String!,$sys_id:String,$encodedRecord:String,$serializedChanges:String,$chars:String!,$referenceKey:String) { GlideLayout_Query { referenceDataRetriever(tableName:$table,fieldName:$field,sysId:$sys_id,encodedRecord:$encodedRecord,serializedChanges:$serializedChanges,chars:$chars,referenceKey:$referenceKey,sysparm_ignore_ref_qual:false,pagination:{limit:100,offset:0},ignoreTotalCount:true) { referenceDataList {sysId referenceKeyValue referenceData {key value}} } } }`;
+    const query=`query ($table:String!,$field:String!,$sys_id:String,$encodedRecord:String,$serializedChanges:String,$chars:String!,$referenceKey:String) { GlideLayout_Query { referenceDataRetriever(tableName:$table,fieldName:$field,sysId:$sys_id,encodedRecord:$encodedRecord,serializedChanges:$serializedChanges,chars:$chars,referenceKey:$referenceKey,sysparm_ignore_ref_qual:false,pagination:{limit:100,offset:0},ignoreTotalCount:true) { referenceRecentDataList {sysId referenceKeyValue referenceData {key value}} referenceDataList {sysId referenceKeyValue referenceData {key value}} } } }`;
     const variables={table:props.tableName||props.referringTable,field:props.fieldName,sys_id:props.recordSysId||'-1',encodedRecord:props.encodedRecord,serializedChanges:props.serializedChanges||'{}',chars:String(expected),referenceKey:props.referenceKey||null};
     const response=await page.fetch('/api/now/graphql',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json',Accept:'application/json','X-UserToken':page.g_ck},body:JSON.stringify({query,variables})});
     if(!response.ok)throw new Error(`NATIVE_REFERENCE_READ_FAILED: ${fieldLabel} (${response.status})`);
     const body=await response.json();
     if(body.errors?.length)throw new Error(`NATIVE_REFERENCE_QUERY_FAILED: ${fieldLabel}`);
-    const rows=body.data?.GlideLayout_Query?.referenceDataRetriever?.referenceDataList;
-    if(!Array.isArray(rows))throw new Error(`NATIVE_REFERENCE_RESPONSE_INVALID: ${fieldLabel}`);
+    const retrieved=body.data?.GlideLayout_Query?.referenceDataRetriever;
+    if(!Array.isArray(retrieved?.referenceDataList))throw new Error(`NATIVE_REFERENCE_RESPONSE_INVALID: ${fieldLabel}`);
+    // Native typeahead splits recent selections from regular matches.
+    // Include both, keeping native order and avoiding duplicate records.
+    const rows=[...new Map([...(retrieved.referenceRecentDataList||[]),...retrieved.referenceDataList].map(r=>[r.sysId,r])).values()];
     const matches=rows.map(r=>({value:props.referenceKey?r.referenceKeyValue:r.sysId,displayValue:r.referenceData?.[0]?.value}))
       .filter(r=>r.value&&typeof r.displayValue==='string'&&matchesDisplay(r.displayValue));
     // Any native-returned version with the requested KB prefix is acceptable.
