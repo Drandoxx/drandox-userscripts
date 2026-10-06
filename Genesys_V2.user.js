@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.527.0
+// @version      1.528.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -5702,7 +5702,23 @@
   }
 
   let activeCallSummary = null;
+  const LAST_CALL_WINDOW_KEY = 'genesys-v2-last-call-window';
+  const LAST_CALL_WINDOW_TTL = 2 * 60 * 60 * 1000;
   let lastCallSummary = null;
+  if (window === window.top) {
+    try {
+      const saved = GM_getValue(LAST_CALL_WINDOW_KEY, null);
+      if (saved && Array.isArray(saved.details) && Number.isFinite(saved.endedAt)
+          && Date.now() - saved.endedAt < LAST_CALL_WINDOW_TTL) lastCallSummary = saved;
+      else GM_deleteValue(LAST_CALL_WINDOW_KEY);
+    } catch (_) { /* Optional persisted call window unavailable. */ }
+  }
+  function saveLastCallWindow() {
+    try {
+      if (lastCallSummary && !lastCallSummary.dismissed) GM_setValue(LAST_CALL_WINDOW_KEY, lastCallSummary);
+      else GM_deleteValue(LAST_CALL_WINDOW_KEY);
+    } catch (error) { console.warn('[Genesys V2] Last call window save failed', error); }
+  }
   function callClock(value) {
     return new Intl.DateTimeFormat(undefined, {
       hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
@@ -5711,6 +5727,9 @@
   function syncLastCallDataPopup(doc, wrapup) {
     if (window !== window.top) { doc.getElementById('gbs-last-call-data')?.remove(); return; }
     let popup = doc.getElementById('gbs-last-call-data');
+    if (lastCallSummary && Date.now() - lastCallSummary.endedAt >= LAST_CALL_WINDOW_TTL) {
+      lastCallSummary = null; saveLastCallWindow();
+    }
     if (!lastCallSummary || lastCallSummary.dismissed || Date.now() - lastCallSummary.endedAt < 25000) { popup?.remove(); return; }
     if (popup?.__gbsDragging) return;
     const liveDuration = wrapup?.querySelector('[data-testid="wrapup-header-message-duration"]')?.textContent?.trim();
@@ -5725,13 +5744,18 @@
       popup.setAttribute('aria-label', 'Last call data');
       popup.style.cssText = 'position:fixed;right:20px;top:80px;width:300px;max-width:calc(100vw - 24px);max-height:70vh;overflow:auto;z-index:2147483643;background:#1d2228;color:#e7f5f8;border:1px solid #22d3ee;border-radius:12px;box-shadow:0 0 16px #22d3ee35;font:14px/1.5 system-ui;';
       doc.body.appendChild(popup);
+      if (Number.isFinite(lastCallSummary.left) && Number.isFinite(lastCallSummary.top)) {
+        popup.style.right = 'auto';
+        popup.style.left = `${Math.max(0, Math.min(doc.defaultView.innerWidth - popup.offsetWidth, lastCallSummary.left))}px`;
+        popup.style.top = `${Math.max(0, Math.min(doc.defaultView.innerHeight - 40, lastCallSummary.top))}px`;
+      }
     }
     const heading = doc.createElement('div');
     heading.style.cssText = 'padding:12px 16px;border-bottom:1px solid #22d3ee70;color:#67e8f9;font-weight:600;user-select:none;cursor:move;touch-action:none';
     heading.textContent = `Last call data - ${callClock(lastCallSummary.startedAt)} until ${callClock(lastCallSummary.endedAt)}`;
     const close = doc.createElement('button'); close.type = 'button'; close.textContent = '×'; close.setAttribute('aria-label', 'Close last call data');
     close.style.cssText = 'float:right;background:transparent;border:0;color:inherit;font-size:20px;cursor:pointer';
-    close.addEventListener('click', () => {lastCallSummary.dismissed = true; popup.remove();}); heading.append(close);
+    close.addEventListener('click', () => {lastCallSummary.dismissed = true; saveLastCallWindow(); popup.remove();}); heading.append(close);
     heading.addEventListener('pointerdown', event => {
       if (event.button !== 0 || event.target === close) return;
       event.preventDefault(); const rect = popup.getBoundingClientRect(), x = event.clientX, y = event.clientY;
@@ -5745,6 +5769,8 @@
       };
       const end = () => {
         popup.__gbsDragging = false;
+        const position = popup.getBoundingClientRect();
+        lastCallSummary.left = position.left; lastCallSummary.top = position.top; saveLastCallWindow();
         heading.removeEventListener('pointermove', move); heading.removeEventListener('pointerup', end);
         heading.removeEventListener('pointercancel', end); heading.removeEventListener('lostpointercapture', end);
         doc.defaultView.removeEventListener('blur', end);
@@ -5853,6 +5879,7 @@
       if (activeCallSummary.connectedAt) {
         lastCallSummary = { startedAt: activeCallSummary.connectedAt, endedAt: Date.now(),
           details: details.size ? [...details] : activeCallSummary.details, wrapupSeconds: null, wrapupObservedAt: Date.now() };
+        saveLastCallWindow();
         activeCallSummary = null;
       }
       popup?.remove(); syncLastCallDataPopup(doc, wrapup); return;
