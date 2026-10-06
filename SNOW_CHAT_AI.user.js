@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.354
+// @version      2.36.355
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -4166,6 +4166,30 @@ const snAIChatDisplayNames=(()=>{
       }
     }
   }
+  function eventFieldShortcut(root) {
+    const ancestorForm=node=>{for(let e=node;e;e=e.parentElement||e.getRootNode?.().host)if(e.localName==='form')return e;return null;};
+    const fields=new Set(root.querySelectorAll?.('sn-record-reference-connected[name="transferred_to"]')||[]);
+    for(let host=root.host;host;host=host.parentElement||host.getRootNode?.().host){if(host.matches?.('sn-record-reference-connected[name="transferred_to"]')){fields.add(host);break;}if(host.localName==='form')break;}
+    for(const field of fields) {
+      const form=ancestorForm(field);if(!form)continue;
+      let header;
+      for(const scope of spaceRoots){const title=scope.querySelector?.('h1');if(title&&/^EVNT\d+/.test(title.textContent.trim())&&ancestorForm(title)===form){header=title.closest('.sn-heading-container')||title.parentElement.parentElement;break;}}
+      if(!header)continue;
+      if(field.style.getPropertyValue('display')!=='none')field.style.setProperty('display','none','important');
+      const id=field.getAttribute('value');
+      const number=field.shadowRoot?.querySelector('now-record-typeahead')?.getAttribute('value')||'';
+      let button=header.querySelector('.sn-ai-event-incident-shortcut');
+      if(!/^INC\d+$/.test(number)||!id){button?.remove();continue;}
+      if(!button){
+        button=document.createElement('button');button.type='button';button.className='sn-ai-event-incident-shortcut';
+        button.style.cssText='display:flex;align-items:center;gap:8px;width:max-content;margin:0 0 10px;padding:6px 10px;border:1px solid var(--sn-theme-655573);border-radius:7px;background:var(--sn-theme-251f31);color:var(--sn-theme-ac94ec);font:inherit;cursor:pointer';
+        button.addEventListener('click',()=>{let tabs;for(const scope of spaceRoots){tabs=scope.querySelector?.('sn-workspace-tabs');if(tabs)break;}tabs?.dispatch?.('ITEM_SELECTED',{table:'incident',sys_id:button.dataset.recordId});});
+        header.prepend(button);
+      }
+      if(button.dataset.recordId!==id||button.dataset.number!==number){button.dataset.recordId=id;button.dataset.number=number;button.innerHTML='<span>'+number+'</span><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/><path d="m21 3-9 9"/><path d="M15 3h6v6"/></svg>';}
+    }
+    for(const field of root.querySelectorAll?.('sn-record-reference-connected[name="business_service"],sn-record-reference-connected[name="u_impacted_service"]')||[])if(field.style.getPropertyValue('display')!=='none')field.style.setProperty('display','none','important');
+  }
   const hiddenIncidentActionIds = new Set([
     'aeff33bb1b696d10a14cec60f54bcb96', // Open the form in Platform
     '0bdd499d77773300112f8b51a9106179', // Compose Email
@@ -4474,6 +4498,7 @@ const snAIChatDisplayNames=(()=>{
     }
   }
   function watch(root) {
+    eventFieldShortcut(root);
     ensureSpaceRoot(root);
     if (roots.has(root)) return;
     roots.add(root);
@@ -4583,6 +4608,7 @@ const snAIChatDisplayNames=(()=>{
         if (node.nodeType === 1) { convertKBNumber(node);node.querySelectorAll?.('a.now-text-link').forEach(convertKBNumber); }
         discover(node);
       }
+      eventFieldShortcut(root);
     });
     observer.observe(root, { childList: true, subtree: true,
       ...(root.host?.matches('sn-workspace-tab,sn-workspace-tab-bar,sn-workspace-sub-tabs')
@@ -19141,7 +19167,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.354' });
+    addLog('info', 'helper-version', { version: '2.36.355' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
