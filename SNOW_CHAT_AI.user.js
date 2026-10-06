@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.322
+// @version      2.36.323
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -3793,6 +3793,32 @@ const snAIChatDisplayNames=(()=>{
       }
     }
   }
+  // Keep the real ServiceNow renderer mounted; never synthesize messages or
+  // change conversation membership, ticket state, or messaging permissions.
+  let forceIMSChatEnabled=false;
+  let forceIMSChatChanged=false;
+  const forcedIMSChats=new Map();
+  function syncForcedIMSChat(root) {
+    for(const host of root.querySelectorAll?.('sn-agent-chat')||[]) {
+      if(!forceIMSChatEnabled)continue;
+      if(!forcedIMSChats.has(host))forcedIMSChats.set(host,{inChatShell:host.getProperties?.().inChatShell ?? host.inChatShell});
+      if(host.getProperties?.().inChatShell!==false)host.inChatShell=false;
+      let outer=host;
+      while(outer && !outer.matches?.('.chrome-tab-panel-list'))outer=outer.parentElement||outer.getRootNode?.().host;
+      if(outer)outer.setAttribute('data-sn-ai-force-chat','');
+    }
+    for(const [host,original] of forcedIMSChats) {
+      if(!host.isConnected){forcedIMSChats.delete(host);continue;}
+      if(!forceIMSChatEnabled){host.inChatShell=original.inChatShell;forcedIMSChats.delete(host);}
+    }
+    if(!forceIMSChatEnabled)root.querySelectorAll?.('[data-sn-ai-force-chat]').forEach(e=>e.removeAttribute('data-sn-ai-force-chat'));
+  }
+  function setForcedIMSChat(enabled) {
+    forceIMSChatEnabled=enabled===true;
+    for(const root of spaceRoots)if(!root.host||root.host.isConnected)syncForcedIMSChat(root);
+  }
+  Promise.resolve(GM_getValue('sn-ai-force-ims-chat-v1',false)).then(value=>{if(!forceIMSChatChanged)setForcedIMSChat(value);});
+  document.addEventListener('sn-ai-force-ims-chat',event=>{forceIMSChatChanged=true;setForcedIMSChat(event.detail);});
   function markActionPopover(node) {
     if (!node.matches?.('.now-dropdown-list') || !node.querySelector('[role="menu"][aria-label="More Actions"]')) return;
     for (let current=node;current;current=current.parentElement || current.getRootNode?.().host) {
@@ -4130,11 +4156,13 @@ const snAIChatDisplayNames=(()=>{
     const style = document.createElement('style');
     style.dataset.snAiActionStyle = 'true';
     style.textContent = css;
+    style.textContent += '\n.chrome-tab-panel-list[data-sn-ai-force-chat]:has(>.chrome-tab-panel.is-active){display:block!important;flex:0 0 min(400px,40%)!important;width:min(400px,40%)!important;min-width:0!important;}\n[data-sn-ai-force-chat]>.chrome-tab-panel.is-active{display:block!important;width:100%!important;height:100%!important;}\n[data-sn-ai-force-chat]>.chrome-tab-panel:not(.is-active){display:none!important;}';
     (root.nodeType === 9 ? (root.head || root.documentElement) : root)?.prepend(style);
     const observer = new MutationObserver(records => {
       // Workspace sometimes clears a mounted root's children, including our
       // style. Restore only this changed root; never rescan the whole page.
       ensureSpaceRoot(root);
+      if(forceIMSChatEnabled)syncForcedIMSChat(root);
       if(style.getRootNode()!==root)(root.nodeType===9?(root.head || root.documentElement):root)?.prepend(style);
       if(records.some(record=>[...record.addedNodes].some(node=>node.nodeType===1
         && node.matches?.('style,link[rel="stylesheet"]') && !node.hasAttribute('data-sn-ai-space-theme')
@@ -4164,6 +4192,7 @@ const snAIChatDisplayNames=(()=>{
       ...(root.host?.matches('sn-workspace-tab,sn-workspace-tab-bar,sn-workspace-sub-tabs')
         ? { characterData:true,attributes:true,attributeFilter:['class','aria-label','aria-selected','disabled'] } : {}) });
     discover(root);
+    syncForcedIMSChat(root);
   }
   // Cover roots created synchronously before their first children are mounted.
   const attach = Element.prototype.attachShadow;
@@ -14911,6 +14940,12 @@ function startSNAI(tabIdentity) {
       const captureSetting=document.createElement('label');captureSetting.className='sn-ai-general-toggle';
       const captureSwitch=document.createElement('input');captureSwitch.type='checkbox';captureSwitch.setAttribute('role','switch');
       captureSetting.append('Style capture',captureSwitch);developerPanel.append(captureSetting);
+      const forceChatSetting=document.createElement('label');forceChatSetting.className='sn-ai-general-toggle';
+      const forceChatSwitch=document.createElement('input');forceChatSwitch.type='checkbox';forceChatSwitch.setAttribute('role','switch');
+      forceChatSetting.append('Always show IMS chat panels',forceChatSwitch);developerPanel.prepend(forceChatSetting);
+      let forceChatSettingChanged=false;
+      gmGetValue('sn-ai-force-ims-chat-v1',false).then(value=>{if(!forceChatSettingChanged)forceChatSwitch.checked=value===true;});
+      forceChatSwitch.addEventListener('change',()=>{forceChatSettingChanged=true;gmSetValue('sn-ai-force-ims-chat-v1',forceChatSwitch.checked).catch(console.warn);document.dispatchEvent(new CustomEvent('sn-ai-force-ims-chat',{detail:forceChatSwitch.checked}));});
       captureSwitch.addEventListener('change',()=>{if(captureSwitch.checked!==Boolean(styleCapture))toggleStyleCapture(captureButton);});
       new MutationObserver(()=>{captureSwitch.checked=Boolean(styleCapture);}).observe(captureButton,{childList:true});
       const previewSetting=document.createElement('label');previewSetting.className='sn-ai-general-toggle';
@@ -18646,7 +18681,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.322' });
+    addLog('info', 'helper-version', { version: '2.36.323' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
