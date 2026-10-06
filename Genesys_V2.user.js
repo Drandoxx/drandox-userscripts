@@ -5711,7 +5711,8 @@
   function syncLastCallDataPopup(doc, wrapup) {
     if (window !== window.top) { doc.getElementById('gbs-last-call-data')?.remove(); return; }
     let popup = doc.getElementById('gbs-last-call-data');
-    if (!lastCallSummary) { popup?.remove(); return; }
+    if (!lastCallSummary || lastCallSummary.dismissed || Date.now() - lastCallSummary.endedAt < 25000) { popup?.remove(); return; }
+    if (popup?.__gbsDragging) return;
     const liveDuration = wrapup?.querySelector('[data-testid="wrapup-header-message-duration"]')?.textContent?.trim();
     if (liveDuration && /^\d{1,2}:\d{2}$/.test(liveDuration)) {
       const [minutes, seconds] = liveDuration.split(':').map(Number);
@@ -5726,8 +5727,32 @@
       doc.body.appendChild(popup);
     }
     const heading = doc.createElement('div');
-    heading.style.cssText = 'padding:12px 16px;border-bottom:1px solid #22d3ee70;color:#67e8f9;font-weight:600;';
+    heading.style.cssText = 'padding:12px 16px;border-bottom:1px solid #22d3ee70;color:#67e8f9;font-weight:600;user-select:none;cursor:move;touch-action:none';
     heading.textContent = `Last call data - ${callClock(lastCallSummary.startedAt)} until ${callClock(lastCallSummary.endedAt)}`;
+    const close = doc.createElement('button'); close.type = 'button'; close.textContent = '×'; close.setAttribute('aria-label', 'Close last call data');
+    close.style.cssText = 'float:right;background:transparent;border:0;color:inherit;font-size:20px;cursor:pointer';
+    close.addEventListener('click', () => {lastCallSummary.dismissed = true; popup.remove();}); heading.append(close);
+    heading.addEventListener('pointerdown', event => {
+      if (event.button !== 0 || event.target === close) return;
+      event.preventDefault(); const rect = popup.getBoundingClientRect(), x = event.clientX, y = event.clientY;
+      popup.__gbsDragging = true; heading.setPointerCapture(event.pointerId);
+      popup.style.setProperty('transition', 'none', 'important');
+      const move = e => {
+        if (!(e.buttons & 1)) return end();
+        popup.style.right = 'auto';
+        popup.style.left = `${Math.max(0, Math.min(doc.defaultView.innerWidth - rect.width, rect.left + e.clientX - x))}px`;
+        popup.style.top = `${Math.max(0, Math.min(doc.defaultView.innerHeight - 40, rect.top + e.clientY - y))}px`;
+      };
+      const end = () => {
+        popup.__gbsDragging = false;
+        heading.removeEventListener('pointermove', move); heading.removeEventListener('pointerup', end);
+        heading.removeEventListener('pointercancel', end); heading.removeEventListener('lostpointercapture', end);
+        doc.defaultView.removeEventListener('blur', end);
+      };
+      heading.addEventListener('pointermove', move); heading.addEventListener('pointerup', end);
+      heading.addEventListener('pointercancel', end); heading.addEventListener('lostpointercapture', end);
+      doc.defaultView.addEventListener('blur', end);
+    });
     const body = doc.createElement('div'); body.style.padding = '12px 16px';
     for (const [label, value] of lastCallSummary.details) {
       const row = doc.createElement('div'); row.style.cssText = 'margin-bottom:8px;overflow-wrap:anywhere';
@@ -5743,6 +5768,7 @@
       const value = doc.createElement('div');
       value.textContent = `${String(Math.floor(remaining / 60)).padStart(2, '0')}:${String(remaining % 60).padStart(2, '0')}`;
       value.setAttribute('role', 'timer');
+      value.style.userSelect = 'none';
       row.append(title, value); body.appendChild(row);
     }
     popup.replaceChildren(heading, body);
@@ -5768,16 +5794,7 @@
     const wrapup = [...doc.querySelectorAll('[data-testid="wrapup-main-container"]')].find(visible);
     let popup = doc.getElementById('gbs-call-information');
     if ((!selected || wrapup) && !incoming) {
-      if (false && activeCallSummary?.connectedAt) {
-        lastCallSummary = {
-          startedAt: activeCallSummary.connectedAt,
-          endedAt: Date.now(),
-          details: activeCallSummary.details || [],
-          wrapupSeconds: null,
-          wrapupObservedAt: Date.now()
-        };
-        activeCallSummary = null;
-      }
+      // Panel disappearance is not an explicit Disconnected transition.
       syncLastCallDataPopup(doc, wrapup);
       if (popup && testCallSession && !testCallSession.finishedAt) {
         testCallSession.finishedAt = new Date().toISOString();
