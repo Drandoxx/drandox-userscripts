@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.323
+// @version      2.36.324
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -3301,7 +3301,20 @@ const snAIChatDisplayNames=(()=>{
         }
       }
     } catch { /* Preserve all unrelated requests unchanged. */ }
-    return Reflect.apply(knowledgeOriginalFetch,this,[input,init]);
+    const response=await Reflect.apply(knowledgeOriginalFetch,this,[input,init]);
+    // Reuse only native interaction subscription replies to refresh badges.
+    // No polling, and no copying unrelated form payloads or message history.
+    if(typeof init?.body==='string' && init.body.includes('GlideRecord_Subscription') && init.body.includes('interaction(')) {
+      response.clone().json().then(payload=>{
+        for(const part of Array.isArray(payload)?payload:[payload])for(const update of part.data?.GlideRecord_Subscription?.interaction?._results||[]) {
+          const id=update.sys_id?.value,previous=imsPreviewRecords.get(id);
+          if(!previous)continue;
+          const merged={...previous,...update};imsPreviewRecords.set(id,merged);
+          if(previous.state?.value!==merged.state?.value||previous.active?.value!==merged.active?.value)paintIMSPreview(merged);
+        }
+      }).catch(()=>{});
+    }
+    return response;
   };
   knowledgePage.fetch=knowledgeWildcardFetch;
   let kbLookupBusy = false;
@@ -3819,6 +3832,74 @@ const snAIChatDisplayNames=(()=>{
   }
   Promise.resolve(GM_getValue('sn-ai-force-ims-chat-v1',false)).then(value=>{if(!forceIMSChatChanged)setForcedIMSChat(value);});
   document.addEventListener('sn-ai-force-ims-chat',event=>{forceIMSChatChanged=true;setForcedIMSChat(event.detail);});
+  const imsPreviewRecords=new Map();
+  const imsPreviewRequests=new Map();
+  async function fetchIMSRecord(condition) {
+    const response=await fetch('/api/now/graphql',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-UserToken':kbSessionToken()},body:JSON.stringify({operationName:'snAIIMSPreview',query:'query snAIIMSPreview($condition:String!){GlideRecord_Query{interaction(queryConditions:$condition){_results{sys_id{value}number{value}type{value}active{value}state{value}assigned_to{value}}}}}',variables:{condition}})});
+    if(!response.ok)throw new Error('Unable to look up IMS ('+response.status+').');
+    const payload=await response.json();if(payload.errors?.length)throw new Error('IMS lookup is unavailable or access was denied.');
+    return payload.data?.GlideRecord_Query?.interaction?._results?.[0]||null;
+  }
+  function paintIMSPreview(record,onlyRoot=null) {
+    const ims=record.number?.value;
+    const inactive=record.active?.value===false || record.active?.value==='false' || ['closed_complete','closed_abandoned'].includes(record.state?.value);
+    const notice=['closed_complete','closed_abandoned'].includes(record.state?.value)?'This chat is closed — history preview':'This is not an active chat — history preview';
+    for(const root of onlyRoot?[onlyRoot]:spaceRoots) {
+      for(const tab of root.querySelectorAll?.('.sn-chrome-one-tab')||[]) {
+        if((tab.querySelector('[data-sn-ai-ims]')?.dataset.snAiIms||tab.getAttribute('aria-label'))!==ims)continue;
+        tab.toggleAttribute('data-sn-ai-chat-preview',inactive);
+        let marker=tab.querySelector('.sn-ai-chat-preview-marker');
+        if(inactive&&!marker){marker=document.createElement('span');marker.className='sn-ai-chat-preview-marker';marker.textContent='◷';marker.title=notice;marker.setAttribute('aria-label','Inactive chat preview');tab.append(marker);}
+        if(!inactive)marker?.remove();
+      }
+      const host=root.host;
+      if(host?.localName!=='sn-agent-chat'||host.getProperties?.().interaction!==record.sys_id?.value)continue;
+      const section=root.querySelector('.sn-chat .sn-section');if(!section)continue;
+      let bar=section.querySelector(':scope>.sn-ai-chat-preview-notice');
+      if(inactive&&!bar){bar=document.createElement('div');bar.className='sn-ai-chat-preview-notice';bar.setAttribute('role','note');section.append(bar);}
+      if(inactive&&bar&&bar.textContent!==notice)bar.textContent=notice;
+      if(!inactive)bar?.remove();
+    }
+  }
+  function syncIMSPreview(root) {
+    const host=root.host;
+    if(host?.localName==='sn-agent-chat') {
+      const id=host.getProperties?.().interaction;
+      if(id&&!imsPreviewRecords.has(id)&&!imsPreviewRequests.has(id)) {
+        const request=fetchIMSRecord('sys_id='+id).then(record=>{if(record){imsPreviewRecords.set(id,record);paintIMSPreview(record);}}).catch(error=>console.warn('[SN AI IMS preview]',error.message));
+        imsPreviewRequests.set(id,request);
+      }
+      const record=imsPreviewRecords.get(id);if(record)paintIMSPreview(record,root);
+    }
+    if(root.querySelector?.('.sn-chrome-one-tab'))for(const record of imsPreviewRecords.values())paintIMSPreview(record,root);
+    const plus=root.querySelector?.('#chrome-add-new-button');
+    if(plus){if(plus.getAttribute('aria-label')!=='Open IMS')plus.setAttribute('aria-label','Open IMS');if(plus.getAttribute('title')!=='Open IMS')plus.setAttribute('title','Open IMS');}
+  }
+  let imsLookupBox=null;
+  function showIMSLookup(button) {
+    imsLookupBox?.remove();
+    const box=document.createElement('form');imsLookupBox=box;box.className='sn-ai-ims-lookup';
+    box.innerHTML='<div role="alert" class="sn-ai-ims-lookup-error" hidden></div><div style="display:flex;gap:6px"><input aria-label="IMS number" placeholder="IMS number" maxlength="30" autocomplete="off"><button type="submit" aria-label="Open IMS">✓</button></div>';
+    const rect=button.getBoundingClientRect();box.style.top=Math.min(rect.bottom+8,innerHeight-100)+'px';box.style.left=Math.max(8,Math.min(rect.right-280,innerWidth-288))+'px';document.body.append(box);
+    const input=box.querySelector('input'),error=box.querySelector('[role="alert"]'),submit=box.querySelector('button');input.focus();
+    box.addEventListener('keydown',event=>{event.stopPropagation();if(event.key==='Escape'){box.remove();imsLookupBox=null;button.focus();}});
+    box.addEventListener('submit',async event=>{
+      event.preventDefault();const ims=input.value.trim().toUpperCase();error.hidden=true;
+      if(!/^IMS\d+$/.test(ims)){error.textContent='Enter a valid IMS number.';error.hidden=false;return;}
+      submit.disabled=true;
+      try {
+        const record=await fetchIMSRecord('number='+ims);
+        if(!record)throw new Error(ims+' was not found or is not available to you.');
+        let tabs;for(const root of spaceRoots){tabs=root.querySelector?.('sn-workspace-tabs');if(tabs)break;}
+        if(typeof tabs?.dispatch!=='function')throw new Error('Workspace navigation is not ready. Try again.');
+        imsPreviewRecords.set(record.sys_id.value,record);
+        tabs.dispatch('ITEM_SELECTED',{table:'interaction',sys_id:record.sys_id.value,row:record});
+        box.remove();imsLookupBox=null;
+      } catch(reason){error.textContent=reason.message;error.hidden=false;input.focus();}finally{submit.disabled=false;}
+    });
+  }
+  window.addEventListener('click',event=>{const button=event.composedPath().find(e=>e?.id==='chrome-add-new-button');if(!button)return;event.preventDefault();event.stopImmediatePropagation();showIMSLookup(button);},true);
+  window.addEventListener('pointerdown',event=>{if(imsLookupBox&&!event.composedPath().includes(imsLookupBox)&&!event.composedPath().some(e=>e?.id==='chrome-add-new-button')){imsLookupBox.remove();imsLookupBox=null;}},true);
   function markActionPopover(node) {
     if (!node.matches?.('.now-dropdown-list') || !node.querySelector('[role="menu"][aria-label="More Actions"]')) return;
     for (let current=node;current;current=current.parentElement || current.getRootNode?.().host) {
@@ -4157,12 +4238,14 @@ const snAIChatDisplayNames=(()=>{
     style.dataset.snAiActionStyle = 'true';
     style.textContent = css;
     style.textContent += '\n.chrome-tab-panel-list[data-sn-ai-force-chat]:has(>.chrome-tab-panel.is-active){display:block!important;flex:0 0 min(400px,40%)!important;width:min(400px,40%)!important;min-width:0!important;}\n[data-sn-ai-force-chat]>.chrome-tab-panel.is-active{display:block!important;width:100%!important;height:100%!important;}\n[data-sn-ai-force-chat]>.chrome-tab-panel:not(.is-active){display:none!important;}';
+    style.textContent += '\n.sn-ai-chat-preview-marker{flex:none;font-size:13px;color:var(--now-color_alert--critical-3,#ed7d86);pointer-events:none;margin:0 6px;} .sn-ai-chat-preview-notice{flex:0 0 auto;padding:3px 6px;font-size:11px;text-align:center;color:var(--now-color_alert--critical-3,#ed7d86);border-top:1px solid currentColor;background:var(--sn-theme-191621);line-height:1.3;} .sn-ai-ims-lookup{position:fixed;z-index:2147483647;width:280px;max-width:calc(100vw - 16px);box-sizing:border-box;padding:10px;background:var(--sn-theme-251f31,#251f31);color:var(--sn-theme-e6edf9,#eee);border:1px solid var(--sn-theme-655573,#655573);border-radius:10px;box-shadow:0 8px 24px #0005;} .sn-ai-ims-lookup input{flex:1;min-width:0;padding:8px;background:var(--sn-theme-191621,#191621);color:inherit;border:1px solid var(--sn-theme-655573);border-radius:6px;font:inherit;} .sn-ai-ims-lookup button{padding:6px 12px;color:inherit;background:var(--sn-theme-655573);border:0;border-radius:6px;cursor:pointer;} .sn-ai-ims-lookup-error{color:var(--now-color_alert--critical-3,#ed7d86);font-size:12px;margin-bottom:8px;} [data-sn-ai-inbox-accept],[data-sn-ai-inbox-accept-host],[data-sn-ai-inbox-proxy="Accept"]{user-select:none!important;}';
     (root.nodeType === 9 ? (root.head || root.documentElement) : root)?.prepend(style);
     const observer = new MutationObserver(records => {
       // Workspace sometimes clears a mounted root's children, including our
       // style. Restore only this changed root; never rescan the whole page.
       ensureSpaceRoot(root);
       if(forceIMSChatEnabled)syncForcedIMSChat(root);
+      syncIMSPreview(root);
       if(style.getRootNode()!==root)(root.nodeType===9?(root.head || root.documentElement):root)?.prepend(style);
       if(records.some(record=>[...record.addedNodes].some(node=>node.nodeType===1
         && node.matches?.('style,link[rel="stylesheet"]') && !node.hasAttribute('data-sn-ai-space-theme')
@@ -4193,6 +4276,7 @@ const snAIChatDisplayNames=(()=>{
         ? { characterData:true,attributes:true,attributeFilter:['class','aria-label','aria-selected','disabled'] } : {}) });
     discover(root);
     syncForcedIMSChat(root);
+    syncIMSPreview(root);
   }
   // Cover roots created synchronously before their first children are mounted.
   const attach = Element.prototype.attachShadow;
@@ -14942,7 +15026,7 @@ function startSNAI(tabIdentity) {
       captureSetting.append('Style capture',captureSwitch);developerPanel.append(captureSetting);
       const forceChatSetting=document.createElement('label');forceChatSetting.className='sn-ai-general-toggle';
       const forceChatSwitch=document.createElement('input');forceChatSwitch.type='checkbox';forceChatSwitch.setAttribute('role','switch');
-      forceChatSetting.append('Always show IMS chat panels',forceChatSwitch);developerPanel.prepend(forceChatSetting);
+      forceChatSetting.append('Always show IMS chat panels',forceChatSwitch);generalPanel.append(forceChatSetting);
       let forceChatSettingChanged=false;
       gmGetValue('sn-ai-force-ims-chat-v1',false).then(value=>{if(!forceChatSettingChanged)forceChatSwitch.checked=value===true;});
       forceChatSwitch.addEventListener('change',()=>{forceChatSettingChanged=true;gmSetValue('sn-ai-force-ims-chat-v1',forceChatSwitch.checked).catch(console.warn);document.dispatchEvent(new CustomEvent('sn-ai-force-ims-chat',{detail:forceChatSwitch.checked}));});
@@ -18681,7 +18765,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.323' });
+    addLog('info', 'helper-version', { version: '2.36.324' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
