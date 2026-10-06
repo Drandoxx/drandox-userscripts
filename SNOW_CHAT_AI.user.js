@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.343
+// @version      2.36.344
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -3971,6 +3971,24 @@ const snAIChatDisplayNames=(()=>{
   }
   const imsPreviewRecords=new Map();
   const imsPreviewRequests=new Map();
+  const endedChatRefreshes=new WeakMap();
+  function refreshEndedChatMetadata(node) {
+    // End-of-conversation messages arrive through SNOW's live message stream,
+    // not necessarily through the fetch-based interaction subscription above.
+    const text=node?.textContent||'';
+    if(!/has ended the conversation\.|conversation (?:has )?ended\.?/i.test(text))return;
+    let host=node.nodeType===1?node:node.parentElement;
+    while(host&&host.localName!=='sn-agent-chat')host=host.parentElement||host.getRootNode?.().host;
+    const id=host?.getProperties?.().interaction;
+    if(!id||isInactiveIMS(imsPreviewRecords.get(id)))return;
+    const previous=endedChatRefreshes.get(host);
+    if(previous&&(previous.pending||Date.now()-previous.at<1000))return;
+    const refresh={pending:true,at:Date.now()};endedChatRefreshes.set(host,refresh);
+    // Read authoritative state once; never infer closure from customer text.
+    fetchIMSRecord('sys_id='+id).then(record=>{
+      if(record){imsPreviewRecords.set(id,record);paintIMSPreview(record);}
+    }).catch(error=>console.warn('[SN AI ended chat]',error.message)).finally(()=>{refresh.pending=false;});
+  }
   async function fetchIMSRecords(condition) {
     const response=await fetch('/api/now/graphql',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-UserToken':kbSessionToken()},body:JSON.stringify({operationName:'snAIIMSPreview',query:'query snAIIMSPreview($condition:String!){GlideRecord_Query{interaction(queryConditions:$condition){_results{sys_id{value}number{value}type{value}active{value}state{value}assigned_to{value}}}}}',variables:{condition}})});
     if(!response.ok)throw new Error('Unable to look up IMS ('+response.status+').');
@@ -4489,6 +4507,7 @@ const snAIChatDisplayNames=(()=>{
         if (record.type==='characterData')installChatDisplayName(record.target.parentElement?.closest('.sn-chrome-one-tab'));
       }
       for (const record of records) for (const node of record.addedNodes) {
+        refreshEndedChatMetadata(node);
         if (node.nodeType === 1) { convertKBNumber(node);node.querySelectorAll?.('a.now-text-link').forEach(convertKBNumber); }
         discover(node);
       }
@@ -19047,7 +19066,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.343' });
+    addLog('info', 'helper-version', { version: '2.36.344' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
