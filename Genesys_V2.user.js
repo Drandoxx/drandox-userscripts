@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.528.0
+// @version      1.529.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -470,7 +470,7 @@
     const hidden = BOARD_COLUMNS.filter((_, index) => !settings.columns[index]).flatMap(([, selectors]) => selectors.split(',').map(selector => `table.gbs-board ${selector.trim()}`)).join(',');
     const tracks = ['32px', '26px', 'minmax(60px,2fr)', 'minmax(48px,1fr)', 'minmax(55px,1fr)', 'minmax(55px,1fr)'].filter((_, index) => settings.columns[index]).join(' ');
     const css = `table.gbs-board{border-spacing:0 ${settings.gap}px!important}table.gbs-board tbody{gap:${settings.gap}px!important}table.gbs-board tbody tr{margin:0!important;border-spacing:0!important}table.gbs-board tbody td{padding-top:${settings.padding}px!important;padding-bottom:${settings.padding}px!important}${hidden ? hidden + '{display:none!important}' : ''}${settings.columns.some(value => !value) ? `table.gbs-board thead tr,table.gbs-board tbody tr{display:grid!important;grid-template-columns:${tracks}!important}table.gbs-board th,table.gbs-board td{width:auto!important;min-width:0!important;max-width:none!important;box-sizing:border-box!important}` : ''}`;
-    const height = 19 + (settings.fontOffset || 0) + 2 + 2 * (settings.rowPadding ?? 8);
+    const height = 21 + (settings.fontOffset || 0) + 2 + 2 * (settings.rowPadding ?? 8);
     const customColumns = settings.columns.some(value => !value);
     doc.querySelectorAll('table.gbs-board:not([aria-label="Board preview"])').forEach(table => {
       if (table.classList.contains('gbs-custom-columns') !== customColumns) {
@@ -512,7 +512,9 @@
     const circleSize = Math.min(18, 14 + Math.max(0, (settings.rowPadding ?? 8) - 1) * 2);
     const circleCSS = `table.gbs-board td.column-agentPresence .entity-v3-presence-indicator-dot{width:${circleSize}px!important;height:${circleSize}px!important;min-width:${circleSize}px!important;min-height:${circleSize}px!important;box-sizing:border-box!important;transition:width 120ms ease,height 120ms ease!important}`;
     const durationPaddingCSS = 'table.gbs-board tbody tr.gbs-duration-wrapped>td{padding-top:2px!important;padding-bottom:2px!important;height:auto!important;min-height:0!important}';
-    const liveCSS = (fullCSS + fontCSS + lineCSS + wrappedCSS + durationPaddingCSS + circleCSS + boardNameColorCSS(settings)).replaceAll('table.gbs-board', 'table.gbs-board:not([aria-label="Board preview"])');
+    // Two extra pixels in the clipped line box protect glyph descenders.
+    const safeLineCSS = lineCSS.replace(`line-height:${fontSize + 3}px`, `line-height:${fontSize + 5}px`);
+    const liveCSS = (fullCSS + fontCSS + safeLineCSS + wrappedCSS + durationPaddingCSS + circleCSS + boardNameColorCSS(settings)).replaceAll('table.gbs-board', 'table.gbs-board:not([aria-label="Board preview"])');
     if (style.textContent !== liveCSS) style.textContent = liveCSS;
   }
   function boardNameColorCSS(settings) {
@@ -5222,7 +5224,7 @@
       const cellBefore = new Map([...preview.querySelectorAll('th,td')].map(cell => [cell,cell.getBoundingClientRect()]));
       preview.style.setProperty('--preview-gap', `${draft.gap}px`);
       preview.style.setProperty('--preview-font', `${16 + (draft.fontOffset || 0)}px`);
-      preview.style.setProperty('--preview-line', `${19 + (draft.fontOffset || 0)}px`);
+      preview.style.setProperty('--preview-line', `${21 + (draft.fontOffset || 0)}px`);
       ownCell.querySelector('.gbs-current-agent-badge').style.setProperty('display', draft.showYou === false ? 'none' : 'inline-flex', 'important');
       youLabel.style.setProperty('--gbs-status', doc.defaultView.getComputedStyle(ownRow).getPropertyValue('--gbs-status').trim() || STATUS_DEFINITIONS.idle.color);
       const circleSize = Math.min(18, 14 + Math.max(0, draft.rowPadding - 1) * 2);
