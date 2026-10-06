@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.362
+// @version      2.36.363
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -4183,6 +4183,53 @@ const snAIChatDisplayNames=(()=>{
       'sn-record-reference-connected[name="u_kits_project_code"],sn-record-input-connected[name="u_kits_project_code.u_project_name"]'
     )) {
       if (field.style.getPropertyValue('display') !== 'none') field.style.setProperty('display', 'none', 'important');
+      const row = field.closest('.sn-section-form-row');
+      if (row && row.style.getPropertyValue('min-height') !== '0px') row.style.setProperty('min-height', '0px', 'important');
+    }
+    for (const container of root.querySelectorAll('.sn-form-column-layout-sections')) {
+      const sections = [...container.children].filter(e => e.matches('.sn-section.ws-form'));
+      const closure = sections.find(e => e.querySelector('.accordion-title')?.textContent.trim() === 'Closure Information');
+      if (!closure) continue;
+      if (container.style.display !== 'flex') container.style.setProperty('display', 'flex');
+      if (container.style.flexDirection !== 'column') container.style.setProperty('flex-direction', 'column');
+      let toggle = container.querySelector(':scope > .sn-ai-other-fields-toggle');
+      if (!toggle) {
+        toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'sn-ai-other-fields-toggle';
+        toggle.style.cssText = 'order:2;flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:10px;width:100%;border:0;background:transparent;color:var(--sn-text,var(--sn-theme-e6edf9));font:inherit;padding:12px;cursor:pointer;';
+        const icon = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 6 5 5 5-5"/><path d="m7 13 5 5 5-5"/></svg>';
+        toggle.innerHTML = icon + '<span>Show other hidden fields</span>' + icon;
+        toggle.setAttribute('aria-expanded', 'false');
+        toggle.addEventListener('click', () => {
+          const show = toggle.getAttribute('aria-expanded') !== 'true';
+          toggle.setAttribute('aria-expanded', String(show));
+          toggle.querySelector('span').textContent = show ? 'Hide other fields' : 'Show other hidden fields';
+          for (const svg of toggle.querySelectorAll('svg')) svg.style.transform = show ? 'rotate(180deg)' : '';
+          for (const section of container.querySelectorAll(':scope > .sn-section.ws-form')) {
+            const label = section.querySelector('.accordion-title')?.textContent.trim();
+            if (label === 'Incident / Request' || label === 'Closure Information') continue;
+            const heading = section.querySelector('.sn-section-header');
+            if (show && heading?.getAttribute('aria-expanded') === 'true') heading.click();
+            section.style.setProperty('display', show ? 'block' : 'none', 'important');
+          }
+        });
+        container.append(toggle);
+      }
+      for (const section of sections) {
+        const heading = section.querySelector('.sn-section-header');
+        const label = section.querySelector('.accordion-title')?.textContent.trim();
+        const primary = label === 'Incident / Request' || label === 'Closure Information';
+        const order = label === 'Incident / Request' ? '0' : label === 'Closure Information' ? '1' : '3';
+        if (section.style.order !== order) section.style.setProperty('order', order);
+        if (section.style.flexShrink !== '0') section.style.setProperty('flex-shrink', '0');
+        const display = primary || toggle.getAttribute('aria-expanded') === 'true' ? 'block' : 'none';
+        if (section.style.getPropertyValue('display') !== display) section.style.setProperty('display', display, 'important');
+        if (primary && heading && !initializedIncidentSections.has(heading)) {
+          initializedIncidentSections.add(heading);
+          if (heading.getAttribute('aria-expanded') === 'false') heading.click();
+        }
+      }
     }
     for (const heading of root.querySelectorAll('.sn-section-header[aria-expanded]')) {
       const label = heading.querySelector('.accordion-title')?.textContent.trim();
@@ -19237,7 +19284,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.362' });
+    addLog('info', 'helper-version', { version: '2.36.363' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
