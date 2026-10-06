@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.314
+// @version      2.36.315
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -11220,9 +11220,8 @@ function startSNAI(tabIdentity) {
   }
   async function commitMatrixOption(fieldLabel, expected) {
     const label=comparableLabel(fieldLabel);
-    const field=await waitForControlByLabel(fieldLabel,3000);
+    const [field,rows]=await Promise.all([waitForControlByLabel(fieldLabel,3000),loadMatrixOptions()]);
     if (!field) throw new Error(`MATRIX_FIELD_MISSING: ${fieldLabel}`);
-    const rows=await loadMatrixOptions();
     const parentLabel=label==='sub category'?'Category':label==='symptom'?'Sub Category':null;
     const parentField=parentLabel?findControlByLabel(parentLabel,currentFormElements()):null;
     const parentHost=parentField?matrixReferenceHost(parentField):null;
@@ -11235,6 +11234,7 @@ function startSNAI(tabIdentity) {
     const props=host?.dAProps;
     const callback=host?.onValueChange || props?.onValueChange;
     if (props?.fieldName!==matrixFieldNames[label] || typeof callback!=='function' || field.disabled || field.readOnly) throw new Error(`MATRIX_NATIVE_UNAVAILABLE: ${fieldLabel}`);
+    if(props.value===row.id && normalisedFieldValue(props.displayValue)===normalisedFieldValue(row.code))return props.displayValue;
     callback.call(host,{value:row.id,displayValue:row.code});
     const next=routingDependentField(fieldLabel);
     // Observe commit and dependent rebuild concurrently; do not pay two
@@ -11252,20 +11252,30 @@ function startSNAI(tabIdentity) {
   }
 
   async function commitKnownNativeReference(fieldLabel,expected,options={}) {
-    // Only reuse resolved IDs from mounted native controls. Never guess IDs
-    // or bypass a dynamic reference qualifier with a generic table query.
-    const field=findControlByLabel(fieldLabel,currentFormElements());
+    const field=await waitForControlByLabel(fieldLabel,3000);
     const host=field?matrixReferenceHost(field):null,props=host?.dAProps;
     const callback=host?.onValueChange||props?.onValueChange;
-    if(!props||typeof callback!=='function'||field.disabled||field.readOnly)return null;
+    if(!props||typeof callback!=='function'||field.disabled||field.readOnly||props.readonly)throw new Error(`NATIVE_REFERENCE_UNAVAILABLE: ${fieldLabel}`);
     const valid=p=>/^[a-f0-9]{32}$/i.test(String(p?.value||''))&&normalisedFieldValue(p.displayValue)===normalisedFieldValue(expected);
     if(valid(props)&&!options.forceReselect)return props.displayValue;
-    if(props.referenceQualifier||props.dependentField||options.forceReselect)return null;
-    const candidates=allPageElements().filter(e=>e.localName==='now-record-typeahead')
-      .map(e=>e.dAProps).filter(p=>p?.referenceTable===props.referenceTable&&valid(p));
-    const ids=new Set(candidates.map(p=>p.value));
-    if(ids.size!==1)return null;
-    const resolved=candidates[0];callback.call(host,{value:resolved.value,displayValue:resolved.displayValue});
+    // The same read-only GraphQL resolver used by sn-record-reference-connected:
+    // serialized changes and encoded record preserve scripted qualifiers.
+    const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
+    const query=`query ($table:String!,$field:String!,$sys_id:String,$encodedRecord:String,$serializedChanges:String,$chars:String!,$referenceKey:String) { GlideLayout_Query { referenceDataRetriever(tableName:$table,fieldName:$field,sysId:$sys_id,encodedRecord:$encodedRecord,serializedChanges:$serializedChanges,chars:$chars,referenceKey:$referenceKey,sysparm_ignore_ref_qual:false,pagination:{limit:100,offset:0},ignoreTotalCount:true) { referenceDataList {sysId referenceKeyValue referenceData {key value}} } } }`;
+    const variables={table:props.tableName||props.referringTable,field:props.fieldName,sys_id:props.recordSysId||'-1',encodedRecord:props.encodedRecord,serializedChanges:props.serializedChanges||'{}',chars:String(expected),referenceKey:props.referenceKey||null};
+    const response=await page.fetch('/api/now/graphql',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json',Accept:'application/json','X-UserToken':page.g_ck},body:JSON.stringify({query,variables})});
+    if(!response.ok)throw new Error(`NATIVE_REFERENCE_READ_FAILED: ${fieldLabel} (${response.status})`);
+    const body=await response.json();
+    if(body.errors?.length)throw new Error(`NATIVE_REFERENCE_QUERY_FAILED: ${fieldLabel}`);
+    const rows=body.data?.GlideLayout_Query?.referenceDataRetriever?.referenceDataList;
+    if(!Array.isArray(rows))throw new Error(`NATIVE_REFERENCE_RESPONSE_INVALID: ${fieldLabel}`);
+    const matches=rows.map(r=>({value:props.referenceKey?r.referenceKeyValue:r.sysId,displayValue:r.referenceData?.[0]?.value}))
+      .filter(r=>r.value&&typeof r.displayValue==='string'&&(options.match==='prefix'?normalisedFieldValue(r.displayValue).startsWith(normalisedFieldValue(expected)):normalisedFieldValue(r.displayValue)===normalisedFieldValue(expected)));
+    if(matches.length!==1 && !(options.first&&matches.length))throw new Error(`NATIVE_REFERENCE_OPTION_NOT_UNIQUE: ${fieldLabel}`);
+    const resolved=matches[0];
+    // Never commit a response into a replacement component with stale context.
+    if(findControlByLabel(fieldLabel,currentFormElements())!==field||host.dAProps.encodedRecord!==props.encodedRecord||host.dAProps.serializedChanges!==props.serializedChanges)throw new Error(`NATIVE_REFERENCE_CONTEXT_CHANGED: ${fieldLabel}`);
+    callback.call(host,{value:resolved.value,displayValue:resolved.displayValue});
     const result=await waitStableReferenceValue(fieldLabel,resolved.displayValue,'exact',5000,0,field);
     const current=findControlByLabel(fieldLabel,currentFormElements());
     if(!result.stable||matrixReferenceHost(current)?.dAProps?.value!==resolved.value)throw new Error(`NATIVE_REFERENCE_COMMIT_FAILED: ${fieldLabel}`);
@@ -11499,7 +11509,28 @@ function startSNAI(tabIdentity) {
     return settled;
   }
 
+  async function commitNativeChoice(fieldLabel,optionValue,code) {
+    const field=await waitForControlByLabel(fieldLabel,3000);
+    if(!field||field.disabled||field.readOnly)throw new Error(`NATIVE_CHOICE_UNAVAILABLE: ${fieldLabel}`);
+    const current=readableElementValue(field);
+    if(fieldMatchesExpected(current,optionValue,fieldLabel))return current;
+    let host=field;
+    while(host&&host.localName!=='now-select')host=deepParentElement(host);
+    if(!host||host.readonly||typeof host.dispatch!=='function')throw new Error(`NATIVE_CHOICE_UNAVAILABLE: ${fieldLabel}`);
+    const flatten=items=>(items||[]).flatMap(item=>item.children?flatten(item.children):[item]);
+    const matches=flatten(host.items).filter(item=>!item.disabled&&normalisedFieldValue(item.label)===normalisedFieldValue(optionValue));
+    if(matches.length!==1)throw new Error(`NATIVE_CHOICE_OPTION_NOT_UNIQUE: ${fieldLabel}`);
+    // Exact action consumed by sn-record-choice-connected's native handler.
+    // Its onValueChange dispatch updates the form and invokes client scripts.
+    host.dispatch('NOW_SELECT#SELECTED_ITEM_SET',{item:matches[0]});
+    const result=await waitStableValue(fieldLabel,optionValue,'exact',5000,0,field);
+    if(!result.stable)automationFailure(code||'NATIVE_CHOICE_COMMIT_FAILED',`${fieldLabel} did not retain ${optionValue}.`);
+    if(comparableLabel(fieldLabel)==='event type')await waitForClassificationDependencyAfterEventType();
+    return result.actual;
+  }
+
   async function autoSelect(fieldLabel, optionValue, code, options = {}) {
+    return commitNativeChoice(fieldLabel,optionValue,code);
     // These two controls drive dependent ServiceNow form sections. Do not use
     // the short optimistic route: it can click a list while it is still being
     // repopulated and leave a stale Event Type or Classification behind.
@@ -11567,6 +11598,7 @@ function startSNAI(tabIdentity) {
   // Conservative compatibility route: retained as the verified fallback for
   // controls that rebuild after a dependency or require a delayed option list.
   async function autoSelectSafe(fieldLabel, optionValue, code, options = {}) {
+    return commitNativeChoice(fieldLabel,optionValue,code);
     const failureCode = code || `SELECT_${comparableLabel(fieldLabel).toUpperCase().replace(/ /g, '_')}_FAILED`;
     const fieldTiming = {
       'event type': { open: 0, ready: 500, after: 1600, popup: 1800 },
@@ -18574,7 +18606,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.314' });
+    addLog('info', 'helper-version', { version: '2.36.315' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
