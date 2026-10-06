@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.324
+// @version      2.36.325
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -18765,7 +18765,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.324' });
+    addLog('info', 'helper-version', { version: '2.36.325' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -18896,7 +18896,7 @@ function startSNAI(tabIdentity) {
         || node.getAttribute('aria-label') === 'Private chat');
   }
 
-  function showChatImagePasteHint() {
+  function showChatImagePasteHint(message='Image is in the clipboard, but click on the Chat text-box to be able to paste the image.') {
     const id = 'local-sn-ai-image-paste-hint';
     let hint = document.getElementById(id);
     if (!hint) {
@@ -18906,7 +18906,7 @@ function startSNAI(tabIdentity) {
       hint.style.cssText = 'position:fixed;right:24px;bottom:24px;z-index:2147483647;max-width:360px;padding:12px 16px;border:1px solid #78b7ff;border-radius:10px;background:#102b4d;color:#eef7ff;box-shadow:0 8px 28px #0006;font:14px/1.4 system-ui,sans-serif;';
       document.documentElement.append(hint);
     }
-    hint.textContent = 'Image is in the clipboard, but click on the Chat text-box to be able to paste the image.';
+    hint.textContent = message;
     clearTimeout(Number(hint.dataset.timer || 0));
     hint.dataset.timer = String(setTimeout(() => hint.remove(), 4500));
   }
@@ -18920,12 +18920,41 @@ function startSNAI(tabIdentity) {
         bubbles: true, composed: true, cancelable: true, dataTransfer: transfer,
       }));
     }
-    return target.dispatchEvent(new DragEvent('drop', {
+    const handled=!target.dispatchEvent(new DragEvent('drop', {
       bubbles: true, composed: true, cancelable: true, dataTransfer: transfer,
     }));
+    // preventDefault means the native drop handler claimed the event. It is
+    // not proof that the asynchronous upload or recipient delivery succeeded.
+    return {dispatched:true,handled};
   }
 
-  function handleChatImagePaste(event) {
+  async function optimiseChatScreenshot(source) {
+    const bitmap=await createImageBitmap(source);
+    const canvas=document.createElement('canvas');
+    try {
+      // Preserve pixel dimensions so small screenshot text stays readable.
+      canvas.width=bitmap.width;canvas.height=bitmap.height;
+      const context=canvas.getContext('2d');if(!context)throw new Error('Image conversion is unavailable.');
+      context.drawImage(bitmap,0,0);
+      const encode=(type,quality)=>new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Image conversion failed.')),type,quality));
+      const png=await encode('image/png');
+      const pixels=context.getImageData(0,0,canvas.width,canvas.height).data;
+      let transparent=false;
+      for(let index=3;index<pixels.length;index+=4)if(pixels[index]!==255){transparent=true;break;}
+      let selected=png;
+      if(!transparent) {
+        const jpeg=await encode('image/jpeg',0.90);
+        // Prefer lossless PNG unless JPEG brings a meaningful size saving.
+        if(jpeg.type==='image/jpeg'&&jpeg.size<png.size*0.85)selected=jpeg;
+      }
+      // Already-supported originals can be smaller than a canvas re-encode.
+      if(source.type===selected.type&&source.size<selected.size)selected=source;
+      const extension=selected.type==='image/jpeg'?'jpg':'png';
+      return {file:new File([selected],`pasted-image-${Date.now()}.${extension}`,{type:selected.type}),width:bitmap.width,height:bitmap.height,originalSize:source.size};
+    } finally {bitmap.close();canvas.width=0;canvas.height=0;}
+  }
+
+  async function handleChatImagePaste(event) {
     const items = [...(event.clipboardData?.items || [])];
     const item = items.find((entry) => entry.kind === 'file' && /^image\//i.test(entry.type));
     if (!item) return;
@@ -18940,19 +18969,29 @@ function startSNAI(tabIdentity) {
     }
     const source = item.getAsFile();
     if (!source) return;
-    const extension = (source.type.split('/')[1] || 'png').replace(/[^a-z0-9]+/gi, '') || 'png';
-    const file = new File([source], `pasted-image-${Date.now()}.${extension}`, { type: source.type || 'image/png' });
     const target = chatPasteDropTarget(event);
     if (!target) {
-      addLog('warn', 'chat-image-paste-no-target', { type: file.type, size: file.size });
+      addLog('warn', 'chat-image-paste-no-target', { type: source.type, size: source.size });
       return;
     }
     event.preventDefault();
     event.stopPropagation();
-    const accepted = dispatchChatFileDrop(target, file);
-    addLog(accepted ? 'info' : 'warn', accepted ? 'chat-image-paste-dispatched' : 'chat-image-paste-rejected', {
-      target: target.localName, type: file.type, size: file.size,
-    });
+    const chatHost=path.find(node=>node?.localName==='sn-agent-chat');
+    const interaction=chatHost?.getProperties?.().interaction;
+    try {
+      const {file,width,height,originalSize}=await optimiseChatScreenshot(source);
+      if(!target.isConnected || (interaction&&chatHost?.getProperties?.().interaction!==interaction)
+        || chatHost?.getProperties?.().active===false || chatTextarea.disabled || chatTextarea.readOnly) {
+        showChatImagePasteHint('Chat changed or is no longer writable. Paste again in the active chat.');return;
+      }
+      const result=dispatchChatFileDrop(target,file);
+      addLog(result?'info':'warn',result?'chat-image-paste-dispatched':'chat-image-paste-no-target',{
+        target:target.localName,type:file.type,size:file.size,originalSize,width,height,nativeDropHandled:result?.handled===true,
+      });
+    } catch(error) {
+      showChatImagePasteHint('Could not prepare the image. Save it as PNG or JPEG and attach it using the paperclip.');
+      addLog('warn','chat-image-conversion-failed',{type:source.type,size:source.size,message:error.message});
+    }
   }
   if (workspacePage) document.addEventListener('paste', handleChatImagePaste, true);
 
