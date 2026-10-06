@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.349
+// @version      2.36.350
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -653,9 +653,10 @@ const snAIChatDisplayNames=(()=>{
     for (const root of spaceRoots) root.querySelectorAll?.('.sn-chrome-one-tab').forEach(markAcceptedTab);
   });
   const nativeSnowColorElements=new WeakSet(),pendingNativeSnowColors=new Set();
+  const nativeSnowColorSelector='.now-chat-message-bubble.left,.now-chat-message-bubble.right,.sn-workspace-header,.sn-toast,.sn-toast *,.sn-toast-close,.sn-toast-close *, .sn-notifications-panel,.sn-notifications-panel *';
   let nativeSnowColorFrame=0;
   function preserveNativeSnowColors(element) {
-    if(selectedSpaceTheme!=='original'||!element?.matches?.('.now-chat-message-bubble.left,.now-chat-message-bubble.right,.sn-workspace-header')||nativeSnowColorElements.has(element))return;
+    if(selectedSpaceTheme!=='original'||!element?.matches?.(nativeSnowColorSelector)||nativeSnowColorElements.has(element))return;
     pendingNativeSnowColors.add(element);
     if(nativeSnowColorFrame)return;
     nativeSnowColorFrame=requestAnimationFrame(()=>{
@@ -1239,6 +1240,16 @@ const snAIChatDisplayNames=(()=>{
     :host(sn-chat-control-html-output) .card-container a:focus-visible {
       outline:2px solid var(--sn-theme-ac94ec);outline-offset:2px;
     }
+    .sn-toast {
+      background:var(--sn-theme-251f31)!important;color:var(--sn-theme-e6edf9)!important;
+      border-color:var(--sn-theme-423750)!important;
+    }
+    .sn-toast.is-unread { background:color-mix(in srgb,var(--sn-theme-ac94ec) 18%,var(--sn-theme-251f31))!important; }
+    .sn-toast:hover { background:color-mix(in srgb,var(--sn-theme-ac94ec) 25%,var(--sn-theme-251f31))!important; }
+    .sn-toast :is(.sn-toast__header,.message) { color:var(--sn-theme-e6edf9)!important;-webkit-text-fill-color:var(--sn-theme-e6edf9)!important; }
+    .sn-toast__meta,.sn-toast__meta * { color:var(--sn-theme-a8b8d1)!important; }
+    .sn-toast-close button { background:transparent!important;color:var(--sn-theme-e6edf9)!important;border-color:transparent!important; }
+    :host-context(sn-workspace-notification-item) .now-icon { color:var(--sn-theme-a8b8d1)!important; }
     .now-card,.now-popover,.now-dropdown-menu,.now-menu,.now-tooltip {
       background-color:var(--sn-theme-251f31)!important;color:var(--sn-theme-e6edf9)!important;border-color:var(--sn-theme-423750)!important;
     }
@@ -2525,7 +2536,7 @@ const snAIChatDisplayNames=(()=>{
   document.addEventListener('sn-ai-theme-palette', event => {
     if (!SN_THEME_PALETTES[event.detail]) return;
     selectedSpaceTheme = event.detail;
-    if(selectedSpaceTheme==='original')for(const root of spaceRoots)for(const element of root.querySelectorAll('.now-chat-message-bubble.left,.now-chat-message-bubble.right,.sn-workspace-header'))preserveNativeSnowColors(element);
+    if(selectedSpaceTheme==='original')for(const root of spaceRoots)for(const element of root.querySelectorAll(nativeSnowColorSelector))preserveNativeSnowColors(element);
     for (const style of spaceStyles.values()) style.textContent = themeText();
     for(const root of spaceRoots) {
       const action=root.querySelector?.('style[data-sn-ai-action-style]');
@@ -4304,7 +4315,7 @@ const snAIChatDisplayNames=(()=>{
   }
   function discover(node) {
     preserveNativeSnowColors(node);
-    for(const element of node.querySelectorAll?.('.now-chat-message-bubble.left,.now-chat-message-bubble.right,.sn-workspace-header')||[])preserveNativeSnowColors(element);
+    for(const element of node.querySelectorAll?.(nativeSnowColorSelector)||[])preserveNativeSnowColors(element);
     installInteractionDisplayName(node.nodeType===3?node.parentElement?.closest('a[data-testisrecordlink="true"]'):(node.closest?.('a[data-testisrecordlink="true"]')||node));
     for(const link of node.querySelectorAll?.('a[data-testisrecordlink="true"]')||[])installInteractionDisplayName(link);
     installChatDisplayName(node.nodeType===3?node.parentElement?.closest('.sn-chrome-one-tab'):(node.closest?.('.sn-chrome-one-tab')||node));
@@ -19108,7 +19119,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.349' });
+    addLog('info', 'helper-version', { version: '2.36.350' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
