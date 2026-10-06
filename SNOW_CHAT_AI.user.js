@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.334
+// @version      2.36.335
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -4017,7 +4017,7 @@ const snAIChatDisplayNames=(()=>{
     'd566c8c9eb703010e0ef83c45e5228be', // Book walk-up appointment
   ]);
   function filterIncidentActions(node) {
-    if (!node.matches?.('now-button,now-dropdown.uiaction-bar-dropdown')) return;
+    if (!node?.matches?.('now-button,now-dropdown.uiaction-bar-dropdown')) return;
     let parent = node, incident = false;
     while (parent) {
       if (parent.localName === 'sn-form-internal-header-layout') {
@@ -4220,6 +4220,7 @@ const snAIChatDisplayNames=(()=>{
       update();
     };
     installStickyState(node);
+    filterIncidentActions(node);
     const measureTab = measureThemeTab;
     measureTab(node);
     installInboxStandby(node);
@@ -4370,6 +4371,7 @@ const snAIChatDisplayNames=(()=>{
     const style = document.createElement('style');
     style.dataset.snAiActionStyle = 'true';
     style.textContent = css;
+    style.textContent += '\n[data-sn-ai-hidden-incident-action]{display:none!important;width:0!important;min-width:0!important;margin:0!important;padding:0!important;}';
     style.textContent += '\n.chrome-tab-panel-list[data-sn-ai-force-chat]:has(>.chrome-tab-panel.is-active){display:block!important;flex:0 0 min(400px,40%)!important;width:min(400px,40%)!important;min-width:0!important;}\n[data-sn-ai-force-chat]>.chrome-tab-panel.is-active{display:block!important;width:100%!important;height:100%!important;}\n[data-sn-ai-force-chat]>.chrome-tab-panel:not(.is-active){display:none!important;}';
     style.textContent += '\n.sn-ai-chat-preview-marker{flex:none;font-size:13px;color:var(--now-color_alert--critical-3,#ed7d86);pointer-events:none;margin:0 6px;} .sn-ai-chat-preview-notice{flex:0 0 auto;padding:3px 6px;font-size:11px;text-align:center;color:var(--now-color_alert--critical-3,#ed7d86);border-top:1px solid currentColor;background:var(--sn-theme-191621);line-height:1.3;} .sn-ai-ims-lookup{position:fixed;z-index:2147483647;width:280px;max-width:calc(100vw - 16px);box-sizing:border-box;padding:10px;background:var(--sn-theme-251f31,#251f31);color:var(--sn-theme-e6edf9,#eee);border:1px solid var(--sn-theme-655573,#655573);border-radius:10px;box-shadow:0 8px 24px #0005;} .sn-ai-ims-lookup input{flex:1;min-width:0;padding:8px;background:var(--sn-theme-191621,#191621);color:inherit;border:1px solid var(--sn-theme-655573);border-radius:6px;font:inherit;} .sn-ai-ims-lookup button{padding:6px 12px;color:inherit;background:var(--sn-theme-655573);border:0;border-radius:6px;cursor:pointer;} .sn-ai-ims-lookup-error{color:var(--now-color_alert--critical-3,#ed7d86);font-size:12px;margin-bottom:8px;} [data-sn-ai-inbox-accept],[data-sn-ai-inbox-accept-host],[data-sn-ai-inbox-proxy="Accept"]{user-select:none!important;}';
     style.textContent += `
@@ -4386,6 +4388,7 @@ const snAIChatDisplayNames=(()=>{
       // Workspace sometimes clears a mounted root's children, including our
       // style. Restore only this changed root; never rescan the whole page.
       ensureSpaceRoot(root);
+      filterIncidentActions(root.host);
       if(forceIMSChatEnabled)syncForcedIMSChat(root);
       syncIMSPreview(root);
       if(style.getRootNode()!==root)(root.nodeType===9?(root.head || root.documentElement):root)?.prepend(style);
@@ -18933,7 +18936,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.334' });
+    addLog('info', 'helper-version', { version: '2.36.335' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
