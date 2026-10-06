@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.315
+// @version      2.36.316
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -11252,11 +11252,14 @@ function startSNAI(tabIdentity) {
   }
 
   async function commitKnownNativeReference(fieldLabel,expected,options={}) {
+    const isKnowledge=comparableLabel(fieldLabel)==='attached knowledge';
+    const prefixMatch=isKnowledge||options.match==='prefix';
+    const matchesDisplay=value=>prefixMatch?normalisedFieldValue(value).startsWith(normalisedFieldValue(expected)):normalisedFieldValue(value)===normalisedFieldValue(expected);
     const field=await waitForControlByLabel(fieldLabel,3000);
     const host=field?matrixReferenceHost(field):null,props=host?.dAProps;
     const callback=host?.onValueChange||props?.onValueChange;
     if(!props||typeof callback!=='function'||field.disabled||field.readOnly||props.readonly)throw new Error(`NATIVE_REFERENCE_UNAVAILABLE: ${fieldLabel}`);
-    const valid=p=>/^[a-f0-9]{32}$/i.test(String(p?.value||''))&&normalisedFieldValue(p.displayValue)===normalisedFieldValue(expected);
+    const valid=p=>/^[a-f0-9]{32}$/i.test(String(p?.value||''))&&matchesDisplay(p.displayValue);
     if(valid(props)&&!options.forceReselect)return props.displayValue;
     // The same read-only GraphQL resolver used by sn-record-reference-connected:
     // serialized changes and encoded record preserve scripted qualifiers.
@@ -11270,8 +11273,9 @@ function startSNAI(tabIdentity) {
     const rows=body.data?.GlideLayout_Query?.referenceDataRetriever?.referenceDataList;
     if(!Array.isArray(rows))throw new Error(`NATIVE_REFERENCE_RESPONSE_INVALID: ${fieldLabel}`);
     const matches=rows.map(r=>({value:props.referenceKey?r.referenceKeyValue:r.sysId,displayValue:r.referenceData?.[0]?.value}))
-      .filter(r=>r.value&&typeof r.displayValue==='string'&&(options.match==='prefix'?normalisedFieldValue(r.displayValue).startsWith(normalisedFieldValue(expected)):normalisedFieldValue(r.displayValue)===normalisedFieldValue(expected)));
-    if(matches.length!==1 && !(options.first&&matches.length))throw new Error(`NATIVE_REFERENCE_OPTION_NOT_UNIQUE: ${fieldLabel}`);
+      .filter(r=>r.value&&typeof r.displayValue==='string'&&matchesDisplay(r.displayValue));
+    // Any native-returned version with the requested KB prefix is acceptable.
+    if(matches.length!==1 && !((isKnowledge||options.first)&&matches.length))throw new Error(`NATIVE_REFERENCE_OPTION_NOT_UNIQUE: ${fieldLabel}`);
     const resolved=matches[0];
     // Never commit a response into a replacement component with stale context.
     if(findControlByLabel(fieldLabel,currentFormElements())!==field||host.dAProps.encodedRecord!==props.encodedRecord||host.dAProps.serializedChanges!==props.serializedChanges)throw new Error(`NATIVE_REFERENCE_CONTEXT_CHANGED: ${fieldLabel}`);
@@ -18606,7 +18610,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.315' });
+    addLog('info', 'helper-version', { version: '2.36.316' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
