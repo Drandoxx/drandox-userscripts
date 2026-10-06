@@ -497,6 +497,52 @@ const snAIChatDisplayNames=(()=>{
   const spaceStyles = new Map();
   let acceptedIMS = new Set();
   const lastTypedIMS = new Map();
+  let autoGreetEnabled=false, autoGreetChanged=false, lastOperatorActivity=Date.now(), incomingAcceptedAt=0;
+  const greetSeenHosts=new WeakSet(), greetAttempted=new Set();
+  try { JSON.parse(sessionStorage.getItem('sn-ai-greet-attempts-v1')||'[]').forEach(id=>greetAttempted.add(id)); } catch {}
+  GM_getValue('sn-ai-auto-greet-v1',false).then(value=>{if(!autoGreetChanged)autoGreetEnabled=value===true;});
+  document.addEventListener('sn-ai-auto-greet',event=>{autoGreetChanged=true;autoGreetEnabled=event.detail===true;});
+  // An accepted incoming offer is required: opening an old IMS never greets it.
+  document.addEventListener('sn-ai-autoaccepted-ims',()=>{incomingAcceptedAt=Date.now();});
+  window.addEventListener('click',event=>{
+    const path=event.composedPath();
+    if(path.some(node=>node.localName==='sn-inbox-card')&&path.some(node=>node.matches?.('button')&&node.textContent.trim()==='Accept'))incomingAcceptedAt=Date.now();
+  },true);
+  for(const type of ['pointerdown','keydown','input'])window.addEventListener(type,event=>{if(event.isTrusted)lastOperatorActivity=Date.now();},true);
+  function queueNewChatGreeting(host) {
+    if(host?.localName!=='sn-chat-input'||greetSeenHosts.has(host))return;
+    greetSeenHosts.add(host);
+    const id=host.sysId||host.getAttribute('sys-id');
+    if(!autoGreetEnabled||!id||greetAttempted.has(id)||Date.now()-incomingAcceptedAt>30000)return;
+    const started=Date.now(), activity=lastOperatorActivity;
+    const ownElements=()=>{const list=[];const visit=root=>{for(const node of root.querySelectorAll('*')){list.push(node);if(node.shadowRoot)visit(node.shadowRoot);}};if(host.shadowRoot)visit(host.shadowRoot);return list;};
+    const input=()=>ownElements().find(node=>node.matches('textarea[name="CHAT_INPUT#CHAT_TEXTAREA"]'));
+    const safe=()=>autoGreetEnabled&&host.isConnected&&(host.sysId||host.getAttribute('sys-id'))===id&&host.isChatOwner===true&&!document.hidden&&host.getBoundingClientRect().width>0&&lastOperatorActivity===activity&&!input()?.disabled&&!input()?.readOnly;
+    const wait=async predicate=>{for(let i=0;i<20;i++){if(!safe())return null;const result=predicate();if(result)return result;await new Promise(resolve=>setTimeout(resolve,100));}return null;};
+    setTimeout(async()=>{
+      if(!safe()||Date.now()-started<5000||!input()||input().value.trim())return;
+      // Do not greet an already-serviced conversation after remount/reload.
+      let chat=host;
+      while(chat&&chat.localName!=='sn-agent-chat')chat=chat.parentElement||chat.getRootNode()?.host;
+      const agentMessages=chat?.shadowRoot?.querySelectorAll('now-chat-message')||[];
+      if([...agentMessages].some(message=>message.shadowRoot?.querySelector('.now-chat-message.agent.right')))return;
+      greetAttempted.add(id);
+      try{sessionStorage.setItem('sn-ai-greet-attempts-v1',JSON.stringify([...greetAttempted].slice(-500)));}catch{}
+      try {
+        host.dispatch('CHAT_INPUT#MESSAGE_ENTERED',{message:'/r w',command:'r',query:'w',currentParamIndex:0,caretPos:4});
+        const option=await wait(()=>ownElements().find(node=>node.id==='quickaction-param-w'));
+        if(!option)return;
+        const expected=option.querySelector('.sn-action-menu-display-value')?.textContent.trim();
+        if(!expected||!safe()||input().value.trim()!=='/r w')return;
+        option.click();
+        const ready=await wait(()=>input()?.value.trim()===expected);
+        const send=ownElements().find(node=>node.matches('button[aria-label="Send Message"]'));
+        if(!ready||!safe()||input().value.trim()!==expected||!send||send.disabled)return;
+        // Same native send control as the operator. No retries after submission.
+        send.click();
+      } catch(error) { console.warn('SN AI auto-greet stopped',error); }
+    },5000);
+  }
   try { acceptedIMS = new Set(JSON.parse(sessionStorage.getItem('sn-ai-unseen-accepted-ims-v1') || '[]')); } catch {}
   const saveAcceptedIMS = () => { try { sessionStorage.setItem('sn-ai-unseen-accepted-ims-v1',JSON.stringify([...acceptedIMS])); } catch {} };
   const namedChatLabels=new WeakSet();
@@ -4220,6 +4266,7 @@ const snAIChatDisplayNames=(()=>{
       update();
     };
     installStickyState(node);
+    queueNewChatGreeting(node);
     filterIncidentActions(node);
     const measureTab = measureThemeTab;
     measureTab(node);
@@ -4293,6 +4340,7 @@ const snAIChatDisplayNames=(()=>{
     for (const element of node.querySelectorAll?.('*') || []) {
       for (const child of element.childNodes) if (child.nodeType===3 && child.textContent.trim()==='Related Search Results' && kbAssistAncestor(element)) child.textContent='Search Results';
       installResponsiveKBPanel(element);
+      queueNewChatGreeting(element);
       markActionPopover(element);
       filterIncidentActions(element);
       installAttachmentDivider(element);
@@ -15192,6 +15240,12 @@ function startSNAI(tabIdentity) {
       const forceChatSetting=document.createElement('label');forceChatSetting.className='sn-ai-general-toggle';
       const forceChatSwitch=document.createElement('input');forceChatSwitch.type='checkbox';forceChatSwitch.setAttribute('role','switch');
       forceChatSetting.append('Always show IMS chat panels',forceChatSwitch);generalPanel.append(forceChatSetting);
+      const greetSetting=document.createElement('label');greetSetting.className='sn-ai-general-toggle';
+      const greetSwitch=document.createElement('input');greetSwitch.type='checkbox';greetSwitch.setAttribute('role','switch');
+      greetSetting.append('Auto greet new users',greetSwitch);generalPanel.append(greetSetting);
+      let greetSettingChanged=false;
+      gmGetValue('sn-ai-auto-greet-v1',false).then(value=>{if(!greetSettingChanged)greetSwitch.checked=value===true;});
+      greetSwitch.addEventListener('change',()=>{greetSettingChanged=true;gmSetValue('sn-ai-auto-greet-v1',greetSwitch.checked);document.dispatchEvent(new CustomEvent('sn-ai-auto-greet',{detail:greetSwitch.checked}));});
       let forceChatSettingChanged=false;
       gmGetValue('sn-ai-force-ims-chat-v1',false).then(value=>{if(!forceChatSettingChanged)forceChatSwitch.checked=value===true;});
       forceChatSwitch.addEventListener('change',()=>{forceChatSettingChanged=true;gmSetValue('sn-ai-force-ims-chat-v1',forceChatSwitch.checked).catch(console.warn);document.dispatchEvent(new CustomEvent('sn-ai-force-ims-chat',{detail:forceChatSwitch.checked}));});
