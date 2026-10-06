@@ -362,6 +362,63 @@ const snAIChatDisplayNames=(()=>{
 // Install presentation rules before Workspace builds its action bars. Observe
 // SNOW New Ticket mode's KB formatter only. Article-title links retain their
 // native popup behavior; the separate KB-number button only copies text.
+// Opt-in, event-driven audio diagnostics. Never plays or replaces a sound.
+(() => {
+  if (!location.pathname.startsWith('/now/workspace/')) return;
+  const page = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+  let developer = false, enabled = false, box, changed = false;
+  const undo = [], entries = [];
+  function report(message) {
+    if (!developer || !enabled) return;
+    entries.unshift(`${new Date().toLocaleTimeString()} · ${message}`);
+    entries.length = Math.min(entries.length, 8);
+    if (!box && document.body) {
+      box = document.createElement('div');box.id = 'sn-ai-sound-watcher';
+      box.style.cssText = 'position:fixed;top:12px;right:12px;z-index:2147483647;width:310px;max-width:calc(100vw - 24px);padding:10px;border:1px solid var(--sn-theme-ac94ec,#ac94ec);border-radius:10px;background:var(--sn-theme-251f31,#251f31);color:var(--sn-theme-e6edf9,#eee);font:12px/1.5 system-ui;pointer-events:none;box-shadow:0 4px 16px #0004;white-space:pre-wrap;';
+      document.body.append(box);
+    }
+    if (box) box.textContent = `SNOW sound watcher\n${entries.join('\n')}`;
+  }
+  function hook(proto, name, wrap) {
+    if (!proto || typeof proto[name] !== 'function') return;
+    const original = proto[name], replacement = wrap(original);
+    try { proto[name] = replacement;undo.push(() => { if (proto[name] === replacement) proto[name] = original; }); }
+    catch (_) { report(`Cannot observe ${name}`); }
+  }
+  function sync() {
+    while (undo.length) undo.pop()();
+    if (!developer || !enabled) { box?.remove();box = null;entries.length = 0;return; }
+    report('Watching playback attempts (no sound triggered).');
+    hook(page.HTMLMediaElement?.prototype, 'play', original => function(...args) {
+      const label = this.muted ? 'muted' : `volume ${Math.round(this.volume * 100)}%`;
+      report(`Media play requested · ${label}`);
+      let result;
+      try { result = Reflect.apply(original, this, args); }
+      catch (error) { report(`Playback failed · ${error.name}`);throw error; }
+      // Observe without replacing the native promise returned to SNOW.
+      result?.then(() => report(`Media playback started · ${label}`), error => report(`Playback blocked/failed · ${error.name}`));
+      return result;
+    });
+    hook(page.AudioScheduledSourceNode?.prototype, 'start', original => function(...args) {
+      report(`Web Audio start requested · context ${this.context?.state || 'unknown'}`);
+      try { return Reflect.apply(original, this, args); }
+      catch (error) { report(`Web Audio failed · ${error.name}`);throw error; }
+    });
+    hook(page.AudioContext?.prototype, 'resume', original => function(...args) {
+      report(`Audio context resume requested · ${this.state}`);
+      const result = Reflect.apply(original, this, args);
+      result?.then(() => report(`Audio context · ${this.state}`), error => report(`Audio resume failed · ${error.name}`));
+      return result;
+    });
+  }
+  document.addEventListener('sn-ai-developer-mode', event => { changed = true;developer = event.detail === true;sync(); });
+  document.addEventListener('sn-ai-sound-watcher', event => { changed = true;enabled = event.detail === true;sync(); });
+  Promise.all([GM_getValue('sn-ai-developer-mode-v1', false), GM_getValue('sn-ai-sound-watcher-v1', false)]).then(([dev, watch]) => {
+    if (!changed) { developer = dev === true;enabled = watch === true;sync(); }
+  });
+  document.addEventListener('DOMContentLoaded', () => { if (developer && enabled && !box) report('Ready to observe audio.'); }, {once:true});
+})();
+
 (() => {
   if (location.hostname !== 'kingfisher.service-now.com'
     || !(/\/new_call\.do$/.test(location.pathname) || location.pathname.includes('/target/new_call.do'))) return;
@@ -15086,6 +15143,12 @@ function startSNAI(tabIdentity) {
       const previewSetting=document.createElement('label');previewSetting.className='sn-ai-general-toggle';
       const previewSwitch=document.createElement('input');previewSwitch.type='checkbox';previewSwitch.setAttribute('role','switch');
       previewSetting.append('Display Preview Chat button',previewSwitch);developerPanel.append(previewSetting);
+      const soundSetting=document.createElement('label');soundSetting.className='sn-ai-general-toggle';
+      const soundSwitch=document.createElement('input');soundSwitch.type='checkbox';soundSwitch.setAttribute('role','switch');
+      soundSetting.append('Sound playback watcher',soundSwitch);developerPanel.append(soundSetting);
+      let soundSettingChanged=false;
+      gmGetValue('sn-ai-sound-watcher-v1',false).then(value=>{if(!soundSettingChanged)soundSwitch.checked=value===true;});
+      soundSwitch.addEventListener('change',()=>{soundSettingChanged=true;gmSetValue('sn-ai-sound-watcher-v1',soundSwitch.checked);document.dispatchEvent(new CustomEvent('sn-ai-sound-watcher',{detail:soundSwitch.checked}));});
       gmGetValue('sn-ai-display-preview-button-v1',true).then(value=>{previewSwitch.checked=value!==false;});
       previewSwitch.addEventListener('change',()=>{gmSetValue('sn-ai-display-preview-button-v1',previewSwitch.checked);document.dispatchEvent(new CustomEvent('sn-ai-display-preview-button',{detail:previewSwitch.checked}));});
       const matrixButton=document.createElement('button');matrixButton.type='button';matrixButton.textContent='Test matrix selection (FTF)';
