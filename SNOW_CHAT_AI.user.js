@@ -4009,6 +4009,38 @@ const snAIChatDisplayNames=(()=>{
       }
     }
   }
+  const hiddenIncidentActionIds = new Set([
+    'aeff33bb1b696d10a14cec60f54bcb96', // Open the form in Platform
+    '0bdd499d77773300112f8b51a9106179', // Compose Email
+    '084959b087081300e3010cf888cb0b0e', // Create Request
+    '807e83d1878010100e3dd61e36cb0b89', // Refresh Impacted Services
+    'd566c8c9eb703010e0ef83c45e5228be', // Book walk-up appointment
+  ]);
+  function filterIncidentActions(node) {
+    if (!node.matches?.('now-button,now-dropdown.uiaction-bar-dropdown')) return;
+    let parent = node, incident = false;
+    while (parent) {
+      if (parent.localName === 'sn-form-internal-header-layout') {
+        incident = parent.table === 'incident';break;
+      }
+      parent = parent.parentElement || parent.getRootNode?.().host;
+    }
+    if (!incident) return;
+    if (node.localName === 'now-button') {
+      const name = node.getAttribute('component-name') || '';
+      if ([...hiddenIncidentActionIds].some(id => name.endsWith(id))) node.setAttribute('data-sn-ai-hidden-incident-action', '');
+      return;
+    }
+    if (!Array.isArray(node.items)) return;
+    const clean = items => items.flatMap(item => {
+      if (hiddenIncidentActionIds.has(String(item.id))) return [];
+      if (!Array.isArray(item.children)) return [item];
+      const children = clean(item.children);
+      return children.length ? [{...item, children}] : [];
+    });
+    const filtered = clean(node.items);
+    if (JSON.stringify(filtered) !== JSON.stringify(node.items)) node.items = filtered;
+  }
   const attachmentDividers=new WeakSet();
   const sidebarWidthStorageKey='sn-ai-sidebar-width-v1';
   const sidebarWidthControllers=new Map();
@@ -4261,6 +4293,7 @@ const snAIChatDisplayNames=(()=>{
       for (const child of element.childNodes) if (child.nodeType===3 && child.textContent.trim()==='Related Search Results' && kbAssistAncestor(element)) child.textContent='Search Results';
       installResponsiveKBPanel(element);
       markActionPopover(element);
+      filterIncidentActions(element);
       installAttachmentDivider(element);
       installPlainModalAction(element);
       elevateImageViewer(element);
