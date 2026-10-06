@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.312
+// @version      2.36.313
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -1452,9 +1452,8 @@ const snAIChatDisplayNames=(()=>{
     }
     :host(now-chat-window) { position:relative;isolation:isolate; }
     :host(now-chat-window)::before {
-      content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;
-      background:radial-gradient(ellipse at 0% 25%,color-mix(in srgb,var(--sn-theme-ac94ec) 18%,transparent),transparent 55%),radial-gradient(ellipse at 100% 80%,color-mix(in srgb,var(--sn-theme-ac94ec) 14%,transparent),transparent 50%);
-      animation:sn-ai-nebula-breathe 24s ease-in-out infinite alternate;
+      /* One backdrop on the host avoids animated tiles on first scroll. */
+      content:none!important;background:none!important;animation:none!important;
     }
     @keyframes sn-ai-nebula-breathe {
       from { opacity:.45;transform:translateY(-5px); }
@@ -14705,7 +14704,7 @@ function startSNAI(tabIdentity) {
     const developerTab=document.createElement('button');
     developerTab.type='button';developerTab.className='local-sn-settings-tab';
     developerTab.setAttribute('role','tab');developerTab.setAttribute('aria-selected','false');
-    developerTab.dataset.settingsTab='developer';developerTab.textContent='Developer settings';developerTab.hidden=true;
+    developerTab.dataset.settingsTab='developer';developerTab.textContent='Developer';developerTab.hidden=true;
     tabList.append(developerTab);
     const developerPanel=document.createElement('section');developerPanel.className='local-sn-settings-panel';
     developerPanel.dataset.settingsPanel='developer';developerPanel.hidden=true;tabList.after(developerPanel);
@@ -14815,7 +14814,11 @@ function startSNAI(tabIdentity) {
       document.addEventListener('sn-ai-developer-mode',event=>{captureDeveloperChanged=true;showCapture(event.detail===true);});
       gmGetValue('sn-ai-developer-mode-v1',false).then(value=>{if(!captureDeveloperChanged)showCapture(value===true);}).catch(console.warn);
       captureButton.addEventListener('click', () => toggleStyleCapture(captureButton));
-      developerPanel.append(captureButton);
+      const captureSetting=document.createElement('label');captureSetting.className='sn-ai-general-toggle';
+      const captureSwitch=document.createElement('input');captureSwitch.type='checkbox';captureSwitch.setAttribute('role','switch');
+      captureSetting.append('Style capture',captureSwitch);developerPanel.append(captureSetting);
+      captureSwitch.addEventListener('change',()=>{if(captureSwitch.checked!==Boolean(styleCapture))toggleStyleCapture(captureButton);});
+      new MutationObserver(()=>{captureSwitch.checked=Boolean(styleCapture);}).observe(captureButton,{childList:true});
       const previewSetting=document.createElement('label');previewSetting.className='sn-ai-general-toggle';
       const previewSwitch=document.createElement('input');previewSwitch.type='checkbox';previewSwitch.setAttribute('role','switch');
       previewSetting.append('Display Preview Chat button',previewSwitch);developerPanel.append(previewSetting);
@@ -14823,11 +14826,15 @@ function startSNAI(tabIdentity) {
       previewSwitch.addEventListener('change',()=>{gmSetValue('sn-ai-display-preview-button-v1',previewSwitch.checked);document.dispatchEvent(new CustomEvent('sn-ai-display-preview-button',{detail:previewSwitch.checked}));});
       const matrixButton=document.createElement('button');matrixButton.type='button';matrixButton.textContent='Test matrix selection (FTF)';
       const matrixStatus=document.createElement('div');matrixStatus.setAttribute('role','status');
+      const matrixSetting=document.createElement('label');matrixSetting.className='sn-ai-general-toggle';
+      const matrixSwitch=document.createElement('input');matrixSwitch.type='checkbox';matrixSwitch.setAttribute('role','switch');
+      matrixSetting.append('Matrix selection test (FTF)',matrixSwitch);
+      matrixSwitch.addEventListener('change',()=>{if(matrixSwitch.checked)matrixButton.click();});
       matrixButton.addEventListener('click',async()=>{
         matrixButton.disabled=true;matrixStatus.textContent='Selecting Category, Sub Category and Symptom…';
         try{const input=document.createElement('input');input.value='matrix test ftf';const result=await runCommandInput(input);matrixStatus.textContent=result?.status==='error'?(result.result?.message||state.lastAction):'Three fields selected. Event remains unsaved.';}
-        catch(error){matrixStatus.textContent=error?.message||String(error);}finally{matrixButton.disabled=false;}
-      });developerPanel.append(matrixButton,matrixStatus);
+        catch(error){matrixStatus.textContent=error?.message||String(error);}finally{matrixButton.disabled=false;matrixSwitch.checked=false;}
+      });developerPanel.append(matrixSetting,matrixStatus);
     }
     tabList.after(generalPanel);
     const settingsTabs = [...settingsDialog.querySelectorAll('[data-settings-tab]')];
@@ -14843,8 +14850,8 @@ function startSNAI(tabIdentity) {
     const cmdEnabledSwitch = settingsDialog.querySelector('[aria-label="Enable CMD button"]');
     const cmdSettingsRow = cmdEnabledSwitch.closest('.local-sn-cmd-colour-row');
     cmdSettingsRow.insertAdjacentHTML('afterend', `
-      <div class="local-sn-cmd-colour-row local-sn-test-setting-row"><input aria-label="Enable TEST button" type="checkbox"/><span>Enable TEST button</span></div>
-      <div class="local-sn-cmd-colour-row local-sn-test-setting-row"><input aria-label="Enable FIELD TEST button" type="checkbox"/><span>Enable FIELD TEST button</span></div>`);
+      <label class="sn-ai-general-toggle local-sn-test-setting-row"><span>TEST bubble</span><input aria-label="Enable TEST button" role="switch" type="checkbox"/></label>
+      <label class="sn-ai-general-toggle local-sn-test-setting-row"><span>FIELD TEST bubble</span><input aria-label="Enable FIELD TEST button" role="switch" type="checkbox"/></label>`);
     const testEnabledSwitch = settingsDialog.querySelector('[aria-label="Enable TEST button"]');
     const fieldTestEnabledSwitch = settingsDialog.querySelector('[aria-label="Enable FIELD TEST button"]');
     developerPanel.append(...settingsDialog.querySelectorAll('.local-sn-test-setting-row'));
@@ -15457,7 +15464,12 @@ function startSNAI(tabIdentity) {
       const previousValue = state[stateKey];
       state[stateKey] = control.checked;
       syncAISettingsUI();
-      try { await gmSetValue(storageKey, state[stateKey]); }
+      try { await gmSetValue(storageKey, state[stateKey]);
+        if(control.checked){
+          if(stateKey==='testEnabled')await createTestWindow(testAction);
+          else await createFieldTestWindow(fieldTestAction);
+        }
+      }
       catch (error) { state[stateKey] = previousValue; syncAISettingsUI(); showAISettingsError(error); }
     });
     feedbackEnableSwitch.addEventListener('change', async () => {
@@ -18539,7 +18551,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.312' });
+    addLog('info', 'helper-version', { version: '2.36.313' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
