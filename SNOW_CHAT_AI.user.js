@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.326
+// @version      2.36.327
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -3834,11 +3834,42 @@ const snAIChatDisplayNames=(()=>{
   document.addEventListener('sn-ai-force-ims-chat',event=>{forceIMSChatChanged=true;setForcedIMSChat(event.detail);});
   const imsPreviewRecords=new Map();
   const imsPreviewRequests=new Map();
-  async function fetchIMSRecord(condition) {
+  async function fetchIMSRecords(condition) {
     const response=await fetch('/api/now/graphql',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-UserToken':kbSessionToken()},body:JSON.stringify({operationName:'snAIIMSPreview',query:'query snAIIMSPreview($condition:String!){GlideRecord_Query{interaction(queryConditions:$condition){_results{sys_id{value}number{value}type{value}active{value}state{value}assigned_to{value}}}}}',variables:{condition}})});
     if(!response.ok)throw new Error('Unable to look up IMS ('+response.status+').');
     const payload=await response.json();if(payload.errors?.length)throw new Error('IMS lookup is unavailable or access was denied.');
-    return payload.data?.GlideRecord_Query?.interaction?._results?.[0]||null;
+    return payload.data?.GlideRecord_Query?.interaction?._results||[];
+  }
+  async function fetchIMSRecord(condition) {return (await fetchIMSRecords(condition))[0]||null;}
+  const queuedIMSTabNumbers=new Set();
+  const loadedIMSTabNumbers=new Set();
+  const imsTabLookupAttempts=new Map();
+  let imsTabLookupTimer=0;
+  function queueIMSTabMetadata(root) {
+    for(const tab of root.querySelectorAll?.('.sn-chrome-one-tab')||[]) {
+      const ims=tab.querySelector('[data-sn-ai-ims]')?.dataset.snAiIms||tab.getAttribute('aria-label');
+      if(!/^IMS\d+$/.test(ims||'')||loadedIMSTabNumbers.has(ims))continue;
+      loadedIMSTabNumbers.add(ims);queuedIMSTabNumbers.add(ims);
+    }
+    if(queuedIMSTabNumbers.size&&!imsTabLookupTimer)imsTabLookupTimer=setTimeout(loadIMSTabMetadata,150);
+  }
+  async function loadIMSTabMetadata() {
+    imsTabLookupTimer=0;
+    const numbers=[...queuedIMSTabNumbers].slice(0,100);
+    numbers.forEach(ims=>{queuedIMSTabNumbers.delete(ims);imsTabLookupAttempts.set(ims,(imsTabLookupAttempts.get(ims)||0)+1);});
+    if(!numbers.length)return;
+    try {
+      // Read all restored tab states in one batch, without selecting tabs or
+      // fetching their conversations, messages, images or full record forms.
+      for(const record of await fetchIMSRecords('numberIN'+numbers.join(','))) {
+        imsPreviewRecords.set(record.sys_id.value,record);paintIMSPreview(record);
+      }
+    } catch(error) {
+      console.warn('[SN AI IMS tab metadata]',error.message);
+      // Bootstrap/auth may not be ready at document-start. Retry just once.
+      for(const ims of numbers)if(imsTabLookupAttempts.get(ims)<2)queuedIMSTabNumbers.add(ims);
+    }
+    if(queuedIMSTabNumbers.size&&!imsTabLookupTimer)imsTabLookupTimer=setTimeout(loadIMSTabMetadata,1200);
   }
   function paintIMSPreview(record,onlyRoot=null) {
     const ims=record.number?.value;
@@ -3867,6 +3898,7 @@ const snAIChatDisplayNames=(()=>{
     }
   }
   function syncIMSPreview(root) {
+    queueIMSTabMetadata(root);
     const host=root.host;
     if(host?.localName==='sn-agent-chat') {
       const id=host.getProperties?.().interaction;
@@ -18779,7 +18811,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.326' });
+    addLog('info', 'helper-version', { version: '2.36.327' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
