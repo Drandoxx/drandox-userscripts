@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.394
+// @version      2.36.395
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -4702,15 +4702,26 @@ const snAIChatDisplayNames=(()=>{
     const observed = new WeakSet();
     const observer = new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(check, 120); });
     observer.observe(reference.getRootNode(), {subtree:true,childList:true,attributes:true,attributeFilter:['value']});
-    function restore(target) {
-      if (!target) return;
-      const original = target.dataset.snAiIlsOriginal;
-      if (original) {
-        const label = target.querySelector('.now-line-height-crop');
-        if (label) label.textContent = original;
-        delete target.dataset.snAiIlsOriginal;
-        target.removeAttribute('data-sn-ai-ils-note');
-      } else target.remove();
+    let injectedContent = '', replacedMessage = null;
+    function renderNativeNote(control, note) {
+      const existing = Array.isArray(control.messages) ? control.messages : [];
+      let messages = existing.flatMap(message => message.status === 'info' && message.content === injectedContent
+        ? (replacedMessage ? [replacedMessage] : []) : [message]);
+      injectedContent = ''; replacedMessage = null;
+      const normalize = text => String(text || '').replace(/\s+/g,' ').trim().replace(/[.]+$/,'');
+      const duplicate = note && messages.some(message => message.status === 'info' &&
+        (normalize(message.content) === normalize(note) || normalize(message.content).startsWith(normalize(note) + '. ')));
+      if (note && !duplicate) {
+        const index = messages.findIndex(message => message.status === 'info');
+        replacedMessage = index >= 0 ? messages[index] : null;
+        injectedContent = replacedMessage?.content ? `${note.replace(/[.]+$/,'')}. ${replacedMessage.content}` : note;
+        const message = {icon:'info-circle-outline', ...(replacedMessage || {}), status:'info', content:injectedContent};
+        if (index >= 0) messages[index] = message;
+        else messages = [message, ...messages];
+      }
+      // Feed the actual native component: its own renderer creates the icon,
+      // spacing, typography, message ID and aria-describedby relationship.
+      if (JSON.stringify(existing) !== JSON.stringify(messages)) control.helpers.updateProperties({messages});
     }
     function scan(root, result = []) {
       if (!observed.has(root)) { observed.add(root); observer.observe(root, {subtree:true, childList:true, characterData:true, attributes:true, attributeFilter:['value']}); }
@@ -4723,12 +4734,11 @@ const snAIChatDisplayNames=(()=>{
       const location = String((p.fields?.u_location || p.fields?.location)?.displayValue || '').trim();
       const code = /^SFD[A-Z0-9]+(?:\s|$)/i.test(location) ? location.split(/\s/)[0].toUpperCase() : '';
       const nodes = reference.shadowRoot ? scan(reference.shadowRoot) : [];
-      const container = nodes.find(e => e.classList.contains('now-form-field-messages'));
-      if (!container) return;
+      const control = nodes.find(e => e.localName === 'now-typeahead' && e.helpers?.updateProperties);
+      if (!control) return;
       const current = ++generation;
       const key = `${p.value}|${code}`;
-      const old = container.querySelector('[data-sn-ai-ils-note]');
-      if (!code || !p.value) { restore(old); return; }
+      if (!code || !p.value) { renderNativeNote(control, ''); return; }
       if (!ilsStoreNotes.has(code)) {
         const request = (async () => {
           const controller = new AbortController();
@@ -4751,23 +4761,7 @@ const snAIChatDisplayNames=(()=>{
       const latest = reference.dAProps;
       const latestLocation = String((latest.fields?.u_location || latest.fields?.location)?.displayValue || '').trim().split(/\s/)[0].toUpperCase();
       if (current !== generation || !reference.isConnected || `${latest.value}|${latestLocation}` !== key) return;
-      const normalize = text => String(text || '').replace(/\s+/g,' ').trim().replace(/[.]+$/,'');
-      const native = [...container.querySelectorAll('.now-form-field-message.-info')].filter(e => !e.hasAttribute('data-sn-ai-ils-note'));
-      const duplicate = native.some(e => normalize(e.textContent) === normalize(note) || normalize(e.textContent).startsWith(normalize(note) + '. '));
-      if (!note || duplicate) { restore(old); return; }
-      // Keep native notices intact, but present the ILS prefix and existing
-      // user text together in the same native info box.
-      const target = native[0] || old || document.createElement('div');
-      const label = target.querySelector('.now-line-height-crop');
-      const original = target.dataset.snAiIlsOriginal ?? (label?.textContent || '');
-      target.dataset.snAiIlsOriginal = original;
-      target.setAttribute('data-sn-ai-ils-note','');
-      target.className = 'now-form-field-message -info';
-      if (!label) target.innerHTML = '<now-icon class="now-form-field-message-icon now-m-inline-end--xs" icon="info-circle-outline"></now-icon><p class="now-form-field-message-label"><span class="now-line-height-crop"></span></p>';
-      const text = original && normalize(original) !== normalize(note) ? `${note.replace(/[.]+$/,'')}. ${original}` : note;
-      const caption = target.querySelector('.now-line-height-crop');
-      if (caption.textContent !== text) caption.textContent = text;
-      if (!target.isConnected) container.prepend(target);
+      renderNativeNote(control, note);
     }
     check();
   }
@@ -19707,7 +19701,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.394' });
+    addLog('info', 'helper-version', { version: '2.36.395' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
