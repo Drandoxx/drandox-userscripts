@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.395
+// @version      2.36.396
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -3809,6 +3809,53 @@ const snAIChatDisplayNames=(()=>{
       || field.getProperties?.()?.label==='Name');
     if(row && name && name.nextElementSibling!==row)name.after(row);
   }
+  const snCopySuccessIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check preview-icon" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+  const snLucideCopyIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-copy" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
+  function ilsInstanceNumber(text) {
+    const source = String(text || '');
+    const index = source.search(/ILS/i);
+    if (index < 0) return null;
+    const match = source.slice(index + 3).match(/\d+/) || source.slice(0,index).match(/\d+/);
+    const number = Number(match?.[0]);
+    return Number.isInteger(number) && number >= 1 && number <= 16 ? number : null;
+  }
+  function installILSLinkCopy(message) {
+    if (!message?.matches?.('.now-form-field-message')) return;
+    const caption = message.querySelector('.now-line-height-crop');
+    if (!caption) return;
+    const number = ilsInstanceNumber(caption.textContent);
+    let button = caption.querySelector('[data-sn-ai-ils-copy]');
+    if (!number) { button?.remove(); return; }
+    if (button) { button.dataset.instance = String(number); return; }
+    button = document.createElement('button');
+    button.type = 'button'; button.dataset.snAiIlsCopy = ''; button.dataset.instance = String(number);
+    button.title = 'Copy ILS instance link'; button.setAttribute('aria-label','Copy ILS instance link');
+    button.style.cssText = 'display:inline-flex!important;align-items:center;justify-content:center;vertical-align:middle;width:14px!important;height:14px!important;min-width:0!important;min-height:0!important;padding:0!important;margin:0 0 0 4px!important;border:0!important;border-radius:0!important;background:transparent!important;color:inherit!important;cursor:pointer;';
+    const setIcon = svg => { button.innerHTML = svg; const icon = button.firstElementChild; icon.style.width = '14px'; icon.style.height = '14px'; };
+    setIcon(snLucideCopyIcon);
+    let resetTimer, notice;
+    button.addEventListener('click', async event => {
+      event.preventDefault(); event.stopPropagation();
+      const instance = Number(button.dataset.instance);
+      if (!Number.isInteger(instance) || instance < 1 || instance > 16) return;
+      const link = `http://ilstc${instance}.sfd.net/cgi-bin/web_om_tcr.exe`;
+      clearTimeout(resetTimer); notice?.remove();
+      try {
+        if (typeof GM_setClipboard === 'function') await GM_setClipboard(link,'text');
+        else await navigator.clipboard.writeText(link);
+        setIcon(snCopySuccessIcon);
+        notice = document.createElement('span'); notice.setAttribute('role','status');
+        notice.textContent = 'ILS instance link copied';
+        notice.style.cssText = 'position:fixed;z-index:2147483647;max-width:calc(100vw - 16px);box-sizing:border-box;padding:5px 9px;border:1px solid var(--sn-theme-655573,#74618b);border-radius:6px;background:var(--sn-theme-251f31,#251f31);color:var(--sn-theme-e6edf9,#e6edf9);font:12px/16px "Source Sans Pro",arial,sans-serif;pointer-events:none;box-shadow:0 3px 10px #0003;';
+        document.body.append(notice);
+        const anchor = button.getBoundingClientRect(), bounds = notice.getBoundingClientRect();
+        notice.style.left = `${Math.max(8,Math.min(window.innerWidth-bounds.width-8,anchor.left+anchor.width/2-bounds.width/2))}px`;
+        notice.style.top = `${Math.max(8,anchor.top-bounds.height-6)}px`;
+        resetTimer = setTimeout(() => { notice?.remove(); notice = null; setIcon(snLucideCopyIcon); },5000);
+      } catch { button.title = 'Could not copy ILS instance link'; setIcon(snLucideCopyIcon); }
+    });
+    caption.append(button);
+  }
   function installUserReferenceEmail(host){
     positionUserReferenceEmail(host.parentElement);
     if(!host.matches?.('sn-record-reference-connected[name="caller"]') || emailReferenceHosts.has(host))return;
@@ -3827,7 +3874,7 @@ const snAIChatDisplayNames=(()=>{
     ensureSpaceRoot(emailRoot);
     const emailInput=emailRoot.querySelector('input'),copyButton=emailRoot.querySelector('button');
     const copyIcon=copyButton.innerHTML;
-    const copiedIcon='<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check"><path d="M20 6 9 17l-5-5"/></svg>';
+    const copiedIcon=snCopySuccessIcon.replace('width="24" height="24"','width="18" height="18"');
     let copiedTimer;
     copyButton.addEventListener('click',async()=>{
       if(!emailInput.value)return;
@@ -4501,7 +4548,7 @@ const snAIChatDisplayNames=(()=>{
           try {
             if (typeof GM_setClipboard === 'function') await GM_setClipboard(value, 'text');
             else await navigator.clipboard.writeText(value);
-            copy.innerHTML = icon('<path d="m9 12 2 2 4-4"/><circle cx="12" cy="12" r="10"/>');
+            copy.innerHTML = snCopySuccessIcon.replace('width="24" height="24"','width="18" height="18"');
             popup.textContent = value + ' copied'; popup.hidden = false;
           } catch {
             popup.textContent = 'Could not copy INC'; popup.hidden = false;
@@ -4749,7 +4796,7 @@ const snAIChatDisplayNames=(()=>{
             const row = (await response.json()).result?.[0];
             if (String(row?.user_name || '').toUpperCase() !== code) return '';
             const note = String(row.u_alert_notes || '').trim();
-            return /\bILS\s+Instance\b/i.test(note) ? note : '';
+            return ilsInstanceNumber(note) ? note : '';
           } finally { clearTimeout(timeout); }
         })();
         ilsStoreNotes.set(code, request);
@@ -4766,6 +4813,7 @@ const snAIChatDisplayNames=(()=>{
     check();
   }
   function discover(node) {
+    installILSLinkCopy(node.nodeType === 3 ? node.parentElement?.closest('.now-form-field-message') : (node.closest?.('.now-form-field-message') || node));
     installILSStoreNote(node.host || node);
     if(node.nodeType===3)keepShortChatCaption(node.parentElement);
     else if(node.matches?.('.now-dropdown-list-label,.now-button-label,.now-line-height-crop'))keepShortChatCaption(node);
@@ -4888,6 +4936,7 @@ const snAIChatDisplayNames=(()=>{
     if (node.nodeType === 1 && node.shadowRoot) watch(node.shadowRoot);
     else queueLateShadowHost(node);
     for (const element of node.querySelectorAll?.('*') || []) {
+      installILSLinkCopy(element);
       for (const child of element.childNodes) if (child.nodeType===3 && child.textContent.trim()==='Related Search Results' && kbAssistAncestor(element)) child.textContent='Search Results';
       installResponsiveKBPanel(element);
       queueNewChatGreeting(element);
@@ -19701,7 +19750,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.395' });
+    addLog('info', 'helper-version', { version: '2.36.396' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
