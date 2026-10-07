@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.530.0
+// @version      1.531.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -5785,7 +5785,29 @@
       measurementLastSave = Date.now();
     }
   }
+  const ACTIVE_CALL_WINDOW_KEY = 'genesys-v2-active-call-window';
   let activeCallSummary = null;
+  if (window === window.top) {
+    try {
+      const saved = GM_getValue(ACTIVE_CALL_WINDOW_KEY, null);
+      if (saved && Array.isArray(saved.details) && Date.now() - saved.updatedAt < 2 * 60 * 60 * 1000) activeCallSummary = saved;
+    } catch (_) { /* Storage unavailable. */ }
+  }
+  let activeCallSavedSignature = '';
+  function saveActiveCallWindow() {
+    if (!activeCallSummary) { GM_deleteValue(ACTIVE_CALL_WINDOW_KEY); activeCallSavedSignature = ''; return; }
+    const signature = JSON.stringify(activeCallSummary.details) + activeCallSummary.connectedAt;
+    if (signature !== activeCallSavedSignature || Date.now() - (activeCallSummary.updatedAt || 0) > 10000) {
+      activeCallSummary.updatedAt = Date.now(); GM_setValue(ACTIVE_CALL_WINDOW_KEY, activeCallSummary);
+      activeCallSavedSignature = signature;
+    }
+  }
+  function finishActiveCall() {
+    if (!activeCallSummary) return;
+    lastCallSummary = {startedAt:activeCallSummary.connectedAt || activeCallSummary.ringingAt,
+      endedAt:Date.now(),details:activeCallSummary.details,wrapupSeconds:null,wrapupObservedAt:Date.now()};
+    activeCallSummary = null; saveActiveCallWindow(); saveLastCallWindow();
+  }
   const LAST_CALL_WINDOW_KEY = 'genesys-v2-last-call-window';
   const LAST_CALL_WINDOW_TTL = 2 * 60 * 60 * 1000;
   let lastCallSummary = null;
@@ -5814,7 +5836,7 @@
     if (lastCallSummary && Date.now() - lastCallSummary.endedAt >= LAST_CALL_WINDOW_TTL) {
       lastCallSummary = null; saveLastCallWindow();
     }
-    if (!lastCallSummary || lastCallSummary.dismissed || Date.now() - lastCallSummary.endedAt < 25000) { popup?.remove(); return; }
+    if (!lastCallSummary || lastCallSummary.dismissed || (!wrapup && Date.now() - lastCallSummary.endedAt < 25000)) { popup?.remove(); return; }
     if (popup?.__gbsDragging) return;
     const liveDuration = wrapup?.querySelector('[data-testid="wrapup-header-message-duration"]')?.textContent?.trim();
     if (liveDuration && /^\d{1,2}:\d{2}$/.test(liveDuration)) {
@@ -5823,6 +5845,7 @@
         lastCallSummary.nativeCountdown = liveDuration;
         lastCallSummary.wrapupSeconds = minutes * 60 + seconds;
         lastCallSummary.wrapupObservedAt = Date.now();
+        saveLastCallWindow();
       }
     }
     if (!popup) {
@@ -5904,9 +5927,13 @@
     const incoming = Boolean(incomingAction) || (callTestEnabled(doc) && Boolean(testCallSession
       && !testCallSession.answeredAt && !testCallSession.finishedAt && !testCallSession.timeoutAt));
     const selected = [...doc.querySelectorAll('.selected-interaction-container')].find(visible);
-    const wrapup = [...collectReachableDocuments()].flatMap(frameDoc => [...frameDoc.querySelectorAll('[data-testid="wrapup-main-container"]')]).find(visible);
+    const wrapup = [...collectReachableDocuments()].flatMap(frameDoc => [...frameDoc.querySelectorAll('[data-testid="wrapup-main-container"], .wrapup-message-container')]).find(element => element.querySelector('[data-testid="wrapup-header-message-duration"]'));
     let popup = doc.getElementById('gbs-call-information');
+    if (wrapup && !incoming) {
+      finishActiveCall(); popup?.remove(); syncLastCallDataPopup(doc, wrapup); return;
+    }
     if (!selected && !incoming) {
+      if (activeCallSummary && /waiting on queue/i.test(doc.querySelector('.command-panel.active.agent')?.textContent || '')) finishActiveCall();
       // Panel disappearance is not an explicit Disconnected transition.
       syncLastCallDataPopup(doc, wrapup);
       if (popup && testCallSession && !testCallSession.finishedAt) {
@@ -5968,11 +5995,14 @@
           details: details.size ? [...details] : activeCallSummary.details, wrapupSeconds: null, wrapupObservedAt: Date.now() };
         saveLastCallWindow();
         activeCallSummary = null;
+        saveActiveCallWindow();
       }
       popup?.remove(); syncLastCallDataPopup(doc, wrapup); return;
     }
     if (!incoming && /^connected$/i.test(state) && !activeCallSummary.connectedAt) activeCallSummary.connectedAt = Date.now();
-    activeCallSummary.details = [...details];
+    if (details.size) activeCallSummary.details = [...details];
+    else for (const [label, value] of activeCallSummary.details) details.set(label, value);
+    saveActiveCallWindow();
     doc.getElementById('gbs-last-call-data')?.remove();
     if (!popup) {
       popup = doc.createElement('section');
@@ -6179,9 +6209,10 @@
   function closeWorkspaceAfterCallEnds(doc) {
     const panel = doc.querySelector('.command-panel.active.agent');
     if (!panel || panel.classList.contains('hidden')) return;
-    const wrapup = panel.querySelector('[data-testid="wrapup-main-container"]');
+    if (activeCallSummary) panel.dataset.gbsHadSelectedInteraction = 'true';
+    const wrapup = [...collectReachableDocuments()].some(frameDoc => frameDoc.querySelector('[data-testid="wrapup-header-message-duration"]'));
     const activeCall = panel.querySelector('.selected-interaction-container .acd-interaction, .selected-interaction-container [class*="interaction-grid"]');
-    if (activeCall && !wrapup) {
+    if (activeCall || wrapup || doc.querySelector('.messenger-shown [data-action="answerInteraction"]')) {
       panel.dataset.gbsHadSelectedInteraction = 'true';
       if (panel.__gbsCallEndCloseTimer) {
         doc.defaultView.clearTimeout(panel.__gbsCallEndCloseTimer);
@@ -6191,10 +6222,11 @@
     }
     // Only react after a real selected interaction was present. This prevents
     // a manually opened empty Workspace from being closed on initial mount.
-    if (panel.dataset.gbsHadSelectedInteraction !== 'true' || panel.__gbsCallEndCloseTimer) return;
+    if ((panel.dataset.gbsHadSelectedInteraction !== 'true' && !(lastCallSummary && /waiting on queue/i.test(panel.textContent || ''))) || panel.__gbsCallEndCloseTimer) return;
     panel.__gbsCallEndCloseTimer = doc.defaultView.setTimeout(() => {
       panel.__gbsCallEndCloseTimer = 0;
       if (!panel.isConnected || panel.querySelector('.selected-interaction-container .acd-interaction, .selected-interaction-container [class*="interaction-grid"]')) return;
+      if ([...collectReachableDocuments()].some(frameDoc => frameDoc.querySelector('[data-testid="wrapup-header-message-duration"]')) || doc.querySelector('.messenger-shown [data-action="answerInteraction"]')) return;
       delete panel.dataset.gbsHadSelectedInteraction;
       panel.querySelector('#panel-agent-close-button')?.click();
     }, 450);
