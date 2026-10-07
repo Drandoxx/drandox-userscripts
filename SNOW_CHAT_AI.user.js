@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.380
+// @version      2.36.381
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -4645,6 +4645,8 @@ const snAIChatDisplayNames=(()=>{
     catch (error) { element.removeAttribute('popover');style.remove();elevatedImageViewers.delete(element);console.warn('[SN AI image viewer]',error); }
   }
   function discover(node) {
+    if(node.localName==='sn-agent-inbox')document.dispatchEvent(new CustomEvent('sn-ai-agent-inbox-ready',{detail:node}));
+    if(node.matches?.('.sn-inbox')&&node.getRootNode().host?.localName==='sn-agent-inbox')document.dispatchEvent(new CustomEvent('sn-ai-agent-inbox-ready',{detail:node.getRootNode().host}));
     preserveNativeSnowColors(node);
     for(const element of node.querySelectorAll?.(nativeSnowColorSelector)||[])preserveNativeSnowColors(element);
     installInteractionDisplayName(node.nodeType===3?node.parentElement?.closest('a[data-testisrecordlink="true"]'):(node.closest?.('a[data-testisrecordlink="true"]')||node));
@@ -19517,7 +19519,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.380' });
+    addLog('info', 'helper-version', { version: '2.36.381' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -21040,26 +21042,35 @@ function installAgentDashboardPopup() {
   if (window.top!==window || !location.pathname.startsWith('/now/workspace/agent') || document.getElementById('sn-ai-agent-dashboard')) return;
   const widgets=[['Available','e2c6a2ba010a2398297b1ac8b4ae27a5','a2b0596cec6b9d49dd1ff9bf76b5084b'],['Away','a154f72bda3af38c12b18a3b0d19abbe','23051643b7e03010097cb81cde11a910']];
   const payload={request:widgets.map(([,id,macro])=>({details:{visualizationId:id,followFilter:true,macroponentSysId:macro},configurations:{widgetSysId:id}})),filters:{filterConfigurations:[{filterId:'099bbeaa4b06dc569ed0ca313accd6d1',values:['9cbdc90d1bc66110a95a8732f54bcbec'],origin:'FILTER_COMPONENT',apply_to:['u_available_agents_by_group.grp_group'],label:'Assignment Groups',source:{encodedQuery:'nameLIKEagent chat',payload:{reference:'',table:'sys_user_group',primaryKey:'sys_id'},type:'table'},type:'choice',order:0,include_unmatched_or_empty:false}]},requestId:'6a075e289785aa2f2a4ded6d375b1bb1',dashboardDetails:{dashboardSysId:'6a075e289785aa2f2a4ded6d375b1bb1',canvasSysId:'b00e0e16585da20a65feb4311ccbf867'},type:'visSysId'};
-  const host=document.createElement('div');host.id='sn-ai-agent-dashboard';document.body.append(host);
+  const host=document.createElement('div');host.id='sn-ai-agent-dashboard';host.hidden=true;document.body.append(host);
   const root=host.attachShadow({mode:'open'});
   root.innerHTML=`<style>
     :host{font:14px/1.4 system-ui;color:var(--sn-theme-e6edf9,#eee6ff)}
     *{box-sizing:border-box}button{font:inherit;color:inherit;background:var(--sn-theme-251f31,#241c33);border:1px solid var(--sn-theme-655573,#74618b);border-radius:7px;padding:5px 9px;cursor:pointer}button:hover{background:var(--sn-theme-49365a,#49365a)}button:focus-visible{outline:2px solid var(--sn-theme-ac94ec,#ac94ec);outline-offset:2px}button:disabled{opacity:.55;cursor:wait}
-    .launch{position:fixed;bottom:16px;right:16px;z-index:2147483646}
-    .panel{position:fixed;top:115px;left:calc(100vw - 390px);width:min(370px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;z-index:2147483646;background:var(--sn-theme-191621,#191426);border:1px solid var(--sn-theme-655573,#74618b);border-radius:12px;box-shadow:0 8px 30px #0005}
-    [hidden]{display:none!important}.head{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--sn-theme-423750,#423750);cursor:move;touch-action:none;user-select:none}.head strong{flex:1}.columns{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px}.column{min-width:0;background:var(--sn-theme-251f31,#241c33);border-radius:8px;padding:9px}h3{font-size:14px;margin:0 0 8px}ul{list-style:none;padding:0;margin:0;max-height:260px;overflow:auto}li{padding:4px 0;overflow-wrap:anywhere}.status{margin:0;padding:0 12px 10px;font-size:11px;color:var(--sn-theme-a8b8d1,#beb0d1)}.available{border-top:3px solid var(--sn-theme-9de2f5,#9de2f5)}.away{border-top:3px solid var(--sn-theme-ac94ec,#ac94ec)}
-  </style><button class="launch" aria-expanded="true">Agents</button><section class="panel" role="dialog" aria-label="Agent Chat Dashboard"><header class="head"><strong>Agent Chat Dashboard</strong><button class="refresh" aria-label="Refresh agents">↻</button><button class="close" aria-label="Close agent dashboard">×</button></header><div class="columns"><section class="column available"><h3>Available</h3><ul aria-label="Available agents"><li>Loading…</li></ul></section><section class="column away"><h3>Away</h3><ul aria-label="Away agents"><li>Loading…</li></ul></section></div><p class="status" role="status">Service Desk UK Agent Chat · Auto refresh: 30s</p></section>`;
-  const panel=root.querySelector('.panel'),launcher=root.querySelector('.launch'),refreshButton=root.querySelector('.refresh'),status=root.querySelector('.status');
-  let timer=null,pending=false,controller=null,failures=0,lastSuccess='',retryAt=0;
-  const clampPosition=(x,y)=>{const b=panel.getBoundingClientRect();panel.style.left=Math.max(8,Math.min(x,innerWidth-b.width-8))+'px';panel.style.top=Math.max(8,Math.min(y,innerHeight-Math.min(b.height,innerHeight-16)-8))+'px';};
-  try{const position=JSON.parse(sessionStorage.getItem('sn-ai-agent-dashboard-position'));if(position)clampPosition(position.x,position.y);}catch{}
+    :host([hidden]){display:none!important}:host{display:block;flex:0 0 auto;margin:8px 10px}
+    .panel{position:relative;width:100%;background:transparent}.columns{display:grid;grid-template-columns:1fr 1fr;background:color-mix(in srgb,var(--sn-theme-251f31,#241c33) 65%,transparent);border:1px solid var(--sn-theme-423750,#423750);border-radius:8px;overflow:hidden}.column{min-width:0;padding:8px 10px}.column+.column{border-left:1px solid var(--sn-theme-423750,#423750)}h3{font-size:13px;margin:0 0 6px;padding-right:18px}.available h3{color:var(--agent-available,#91d6b2)}.away h3{color:var(--agent-away,#ffc54c)}ul{list-style:none;padding:0;margin:0;max-height:100px;overflow:auto}li{padding:2px 0;overflow-wrap:anywhere;font-size:12px}.status{margin:5px 0 0;text-align:center;font-size:10px;color:var(--sn-theme-a8b8d1,#beb0d1)}.refresh{position:absolute;top:4px;right:5px;font-size:13px;line-height:1;padding:3px 5px;background:transparent}
+  </style><section class="panel" aria-label="Agent availability"><button class="refresh" aria-label="Refresh agents">↻</button><div class="columns"><section class="column available"><h3>Available</h3><ul aria-label="Available agents"><li>Loading…</li></ul></section><section class="column away"><h3>Away</h3><ul aria-label="Away agents"><li>Loading…</li></ul></section></div><p class="status" role="status">Loading…</p></section>`;
+  const panel=root.querySelector('.panel'),refreshButton=root.querySelector('.refresh'),status=root.querySelector('.status');
+  let timer=null,pending=false,controller=null,failures=0,lastSuccess=0,retryAt=0,dockObserver=null;
+  const age=()=>lastSuccess?'Updated '+Math.floor((Date.now()-lastSuccess)/1000)+' seconds ago':'Not updated yet';
+  const mount=inbox=>{
+    const scope=inbox?.shadowRoot,container=scope?.querySelector('.sn-inbox');if(!container)return;
+    container.style.display='flex';container.style.flexDirection='column';container.style.height='100%';container.style.minHeight='0';container.style.overflow='hidden';
+    const cards=container.querySelector('.sn-card-list');if(cards){cards.style.flex='1 1 0';cards.style.minHeight='0';cards.style.height='auto';cards.style.overflowY='auto';}
+    if(host.parentElement!==container)container.append(host);host.hidden=false;
+    const colors=r=>{for(const option of r.querySelectorAll('select[data-sn-ai-presence] option'))if(['Available','Away'].includes(option.value))host.style.setProperty('--agent-'+option.value.toLowerCase(),getComputedStyle(option).color);for(const e of r.querySelectorAll('*'))if(e.shadowRoot)colors(e.shadowRoot);};colors(scope);
+    dockObserver?.disconnect();dockObserver=new MutationObserver(()=>{if(!host.isConnected||host.parentElement!==scope.querySelector('.sn-inbox'))mount(inbox);});dockObserver.observe(scope,{childList:true,subtree:true});
+  };
+  document.addEventListener('sn-ai-agent-inbox-ready',event=>mount(event.detail));
+  const find=r=>{for(const e of r.querySelectorAll('*')){if(e.localName==='sn-agent-inbox')mount(e);if(e.shadowRoot&&e!==host)find(e.shadowRoot);}};find(document);
+  document.addEventListener('sn-ai-theme-palette',()=>requestAnimationFrame(()=>find(document)));
   const stop=()=>{clearTimeout(timer);timer=null;};
   const schedule=()=>{stop();if(!panel.hidden&&!document.hidden)timer=setTimeout(load,Math.max(retryAt-Date.now(),Math.min(120000,30000*2**failures)));};
   async function load(){
     if(pending||panel.hidden||document.hidden)return;
     if(Date.now()<retryAt){status.textContent='Rate limited · Retry in '+Math.ceil((retryAt-Date.now())/1000)+'s';schedule();return;}
     stop();pending=true;refreshButton.disabled=true;controller=new AbortController();const timeout=setTimeout(()=>controller?.abort(),90000);
-    status.textContent='Refreshing…'+(lastSuccess?' Last update: '+lastSuccess:'');
+    status.textContent='Refreshing…';
     try{
       const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
       if(!page.g_ck)throw new Error('Session is not ready');
@@ -21069,22 +21080,15 @@ function installAgentDashboardPopup() {
       const json=await response.json();if(!Array.isArray(json.result))throw new Error('Unexpected analytics response');
       const lists=widgets.map(([,id])=>{const item=json.result.find(r=>r.details?.visualizationId===id);if(!item||item.statusCode!==200||!Array.isArray(item.dataResponses))throw new Error('Missing agent results');return item.dataResponses.flatMap(r=>(r.response?.data||[]).slice(1)).map(row=>({name:String(row[0]||''),count:Number(row[1]||1)})).filter(row=>row.name);});
       lists.forEach((rows,index)=>{const list=root.querySelectorAll('ul')[index];list.replaceChildren();if(!rows.length){const li=document.createElement('li');li.textContent='No agents';list.append(li);}for(const row of rows){const li=document.createElement('li');li.textContent=row.name+(row.count>1?' × '+row.count:'');list.append(li);}});
-      failures=0;lastSuccess=new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});status.textContent='Updated '+lastSuccess+' · Service Desk UK Agent Chat · Auto: 30s';
-    }catch(error){failures=Math.min(2,failures+1);status.textContent='Refresh failed: '+(error.name==='AbortError'?'timed out':error.message)+(lastSuccess?' · Showing '+lastSuccess:'')+' · Retry in '+Math.min(120,30*2**failures)+'s';}
+      failures=0;lastSuccess=Date.now();status.textContent=age();
+    }catch(error){failures=Math.min(2,failures+1);status.textContent='Refresh failed · '+age();status.title=error.message;}
     finally{clearTimeout(timeout);controller=null;pending=false;refreshButton.disabled=false;schedule();}
   }
   refreshButton.addEventListener('click',load);
-  root.querySelector('.close').addEventListener('click',()=>{panel.hidden=true;launcher.setAttribute('aria-expanded','false');stop();controller?.abort();});
-  launcher.addEventListener('click',()=>{panel.hidden=!panel.hidden;launcher.setAttribute('aria-expanded',String(!panel.hidden));if(panel.hidden){stop();controller?.abort();}else{clampPosition(parseFloat(panel.style.left)||innerWidth-390,parseFloat(panel.style.top)||115);load();}});
-  const head=root.querySelector('.head');let drag=null;
-  head.addEventListener('pointerdown',event=>{if(event.target.closest('button')||event.button!==0)return;const b=panel.getBoundingClientRect();drag={x:event.clientX-b.x,y:event.clientY-b.y};head.setPointerCapture(event.pointerId);event.preventDefault();});
-  head.addEventListener('pointermove',event=>{if(drag)clampPosition(event.clientX-drag.x,event.clientY-drag.y);});
-  const finish=()=>{if(!drag)return;drag=null;try{sessionStorage.setItem('sn-ai-agent-dashboard-position',JSON.stringify({x:parseFloat(panel.style.left),y:parseFloat(panel.style.top)}));}catch{}};
-  head.addEventListener('pointerup',finish);head.addEventListener('pointercancel',finish);
-  window.addEventListener('resize',()=>{if(!panel.hidden)clampPosition(parseFloat(panel.style.left)||innerWidth-390,parseFloat(panel.style.top)||115);});
+  const ageTicker=setInterval(()=>{if(!document.hidden&&!pending&&!failures&&lastSuccess)status.textContent=age();},1000);
   document.addEventListener('visibilitychange',()=>{stop();if(!document.hidden&&!panel.hidden)load();});
-  window.addEventListener('pagehide',()=>{stop();controller?.abort();});
-  clampPosition(parseFloat(panel.style.left)||innerWidth-390,parseFloat(panel.style.top)||115);load();
+  window.addEventListener('pagehide',()=>{stop();clearInterval(ageTicker);dockObserver?.disconnect();controller?.abort();});
+  load();
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installAgentDashboardPopup,{once:true});else installAgentDashboardPopup();
 
