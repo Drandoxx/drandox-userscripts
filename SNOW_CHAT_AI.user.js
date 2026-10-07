@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.392
+// @version      2.36.393
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -15480,7 +15480,11 @@ function startSNAI(tabIdentity) {
       prepare?.();
       windowElement.hidden = false;
       windowElement.style.visibility = 'hidden';
+      viewportBubbles.add(windowElement);
+      bubbleSizeObserver.observe(windowElement);
+      bubbleVisibilityObserver.observe(windowElement, { attributes: true, attributeFilter: ['hidden', 'class'] });
       position?.();
+      fitBubbleInViewport(windowElement);
       const windowRect = windowElement.getBoundingClientRect();
       windowElement.hidden = true;
       windowElement.style.visibility = '';
@@ -15606,7 +15610,52 @@ function startSNAI(tabIdentity) {
         afterOpen: () => collapsedCommandInput.focus(),
       });
     };
+    const viewportBubbles = new Set();
+    const fitBubbleInViewport = (element) => {
+      if (!element.isConnected || element.hidden || element.classList.contains('local-sn-window-animating')) return;
+      const viewport = window.visualViewport;
+      const left = (viewport?.offsetLeft || 0) + 8;
+      const top = (viewport?.offsetTop || 0) + 8;
+      const width = Math.max(1, (viewport?.width || window.innerWidth) - 16);
+      const height = Math.max(1, (viewport?.height || window.innerHeight) - 16);
+      element.style.maxWidth = `${width}px`;
+      element.style.maxHeight = `${height}px`;
+      element.style.boxSizing = 'border-box';
+      let rect = element.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      // Oversized content remains reachable by scrolling, never by putting a
+      // wall outside the viewport. Regular card scrollers remain unchanged.
+      element.style.overflowY = element.scrollHeight > height ? 'auto' : '';
+      rect = element.getBoundingClientRect();
+      const x = Math.max(left, Math.min(left + width - rect.width, rect.left));
+      const y = Math.max(top, Math.min(top + height - rect.height, rect.top));
+      if (Math.abs(x - rect.left) < .5 && Math.abs(y - rect.top) < .5) return;
+      element.style.inset = 'auto';
+      element.style.transform = 'none';
+      element.style.left = `${x}px`;
+      element.style.top = `${y}px`;
+    };
+    let bubbleFitFrame = 0;
+    const scheduleBubbleFit = () => {
+      if (bubbleFitFrame) return;
+      bubbleFitFrame = requestAnimationFrame(() => {
+        bubbleFitFrame = 0;
+        for (const element of viewportBubbles) {
+          if (!element.isConnected) { bubbleSizeObserver.unobserve(element); viewportBubbles.delete(element); }
+          else fitBubbleInViewport(element);
+        }
+      });
+    };
+    const bubbleSizeObserver = new ResizeObserver(scheduleBubbleFit);
+    const bubbleVisibilityObserver = new MutationObserver(scheduleBubbleFit);
+    window.addEventListener('resize', scheduleBubbleFit);
+    window.visualViewport?.addEventListener('resize', scheduleBubbleFit);
+    window.visualViewport?.addEventListener('scroll', scheduleBubbleFit);
     const makeWindowDraggable = (windowElement, dragHandle) => {
+      viewportBubbles.add(windowElement);
+      bubbleSizeObserver.observe(windowElement);
+      bubbleVisibilityObserver.observe(windowElement, { attributes: true, attributeFilter: ['hidden', 'class'] });
+      scheduleBubbleFit();
       dragHandle.addEventListener('pointerdown', (event) => {
         if (event.button !== 0 || event.target.closest('button, input, select, textarea, label')) return;
         const pointerStartX = event.clientX;
@@ -15632,6 +15681,7 @@ function startSNAI(tabIdentity) {
           const maxTop = Math.max(0, window.innerHeight - windowElement.offsetHeight);
           windowElement.style.left = `${Math.min(maxLeft, Math.max(0, moveEvent.clientX - offsetX))}px`;
           windowElement.style.top = `${Math.min(maxTop, Math.max(0, moveEvent.clientY - offsetY))}px`;
+          fitBubbleInViewport(windowElement);
         };
         const stop = () => {
           // A pointer-up after a real drag also emits a click. Remember it briefly so
@@ -19575,7 +19625,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.392' });
+    addLog('info', 'helper-version', { version: '2.36.393' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
