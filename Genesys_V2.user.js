@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.537.0
+// @version      1.538.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -218,8 +218,18 @@
     }
   }
 
+  let manualUpdateResultPending = false;
+  function showManualUpdateProgress(message) {
+    showGenesysUpdateNotice(GM_info.script.version, null, true);
+    const root = document.getElementById?.('gbs-official-update-notice')?.shadowRoot;
+    if (root) { root.querySelector('.title').textContent = message; root.querySelector('.versions').textContent = `Running: ${GM_info.script.version}`; }
+  }
   async function checkGenesysUpdates(manual = false) {
-    if (window !== window.top || updateCheckPending) return;
+    if (window !== window.top) return;
+    if (updateCheckPending) {
+      if (manual) { manualUpdateResultPending = true; showManualUpdateProgress('Checking for updates…'); }
+      return;
+    }
     if (typeof GM_xmlhttpRequest !== 'function' || typeof GM_info === 'undefined') return;
     const currentVersion = GM_info.script?.version;
     if (!/^\d+(?:\.\d+)*$/.test(String(currentVersion))) return;
@@ -236,7 +246,13 @@
       const due = manual ? (state.githubManualAt || 0) + MANUAL_MS : Math.max(state.githubAutoAt || 0, state.githubSuccessAt || 0) + HOUR_MS;
       const adminManual = manual && isSavedAdmin(document);
       if (now < due && !adminManual) { if (manual) { showUpdateCooldown(due - now); applyCachedUpdate(state, true); } return; }
-    } else if (!primaryProbe && (state.primaryRetryAt ? now < state.primaryRetryAt : !manual && now - (state.primaryAt || 0) < 10000)) return;
+    } else if (!primaryProbe && (state.primaryRetryAt ? now < state.primaryRetryAt : !manual && now - (state.primaryAt || 0) < 10000)) {
+      if (manual) {
+        if (state.cached && !state.lastPrimaryFailure && !availableUpdateRelease) showGenesysUpdateNotice(currentVersion, null, true);
+        else if (!availableUpdateRelease) showManualUpdateProgress(`Next update check in ${Math.max(1, Math.ceil((state.primaryRetryAt - now) / 1000))}s`);
+      }
+      return;
+    }
     if (manual) {
       const button = document.querySelector('.gbs-settings-check-updates');
       if (button) {
@@ -245,7 +261,11 @@
       }
     }
     const oldLock = GM_getValue(UPDATE_LOCK_KEY, null);
-    if (oldLock?.expires > now) return;
+    if (oldLock?.expires > now) {
+      if (manual) showManualUpdateProgress('Another tab is checking for updates. Try again shortly.');
+      return;
+    }
+    if (manual) showManualUpdateProgress('Checking for updates…');
     updateCheckPending = true;
     const token = String(now) + Math.random().toString(36).slice(2);
     GM_setValue(UPDATE_LOCK_KEY, { token, expires: now + 20000 });
@@ -273,6 +293,10 @@
       }
       GM_setValue(UPDATE_STATE_KEY, shared);
       releaseLock(); console.warn('[Genesys V2 update]', message);
+      if (manual || manualUpdateResultPending) {
+        manualUpdateResultPending = false;
+        showManualUpdateProgress('Update check failed. Please try again shortly.');
+      }
       if (!fallback && shared.fallback) checkGenesysUpdates(false);
     };
     if (fallback) {
@@ -308,8 +332,10 @@
             shared.cached = { id: RELEASE_ID, version: release.version, downloadUrl: allowed, source: fallback ? 'github' : 'primary' };
             if (fallback) shared.githubSuccessAt = Date.now();
             GM_setValue(UPDATE_STATE_KEY, shared);
-            releaseLock(); applyCachedUpdate(shared, manual);
-            if (manual && !availableUpdateRelease) showGenesysUpdateNotice(currentVersion, null, true);
+            const showManualResult = manual || manualUpdateResultPending;
+            manualUpdateResultPending = false;
+            releaseLock(); applyCachedUpdate(shared, showManualResult);
+            if (showManualResult && !availableUpdateRelease) showGenesysUpdateNotice(currentVersion, null, true);
           } catch (error) { warn(error.message); }
         },
         onerror: () => warn('Network request failed'),
