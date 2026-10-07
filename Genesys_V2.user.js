@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.533.0
+// @version      1.534.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -1471,6 +1471,18 @@
       pointer-events: none !important;
     }
     html:not(.gbs-light-mode) main.center-stage.side-panel-open.agent > * {
+      pointer-events: auto;
+    }
+    /* Each empty ancestor is independently hit-testable above the iframe. */
+    html:not(.gbs-light-mode) .command-view:has(main.center-stage.side-panel-open.agent),
+    html:not(.gbs-light-mode) .nav-v2-main:has(main.center-stage.side-panel-open.agent),
+    html:not(.gbs-light-mode) .command-layout:has(main.center-stage.side-panel-open.agent) {
+      pointer-events: none !important;
+    }
+    html:not(.gbs-light-mode) .nav-v2-main:has(main.center-stage.side-panel-open.agent) > .command-bar,
+    html:not(.gbs-light-mode) .command-layout:has(main.center-stage.side-panel-open.agent) > aside,
+    html:not(.gbs-light-mode) .command-view:has(main.center-stage.side-panel-open.agent) .command-panel,
+    html:not(.gbs-light-mode) .command-view:has(main.center-stage.side-panel-open.agent) .application-scroll {
       pointer-events: auto;
     }
     .command-panel.active.agent.gbs-agent-workspace-resizable {
