@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.363
+// @version      2.36.364
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -11843,8 +11843,9 @@ function startSNAI(tabIdentity) {
     for(let attempt=1;attempt<=attempts;attempt++){
       try{return await commitNativeReferenceAttempt(fieldLabel,expected,options);}
       catch(error){
-        const transient=/NATIVE_REFERENCE_(UNAVAILABLE|NO_ALLOWED_MATCH|OPTION_NOT_UNIQUE|CONTEXT_CHANGED)/.test(String(error?.message||error));
+        const transient=/NATIVE_REFERENCE_(UNAVAILABLE|NO_ALLOWED_MATCH|OPTION_NOT_UNIQUE|CONTEXT_CHANGED|COMMIT_FAILED)/.test(String(error?.message||error));
         if(!transient||attempt===attempts)throw error;
+        addLog('warn', 'native-reference-retry', { field: fieldLabel, attempt, message: String(error?.message || error) });
         // Event Type rebuilds Template Name and its scripted qualifier.
         // Resolve the replacement control and fresh encoded record each try.
         await sleep(250*attempt);
@@ -11885,10 +11886,34 @@ function startSNAI(tabIdentity) {
     // Never commit a response into a replacement component with stale context.
     if(findControlByLabel(fieldLabel,currentFormElements())!==field||host.dAProps.encodedRecord!==props.encodedRecord||host.dAProps.serializedChanges!==props.serializedChanges)throw new Error(`NATIVE_REFERENCE_CONTEXT_CHANGED: ${fieldLabel}`);
     callback.call(host,{value:resolved.value,displayValue:resolved.displayValue});
-    const result=await waitStableReferenceValue(fieldLabel,resolved.displayValue,'exact',5000,0,field);
-    const current=findControlByLabel(fieldLabel,currentFormElements());
-    if(!result.stable||matrixReferenceHost(current)?.dAProps?.value!==resolved.value)throw new Error(`NATIVE_REFERENCE_COMMIT_FAILED: ${fieldLabel}`);
-    return result.actual;
+    // Display text can update before the form model, especially while a
+    // template applies and replaces its typeahead. Verify ID and display
+    // together on the current host instead of failing on that first frame.
+    const started = performance.now();
+    let current = field, lastScan = 0, stableSince = 0, actual = '', committedId = '';
+    const timeout = comparableLabel(fieldLabel) === 'template name' ? 8000 : 5000;
+    while (performance.now() - started < timeout) {
+      if (!current?.isConnected || performance.now() - lastScan >= 250) {
+        current = findControlByLabel(fieldLabel, currentFormElements());
+        lastScan = performance.now();
+      }
+      const currentHost = current?.isConnected ? matrixReferenceHost(current) : null;
+      const currentProps = currentHost?.dAProps;
+      committedId = String(currentProps?.value || '');
+      actual = String(currentProps?.displayValue || '');
+      const committed = committedId === String(resolved.value)
+        && normalisedFieldValue(actual) === normalisedFieldValue(resolved.displayValue);
+      if (committed) {
+        if (!stableSince) stableSince = performance.now();
+        if (performance.now() - stableSince >= 250) return actual;
+      } else stableSince = 0;
+      await sleep(100);
+    }
+    addLog('warn', 'native-reference-commit-timeout', {
+      field: fieldLabel, expected: resolved.displayValue, actual,
+      recordIdMatched: committedId === String(resolved.value), controlConnected: !!current?.isConnected,
+    });
+    throw new Error(`NATIVE_REFERENCE_COMMIT_FAILED: ${fieldLabel}`);
   }
 
   async function autoLookup(fieldLabel, searchValue, options = {}) {
@@ -19284,7 +19309,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.363' });
+    addLog('info', 'helper-version', { version: '2.36.364' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
