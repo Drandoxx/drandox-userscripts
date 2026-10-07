@@ -5009,7 +5009,18 @@
       const link = doc.createElement('a'); link.href = url; link.download = 'genesys-v2-call-measurements.json'; link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     });
-    lastCall.append(title, info, download, historyDownload, measurementDownload); body.appendChild(lastCall);
+    const measurementInfo = doc.createElement('div');
+    const refreshMeasurementInfo = () => {
+      const data = GM_getValue('genesys-v2-call-measurements', {calls:[]});
+      const calls = [...(data.calls || []), ...(data.active ? [data.active] : [])];
+      measurementInfo.textContent = `${calls.length} recorded calls • ${calls.reduce((total, call) => total + (call.durationSeconds || 0), 0)} seconds measured${data.active ? ' • recording current call' : ''}. ${calls.map((call,index) => `Call ${index+1}: ${call.durationSeconds || 0}s`).join(' · ')}`;
+    };
+    refreshMeasurementInfo();
+    const measurementInfoTimer = setInterval(() => {
+      if (!measurementInfo.isConnected) { clearInterval(measurementInfoTimer); return; }
+      refreshMeasurementInfo();
+    },1000);
+    lastCall.append(title, info, download, historyDownload, measurementDownload, measurementInfo); body.appendChild(lastCall);
     checkbox.checked = showAdminCallButton(doc);
     popover.querySelector('.gbs-settings-footer .gbs-settings-save').addEventListener('click', () => {
       if (!isSavedAdmin(doc)) return;
@@ -5723,7 +5734,7 @@
     const incoming = doc.querySelector('.messenger-shown [data-action="answerInteraction"]');
     const view = incoming?.closest('.messenger-message')?.querySelector('[data-action="openAcdInteraction"] a');
     // View only loads the native panel; never answer or operate call controls.
-    if (view && !view.dataset.gbsMeasurementViewed) {
+    if (view && !view.dataset.gbsAutoViewed && !view.dataset.gbsMeasurementViewed) {
       view.dataset.gbsMeasurementViewed = 'true'; view.click();
     }
     const sources = [], inaccessible = [];
@@ -5744,10 +5755,13 @@
     const popup = doc.getElementById('gbs-call-information');
     const lastPopup = doc.getElementById('gbs-last-call-data');
     const sourceText = sources.map(source => source.text).join('\n');
-    if (!incoming && !sourceText && !popup && !lastPopup && !measurementState) return;
-    if (!measurementState) measurementState = {startedAt:new Date().toISOString(),sampleIntervalMs:1000,samples:[],droppedSamples:0,limits:'Accessible DOM only; no private native JS or cross-origin iframe access.'};
+    if (!measurementState && !popup) return;
+    if (!measurementState) {
+      measurementState = {startedAt:new Date().toISOString(),sampleIntervalMs:1000,samples:[],droppedSamples:0,limits:'Accessible DOM only; no private native JS or cross-origin iframe access.'};
+      measurementLastSignature = ''; measurementLastSave = 0;
+    }
     const sourcePhone = sourceText.match(/\+\d[\d ()-]{6,}\d/)?.[0]?.replace(/\D/g,'') || null;
-    const popupText = popup?.innerText || lastPopup?.innerText || '';
+    const popupText = popup?.innerText || '';
     const popupPhone = popupText.match(/\+\d[\d ()-]{6,}\d/)?.[0]?.replace(/\D/g,'') || null;
     const sample = {at:new Date().toISOString(),incoming:!!incoming,viewClicked:!!view?.dataset.gbsMeasurementViewed,
       sources,inaccessible,popupText,sourcePhone,popupPhone,phoneMatches:sourcePhone ? sourcePhone === popupPhone : null,
@@ -5757,7 +5771,18 @@
       measurementLastSignature = signature; measurementState.samples.push(sample);
       // Bound diagnostic storage; explicitly report any truncated early samples.
       if (measurementState.samples.length > 3000) {measurementState.samples.shift();measurementState.droppedSamples++;}
-      GM_setValue('genesys-v2-call-measurements',measurementState); measurementLastSave = Date.now();
+      const saved = GM_getValue('genesys-v2-call-measurements', {calls:[]});
+      const calls = Array.isArray(saved.calls) ? saved.calls : [];
+      measurementState.durationSeconds = Math.round((Date.now()-Date.parse(measurementState.startedAt))/1000);
+      if (sourcePhone && !measurementState.nativePhoneAt) measurementState.nativePhoneAt = sample.at;
+      if (popupPhone && !measurementState.popupPhoneAt) measurementState.popupPhoneAt = sample.at;
+      if (measurementState.nativePhoneAt && measurementState.popupPhoneAt) measurementState.phoneDelayMs = Date.parse(measurementState.popupPhoneAt)-Date.parse(measurementState.nativePhoneAt);
+      if (!incoming && !popup && !sample.countdown) {
+        measurementState.endedAt = sample.at; calls.push(measurementState);
+        GM_setValue('genesys-v2-call-measurements', {calls:calls.slice(-50),active:null});
+        measurementState = null;
+      } else GM_setValue('genesys-v2-call-measurements', {calls,active:measurementState});
+      measurementLastSave = Date.now();
     }
   }
   let activeCallSummary = null;
@@ -8869,6 +8894,7 @@ function fitDashboardMetricSpacing(doc) {
   const incomingCallTimer = window.setInterval(() => {
     watchIncomingCall(document);
     try { measureCallPopup(document); } catch (error) { console.warn('[Genesys V2] Call measurement', error); }
+    try { syncCallInformationPopup(document); } catch (_) { /* Native call panel may still be mounting. */ }
   }, 1000);
   watchIncomingCall(document);
   // A low-frequency safety sweep covers late-attached closed app widgets
