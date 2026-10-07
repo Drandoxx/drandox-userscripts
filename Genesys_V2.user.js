@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.534.0
+// @version      1.535.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -6313,6 +6313,15 @@
       || parseFloat(panel?.style.getPropertyValue('--gbs-agent-workspace-width'))
       || panel?.getBoundingClientRect().width || 0;
     hosts.forEach(host => {
+      // Native Workspace treats the dashboard as modal background and marks
+      // its wrapper inert. Our side-by-side layout must keep it interactive.
+      // Do not clear inert while a genuine settings/native modal is open.
+      const modalOpen = doc.querySelector('.gbs-settings-popover:not([hidden]), dialog[open], [aria-modal="true"]:not([hidden]), gux-modal[open]');
+      if (themeMode(doc) !== 'light' && panelVisible && !modalOpen) {
+        for (let wrapper = host; wrapper && !wrapper.matches('main.center-stage'); wrapper = wrapper.parentElement) {
+          if (wrapper.hasAttribute('inert')) wrapper.removeAttribute('inert');
+        }
+      }
       const stage = host.closest('main.center-stage');
       if (!stage || (panel && agentWorkspaceIsFullscreen(panel))) {
         ['width', 'flex', 'max-width', 'float'].forEach(property => {
