@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.536.0
+// @version      1.537.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -6313,7 +6313,20 @@
       || parseFloat(panel?.style.getPropertyValue('--gbs-agent-workspace-width'))
       || panel?.getBoundingClientRect().width || 0;
     hosts.forEach(host => {
-      // Preserve the dashboard's native inert state.
+      // Workspace is side-by-side, not modal: both Dashboard and Board remain
+      // interactive. Only release inert on this host's own native wrappers;
+      // genuine visible modal dialogs continue blocking background input.
+      const modalOpen = [...doc.querySelectorAll('.gbs-settings-popover:not([hidden]), dialog[open], [aria-modal="true"]:not([hidden]), gux-modal[open]')]
+        .some(modal => {
+          const bounds = modal.getBoundingClientRect();
+          const style = doc.defaultView.getComputedStyle(modal);
+          return bounds.width > 0 && bounds.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+        });
+      if (themeMode(doc) !== 'light' && panelVisible && !modalOpen) {
+        for (let wrapper = host; wrapper && !wrapper.matches('main.center-stage'); wrapper = wrapper.parentElement) {
+          if (wrapper.hasAttribute('inert')) wrapper.removeAttribute('inert');
+        }
+      }
       const stage = host.closest('main.center-stage');
       if (!stage || (panel && agentWorkspaceIsFullscreen(panel))) {
         ['width', 'flex', 'max-width', 'float'].forEach(property => {
