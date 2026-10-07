@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.532.0
+// @version      1.533.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -1464,6 +1464,15 @@
     .gbs-resizer svg { position: absolute !important; top: calc(50% - 1px) !important; left: 14px !important; width: 22px !important; height: 22px !important; transform: translate(-50%, -50%) !important; box-sizing: border-box !important; opacity: 1 !important; color: #e2e8f0 !important; background: #334155 !important; border: 1px solid #64748b !important; border-radius: 4px !important; padding: 3px !important; pointer-events: none !important; }
     /* Workspace divider: the actual right-hand panel is absolutely positioned;
        its enclosing aside has no width and cannot be the resize target. */
+    /* Native center-stage remains viewport-wide above the dashboard iframe
+       while Agent Workspace is open. Its empty surface must not intercept
+       Board wheel/selection input; real children (dialogs/calls) stay active. */
+    html:not(.gbs-light-mode) main.center-stage.side-panel-open.agent {
+      pointer-events: none !important;
+    }
+    html:not(.gbs-light-mode) main.center-stage.side-panel-open.agent > * {
+      pointer-events: auto;
+    }
     .command-panel.active.agent.gbs-agent-workspace-resizable {
       position: absolute !important; right: 0 !important; bottom: 0 !important;
       flex: 0 0 var(--gbs-agent-workspace-width, 760px) !important;
