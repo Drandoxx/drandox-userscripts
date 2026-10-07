@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.388
+// @version      2.36.389
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -4197,6 +4197,17 @@ const snAIChatDisplayNames=(()=>{
     }
   }
   const imsReplyTimes = new Map();
+  const imsReplyStorage='sn-ai-ims-reply-times-v1';
+  const imsReplyExpiry=3600000;
+  let imsReplyLastSave=0;
+  try{for(const [id,state] of JSON.parse(sessionStorage.getItem(imsReplyStorage)||'[]'))if(state&&Date.now()-Number(state.usedAt)<imsReplyExpiry)imsReplyTimes.set(id,state);}catch{}
+  function saveIMSReplyTimes(){
+    const now=Date.now();
+    for(const [id,state] of imsReplyTimes)if(now-Number(state.usedAt||0)>imsReplyExpiry)imsReplyTimes.delete(id);
+    try{sessionStorage.setItem(imsReplyStorage,JSON.stringify([...imsReplyTimes]));}catch{}
+    imsReplyLastSave=now;
+  }
+  window.addEventListener('pagehide',saveIMSReplyTimes);
   const imsTimerTabs = new Set();
   const imsTimerUnread = new WeakMap();
   let imsReplyTicker = null;
@@ -4205,7 +4216,7 @@ const snAIChatDisplayNames=(()=>{
     return [...imsPreviewRecords.values()].find(r => r.number?.value === ims);
   }
   function imsTimerState(id) {
-    if (!imsReplyTimes.has(id)) imsReplyTimes.set(id, { left:0, right:0, last:0, provisional:0 });
+    if (!imsReplyTimes.has(id)) imsReplyTimes.set(id, { left:0, right:0, last:0, provisional:0,usedAt:Date.now() });
     return imsReplyTimes.get(id);
   }
   function installIMSReplyTimers(tab, unread = tab.classList.contains('is-updated')) {
@@ -4217,6 +4228,7 @@ const snAIChatDisplayNames=(()=>{
     if (id && unread && !imsTimerUnread.get(tab) && !tab.classList.contains('is-selected') && !isInactiveIMS(record)) {
       const state = imsTimerState(id);
       if (!state.right) state.right = state.provisional = Date.now();
+      state.ims=ims;state.usedAt=Date.now();saveIMSReplyTimes();
     }
     imsTimerUnread.set(tab, unread);
     if (!tab.querySelector('.sn-ai-ims-reply-timers')) {
@@ -4255,6 +4267,8 @@ const snAIChatDisplayNames=(()=>{
     const time = Number(m.timestamp?.valueOf?.());
     if (!agent || !sender || !Number.isFinite(time) || time <= 0) return;
     const state = imsTimerState(props.interaction);
+    state.usedAt=Date.now();
+    state.ims=imsPreviewRecords.get(props.interaction)?.number?.value||state.ims;
     if (time < state.last || (time === state.last && !reconcile)) return;
     const sameMessage = time === state.last;
     state.last = time;
@@ -4267,7 +4281,7 @@ const snAIChatDisplayNames=(()=>{
       if (!sameMessage || state.provisional) state.right = time;
       state.provisional = 0;
     }
-    paintIMSReplyTimers();
+    paintIMSReplyTimers();saveIMSReplyTimes();
   }
   function paintIMSReplyTimers() {
     const now = Date.now();
@@ -4278,8 +4292,13 @@ const snAIChatDisplayNames=(()=>{
       const record = imsTimerRecord(tab.getAttribute('aria-label'));
       const closed = tab.hasAttribute('data-sn-ai-chat-preview') || (record && isInactiveIMS(record));
       row.hidden = !!closed;
-      if (closed) { if (record) imsReplyTimes.delete(record.sys_id.value); continue; }
-      const state = record ? imsReplyTimes.get(record.sys_id.value) : null;
+      if (closed) {
+        let removed=false;for(const [id,saved] of imsReplyTimes)if(id===record?.sys_id?.value||saved.ims===tab.getAttribute('aria-label')){imsReplyTimes.delete(id);removed=true;}
+        if(removed)saveIMSReplyTimes();continue;
+      }
+      const ims=tab.getAttribute('aria-label');
+      const state = (record ? imsReplyTimes.get(record.sys_id.value) : null)||[...imsReplyTimes.values()].find(saved=>saved.ims===ims);
+      if(state){state.ims=ims;state.usedAt=now;}
       const left = state?.left ? Math.max(0, Math.floor((now - state.left) / 1000)) : 0;
       const active = tab.classList.contains('is-selected') || tab.getAttribute('aria-selected') === 'true';
       // An unread event is provisional, not proof of a customer message in the active chat.
@@ -4297,7 +4316,8 @@ const snAIChatDisplayNames=(()=>{
       const alertLabel = count ? count + ' alerts: waiting for ' + owner + ' reply' : '';
       if (alerts.getAttribute('aria-label') !== alertLabel) alerts.setAttribute('aria-label', alertLabel);
     }
-    if (!imsTimerTabs.size && imsReplyTicker) { clearInterval(imsReplyTicker); imsReplyTicker = null; imsReplyTimes.clear(); }
+    if(now-imsReplyLastSave>=60000)saveIMSReplyTimes();
+    if (!imsTimerTabs.size && imsReplyTicker) { clearInterval(imsReplyTicker); imsReplyTicker = null; saveIMSReplyTimes(); }
   }
   const incidentDefaultSections = new Set([
     'Notes', 'Related Records', 'Matrix', '3rd Party', 'Supplier Integration',
@@ -4891,7 +4911,7 @@ const snAIChatDisplayNames=(()=>{
       .sn-chrome-one-tab:has(>.sn-ai-ims-reply-timers:not([hidden])){position:relative;}
       /* Hide native IMS presence/unsaved dots without moving the title or timers. */
       .sn-chrome-one-tab[aria-label^="IMS"]>.sn-chrome-one-tab-content.has-presence{visibility:hidden!important;pointer-events:none!important;}
-      .sn-chrome-one-tab[aria-label^="IMS"]>.sn-chrome-one-tab-content:not(.has-icon):not(.has-presence){flex:1 1 auto!important;min-width:0!important;max-width:none!important;transform:translateY(-3px);}
+      .sn-chrome-one-tab[aria-label^="IMS"]>.sn-chrome-one-tab-content:not(.has-icon):not(.has-presence){flex:1 1 auto!important;min-width:0!important;max-width:none!important;transform:translateY(-5px);}
       .sn-chrome-one-tab[aria-label^="IMS"]>.sn-chrome-one-tab-content:not(.has-icon):not(.has-presence)>span:not(.sn-ai-chat-preview-marker){flex:0 0 auto!important;max-width:none!important;white-space:nowrap!important;}
       .sn-ai-ims-reply-timers{position:absolute;left:7px;right:auto;width:calc(10ch / .65 + 18px);bottom:7px;display:grid!important;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;font-size:.65em!important;line-height:1;font-variant-numeric:tabular-nums;color:inherit;pointer-events:none;}
       .sn-ai-ims-reply-timers[hidden]{display:none!important;}
@@ -19550,7 +19570,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.388' });
+    addLog('info', 'helper-version', { version: '2.36.389' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -21091,6 +21111,15 @@ function installAgentDashboardPopup() {
   footerStyle.textContent='.update-footer{display:flex;align-items:center;justify-content:center;gap:5px;margin-top:3px;font-size:10px;line-height:1.2;color:var(--sn-theme-a8b8d1,#beb0d1)}.update-footer .status{padding:0;margin:0;min-height:0;line-height:inherit;font-size:inherit;color:inherit}.update-footer .refresh,.update-footer .refresh:hover,.update-footer .refresh:active,.update-footer .refresh:disabled{position:static!important;flex:0 0 1em;width:1em!important;height:1em!important;min-width:0!important;font-size:inherit!important;color:inherit!important;margin:0!important}.update-footer .refresh svg{width:1em;height:1em}:host{margin-bottom:4px}';
   root.append(footerStyle);
   footerStyle.textContent+='\n.update-footer{font-size:9px}';
+  footerStyle.textContent+='\nli[data-agent-card]{margin:3px 0;padding:4px 6px;border-radius:6px;border:1px solid color-mix(in srgb,hsl(var(--agent-hue) 70% 60%) 45%,var(--sn-theme-655573,#74618b));background:color-mix(in srgb,hsl(var(--agent-hue) 70% 60%) 18%,var(--sn-theme-251f31,#241c33));color:var(--sn-theme-e6edf9,#eee6ff)}';
+  let agentColors={};try{agentColors=JSON.parse(localStorage.getItem('sn-ai-agent-name-colors-v1')||'{}');}catch{}
+  const agentHue=name=>{
+    const key=name.normalize('NFKC').trim().toLowerCase();let hash=2166136261;
+    for(const char of key)hash=Math.imul(hash^char.codePointAt(0),16777619);
+    const hue=(hash>>>0)%360;
+    if(agentColors[key]!==hue){agentColors[key]=hue;try{localStorage.setItem('sn-ai-agent-name-colors-v1',JSON.stringify(agentColors));}catch{}}
+    return hue;
+  };
   refreshButton.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>';
   let timer=null,pending=false,controller=null,failures=0,lastSuccess=0,retryAt=0,dockObserver=null;
   const age=()=>lastSuccess?'Updated '+Math.floor((Date.now()-lastSuccess)/1000)+' seconds ago':'Not updated yet';
@@ -21126,6 +21155,7 @@ function installAgentDashboardPopup() {
         const names=rows.length?rows.map(row=>row.name+(row.count>1?' × '+row.count:'')):['No agents'];
         names.forEach((name,i)=>{
           let li=list.children[i];if(!li){li=document.createElement('li');list.append(li);}
+          if(rows[i]){li.dataset.agentCard='';li.style.setProperty('--agent-hue',agentHue(rows[i].name));}else{li.removeAttribute('data-agent-card');li.style.removeProperty('--agent-hue');}
           if(li.textContent!==name){li.textContent=name;if(!matchMedia('(prefers-reduced-motion: reduce)').matches)li.animate([{opacity:.65},{opacity:1}],{duration:180,easing:'ease-out'});}
         });
         while(list.children.length>names.length)list.lastElementChild.remove();
