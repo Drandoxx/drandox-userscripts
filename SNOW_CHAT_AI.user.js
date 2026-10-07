@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.399
+// @version      2.36.400
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -19799,7 +19799,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.399' });
+    addLog('info', 'helper-version', { version: '2.36.400' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -21356,22 +21356,33 @@ function installAgentDashboardPopup() {
   };
   refreshButton.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>';
   let timer=null,pending=false,controller=null,failures=0,lastSuccess=0,retryAt=0,dockObserver=null;
+  let wasVisible=false,recoveryFrame=0;
+  const dashboardVisible=()=>!document.hidden&&!host.hidden&&host.isConnected&&host.getBoundingClientRect().width>0&&host.getBoundingClientRect().height>0;
+  const recoverDashboard=()=>{
+    if(!dashboardVisible()){wasVisible=false;stop();return;}
+    const table=root.querySelector('.columns');
+    const missing=table.getBoundingClientRect().height<2||root.querySelectorAll('ul').length!==2||[...root.querySelectorAll('ul')].some(list=>!list.children.length);
+    const returned=!wasVisible;wasVisible=true;
+    if(returned||missing){table.style.removeProperty('height');load();}
+  };
+  const scheduleRecovery=()=>{if(!recoveryFrame)recoveryFrame=requestAnimationFrame(()=>{recoveryFrame=0;recoverDashboard();});};
   const age=()=>lastSuccess?'Updated '+Math.floor((Date.now()-lastSuccess)/1000)+' seconds ago':'Not updated yet';
   const mount=inbox=>{
     const scope=inbox?.shadowRoot,container=scope?.querySelector('.sn-inbox');if(!container)return;
     container.style.display='flex';container.style.flexDirection='column';container.style.height='100%';container.style.minHeight='0';container.style.overflow='hidden';
     const cards=container.querySelector('.sn-card-list');if(cards){cards.style.flex='1 1 0';cards.style.minHeight='0';cards.style.height='auto';cards.style.overflowY='auto';}
-    if(host.parentElement!==container)container.append(host);host.hidden=false;
+    if(host.parentElement!==container){container.append(host);wasVisible=false;}host.hidden=false;
     const colors=r=>{for(const option of r.querySelectorAll('select[data-sn-ai-presence] option'))if(['Available','Away'].includes(option.value))host.style.setProperty('--agent-'+option.value.toLowerCase(),getComputedStyle(option).color);for(const e of r.querySelectorAll('*'))if(e.shadowRoot)colors(e.shadowRoot);};colors(scope);
-    dockObserver?.disconnect();dockObserver=new MutationObserver(()=>{if(!host.isConnected||host.parentElement!==scope.querySelector('.sn-inbox'))mount(inbox);});dockObserver.observe(scope,{childList:true,subtree:true});
+    dockObserver?.disconnect();dockObserver=new MutationObserver(()=>{if(!host.isConnected||host.parentElement!==scope.querySelector('.sn-inbox'))mount(inbox);scheduleRecovery();});dockObserver.observe(scope,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden','class']});
+    scheduleRecovery();
   };
   document.addEventListener('sn-ai-agent-inbox-ready',event=>mount(event.detail));
   const find=r=>{for(const e of r.querySelectorAll('*')){if(e.localName==='sn-agent-inbox')mount(e);if(e.shadowRoot&&e!==host)find(e.shadowRoot);}};find(document);
   document.addEventListener('sn-ai-theme-palette',()=>requestAnimationFrame(()=>find(document)));
   const stop=()=>{clearTimeout(timer);timer=null;};
-  const schedule=()=>{stop();if(!panel.hidden&&!document.hidden)timer=setTimeout(load,Math.max(retryAt-Date.now(),Math.min(120000,30000*2**failures)));};
+  const schedule=()=>{stop();if(dashboardVisible())timer=setTimeout(load,Math.max(retryAt-Date.now(),Math.min(120000,30000*2**failures)));};
   async function load(){
-    if(pending||panel.hidden||document.hidden)return;
+    if(pending||!dashboardVisible())return;
     if(Date.now()<retryAt){status.textContent='Rate limited · Retry in '+Math.ceil((retryAt-Date.now())/1000)+'s';schedule();return;}
     stop();pending=true;refreshButton.disabled=true;controller=new AbortController();const timeout=setTimeout(()=>controller?.abort(),90000);
     refreshButton.setAttribute('aria-busy','true');
@@ -21411,16 +21422,17 @@ function installAgentDashboardPopup() {
       // Measure natural height synchronously, then animate from the displayed height.
       table.style.transition='none';table.style.height='auto';const newHeight=table.getBoundingClientRect().height;
       table.style.height=oldHeight+'px';void table.offsetHeight;table.style.removeProperty('transition');
-      requestAnimationFrame(()=>{table.style.height=newHeight+'px';});
+      requestAnimationFrame(()=>{if(newHeight>0&&dashboardVisible())table.style.height=newHeight+'px';else table.style.removeProperty('height');});
       failures=0;lastSuccess=Date.now();status.textContent=age();
     }catch(error){failures=Math.min(2,failures+1);status.textContent='Refresh failed · '+age();status.title=error.message;}
     finally{clearTimeout(timeout);controller=null;pending=false;refreshButton.disabled=false;refreshButton.removeAttribute('aria-busy');schedule();}
   }
   refreshButton.addEventListener('click',load);
-  const ageTicker=setInterval(()=>{if(!document.hidden&&!pending&&!failures&&lastSuccess)status.textContent=age();},1000);
-  document.addEventListener('visibilitychange',()=>{stop();if(!document.hidden&&!panel.hidden)load();});
-  window.addEventListener('pagehide',()=>{stop();clearInterval(ageTicker);dockObserver?.disconnect();controller?.abort();});
-  load();
+  const visibilityObserver=new IntersectionObserver(scheduleRecovery);visibilityObserver.observe(host);
+  const ageTicker=setInterval(()=>{recoverDashboard();if(dashboardVisible()&&!pending&&!failures&&lastSuccess)status.textContent=age();},1000);
+  document.addEventListener('visibilitychange',()=>{stop();if(document.hidden)wasVisible=false;else scheduleRecovery();});
+  window.addEventListener('pagehide',()=>{stop();clearInterval(ageTicker);cancelAnimationFrame(recoveryFrame);visibilityObserver.disconnect();dockObserver?.disconnect();controller?.abort();});
+  scheduleRecovery();
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installAgentDashboardPopup,{once:true});else installAgentDashboardPopup();
 
