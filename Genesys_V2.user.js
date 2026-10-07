@@ -4854,6 +4854,10 @@
     }
   }
   function watchIncomingCall(doc) {
+    if (window === window.top && themeMode(doc) !== 'light') {
+      const view = doc.querySelector('.messenger-shown [data-action="openAcdInteraction"] a');
+      if (view && !view.dataset.gbsAutoViewed) { view.dataset.gbsAutoViewed = 'true'; view.click(); }
+    }
     const action = doc.querySelector('.messenger-shown [data-action="answerInteraction"], .messenger-shown [data-action="openAcdInteraction"]');
     const alert = action?.closest('.messenger-message');
     if (alert) {
@@ -5790,8 +5794,11 @@
     const liveDuration = wrapup?.querySelector('[data-testid="wrapup-header-message-duration"]')?.textContent?.trim();
     if (liveDuration && /^\d{1,2}:\d{2}$/.test(liveDuration)) {
       const [minutes, seconds] = liveDuration.split(':').map(Number);
-      lastCallSummary.wrapupSeconds = minutes * 60 + seconds;
-      lastCallSummary.wrapupObservedAt = Date.now();
+      if (lastCallSummary.nativeCountdown !== liveDuration) {
+        lastCallSummary.nativeCountdown = liveDuration;
+        lastCallSummary.wrapupSeconds = minutes * 60 + seconds;
+        lastCallSummary.wrapupObservedAt = Date.now();
+      }
     }
     if (!popup) {
       popup = doc.createElement('section');
@@ -5874,7 +5881,7 @@
     const selected = [...doc.querySelectorAll('.selected-interaction-container')].find(visible);
     const wrapup = [...collectReachableDocuments()].flatMap(frameDoc => [...frameDoc.querySelectorAll('[data-testid="wrapup-main-container"]')]).find(visible);
     let popup = doc.getElementById('gbs-call-information');
-    if ((!selected || wrapup) && !incoming) {
+    if (!selected && !incoming) {
       // Panel disappearance is not an explicit Disconnected transition.
       syncLastCallDataPopup(doc, wrapup);
       if (popup && testCallSession && !testCallSession.finishedAt) {
@@ -6063,6 +6070,18 @@
       title.style.cssText = 'color:#8fb2bd;font-size:12px';
       const content = doc.createElement('div');
       content.textContent = value;
+      if (/phone number|location|country/i.test(label)) {
+        const copy = doc.createElement('button');
+        copy.type = 'button'; copy.setAttribute('aria-label', `Copy ${label}`);
+        copy.style.cssText = 'margin-left:8px;padding:2px;background:transparent;border:0;color:#67e8f9;cursor:pointer';
+        const icon = checked => `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-${checked ? 'check' : 'copy'}">${checked ? '<path d="m9 12 2 2 4-4"/>' : '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>'}</svg>`;
+        copy.innerHTML = icon(false);
+        copy.addEventListener('click', async () => {
+          try { await doc.defaultView.navigator.clipboard.writeText(value); copy.innerHTML = icon(true); }
+          catch (_) { copy.setAttribute('aria-label', 'Copy failed'); }
+        });
+        content.appendChild(copy);
+      }
       row.append(title, content);
       body.appendChild(row);
     }
