@@ -4802,7 +4802,8 @@ const snAIChatDisplayNames=(()=>{
       .sn-ai-ims-reply-timers[hidden]{display:none!important;}
       .sn-ai-wait-customer,.sn-ai-wait-agent{opacity:.72;}
       .sn-ai-wait-agent{text-align:right;}
-      .sn-ai-wait-alerts{display:flex;justify-content:center;gap:3px;color:var(--now-color_alert--critical-3,#ed7d86);filter:drop-shadow(0 0 4px currentColor);}
+      .sn-chrome-one-tab .sn-ai-ims-reply-timers .sn-ai-wait-alerts,.sn-chrome-one-tab .sn-ai-ims-reply-timers .sn-ai-wait-alerts *{color:#ed7d86!important;}
+      .sn-ai-wait-alerts{display:flex;justify-content:center;gap:3px;filter:drop-shadow(0 0 4px #ed7d86);}
       .sn-ai-wait-alerts svg{display:block;width:1em;height:1em;}
       .sn-chrome-one-tab.sn-chrome-one-tab.sn-chrome-one-tab.sn-chrome-one-tab.sn-chrome-one-tab.sn-chrome-one-tab[data-sn-ai-chat-preview]{
         background:color-mix(in srgb,color-mix(in srgb,var(--sn-theme-251f31) 75%,#777 25%) 96%,var(--sn-theme-ac94ec) 4%)!important;
