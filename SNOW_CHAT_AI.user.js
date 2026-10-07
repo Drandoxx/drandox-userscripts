@@ -4850,7 +4850,9 @@ const snAIChatDisplayNames=(()=>{
       .sn-ai-ims-reply-timers[data-reply-owner="agent"] .sn-ai-wait-agent{justify-self:stretch;border-radius:0 4px 4px 0;}
       .sn-chrome-one-tab .sn-ai-ims-reply-timers[data-reply-owner="customer"] .sn-ai-wait-alerts{background:var(--sn-chat-user-fill)!important;color:var(--sn-theme-e6edf9)!important;border-radius:0 4px 4px 0;filter:none;}
       .sn-chrome-one-tab .sn-ai-ims-reply-timers[data-reply-owner="agent"] .sn-ai-wait-alerts{background:var(--sn-chat-agent-fill)!important;color:var(--sn-theme-e3d9ff)!important;border-radius:4px 0 0 4px;filter:none;}
-      .sn-chrome-one-tab .sn-ai-ims-reply-timers .sn-ai-wait-alerts svg{color:inherit!important;filter:drop-shadow(0 0 3px currentColor);}
+      .sn-chrome-one-tab .sn-ai-ims-reply-timers .sn-ai-wait-alerts svg,
+      .sn-chrome-one-tab .sn-ai-ims-reply-timers .sn-ai-wait-alerts svg *{color:inherit!important;}
+      .sn-chrome-one-tab .sn-ai-ims-reply-timers .sn-ai-wait-alerts svg{filter:drop-shadow(0 0 3px currentColor);}
       .sn-ai-wait-alerts svg{display:block;width:1em;height:1em;}
       .sn-chrome-one-tab.sn-chrome-one-tab.sn-chrome-one-tab.sn-chrome-one-tab.sn-chrome-one-tab.sn-chrome-one-tab[data-sn-ai-chat-preview]{
         background:color-mix(in srgb,color-mix(in srgb,var(--sn-theme-251f31) 75%,#777 25%) 96%,var(--sn-theme-ac94ec) 4%)!important;
