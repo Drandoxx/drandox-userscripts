@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.390
+// @version      2.36.391
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -19575,7 +19575,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.390' });
+    addLog('info', 'helper-version', { version: '2.36.391' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -21099,6 +21099,10 @@ function installAgentDashboardPopup() {
   const widgets=[['Available','e2c6a2ba010a2398297b1ac8b4ae27a5','a2b0596cec6b9d49dd1ff9bf76b5084b'],['Away','a154f72bda3af38c12b18a3b0d19abbe','23051643b7e03010097cb81cde11a910']];
   const payload={request:widgets.map(([,id,macro])=>({details:{visualizationId:id,followFilter:true,macroponentSysId:macro},configurations:{widgetSysId:id}})),filters:{filterConfigurations:[{filterId:'099bbeaa4b06dc569ed0ca313accd6d1',values:['9cbdc90d1bc66110a95a8732f54bcbec'],origin:'FILTER_COMPONENT',apply_to:['u_available_agents_by_group.grp_group'],label:'Assignment Groups',source:{encodedQuery:'nameLIKEagent chat',payload:{reference:'',table:'sys_user_group',primaryKey:'sys_id'},type:'table'},type:'choice',order:0,include_unmatched_or_empty:false}]},requestId:'6a075e289785aa2f2a4ded6d375b1bb1',dashboardDetails:{dashboardSysId:'6a075e289785aa2f2a4ded6d375b1bb1',canvasSysId:'b00e0e16585da20a65feb4311ccbf867'},type:'visSysId'};
   const host=document.createElement('div');host.id='sn-ai-agent-dashboard';host.hidden=true;document.body.append(host);
+  const activeChatsId='6bf14a27144f7fb166b76d08f843a0e9';
+  payload.request.push({details:{visualizationId:activeChatsId,followFilter:true,macroponentSysId:'23051643b7e03010097cb81cde11a910'},configurations:{widgetSysId:activeChatsId}});
+  payload.filters.filterConfigurations[0].apply_to.push('interaction.assignment_group');
+  payload.filters.filterConfigurations.push({filterId:'3e16df4b504b31c96a6e581b39309f00',values:['f7879842618d2300964fe119fb67115a'],origin:'FILTER_COMPONENT',apply_to:['interaction.u_work_queue'],label:'Work Queues',source:{encodedQuery:'nameLIKEDesk',payload:{reference:'',table:'awa_queue',primaryKey:'sys_id'},type:'table'},type:'choice',order:1,include_unmatched_or_empty:false});
   const root=host.attachShadow({mode:'open'});
   root.innerHTML=`<style>
     :host{font:14px/1.4 system-ui;color:var(--sn-theme-e6edf9,#eee6ff)}
@@ -21115,6 +21119,7 @@ function installAgentDashboardPopup() {
   const footerStyle=document.createElement('style');
   footerStyle.textContent='.update-footer{display:flex;align-items:center;justify-content:center;gap:5px;margin-top:3px;font-size:10px;line-height:1.2;color:var(--sn-theme-a8b8d1,#beb0d1)}.update-footer .status{padding:0;margin:0;min-height:0;line-height:inherit;font-size:inherit;color:inherit}.update-footer .refresh,.update-footer .refresh:hover,.update-footer .refresh:active,.update-footer .refresh:disabled{position:static!important;flex:0 0 1em;width:1em!important;height:1em!important;min-width:0!important;font-size:inherit!important;color:inherit!important;margin:0!important}.update-footer .refresh svg{width:1em;height:1em}:host{margin-bottom:4px}';
   root.append(footerStyle);
+  footerStyle.textContent+='\nli[data-agent-card]{display:flex;align-items:center;gap:6px}.agent-name{flex:1;min-width:0;overflow-wrap:anywhere}.agent-chat-count{flex:0 0 auto;margin-left:auto;font-variant-numeric:tabular-nums;font-weight:600;padding:0 4px;border-radius:4px;background:color-mix(in srgb,var(--sn-theme-e6edf9,#eee6ff) 8%,transparent)}';
   footerStyle.textContent+='\n.update-footer{font-size:9px}';
   footerStyle.textContent+='\nli[data-agent-card]{margin:3px 0;padding:4px 6px;border-radius:6px;border:1px solid color-mix(in srgb,hsl(var(--agent-hue) 70% 60%) 45%,var(--sn-theme-655573,#74618b));background:color-mix(in srgb,hsl(var(--agent-hue) 70% 60%) 18%,var(--sn-theme-251f31,#241c33));color:var(--sn-theme-e6edf9,#eee6ff)}';
   let agentColors={};try{agentColors=JSON.parse(localStorage.getItem('sn-ai-agent-name-colors-v1')||'{}');}catch{}
@@ -21153,15 +21158,29 @@ function installAgentDashboardPopup() {
       if(response.status===429){const header=response.headers.get('Retry-After');const seconds=header&&/^\d+$/.test(header)?Number(header):header?Math.max(0,(Date.parse(header)-Date.now())/1000):60;retryAt=Date.now()+Math.max(60,Number.isFinite(seconds)?seconds:60)*1000;}
       if(!response.ok)throw new Error('HTTP '+response.status);
       const json=await response.json();if(!Array.isArray(json.result))throw new Error('Unexpected analytics response');
+      const activeResult=json.result.find(item=>item.details?.visualizationId===activeChatsId);
+      if(!activeResult||activeResult.statusCode!==200||!Array.isArray(activeResult.dataResponses))throw new Error('Missing active chat counts');
+      const chatCounts=new Map();
+      for(const result of activeResult.dataResponses)for(const row of (result.response?.data||[]).slice(1)){
+        const name=String(row[0]||'').trim().toLowerCase(),count=Number(row[1]);
+        if(name&&Number.isFinite(count))chatCounts.set(name,(chatCounts.get(name)||0)+count);
+      }
       const lists=widgets.map(([,id])=>{const item=json.result.find(r=>r.details?.visualizationId===id);if(!item||item.statusCode!==200||!Array.isArray(item.dataResponses))throw new Error('Missing agent results');return item.dataResponses.flatMap(r=>(r.response?.data||[]).slice(1)).map(row=>({name:String(row[0]||''),count:Number(row[1]||1)})).filter(row=>row.name);});
       const table=root.querySelector('.columns'),oldHeight=table.getBoundingClientRect().height;
       lists.forEach((rows,index)=>{
         const list=root.querySelectorAll('ul')[index];
-        const names=rows.length?rows.map(row=>row.name+(row.count>1?' × '+row.count:'')):['No agents'];
+        const names=rows.length?rows.map(row=>row.name):['No agents'];
         names.forEach((name,i)=>{
           let li=list.children[i];if(!li){li=document.createElement('li');list.append(li);}
           if(rows[i]){li.dataset.agentCard='';li.style.setProperty('--agent-hue',agentHue(rows[i].name));}else{li.removeAttribute('data-agent-card');li.style.removeProperty('--agent-hue');}
-          if(li.textContent!==name){li.textContent=name;if(!matchMedia('(prefers-reduced-motion: reduce)').matches)li.animate([{opacity:.65},{opacity:1}],{duration:180,easing:'ease-out'});}
+          if(rows[i]){
+            if(!li.querySelector('.agent-name')){li.replaceChildren();const label=document.createElement('span'),count=document.createElement('span');label.className='agent-name';count.className='agent-chat-count';li.append(label,count);}
+            const label=li.querySelector('.agent-name'),badge=li.querySelector('.agent-chat-count');
+            const count=chatCounts.get(name.trim().toLowerCase())||0;
+            if(label.textContent!==name)label.textContent=name;
+            if(badge.textContent!==String(count))badge.textContent=String(count);
+            badge.setAttribute('aria-label',count+' active chats');badge.title=count+' active chats';
+          }else if(li.textContent!==name)li.textContent=name;
         });
         while(list.children.length>names.length)list.lastElementChild.remove();
       });
