@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.531.0
+// @version      1.532.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -6085,13 +6085,26 @@
     const snowAction = scopes.flatMap(scope => [...scope.querySelectorAll('a,button,input[type="button"]')])
       .find(element => visible(element) && /open in snow/i.test(element.textContent || element.value || ''));
     popup.__gbsSnowAction = snowAction;
+    const resolveCallControl = (root, control) => {
+      const candidates = [...(root?.querySelectorAll(control.selector) || [])];
+      if (control.mute) {
+        const labelled = [...(root?.querySelectorAll('button') || [])].filter(button =>
+          /^(?:unmute|mute)(?:\s+(?:microphone|call|audio))?$/i.test((button.getAttribute('aria-label') || button.title || button.textContent || '').trim()));
+        candidates.push(...labelled);
+      }
+      return candidates.find(button => visible(button) && !button.disabled && button.getAttribute('aria-disabled') !== 'true')
+        || candidates.find(visible) || null;
+    };
     const callControls = [
-      { selector: 'button.interaction-mute-btn', fallback: 'Mute' },
+      { selector: 'button.interaction-mute-btn, button.interaction-unmute-btn', fallback: 'Mute', mute: true },
       { selector: 'button.interaction-hold-btn', fallback: 'Hold' },
       { selector: 'button.interaction-end-btn', fallback: 'Hang up', hangup: true }
     ].map(control => {
-      const native = selected?.querySelector(control.selector);
-      return { ...control, native, label: control.hangup ? 'Hang up' : native?.getAttribute('aria-label') || control.fallback };
+      const native = resolveCallControl(selected, control);
+      const nativeLabel = native?.getAttribute('aria-label') || native?.title || '';
+      const muted = control.mute && (native?.classList.contains('interaction-unmute-btn')
+        || /unmute/i.test(nativeLabel) || native?.getAttribute('aria-pressed') === 'true');
+      return { ...control, native, label: control.mute ? (muted ? 'Unmute' : 'Mute') : control.hangup ? 'Hang up' : nativeLabel || control.fallback };
     });
     const signature = JSON.stringify([...details]) + state + Boolean(snowAction)
       + (incoming ? Math.floor((Date.now() - (testCallSession?.startedMs || Date.now())) / 1000) : '')
@@ -6192,7 +6205,7 @@
         // Resolve the current native button, not a stale Ember node. Never
         // duplicate its business logic or submit a second action ourselves.
         const current = [...doc.querySelectorAll('.selected-interaction-container')].find(visible);
-        const action = current?.querySelector(control.selector);
+        const action = resolveCallControl(current, control);
         if (!action || action.disabled || action.getAttribute('aria-disabled') === 'true') return;
         if (control.hangup && !doc.defaultView.confirm('Are you sure you want to hang up this call?')) return;
         action.click();
