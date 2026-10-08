@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.412
+// @version      2.36.413
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -3519,15 +3519,38 @@ const snAIChatDisplayNames=(()=>{
       return changed?JSON.stringify(payload):body;
     } catch { return body; }
   }
-  // This verified read-only operation alone is normalized; no responses,
-  // record writes, presence requests or visible field values are changed.
+  // Normalize the verified knowledge lookup and repair only known empty
+  // Workspace action metadata. No record write is made by this wrapper.
   const knowledgePage=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
   const knowledgeOriginalFetch=knowledgePage.fetch;
+  const emptyEventActionNames=new Map([
+    ['3daa48146f339100470828112e3ee441','createEvent'],
+    ['ccd80d5974a22900ca394784b0ec7f76','save_my_group'],
+    ['54bc1f0474566500ca394784b0ec7f90','log_resolve']
+  ]);
+  function repairEmptyEventActions(payload) {
+    let changed=false;
+    function visit(value) {
+      if(!value||typeof value!=='object')return;
+      const name=emptyEventActionNames.get(value.sysId);
+      // Repair only the verified no-op Workspace handlers. Native submit keeps
+      // mandatory-field validation and the original server action intact.
+      if(name&&value.name===name&&value.hasClientScript===true&&
+        /^\s*function\s+onClick\s*\(\s*g_form\s*\)\s*\{\s*\}\s*;?\s*$/.test(value.clientScript||'')) {
+        value.clientScript=`function onClick(g_form) { g_form.submit('${name}'); }`;
+        changed=true;
+      }
+      for(const child of Object.values(value))visit(child);
+    }
+    visit(payload);return changed;
+  }
   const knowledgeWildcardFetch=async function(input,init) {
+    let nativeGraphQL=false;
     try {
       const url=new URL(typeof input==='string'?input:(input.url || input.href),location.href);
       const method=String(init?.method || input?.method || 'GET').toUpperCase();
       if (url.origin===location.origin && url.pathname==='/api/now/graphql' && method==='POST') {
+        nativeGraphQL=true;
         if (typeof init?.body==='string') {
           const body=knowledgeWildcardBody(init.body);
           if (body!==init.body) init={...init,body};
@@ -3539,6 +3562,21 @@ const snAIChatDisplayNames=(()=>{
       }
     } catch { /* Preserve all unrelated requests unchanged. */ }
     const response=await Reflect.apply(knowledgeOriginalFetch,this,[input,init]);
+    if(nativeGraphQL) {
+      try {
+        const body=await response.clone().text();
+        if([...emptyEventActionNames.keys()].some(id=>body.includes(id))) {
+          const payload=JSON.parse(body);
+          if(repairEmptyEventActions(payload)) {
+            const headers=new knowledgePage.Headers(response.headers);
+            headers.delete('content-length');
+            const repaired=new knowledgePage.Response(JSON.stringify(payload),{status:response.status,statusText:response.statusText,headers});
+            Object.defineProperty(repaired,'url',{value:response.url});
+            return repaired;
+          }
+        }
+      } catch { /* Preserve the native response if it cannot be repaired safely. */ }
+    }
     // Reuse only native interaction subscription replies to refresh badges.
     // No polling, and no copying unrelated form payloads or message history.
     if(typeof init?.body==='string' && init.body.includes('GlideRecord_Subscription') && init.body.includes('interaction(')) {
@@ -4113,6 +4151,7 @@ const snAIChatDisplayNames=(()=>{
     if(outer)outer.toggleAttribute('data-sn-ai-force-chat',shouldForce);
   }
   function syncForcedIMSChat(root) {
+    restoreIMSChatTabs(root);
     const hosts=[...(root.querySelectorAll?.('sn-agent-chat')||[])];
     if(root.host?.localName==='sn-agent-chat')hosts.push(root.host);
     for(const host of hosts)syncForcedIMSHost(host,imsPreviewRecords.get(host.getProperties?.().interaction));
@@ -4124,6 +4163,33 @@ const snAIChatDisplayNames=(()=>{
   }
   const imsPreviewRecords=new Map();
   const imsPreviewRequests=new Map();
+  function restoreIMSChatTabs(root) {
+    if(!forceIMSChatEnabled)return;
+    const bars=[...(root.querySelectorAll?.('sn-workspace-tab-bar')||[])];
+    if(root.host?.localName==='sn-workspace-tab-bar')bars.push(root.host);
+    for(const bar of bars) {
+      const props=bar.getProperties?.(),tabs=props?.tabList;
+      if(!Array.isArray(tabs)||!tabs.some(t=>t.parentTabId==='root'))continue;
+      let changed=false;
+      for(const tab of tabs) {
+        const record=imsPreviewRecords.get(tab.sys_id);
+        if(tab.parentTabId!=='root'||tab.type!=='record'||tab.table!=='interaction'||
+          !isInactiveIMS(record)||record.type?.value!=='chat')continue;
+        tab.type='chat';tab.contentId='chat_'+tab.sys_id;
+        tab.additional_data={...tab.additional_data,chat:{table:'interaction',sys_id:tab.sys_id},overrideTabLimit:true};
+        changed=true;
+      }
+      if(!changed)continue;
+      let owner=bar;
+      while(owner&&owner.localName!=='sn-workspace-tabs')owner=owner.parentElement||owner.getRootNode?.().host;
+      const selected=tabs.find(t=>t.tab_id===props.selectedTabId);
+      if(owner?.dispatch&&selected) {
+        // The state update remounts the native history renderer without
+        // reopening the conversation or changing the selected child record.
+        owner.dispatch('SELECT_TAB',{tab_ids:[selected.tab_id,selected.selectedTabId]});
+      }
+    }
+  }
   const endedChatRefreshes=new WeakMap();
   function refreshEndedChatMetadata(node) {
     // End-of-conversation messages arrive through SNOW's live message stream,
@@ -4184,6 +4250,7 @@ const snAIChatDisplayNames=(()=>{
     const inactive=isInactiveIMS(record);
     const notice=['closed_complete','closed_abandoned'].includes(record.state?.value)?'This chat is closed — history preview':'This is not an active chat — history preview';
     for(const root of onlyRoot?[onlyRoot]:spaceRoots) {
+      restoreIMSChatTabs(root);
       for(const tab of root.querySelectorAll?.('.sn-chrome-one-tab')||[]) {
         if((tab.querySelector('[data-sn-ai-ims]')?.dataset.snAiIms||tab.getAttribute('aria-label'))!==ims)continue;
         tab.toggleAttribute('data-sn-ai-chat-preview',inactive);
@@ -19905,7 +19972,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.412' });
+    addLog('info', 'helper-version', { version: '2.36.413' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
