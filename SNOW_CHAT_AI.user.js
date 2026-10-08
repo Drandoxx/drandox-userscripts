@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.413
+// @version      2.36.414
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -9,7 +9,6 @@
 // @match        https://kingfisher.service-now.com/now/workspace/*
 // @match        https://kingfisher.service-now.com/incident.do*
 // @match        https://kingfisher.service-now.com/new_call.do*
-// @match        https://kingfisher.service-now.com/now/nav/ui/classic/params/target/new_call.do*
 // @run-at       document-start
 // @sandbox      DOM
 // @grant        GM_getValue
@@ -421,7 +420,7 @@ const snAIChatDisplayNames=(()=>{
 
 (() => {
   if (location.hostname !== 'kingfisher.service-now.com'
-    || !(/\/new_call\.do$/.test(location.pathname) || location.pathname.includes('/target/new_call.do'))) return;
+    || !/^\/new_call\.do$/.test(location.pathname)) return;
   const documents = new WeakSet();
   function nativeColors(doc) {
     // Native focus/hover styles briefly turn blue. Never sample those transient
@@ -480,10 +479,8 @@ const snAIChatDisplayNames=(()=>{
       const button = doc.createElement('button');button.type = 'button';button.className = 'sn-ai-copy-kb';button.dataset.kb = match[0];button.textContent = match[0];button.title = 'Copy ' + match[0];
       fragment.append(button,doc.createTextNode(node.textContent.slice(match.index + match[0].length)));node.replaceWith(fragment);
     }
-    for (const frame of doc.querySelectorAll('iframe')) {
-      if (!frame.dataset.snAiStackKbWatched) { frame.dataset.snAiStackKbWatched = 'true';frame.addEventListener('load',() => { try { if (frame.contentDocument) scan(frame.contentDocument); } catch {} }); }
-      try { if (frame.contentDocument) scan(frame.contentDocument); } catch {}
-    }
+    // The matching new_call.do frame owns this formatter. Never observe or
+    // recursively scan the Unified Navigation shell and its Favorites menu.
   }
   if (document.documentElement) scan(document);else document.addEventListener('DOMContentLoaded',() => scan(document),{once:true});
 })();
@@ -6110,7 +6107,7 @@ function installChatSnippets() {
 
 function startSNAI(tabIdentity) {
   // Classic navigation shells and their form iframe must not both create UI.
-  // The actual form owns Settings/Stack; the shell only installs KB styling.
+  // The actual form owns Settings/Stack/KB styling; the shell stays untouched.
   if (location.pathname.startsWith('/now/nav/ui/classic/')) {
     document.getElementById('local-sn-inspector-root')?.remove();
     return;
@@ -19972,7 +19969,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.413' });
+    addLog('info', 'helper-version', { version: '2.36.414' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
