@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.539.0
+// @version      1.540.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -5776,6 +5776,33 @@
 
   let measurementState = null;
   let measurementLastSignature = '', measurementLastSave = 0;
+  function collectCallVisualDiagnostics(doc) {
+    const surfaces = [], controls = []; let inspected = 0;
+    const scan = (root, path) => {
+      for (const element of root.querySelectorAll('*')) {
+        if (++inspected > 2500 || surfaces.length >= 60) return;
+        const rect = element.getBoundingClientRect();
+        if (!rect.width || !rect.height) continue;
+        const style = doc.defaultView.getComputedStyle(element);
+        const selector = element.tagName.toLowerCase() + (element.id ? `#${element.id}` : '') + [...element.classList].map(name => `.${name}`).join('');
+        const color = style.backgroundColor.match(/[\d.]+/g)?.map(Number);
+        if (color && color.length >= 3 && (color[3] ?? 1) > .5 && Math.min(...color.slice(0,3)) > 175 && rect.width * rect.height > 200) {
+          const html = element.cloneNode(true);
+          html.querySelectorAll('script,input,textarea').forEach(node => node.remove());
+          surfaces.push({path:`${path} > ${selector}`,rect:rect.toJSON(),html:html.outerHTML.slice(0,5000),
+            styles:Object.fromEntries(['background-color','color','border','box-shadow','display','position','overflow','padding','font-size','line-height'].map(key => [key,style.getPropertyValue(key)]))});
+        }
+        if (element.matches('button') && /mute|hold|hang|end call/i.test([element.className,element.getAttribute('aria-label'),element.title,element.textContent].join(' '))) {
+          controls.push({path:`${path} > ${selector}`,html:element.outerHTML.slice(0,2000),disabled:element.disabled,ariaDisabled:element.getAttribute('aria-disabled'),pressed:element.getAttribute('aria-pressed')});
+        }
+        if (element.shadowRoot) scan(element.shadowRoot,`${path} > ${selector} ::shadow`);
+      }
+    };
+    const areas = [...doc.querySelectorAll('.command-panel.active.agent, .selected-interaction-container, [data-testid="wrapup-main-container"]')];
+    if (!areas.length && /acw-gadgets|contact|profile/i.test(doc.location.href)) areas.push(doc.body);
+    for (const area of areas) if (area) scan(area,area.tagName.toLowerCase());
+    return {surfaces,controls,inspected,capped:inspected > 2500 || surfaces.length >= 60};
+  }
   function measureCallPopup(doc) {
     if (window !== window.top || !isSavedAdmin(doc) || themeMode(doc) === 'light') return;
     const incoming = doc.querySelector('.messenger-shown [data-action="answerInteraction"]');
@@ -5792,7 +5819,8 @@
       const areas = [...frameDoc.querySelectorAll('.selected-interaction-container, .interactions, [data-testid="wrapup-main-container"]')];
       const text = areas.map(area => area.innerText || '').join('\n').slice(0, 16000);
       const countdown = frameDoc.querySelector('[data-testid="wrapup-header-message-duration"]')?.textContent?.trim();
-      if (text || countdown) sources.push({url:frameDoc.location.href,text,countdown:countdown || null});
+      const visual = collectCallVisualDiagnostics(frameDoc);
+      if (text || countdown || visual.surfaces.length || visual.controls.length) sources.push({url:frameDoc.location.href,text,countdown:countdown || null,visual});
       frameDoc.querySelectorAll('iframe').forEach(frame => {
         try { const nested = accessibleFrameDocument(frame); if (nested) visit(nested,depth+1); else inaccessible.push(frame.title || frame.src); }
         catch (_) { inaccessible.push(frame.title || frame.src); }
@@ -5979,6 +6007,12 @@
       doc.getElementById('gbs-last-call-data')?.remove();
       doc.getElementById('gbs-call-information')?.remove();
       return;
+    }
+    // Old iframe executions can retain their own cards after updating without
+    // a full reload. The top document owns every call card; sweep reachable
+    // nested documents on each pass, not just when their script runs.
+    for (const frameDoc of collectReachableDocuments()) {
+      if (frameDoc !== doc) frameDoc.querySelectorAll('#gbs-last-call-data, #gbs-call-information').forEach(card => card.remove());
     }
     // Customer details stay in the live DOM only; never persist or transmit them.
     const visible = element => element && element.getBoundingClientRect().width > 0
