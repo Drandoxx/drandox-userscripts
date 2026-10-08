@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.538.0
+// @version      1.539.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -5852,7 +5852,7 @@
   function finishActiveCall() {
     if (!activeCallSummary) return;
     lastCallSummary = {startedAt:activeCallSummary.connectedAt || activeCallSummary.ringingAt,
-      endedAt:Date.now(),details:activeCallSummary.details,wrapupSeconds:null,wrapupObservedAt:Date.now()};
+      endedAt:Date.now(),details:activeCallSummary.details,wrapupSeconds:29,wrapupObservedAt:Date.now(),wrapupComplete:false};
     activeCallSummary = null; saveActiveCallWindow(); saveLastCallWindow();
   }
   const LAST_CALL_WINDOW_KEY = 'genesys-v2-last-call-window';
@@ -5880,13 +5880,15 @@
   function syncLastCallDataPopup(doc, wrapup) {
     if (window !== window.top) { doc.getElementById('gbs-last-call-data')?.remove(); return; }
     let popup = doc.getElementById('gbs-last-call-data');
+    // Never show an earlier-call card alongside a new active call.
+    if (activeCallSummary) { popup?.remove(); return; }
     if (lastCallSummary && Date.now() - lastCallSummary.endedAt >= LAST_CALL_WINDOW_TTL) {
       lastCallSummary = null; saveLastCallWindow();
     }
-    if (!lastCallSummary || lastCallSummary.dismissed || (!wrapup && Date.now() - lastCallSummary.endedAt < 25000)) { popup?.remove(); return; }
+    if (!lastCallSummary || lastCallSummary.dismissed) { popup?.remove(); return; }
     if (popup?.__gbsDragging) return;
     const liveDuration = wrapup?.querySelector('[data-testid="wrapup-header-message-duration"]')?.textContent?.trim();
-    if (liveDuration && /^\d{1,2}:\d{2}$/.test(liveDuration)) {
+    if (!lastCallSummary.wrapupComplete && liveDuration && /^\d{1,2}:\d{2}$/.test(liveDuration)) {
       const [minutes, seconds] = liveDuration.split(':').map(Number);
       if (lastCallSummary.nativeCountdown !== liveDuration) {
         lastCallSummary.nativeCountdown = liveDuration;
@@ -5895,6 +5897,19 @@
         saveLastCallWindow();
       }
     }
+    const remainingWrapup = Number.isFinite(lastCallSummary.wrapupSeconds)
+      ? Math.max(0, lastCallSummary.wrapupSeconds - Math.floor((Date.now() - lastCallSummary.wrapupObservedAt) / 1000)) : 0;
+    if (!lastCallSummary.wrapupComplete && remainingWrapup === 0) {
+      lastCallSummary.wrapupComplete = true; saveLastCallWindow();
+      const panel = doc.querySelector('.command-panel.active.agent');
+      if (!doc.querySelector('.messenger-shown [data-action="answerInteraction"]')) panel?.querySelector('#panel-agent-close-button')?.click();
+    }
+    // Reuse the existing card, preserving its screen position across phases.
+    if (!popup) {
+      popup = doc.getElementById('gbs-call-information');
+      if (popup) { popup.id = 'gbs-last-call-data'; delete popup.dataset.details; }
+    }
+    doc.querySelectorAll('#gbs-last-call-data').forEach(element => { if (element !== popup) element.remove(); });
     if (!popup) {
       popup = doc.createElement('section');
       popup.id = 'gbs-last-call-data';
@@ -5909,7 +5924,9 @@
     }
     const heading = doc.createElement('div');
     heading.style.cssText = 'padding:12px 16px;border-bottom:1px solid #22d3ee70;color:#67e8f9;font-weight:600;user-select:none;cursor:move;touch-action:none';
-    heading.textContent = `Last call data - ${callClock(lastCallSummary.startedAt)} until ${callClock(lastCallSummary.endedAt)}`;
+    heading.textContent = lastCallSummary.wrapupComplete
+      ? `Earlier call data - ${callClock(lastCallSummary.startedAt)} until ${callClock(lastCallSummary.endedAt)}`
+      : 'Call information — After Call Work';
     const close = doc.createElement('button'); close.type = 'button'; close.textContent = '×'; close.setAttribute('aria-label', 'Close last call data');
     close.style.cssText = 'float:right;background:transparent;border:0;color:inherit;font-size:20px;cursor:pointer';
     close.addEventListener('click', () => {lastCallSummary.dismissed = true; saveLastCallWindow(); popup.remove();}); heading.append(close);
@@ -5977,10 +5994,10 @@
     const wrapup = [...collectReachableDocuments()].flatMap(frameDoc => [...frameDoc.querySelectorAll('[data-testid="wrapup-main-container"], .wrapup-message-container')]).find(element => element.querySelector('[data-testid="wrapup-header-message-duration"]'));
     let popup = doc.getElementById('gbs-call-information');
     if (wrapup && !incoming) {
-      finishActiveCall(); popup?.remove(); syncLastCallDataPopup(doc, wrapup); return;
+      finishActiveCall(); syncLastCallDataPopup(doc, wrapup); return;
     }
     if (!selected && !incoming) {
-      if (activeCallSummary && /waiting on queue/i.test(doc.querySelector('.command-panel.active.agent')?.textContent || '')) finishActiveCall();
+      if (activeCallSummary) finishActiveCall();
       // Panel disappearance is not an explicit Disconnected transition.
       syncLastCallDataPopup(doc, wrapup);
       if (popup && testCallSession && !testCallSession.finishedAt) {
@@ -5988,7 +6005,7 @@
         testCallSession.popupVisibleMs = Date.now() - testCallSession.startedMs;
         persistTestCall();
       }
-      popup?.remove(); return;
+      return;
     }
     if (popup?.__gbsDragging) return;
     const clean = value => String(value || '').replace(/\s+/g, ' ').trim();
@@ -6027,6 +6044,11 @@
     // Header often provides the number's country, not a verified physical location.
     add('Call label', selected?.querySelector('.participant-name, .interaction-name')?.textContent);
     const state = incoming ? 'Incoming' : details.get('Interaction State') || '';
+    // Native Disconnected details may remain mounted throughout wrap-up. Do
+    // not create a new session from that stale panel on every polling pass.
+    if (!incoming && !activeCallSummary && lastCallSummary && !/^connected$/i.test(state)) {
+      syncLastCallDataPopup(doc, wrapup); return;
+    }
     details.delete('Interaction State');
     const seenValues = new Set();
     for (const [label, value] of details) {
@@ -6038,13 +6060,10 @@
     if (!activeCallSummary) activeCallSummary = { ringingAt: Date.now(), connectedAt: null, details: [] };
     if (/^disconnected$/i.test(state)) {
       if (activeCallSummary.connectedAt) {
-        lastCallSummary = { startedAt: activeCallSummary.connectedAt, endedAt: Date.now(),
-          details: details.size ? [...details] : activeCallSummary.details, wrapupSeconds: null, wrapupObservedAt: Date.now() };
-        saveLastCallWindow();
-        activeCallSummary = null;
-        saveActiveCallWindow();
+        if (details.size) activeCallSummary.details = [...details];
+        finishActiveCall();
       }
-      popup?.remove(); syncLastCallDataPopup(doc, wrapup); return;
+      syncLastCallDataPopup(doc, wrapup); return;
     }
     if (!incoming && /^connected$/i.test(state) && !activeCallSummary.connectedAt) activeCallSummary.connectedAt = Date.now();
     if (details.size) activeCallSummary.details = [...details];
