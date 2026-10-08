@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.410
+// @version      2.36.411
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -172,7 +172,7 @@
   First Time Fix (FTF) / `Resolve {IMS} as FTF`:
     Category NTWK; Sub Category NTWK-OTHER; Symptom NTWK-OTHER-OTHER;
     Event Type Incident; Template GROUP - First Time Fix Template;
-    Configuration Item HARDWARE / SOFTWARE REQUEST; Priority 4 - Low. Leave
+    Configuration Item empty for manual selection; Priority 4 - Low. Leave
     Classification and Attached Knowledge blank unless the human gives a
     value. Use this exact description structure:
       DEVICE DETAILS(IP/SN/PTID/Host name):
@@ -7105,7 +7105,7 @@ function startSNAI(tabIdentity) {
         Symptom: 'NTWK-OTHER-OTHER',
         'Event Type': 'Incident',
         'Template Name': 'GROUP - First Time Fix Template',
-        'Configuration Item': 'HARDWARE / SOFTWARE REQUEST',
+        'Configuration Item': '',
         Priority: '4 - Low',
         "If we need to contact you, when\'s the best time?": 'NA',
         'What error message do you see?': 'NA',
@@ -12340,6 +12340,28 @@ function startSNAI(tabIdentity) {
     }
   }
 
+  async function autoClearReference(fieldLabel,code) {
+    for(let attempt=1;attempt<=3;attempt++){
+      const field=await waitForControlByLabel(fieldLabel,3000);
+      const host=field?matrixReferenceHost(field):null,props=host?.dAProps;
+      const callback=host?.onValueChange||props?.onValueChange;
+      if(!props||typeof callback!=='function'||props.readonly)automationFailure(code,`${fieldLabel} cannot be cleared.`);
+      callback.call(host,{value:'',displayValue:''});
+      let stableSince=0;const started=performance.now();
+      while(performance.now()-started<2500){
+        const current=findControlByLabel(fieldLabel,currentFormElements());
+        const value=current?matrixReferenceHost(current)?.dAProps:null;
+        // A mandatory-field error is expected: verify the reference ID and
+        // display value, not aria-invalid. Never suppress native validation.
+        if(value&&!String(value.value||'').trim()&&!String(value.displayValue||'').trim()){
+          if(!stableSince)stableSince=performance.now();
+          if(performance.now()-stableSince>=450)return;
+        }else stableSince=0;
+        await sleep(50);
+      }
+    }
+    automationFailure(code,`${fieldLabel} did not remain empty.`);
+  }
   async function commitNativeReferenceAttempt(fieldLabel,expected,options={}) {
     const isKnowledge=comparableLabel(fieldLabel)==='attached knowledge';
     const prefixMatch=isKnowledge||options.match==='prefix';
@@ -13430,7 +13452,7 @@ function startSNAI(tabIdentity) {
           { kind: 'select', field: 'Classification', value: 'Software' },
         ],
       });
-      await autoLookup('Configuration Item', 'HARDWARE / SOFTWARE REQUEST', { expected: 'HARDWARE / SOFTWARE REQUEST', code: 'FTF_CI_COMMIT_FAILED' });
+      await autoClearReference('Configuration Item','FTF_CI_CLEAR_FAILED');
       await requirePopulatedField('Assignment Group', 'FTF_ASSIGNMENT_GROUP_EMPTY');
       await autoSelect('Priority', '4 - Low', 'FTF_PRIORITY_COMMIT_FAILED');
       const description = `DEVICE DETAILS(IP/SN/PTID/Host name): ${data.deviceDetails}\nWHAT WAS THE ISSUE REPORTED: ${data.issue}\nSOLUTION PROVIDED: ${data.solution}`;
@@ -13519,6 +13541,7 @@ function startSNAI(tabIdentity) {
           });
         }
       }
+      if(!data.configurationItem)await autoClearReference('Configuration Item','HP_CI_CLEAR_FAILED');
       const description = buildHPDescription(data.issueType, data.values);
       // The template's contact detail is separate from the main Event control.
       // Preserve an operator-entered number, otherwise reuse the HP contact.
@@ -18344,7 +18367,7 @@ function startSNAI(tabIdentity) {
             await benchmark('FTF Symptom', () => autoLookup('Symptom', 'NTWK-OTHER-OTHER', { expected: 'NTWK-OTHER-OTHER', strictCommit: true, code: 'CONTROL_TEST_FTF_SYMPTOM_FAILED' }));
             await benchmark('FTF Event Type', () => autoSelect('Event Type', 'Incident', 'CONTROL_TEST_EVENT_TYPE_FAILED'));
             await benchmark('FTF Template Name', () => autoLookup('Template Name', 'GROUP - First Time Fix Template', { expected: 'GROUP - First Time Fix Template', strictCommit: true, code: 'CONTROL_TEST_FTF_TEMPLATE_FAILED' }));
-            await benchmark('FTF Configuration Item', () => autoLookup('Configuration Item', 'HARDWARE / SOFTWARE REQUEST', { expected: 'HARDWARE / SOFTWARE REQUEST', strictCommit: true, code: 'CONTROL_TEST_FTF_CI_FAILED' }));
+            await benchmark('FTF Configuration Item', () => autoClearReference('Configuration Item','CONTROL_TEST_FTF_CI_CLEAR_FAILED'));
             await benchmark('FTF Priority', () => autoSelect('Priority', '4 - Low', 'CONTROL_TEST_PRIORITY_FAILED'));
             await benchmark('FTF Short Description', () => autoText('Short Description', 'CONTROL TEST - First Time Fix', 'CONTROL_TEST_TEXT_FAILED', 80));
             await benchmark('FTF Description', () => autoText('Description', 'DEVICE DETAILS(IP/SN/PTID/Host name): Not provided\nWHAT WAS THE ISSUE REPORTED: Control test\nSOLUTION PROVIDED: Control test only', 'CONTROL_TEST_DESCRIPTION_FAILED'));
@@ -19425,7 +19448,7 @@ function startSNAI(tabIdentity) {
             // CI is an operator-only optional lookup. It is intentionally not
             // an AI value: when supplied, use the exact search text and pick
             // the first matching Configuration Item in Workspace.
-            if (supplied['configuration-item']) command.HP['Configuration Item'] = supplied['configuration-item'];
+            command.HP['Configuration Item'] = supplied['configuration-item'] || '';
             lastAIResponse = command;
             if (stopped) throw Object.assign(new Error('HP request stopped.'), { code: 'AI_STOPPED' });
             reusableAICommand = await writeCachedAICommand('HP', pinnedIMS, JSON.stringify(command));
@@ -19864,7 +19887,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.410' });
+    addLog('info', 'helper-version', { version: '2.36.411' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
