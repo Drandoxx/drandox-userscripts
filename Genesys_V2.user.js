@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.544.0
+// @version      1.545.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -5976,12 +5976,12 @@
       }
     }
     const heading = doc.createElement('div');
-    heading.style.cssText = 'padding:12px 16px;border-bottom:1px solid #22d3ee70;color:#67e8f9;font-weight:600;user-select:none;cursor:move;touch-action:none';
+    heading.style.cssText = 'position:relative;padding:12px 42px 12px 16px;border-bottom:1px solid #22d3ee70;color:#67e8f9;font-weight:600;user-select:none;cursor:move;touch-action:none;overflow-wrap:anywhere';
     heading.textContent = lastCallSummary.wrapupComplete
-      ? `Earlier call data - ${callClock(lastCallSummary.startedAt)} until ${callClock(lastCallSummary.endedAt)}`
+      ? 'Earlier call data'
       : 'Call information — After Call Work';
     const close = doc.createElement('button'); close.type = 'button'; close.textContent = '×'; close.setAttribute('aria-label', 'Close last call data');
-    close.style.cssText = 'float:right;background:transparent;border:0;color:inherit;font-size:20px;cursor:pointer';
+    close.style.cssText = 'position:absolute;right:10px;top:8px;width:28px;height:28px;padding:0;line-height:28px;background:transparent;border:0;color:inherit;font-size:20px;cursor:pointer';
     close.addEventListener('click', () => {lastCallSummary.dismissed = true; saveLastCallWindow(); popup.remove();}); heading.append(close);
     heading.addEventListener('pointerdown', event => {
       if (event.button !== 0 || event.target === close) return;
@@ -6011,8 +6011,23 @@
       const row = doc.createElement('div'); row.style.cssText = 'margin-bottom:8px;overflow-wrap:anywhere';
       const title = doc.createElement('div'); title.textContent = label; title.style.cssText = 'color:#8fb2bd;font-size:12px';
       const content = doc.createElement('div'); content.textContent = value;
+      if (/phone number|location|country/i.test(label)) {
+        const copy = doc.createElement('button'); copy.type = 'button'; copy.setAttribute('aria-label', `Copy ${label}`);
+        copy.style.cssText = 'margin-left:8px;padding:2px;background:transparent;border:0;color:#67e8f9;cursor:pointer;vertical-align:middle';
+        const icon = checked => `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-${checked ? 'check' : 'copy'}">${checked ? '<path d="m9 12 2 2 4-4"/>' : '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>'}</svg>`;
+        copy.innerHTML = icon(false);
+        copy.addEventListener('click', async () => {
+          try { await doc.defaultView.navigator.clipboard.writeText(value); copy.innerHTML = icon(true); }
+          catch (_) { copy.setAttribute('aria-label', 'Copy failed'); }
+        });
+        content.appendChild(copy);
+      }
       row.append(title, content); body.appendChild(row);
     }
+    const timing = doc.createElement('div');
+    timing.style.cssText = 'font-size:12px;color:#8fb2bd;margin-top:10px;user-select:none';
+    timing.textContent = `Observed call: ${callClock(lastCallSummary.startedAt)} – ${callClock(lastCallSummary.endedAt)} (not verified Genesys duration)`;
+    body.appendChild(timing);
     if (Number.isFinite(lastCallSummary.wrapupSeconds)) {
       const elapsed = Math.floor((Date.now() - lastCallSummary.wrapupObservedAt) / 1000);
       const remaining = Math.max(0, lastCallSummary.wrapupSeconds - elapsed);
