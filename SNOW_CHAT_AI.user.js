@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.401
+// @version      2.36.403
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -5998,6 +5998,7 @@ function startSNAI(tabIdentity) {
   const CHAT_CACHE_READER_VERSION = 4;
   const COMMAND_STATUS_KEY = 'local-sn-inspector-command-status-v1';
   const LAUNCHER_POSITION_KEY = `local-sn-inspector-launcher-position-v2:${positionScope}`;
+  const LAUNCHER_MODE_POSITION_KEY = `local-sn-inspector-launcher-position-v3:${pageMode}`;
   const TICKET_WINDOWS_KEY = `local-sn-inspector-ticket-windows-v2:${positionScope}`;
   const AI_ENABLED_KEY = 'local-sn-inspector-ai-enabled-v1';
   const CMD_ENABLED_KEY = 'local-sn-inspector-cmd-enabled-v1';
@@ -15383,21 +15384,39 @@ function startSNAI(tabIdentity) {
     const waitForLauncherUI = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const saveLauncherPosition = (left, top) => {
       try {
-        localStorage.setItem(LAUNCHER_POSITION_KEY, JSON.stringify({
+        const position = JSON.stringify({
           left: Math.round(left * 10) / 10,
           top: Math.round(top * 10) / 10,
           viewportWidth: window.innerWidth,
           viewportHeight: window.innerHeight,
           savedAt: new Date().toISOString(),
-        }));
+        });
+        localStorage.setItem(LAUNCHER_POSITION_KEY, position);
+        localStorage.setItem(LAUNCHER_MODE_POSITION_KEY, position);
       } catch (error) {
         addLog('warn', 'launcher-position-save-failed', { message: error.message });
       }
     };
     const restoreLauncherPosition = () => {
       try {
-        const saved = JSON.parse(localStorage.getItem(LAUNCHER_POSITION_KEY) || 'null');
+        const readPosition = key => {
+          try { const value = JSON.parse(localStorage.getItem(key) || 'null'); return value && Number.isFinite(value.left) && Number.isFinite(value.top) ? value : null; }
+          catch { return null; }
+        };
+        let saved = readPosition(LAUNCHER_POSITION_KEY) || readPosition(LAUNCHER_MODE_POSITION_KEY);
+        if (!saved) {
+          // Recover earlier positions only from this page mode. Never migrate
+          // the classic incident's position into the Workspace launcher.
+          const prefix = `local-sn-inspector-launcher-position-v2:${pageMode}:`;
+          for (let index = 0; index < localStorage.length; index++) {
+            const key = localStorage.key(index);
+            if (!key?.startsWith(prefix)) continue;
+            const candidate = readPosition(key);
+            if (candidate && (!saved || String(candidate.savedAt || '') > String(saved.savedAt || ''))) saved = candidate;
+          }
+        }
         if (!saved || !Number.isFinite(saved.left) || !Number.isFinite(saved.top)) return false;
+        localStorage.setItem(LAUNCHER_MODE_POSITION_KEY, JSON.stringify(saved));
         // Restore against the compact pill, not startup/settings content that
         // may temporarily expand the host before the collapsed class mounts.
         const left = Math.min(Math.max(0, window.innerWidth - 64), Math.max(0, saved.left));
@@ -19799,7 +19818,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.401' });
+    addLog('info', 'helper-version', { version: '2.36.403' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -21345,7 +21364,7 @@ function installAgentDashboardPopup() {
   root.append(footerStyle);
   footerStyle.textContent+='\nli[data-agent-card]{display:flex;align-items:center;gap:6px}.agent-name{flex:1;min-width:0;overflow-wrap:anywhere}.agent-chat-count{flex:0 0 auto;margin-left:auto;font-variant-numeric:tabular-nums;font-weight:600;padding:0 4px;border-radius:4px;background:color-mix(in srgb,var(--sn-theme-e6edf9,#eee6ff) 8%,transparent)}';
   footerStyle.textContent+='\n.update-footer{font-size:9px}';
-  footerStyle.textContent+='\nli[data-no-agents]{color:color-mix(in srgb,var(--sn-theme-e6edf9,#eee6ff) 16%,var(--sn-theme-251f31,#241c33))}';
+  footerStyle.textContent+='\nli[data-no-agents]{text-align:center;color:color-mix(in srgb,var(--sn-theme-e6edf9,#eee6ff) 16%,var(--sn-theme-251f31,#241c33))}';
   footerStyle.textContent+='\nli[data-agent-card]{margin:3px 0;padding:4px 6px;border-radius:6px;border:1px solid color-mix(in srgb,hsl(var(--agent-hue) 70% 60%) 45%,var(--sn-theme-655573,#74618b));background:color-mix(in srgb,hsl(var(--agent-hue) 70% 60%) 18%,var(--sn-theme-251f31,#241c33));color:var(--sn-theme-e6edf9,#eee6ff)}';
   let agentColors={};try{agentColors=JSON.parse(localStorage.getItem('sn-ai-agent-name-colors-v1')||'{}');}catch{}
   const agentHue=name=>{
