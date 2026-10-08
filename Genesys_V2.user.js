@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.546.0
+// @version      1.547.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -6040,7 +6040,7 @@
       if (/phone number|location|country/i.test(label)) {
         const copy = doc.createElement('button'); copy.type = 'button'; copy.setAttribute('aria-label', `Copy ${label}`);
         copy.style.cssText = 'margin-left:8px;padding:2px;background:transparent;border:0;color:#67e8f9;cursor:pointer;vertical-align:middle';
-        const icon = checked => `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-${checked ? 'check' : 'copy'}">${checked ? '<path d="m9 12 2 2 4-4"/>' : '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>'}</svg>`;
+        const icon = checked => `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-${checked ? 'check' : 'copy'}">${checked ? '<path d="M20 6 9 17l-5-5"/>' : '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>'}</svg>`;
         copy.innerHTML = icon(false);
         copy.addEventListener('click', async () => {
           try { await doc.defaultView.navigator.clipboard.writeText(value); copy.innerHTML = icon(true); }
@@ -6311,7 +6311,7 @@
         const copy = doc.createElement('button');
         copy.type = 'button'; copy.setAttribute('aria-label', `Copy ${label}`);
         copy.style.cssText = 'margin-left:8px;padding:2px;background:transparent;border:0;color:#67e8f9;cursor:pointer';
-        const icon = checked => `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-${checked ? 'check' : 'copy'}">${checked ? '<path d="m9 12 2 2 4-4"/>' : '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>'}</svg>`;
+        const icon = checked => `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-${checked ? 'check' : 'copy'}">${checked ? '<path d="M20 6 9 17l-5-5"/>' : '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>'}</svg>`;
         copy.innerHTML = icon(false);
         copy.addEventListener('click', async () => {
           try { await doc.defaultView.navigator.clipboard.writeText(value); copy.innerHTML = icon(true); }
