@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.541.0
+// @version      1.542.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -5063,11 +5063,27 @@
       measurementInfo.textContent = `${calls.length} recorded calls • ${calls.reduce((total, call) => total + (call.durationSeconds || 0), 0)} seconds measured${data.active ? ' • recording current call' : ''}. ${calls.map((call,index) => `Call ${index+1}: ${call.durationSeconds || 0}s`).join(' · ')}`;
     };
     refreshMeasurementInfo();
+    const removeMeasurements = doc.createElement('button');
+    removeMeasurements.type = 'button';
+    removeMeasurements.textContent = 'Remove recorded calls';
+    removeMeasurements.style.cssText = 'margin-top:10px;padding:9px 12px;border:1px solid #fb7185;border-radius:6px;background:#1d2228;color:#fb7185;cursor:pointer';
+    removeMeasurements.title = 'Deletes completed measurement recordings; preserves an ongoing call and older collectors.';
+    removeMeasurements.addEventListener('click', () => {
+      if (!isSavedAdmin(doc)) return;
+      const data = GM_getValue('genesys-v2-call-measurements', {calls:[]});
+      if (!(data.calls || []).length) {
+        measurementInfo.textContent = 'No completed recordings to remove. An ongoing call is preserved.';
+        return;
+      }
+      if (!doc.defaultView.confirm('Permanently remove all completed call measurement recordings? Download them first if needed. An ongoing call and the older call collectors will not be removed.')) return;
+      GM_setValue('genesys-v2-call-measurements', {calls:[],active:data.active || null});
+      refreshMeasurementInfo();
+    });
     const measurementInfoTimer = setInterval(() => {
       if (!measurementInfo.isConnected) { clearInterval(measurementInfoTimer); return; }
       refreshMeasurementInfo();
     },1000);
-    lastCall.append(title, info, download, historyDownload, measurementDownload, measurementInfo); body.appendChild(lastCall);
+    lastCall.append(title, info, download, historyDownload, measurementDownload, measurementInfo, removeMeasurements); body.appendChild(lastCall);
     checkbox.checked = showAdminCallButton(doc);
     popover.querySelector('.gbs-settings-footer .gbs-settings-save').addEventListener('click', () => {
       if (!isSavedAdmin(doc)) return;
