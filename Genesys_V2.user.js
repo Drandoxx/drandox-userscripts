@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.545.0
+// @version      1.546.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -5796,14 +5796,29 @@
   function collectCallVisualDiagnostics(doc, callFrame = false) {
     const cached = callVisualCache.get(doc);
     if (cached && Date.now() - cached.at < 3000) return cached.value;
-    const surfaces = [], controls = []; let inspected = 0;
+    const surfaces = [], controls = [], identifiers = [], timers = [], snapshots = []; let inspected = 0;
+    const seenIds = new Set();
+    const findIds = (text, path) => {
+      const pattern = /(conversation|call|participant|session|communication)[-_ ]?(?:id)?["'\s:=/?%-]*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/gi;
+      for (const match of String(text).matchAll(pattern)) {
+        const key = `${match[1].toLowerCase()}:${match[2].toLowerCase()}`;
+        if (!seenIds.has(key)) { seenIds.add(key); identifiers.push({kind:match[1].toLowerCase(),id:match[2],path,confidence:'DOM candidate; not API verified'}); }
+      }
+    };
+    findIds(doc.location.href,'document URL');
     const scan = (root, path) => {
       for (const element of root.querySelectorAll('*')) {
         if (++inspected > 2500 || surfaces.length >= 60) return;
         const rect = element.getBoundingClientRect();
-        if (!rect.width || !rect.height) continue;
         const style = doc.defaultView.getComputedStyle(element);
         const selector = element.tagName.toLowerCase() + (element.id ? `#${element.id}` : '') + [...element.classList].map(name => `.${name}`).join('');
+        const elementPath = `${path} > ${selector}`;
+        for (const attribute of element.attributes) {
+          if (!/token|authorization|cookie|secret|password/i.test(attribute.name)) findIds(`${attribute.name}=${attribute.value}`,elementPath);
+        }
+        const shown = !!rect.width && !!rect.height;
+        if (element.matches('time, [role="timer"], [data-testid*="duration"], [class*="countdown"]')) timers.push({path:elementPath,text:element.textContent?.trim(),visible:shown,ariaLabel:element.getAttribute('aria-label'),html:element.outerHTML.slice(0,1500)});
+        if (!shown) { if (element.shadowRoot) scan(element.shadowRoot,`${elementPath} ::shadow`); continue; }
         const color = style.backgroundColor.match(/[\d.]+/g)?.map(Number);
         if (color && color.length >= 3 && (color[3] ?? 1) > .5 && Math.min(...color.slice(0,3)) > 175 && rect.width * rect.height > 200) {
           const html = element.cloneNode(true);
@@ -5811,7 +5826,7 @@
           surfaces.push({path:`${path} > ${selector}`,rect:rect.toJSON(),html:html.outerHTML.slice(0,5000),
             styles:Object.fromEntries(['background-color','color','border','box-shadow','display','position','overflow','padding','font-size','line-height'].map(key => [key,style.getPropertyValue(key)]))});
         }
-        if (element.matches('button') && /mute|hold|hang|end call/i.test([element.className,element.getAttribute('aria-label'),element.title,element.textContent].join(' '))) {
+        if (element.matches('button, a, [role="button"]')) {
           controls.push({path:`${path} > ${selector}`,html:element.outerHTML.slice(0,2000),disabled:element.disabled,ariaDisabled:element.getAttribute('aria-disabled'),pressed:element.getAttribute('aria-pressed')});
         }
         if (element.shadowRoot) scan(element.shadowRoot,`${path} > ${selector} ::shadow`);
@@ -5819,8 +5834,16 @@
     };
     const areas = [...doc.querySelectorAll('.command-panel.active.agent, .selected-interaction-container, [data-testid="wrapup-main-container"]')];
     if (!areas.length && (callFrame || /acw-gadgets|contact|profile/i.test(doc.location.href))) areas.push(doc.body);
-    for (const area of areas) if (area) scan(area,area.tagName.toLowerCase());
-    const value = {surfaces,controls,inspected,capped:inspected > 2500 || surfaces.length >= 60};
+    for (const area of areas) if (area) {
+      const clone = area.cloneNode(true);
+      clone.querySelectorAll('script,input,textarea').forEach(node => node.remove());
+      for (const node of [clone,...clone.querySelectorAll('*')]) for (const attribute of [...node.attributes]) {
+        if (/token|authorization|cookie|secret|password/i.test(attribute.name)) node.removeAttribute(attribute.name);
+      }
+      snapshots.push({html:clone.outerHTML.slice(0,40000),truncated:clone.outerHTML.length > 40000});
+      scan(area,area.tagName.toLowerCase());
+    }
+    const value = {surfaces,controls,identifiers,timers,snapshots,inspected,capped:inspected > 2500 || surfaces.length >= 60};
     callVisualCache.set(doc,{at:Date.now(),value}); return value;
   }
   function measureCallPopup(doc) {
@@ -5841,7 +5864,7 @@
       const text = areas.map(area => area.innerText || '').join('\n').slice(0, 16000);
       const countdown = frameDoc.querySelector('[data-testid="wrapup-header-message-duration"]')?.textContent?.trim();
       const visual = collectCallVisualDiagnostics(frameDoc, callFrame);
-      if (text || countdown || visual.surfaces.length || visual.controls.length) sources.push({url:frameDoc.location.href,text,countdown:countdown || null,visual});
+      if (text || countdown || visual.surfaces.length || visual.controls.length || visual.identifiers.length || visual.timers.length) sources.push({url:frameDoc.location.href,text,countdown:countdown || null,visual});
       frameDoc.querySelectorAll('iframe').forEach(frame => {
         try { const nested = accessibleFrameDocument(frame); if (nested) visit(nested,depth+1,callFrame || !!frame.closest('.command-panel.active.agent, .selected-interaction-container')); else inaccessible.push(frame.title || frame.src); }
         catch (_) { inaccessible.push(frame.title || frame.src); }
@@ -5863,6 +5886,9 @@
       sources,inaccessible,popupText,sourcePhone,popupPhone,phoneMatches:sourcePhone ? sourcePhone === popupPhone : null,
       countdown:sources.find(source => source.countdown)?.countdown || null,popupCountdown:(popup || lastPopup)?.querySelector('[role="timer"]')?.textContent || null};
     const signature = JSON.stringify({...sample,at:null});
+    const postCall = !incoming && !popup && (!sample.countdown || /^0+:0+$/.test(sample.countdown));
+    if (postCall && !measurementState.postCallStartedAt) measurementState.postCallStartedAt = Date.now();
+    if (!postCall) measurementState.postCallStartedAt = null;
     if (signature !== measurementLastSignature || Date.now()-measurementLastSave >= 5000) {
       measurementLastSignature = signature; measurementState.samples.push(sample);
       // Bound diagnostic storage; explicitly report any truncated early samples.
@@ -5873,7 +5899,7 @@
       if (sourcePhone && !measurementState.nativePhoneAt) measurementState.nativePhoneAt = sample.at;
       if (popupPhone && !measurementState.popupPhoneAt) measurementState.popupPhoneAt = sample.at;
       if (measurementState.nativePhoneAt && measurementState.popupPhoneAt) measurementState.phoneDelayMs = Date.parse(measurementState.popupPhoneAt)-Date.parse(measurementState.nativePhoneAt);
-      if (!incoming && !popup && !sample.countdown) {
+      if (postCall && Date.now() - measurementState.postCallStartedAt >= 30000) {
         measurementState.endedAt = sample.at; calls.push(measurementState);
         GM_setValue('genesys-v2-call-measurements', {calls:calls.slice(-50),active:null});
         measurementState = null;
