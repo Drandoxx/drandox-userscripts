@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.411
+// @version      2.36.412
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -509,8 +509,23 @@ const snAIChatDisplayNames=(()=>{
   document.addEventListener('sn-ai-auto-greet',event=>{autoGreetChanged=true;autoGreetEnabled=event.detail===true;});
   // An accepted incoming offer is required: opening an old IMS never greets it.
   const autoGreetOffers=new Map();
+  const pendingGreetingIds=new Set();
+  let greetingFocusEpoch=0;
+  const greetingWindowActive=()=>!document.hidden&&document.hasFocus();
+  function rememberGreetingAttempt(id){
+    greetAttempted.add(id);pendingGreetingIds.delete(id);
+    try{sessionStorage.setItem('sn-ai-greet-attempts-v1',JSON.stringify([...greetAttempted].slice(-500)));}catch{}
+  }
+  function skipInactiveGreetings(){
+    greetingFocusEpoch++;
+    autoGreetOffers.clear();
+    for(const id of [...pendingGreetingIds])rememberGreetingAttempt(id);
+  }
+  window.addEventListener('blur',skipInactiveGreetings);
+  document.addEventListener('visibilitychange',()=>{if(!greetingWindowActive())skipInactiveGreetings();});
   document.addEventListener('sn-ai-autoaccepted-ims',event=>{
     const ims=event.detail?.ims;if(!/^IMS\d+$/.test(ims||''))return;
+    if(!greetingWindowActive())return;
     autoGreetOffers.set(ims,event.detail.acceptedAt||Date.now());
     for(const scope of spaceRoots)for(const input of scope.querySelectorAll?.('sn-chat-input')||[])queueNewChatGreeting(input);
   });
@@ -519,6 +534,9 @@ const snAIChatDisplayNames=(()=>{
     if(host?.localName!=='sn-chat-input'||greetSeenHosts.has(host))return;
     const id=host.sysId||host.getAttribute('sys-id');
     if(!autoGreetEnabled||!id||greetAttempted.has(id)||!autoGreetOffers.size)return;
+    if(!greetingWindowActive()){rememberGreetingAttempt(id);return;}
+    const focusEpoch=greetingFocusEpoch;
+    pendingGreetingIds.add(id);
     greetSeenHosts.add(host);
     let record;
     try{record=imsPreviewRecords.get(id)||await fetchIMSRecord('sys_id='+id);}catch{greetSeenHosts.delete(host);return;}
@@ -528,12 +546,13 @@ const snAIChatDisplayNames=(()=>{
     const greetDelayMs=autoGreetDelaySeconds*1000;
     const ownElements=()=>{const list=[];const visit=root=>{for(const node of root.querySelectorAll('*')){list.push(node);if(node.shadowRoot)visit(node.shadowRoot);}};if(host.shadowRoot)visit(host.shadowRoot);return list;};
     const input=()=>ownElements().find(node=>node.matches('textarea[name="CHAT_INPUT#CHAT_TEXTAREA"]'));
-    const safe=()=>autoGreetEnabled&&host.isConnected&&(host.sysId||host.getAttribute('sys-id'))===id&&host.isChatOwner===true&&!document.hidden&&host.getBoundingClientRect().width>0&&lastOperatorActivity===activity&&!input()?.disabled&&!input()?.readOnly&&ownElements().some(node=>node.matches('[role="tab"][aria-selected="true"]')&&/Public Chat/i.test(node.textContent));
+    const safe=()=>autoGreetEnabled&&greetingWindowActive()&&focusEpoch===greetingFocusEpoch&&host.isConnected&&(host.sysId||host.getAttribute('sys-id'))===id&&host.isChatOwner===true&&host.getBoundingClientRect().width>0&&lastOperatorActivity===activity&&!input()?.disabled&&!input()?.readOnly&&ownElements().some(node=>node.matches('[role="tab"][aria-selected="true"]')&&/Public Chat/i.test(node.textContent));
     const wait=async predicate=>{for(let i=0;i<20;i++){if(!safe())return null;const result=predicate();if(result)return result;await new Promise(resolve=>setTimeout(resolve,100));}return null;};
     setTimeout(async()=>{
       // Wait for native controls to mount; never insert a command into a partial/error view.
       let loaded=false;
       for(let i=0;i<480;i++){
+        if(!greetingWindowActive()||focusEpoch!==greetingFocusEpoch){rememberGreetingAttempt(id);return;}
         if(!autoGreetEnabled||!host.isConnected||lastOperatorActivity!==activity||greetAttempted.has(id))return;
         const field=input(),nodes=ownElements();
         if(field?.value.trim())return;
@@ -548,8 +567,7 @@ const snAIChatDisplayNames=(()=>{
       while(chat&&chat.localName!=='sn-agent-chat')chat=chat.parentElement||chat.getRootNode()?.host;
       const agentMessages=chat?.shadowRoot?.querySelectorAll('now-chat-message')||[];
       if([...agentMessages].some(message=>message.shadowRoot?.querySelector('.now-chat-message.agent.right')))return;
-      greetAttempted.add(id);
-      try{sessionStorage.setItem('sn-ai-greet-attempts-v1',JSON.stringify([...greetAttempted].slice(-500)));}catch{}
+      rememberGreetingAttempt(id);
       try {
         host.dispatch('CHAT_INPUT#MESSAGE_ENTERED',{message:'/r w',command:'r',query:'w',currentParamIndex:0,caretPos:4});
         const option=await wait(()=>ownElements().find(node=>node.id==='quickaction-param-w'));
@@ -19887,7 +19905,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.411' });
+    addLog('info', 'helper-version', { version: '2.36.412' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
