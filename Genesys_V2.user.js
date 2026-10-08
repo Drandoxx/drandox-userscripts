@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.540.0
+// @version      1.541.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -5911,7 +5911,10 @@
     }).format(new Date(value));
   }
   function syncLastCallDataPopup(doc, wrapup) {
-    if (window !== window.top) { doc.getElementById('gbs-last-call-data')?.remove(); return; }
+    if (window !== window.top || doc.defaultView !== window.top) {
+      doc.querySelectorAll('#gbs-last-call-data, #gbs-call-information').forEach(card => card.remove());
+      return;
+    }
     let popup = doc.getElementById('gbs-last-call-data');
     // Never show an earlier-call card alongside a new active call.
     if (activeCallSummary) { popup?.remove(); return; }
@@ -6008,7 +6011,7 @@
   }
 
   function syncCallInformationPopup(doc) {
-    if (window !== window.top) {
+    if (window !== window.top || doc.defaultView !== window.top) {
       doc.getElementById('gbs-last-call-data')?.remove();
       doc.getElementById('gbs-call-information')?.remove();
       return;
