@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.409
+// @version      2.36.410
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -4205,6 +4205,10 @@ const snAIChatDisplayNames=(()=>{
     if(plus){if(plus.getAttribute('aria-label')!=='Open record')plus.setAttribute('aria-label','Open record');if(plus.getAttribute('title')!=='Open record')plus.setAttribute('title','Open record');}
   }
   let imsLookupBox=null;
+  function currentIMSParentId() {
+    return location.pathname.match(/\/chat\/([a-f0-9]{32})(?:\/|$)/i)?.[1]
+      ||location.pathname.match(/\/record\/interaction\/([a-f0-9]{32})(?:\/|$)/i)?.[1];
+  }
   function installSubTabRecordButton(node) {
     if (!node?.matches?.('.sn-chrome-tabs-content')) return;
     let owner=node;
@@ -4257,8 +4261,7 @@ const snAIChatDisplayNames=(()=>{
           // ITEM_SELECTED's row branch always creates a main tab. The native
           // parent-bound branch requires explicit IDs and no row property.
           // Resolve after the lookup, so switching IMS while it runs is safe.
-          const parentId=location.pathname.match(/\/chat\/([a-f0-9]{32})(?:\/|$)/i)?.[1]
-            ||location.pathname.match(/\/record\/interaction\/([a-f0-9]{32})(?:\/|$)/i)?.[1];
+          const parentId=currentIMSParentId();
           if(!parentId)throw new Error('Select an IMS chat before opening a sub-tab.');
           tabs.dispatch('ITEM_SELECTED',{table,sys_id:record.sys_id.value,parent_table:'interaction',parent_sys_id:parentId});
         }else tabs.dispatch('ITEM_SELECTED',{table,sys_id:record.sys_id.value,row:record});
@@ -4558,13 +4561,11 @@ const snAIChatDisplayNames=(()=>{
         button=document.createElement('button');button.type='button';button.className='sn-ai-event-incident-shortcut';
         button.style.cssText='display:inline-flex!important;flex-direction:row!important;flex:0 0 auto!important;align-items:center!important;justify-content:center!important;align-self:flex-start!important;gap:8px;width:max-content!important;height:34px!important;min-height:34px!important;max-height:34px!important;box-sizing:border-box!important;margin:0 0 10px 24px!important;padding:6px 10px;border:0;border-radius:7px;background:linear-gradient(115deg,var(--sn-theme-9de2f5),var(--sn-theme-ac94ec));color:var(--sn-theme-14121c);font:inherit;font-weight:600;cursor:pointer';
         button.addEventListener('click',()=>{
-          // Reuse the actual chat smart link when mounted: it opens an IMS sub-tab.
-          for(const scope of spaceRoots)for(const link of scope.querySelectorAll?.('a[datanowsmartlink]')||[]){
-            if(link.textContent.trim().startsWith(button.dataset.number)){link.click();return;}
-          }
-          // Keep fallback navigation scoped to the sub-tab controller, never
-          // the top-level Workspace tabs used for independent IMS records.
-          for(const scope of spaceRoots){const tabs=scope.querySelector?.('sn-workspace-sub-tabs');if(tabs?.dispatch){tabs.dispatch('ITEM_SELECTED',{table:'incident',sys_id:button.dataset.recordId});return;}}
+          // Closed chats have no mounted transcript smart link. Always use the
+          // explicit IMS parent route, which works for active and closed chats.
+          const parentId=currentIMSParentId();
+          if(!parentId)return;
+          for(const scope of spaceRoots){const tabs=scope.querySelector?.('sn-workspace-sub-tabs');if(tabs?.dispatch){tabs.dispatch('ITEM_SELECTED',{table:'incident',sys_id:button.dataset.recordId,parent_table:'interaction',parent_sys_id:parentId});return;}}
         });
         header.prepend(button);
       }
@@ -19863,7 +19864,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.409' });
+    addLog('info', 'helper-version', { version: '2.36.410' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
