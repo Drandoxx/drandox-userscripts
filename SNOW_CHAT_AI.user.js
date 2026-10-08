@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.404
+// @version      2.36.405
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -4202,7 +4202,7 @@ const snAIChatDisplayNames=(()=>{
     }
     if(root.querySelector?.('.sn-chrome-one-tab'))for(const record of imsPreviewRecords.values())paintIMSPreview(record,root);
     const plus=root.querySelector?.('#chrome-add-new-button');
-    if(plus){if(plus.getAttribute('aria-label')!=='Open IMS')plus.setAttribute('aria-label','Open IMS');if(plus.getAttribute('title')!=='Open IMS')plus.setAttribute('title','Open IMS');}
+    if(plus){if(plus.getAttribute('aria-label')!=='Open record')plus.setAttribute('aria-label','Open record');if(plus.getAttribute('title')!=='Open record')plus.setAttribute('title','Open record');}
   }
   let imsLookupBox=null;
   function showIMSLookup(button) {
@@ -4210,7 +4210,7 @@ const snAIChatDisplayNames=(()=>{
     const box=document.createElement('form');imsLookupBox=box;box.className='sn-ai-ims-lookup';
     // This popup lives in document.body, outside the workspace shadow styles.
     box.style.cssText='position:fixed!important;z-index:2147483647;width:280px;max-width:calc(100vw - 16px);box-sizing:border-box;margin:0;padding:10px;background:var(--sn-theme-251f31,#251f31);color:var(--sn-theme-e6edf9,#eee);border:1px solid var(--sn-theme-655573,#655573);border-radius:10px;box-shadow:0 8px 24px #0005;';
-    box.innerHTML='<div role="alert" class="sn-ai-ims-lookup-error" hidden></div><div style="display:flex;gap:6px"><input aria-label="IMS number" placeholder="IMS number" maxlength="30" autocomplete="off"><button type="submit" aria-label="Open IMS">✓</button></div>';
+    box.innerHTML='<div role="alert" class="sn-ai-ims-lookup-error" hidden></div><div style="display:flex;gap:6px"><input aria-label="Record number" placeholder="IMS / EVNT / INC / SCTASK / RITM" maxlength="30" autocomplete="off"><button type="submit" aria-label="Open record">Open</button></div>';
     const rect=button.getBoundingClientRect();box.style.top=Math.min(rect.bottom+8,innerHeight-100)+'px';box.style.left=Math.max(8,Math.min(rect.right-280,innerWidth-288))+'px';document.body.append(box);
     const input=box.querySelector('input'),error=box.querySelector('[role="alert"]'),submit=box.querySelector('button');input.focus();
     input.style.cssText='flex:1;min-width:0;padding:8px;background:var(--sn-theme-191621,#191621);color:inherit;border:1px solid var(--sn-theme-655573,#655573);border-radius:6px;font:inherit;';
@@ -4219,15 +4219,24 @@ const snAIChatDisplayNames=(()=>{
     box.addEventListener('keydown',event=>{event.stopPropagation();if(event.key==='Escape'){box.remove();imsLookupBox=null;button.focus();}});
     box.addEventListener('submit',async event=>{
       event.preventDefault();const ims=input.value.trim().toUpperCase();error.hidden=true;
-      if(!/^IMS\d+$/.test(ims)){error.textContent='Enter a valid IMS number.';error.hidden=false;return;}
+      const prefix=ims.match(/^(IMS|EVNT|INC|SCTASK|RITM)\d+$/)?.[1];
+      if(!prefix){error.textContent='Enter a valid IMS, EVNT, INC, SCTASK or RITM number.';error.hidden=false;return;}
       submit.disabled=true;
       try {
-        const record=await fetchIMSRecord('number='+ims);
+        const table={IMS:'interaction',EVNT:'new_call',INC:'incident',SCTASK:'sc_task',RITM:'sc_req_item'}[prefix];
+        let record;
+        if(prefix==='IMS')record=await fetchIMSRecord('number='+ims);
+        else {
+          const response=await fetch('/api/now/table/'+table+'?sysparm_query='+encodeURIComponent('number='+ims)+'&sysparm_fields=sys_id,number&sysparm_limit=1',{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':kbSessionToken()}});
+          if(!response.ok)throw new Error('Unable to look up record ('+response.status+').');
+          const row=(await response.json()).result?.[0];
+          if(row&&row.number===ims&&/^[a-f0-9]{32}$/i.test(row.sys_id))record={sys_id:{value:row.sys_id},number:{value:row.number}};
+        }
         if(!record)throw new Error(ims+' was not found or is not available to you.');
         let tabs;for(const root of spaceRoots){tabs=root.querySelector?.('sn-workspace-tabs');if(tabs)break;}
         if(typeof tabs?.dispatch!=='function')throw new Error('Workspace navigation is not ready. Try again.');
-        imsPreviewRecords.set(record.sys_id.value,record);
-        tabs.dispatch('ITEM_SELECTED',{table:'interaction',sys_id:record.sys_id.value,row:record});
+        if(prefix==='IMS')imsPreviewRecords.set(record.sys_id.value,record);
+        tabs.dispatch('ITEM_SELECTED',{table,sys_id:record.sys_id.value,row:record});
         box.remove();imsLookupBox=null;
       } catch(reason){error.textContent=reason.message;error.hidden=false;input.focus();}finally{submit.disabled=false;}
     });
@@ -19818,7 +19827,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.404' });
+    addLog('info', 'helper-version', { version: '2.36.405' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
