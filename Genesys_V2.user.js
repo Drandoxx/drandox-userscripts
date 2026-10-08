@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.543.0
+// @version      1.544.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -5955,8 +5955,7 @@
       ? Math.max(0, lastCallSummary.wrapupSeconds - Math.floor((Date.now() - lastCallSummary.wrapupObservedAt) / 1000)) : 0;
     if (!lastCallSummary.wrapupComplete && remainingWrapup === 0) {
       lastCallSummary.wrapupComplete = true; saveLastCallWindow();
-      const panel = doc.querySelector('.command-panel.active.agent');
-      if (!doc.querySelector('.messenger-shown [data-action="answerInteraction"]')) panel?.querySelector('#panel-agent-close-button')?.click();
+      closeWorkspaceForWrapup(doc);
     }
     // Reuse the existing card, preserving its screen position across phases.
     if (!popup) {
@@ -6353,7 +6352,44 @@
     body.appendChild(controls);
   }
 
+  let nativeWrapupWatch = null;
+  function closeWorkspaceForWrapup(doc) {
+    if (window !== window.top || doc !== document || activeCallSummary
+        || doc.querySelector('.messenger-shown [data-action="answerInteraction"]')) return false;
+    const panel = doc.querySelector('.command-panel.active.agent');
+    if (!panel || panel.classList.contains('hidden') || panel.classList.contains('panel-not-active')) return false;
+    const toggle = agentWorkspaceToggle(doc);
+    if (toggle?.getAttribute('aria-expanded') === 'false') return false;
+    if (lastCallSummary) { lastCallSummary.wrapupComplete = true; saveLastCallWindow(); }
+    if (toggle) toggle.click();
+    else panel.querySelector('#panel-agent-close-button')?.click();
+    return true;
+  }
+  function watchNativeWrapupEnd(doc) {
+    if (window !== window.top || doc !== document || themeMode(doc) === 'light') return;
+    const timers = [...collectReachableDocuments()].flatMap(frameDoc => [...frameDoc.querySelectorAll('[data-testid="wrapup-header-message-duration"]')]);
+    const timer = timers.find(element => {
+      const bounds = element.getBoundingClientRect();
+      return bounds.width > 0 && bounds.height > 0 && /^\d+:\d{2}$/.test(element.textContent.trim());
+    });
+    const now = Date.now();
+    if (timer) {
+      if (!nativeWrapupWatch) nativeWrapupWatch = {firstSeen:now,lastSeen:now,triggered:false};
+      nativeWrapupWatch.lastSeen = now;
+      const [minutes, seconds] = timer.textContent.trim().split(':').map(Number);
+      if (minutes * 60 + seconds <= 1 && !nativeWrapupWatch.triggered) {
+        finishActiveCall();
+        nativeWrapupWatch.triggered = closeWorkspaceForWrapup(doc);
+      }
+    } else if (nativeWrapupWatch) {
+      if (!nativeWrapupWatch.triggered && nativeWrapupWatch.lastSeen - nativeWrapupWatch.firstSeen >= 3000) {
+        finishActiveCall(); closeWorkspaceForWrapup(doc);
+      }
+      nativeWrapupWatch = null;
+    }
+  }
   function closeWorkspaceAfterCallEnds(doc) {
+    watchNativeWrapupEnd(doc);
     const panel = doc.querySelector('.command-panel.active.agent');
     if (!panel || panel.classList.contains('hidden')) return;
     if (activeCallSummary) panel.dataset.gbsHadSelectedInteraction = 'true';
