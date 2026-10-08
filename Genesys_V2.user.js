@@ -5776,7 +5776,10 @@
 
   let measurementState = null;
   let measurementLastSignature = '', measurementLastSave = 0;
-  function collectCallVisualDiagnostics(doc) {
+  const callVisualCache = new WeakMap();
+  function collectCallVisualDiagnostics(doc, callFrame = false) {
+    const cached = callVisualCache.get(doc);
+    if (cached && Date.now() - cached.at < 3000) return cached.value;
     const surfaces = [], controls = []; let inspected = 0;
     const scan = (root, path) => {
       for (const element of root.querySelectorAll('*')) {
@@ -5799,12 +5802,14 @@
       }
     };
     const areas = [...doc.querySelectorAll('.command-panel.active.agent, .selected-interaction-container, [data-testid="wrapup-main-container"]')];
-    if (!areas.length && /acw-gadgets|contact|profile/i.test(doc.location.href)) areas.push(doc.body);
+    if (!areas.length && (callFrame || /acw-gadgets|contact|profile/i.test(doc.location.href))) areas.push(doc.body);
     for (const area of areas) if (area) scan(area,area.tagName.toLowerCase());
-    return {surfaces,controls,inspected,capped:inspected > 2500 || surfaces.length >= 60};
+    const value = {surfaces,controls,inspected,capped:inspected > 2500 || surfaces.length >= 60};
+    callVisualCache.set(doc,{at:Date.now(),value}); return value;
   }
   function measureCallPopup(doc) {
     if (window !== window.top || !isSavedAdmin(doc) || themeMode(doc) === 'light') return;
+    if (!measurementState && !doc.getElementById('gbs-call-information')) return;
     const incoming = doc.querySelector('.messenger-shown [data-action="answerInteraction"]');
     const view = incoming?.closest('.messenger-message')?.querySelector('[data-action="openAcdInteraction"] a');
     // View only loads the native panel; never answer or operate call controls.
@@ -5813,16 +5818,16 @@
     }
     const sources = [], inaccessible = [];
     const visited = new Set();
-    const visit = (frameDoc, depth = 0) => {
+    const visit = (frameDoc, depth = 0, callFrame = false) => {
       if (!frameDoc || visited.has(frameDoc) || depth > 6) return;
       visited.add(frameDoc);
       const areas = [...frameDoc.querySelectorAll('.selected-interaction-container, .interactions, [data-testid="wrapup-main-container"]')];
       const text = areas.map(area => area.innerText || '').join('\n').slice(0, 16000);
       const countdown = frameDoc.querySelector('[data-testid="wrapup-header-message-duration"]')?.textContent?.trim();
-      const visual = collectCallVisualDiagnostics(frameDoc);
+      const visual = collectCallVisualDiagnostics(frameDoc, callFrame);
       if (text || countdown || visual.surfaces.length || visual.controls.length) sources.push({url:frameDoc.location.href,text,countdown:countdown || null,visual});
       frameDoc.querySelectorAll('iframe').forEach(frame => {
-        try { const nested = accessibleFrameDocument(frame); if (nested) visit(nested,depth+1); else inaccessible.push(frame.title || frame.src); }
+        try { const nested = accessibleFrameDocument(frame); if (nested) visit(nested,depth+1,callFrame || !!frame.closest('.command-panel.active.agent, .selected-interaction-container')); else inaccessible.push(frame.title || frame.src); }
         catch (_) { inaccessible.push(frame.title || frame.src); }
       });
     };
