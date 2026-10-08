@@ -6155,10 +6155,13 @@
       const candidates = [...(root?.querySelectorAll(control.selector) || [])];
       if (control.mute) {
         const labelled = [...(root?.querySelectorAll('button') || [])].filter(button =>
-          /^(?:unmute|mute)(?:\s+(?:microphone|call|audio))?$/i.test((button.getAttribute('aria-label') || button.title || button.textContent || '').trim()));
+          /\b(?:unmute|mute)\b/i.test([button.getAttribute('aria-label'), button.title,
+            button.textContent, ...[...button.querySelectorAll('gux-icon')].map(icon => icon.getAttribute('screenreader-text'))].filter(Boolean).join(' ')));
         candidates.push(...labelled);
       }
-      return candidates.find(button => visible(button) && !button.disabled && button.getAttribute('aria-disabled') !== 'true')
+      const isUnmute = button => /unmute/i.test([button.className,button.getAttribute('aria-label'),button.title,button.textContent].join(' '));
+      const enabled = button => visible(button) && !button.disabled && button.getAttribute('aria-disabled') !== 'true';
+      return (control.mute ? candidates.find(button => isUnmute(button) && enabled(button)) : null) || candidates.find(enabled)
         || candidates.find(visible) || null;
     };
     const callControls = [
@@ -6174,7 +6177,7 @@
     });
     const signature = JSON.stringify([...details]) + state + Boolean(snowAction)
       + (incoming ? Math.floor((Date.now() - (testCallSession?.startedMs || Date.now())) / 1000) : '')
-      + JSON.stringify(callControls.map(control => [control.label, Boolean(control.native), control.native?.disabled, control.native?.getAttribute('aria-pressed')]));
+      + JSON.stringify(callControls.map(control => [control.label, Boolean(control.native), control.native?.disabled, control.native?.getAttribute('aria-disabled'), control.native?.getAttribute('aria-pressed')]));
     if (popup.dataset.details === signature) return;
     popup.dataset.details = signature;
     if (testCallSession && !testCallSession.finishedAt) {
@@ -6277,6 +6280,11 @@
         action.click();
         button.disabled = true;
         doc.defaultView.setTimeout(() => {
+          // Ember can clear aria-disabled without changing the label/pressed
+          // state. Never leave our temporary click lock latched indefinitely.
+          const fresh = resolveCallControl([...doc.querySelectorAll('.selected-interaction-container')].find(visible), control);
+          button.disabled = !fresh || fresh.disabled || fresh.getAttribute('aria-disabled') === 'true';
+          button.style.opacity = button.disabled ? '.45' : '1';
           if (popup.isConnected) { delete popup.dataset.details; syncCallInformationPopup(doc); }
         }, 200);
       });
