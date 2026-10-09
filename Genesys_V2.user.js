@@ -5047,7 +5047,7 @@
     measurementDownload.textContent = 'Download call timing & popup measurements';
     measurementDownload.style.cssText = 'display:block;margin-top:14px;padding:10px;border:1px dashed #67e8f9;border-radius:6px;background:#1d2228;color:#a5f3fc;cursor:pointer';
     measurementDownload.addEventListener('click', () => {
-      const data = GM_getValue('genesys-v2-call-measurements', {samples:[]});
+      const data = {...GM_getValue('genesys-v2-call-measurements', {samples:[]}),todayCallCache:readTodayCallCache()};
       const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], {type:'application/json'}));
       const link = doc.createElement('a'); link.href = url; link.download = 'genesys-v2-call-measurements.json'; link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -6084,7 +6084,8 @@
     const sourceText = sources.map(source => source.text).join('\n');
     if (!measurementState && !popup) return;
     if (!measurementState) {
-      measurementState = {schemaVersion:2,startedAt:new Date().toISOString(),sampleIntervalMs:1000,samples:[],elements:{},droppedSamples:0,limits:'Accessible DOM only; initial elements plus field-path deltas. HTML captured once per element path.'};
+      measurementState = {schemaVersion:3,startedAt:new Date().toISOString(),sampleIntervalMs:1000,samples:[],elements:{},network:[],droppedSamples:0,limits:'Accessible DOM and call-only API projections; changes only, no credentials. Network bounded to 120 events / 500KB.'};
+      callNetworkChanges.length = 0; callNetworkSignatures.clear();
       measurementPreviousFields = {}; measurementPersistedAt = 0;
       measurementLastSignature = ''; measurementLastSave = 0;
     }
@@ -6099,6 +6100,13 @@
     if (postCall && !measurementState.postCallStartedAt) measurementState.postCallStartedAt = Date.now();
     if (!postCall) measurementState.postCallStartedAt = null;
     const delta = compactMeasurement(sample);
+    if (callNetworkChanges.length) {
+      measurementState.network ||= [];
+      measurementState.network.push(...callNetworkChanges.splice(0));
+      while (measurementState.network.length > 120 || JSON.stringify(measurementState.network).length > 500000) {
+        measurementState.network.shift(); measurementState.droppedNetworkEvents = (measurementState.droppedNetworkEvents || 0) + 1;
+      }
+    }
     if (Object.keys(delta.changes).length || delta.removed.length || (postCall && Date.now() - measurementState.postCallStartedAt >= 30000)) {
       if (Object.keys(delta.changes).length || delta.removed.length) measurementState.samples.push(delta);
       // Bound diagnostic storage; explicitly report any truncated early samples.
@@ -6132,7 +6140,7 @@
   let activeCallSavedSignature = '';
   function saveActiveCallWindow() {
     if (!activeCallSummary) { GM_deleteValue(ACTIVE_CALL_WINDOW_KEY); activeCallSavedSignature = ''; return; }
-    const signature = JSON.stringify(activeCallSummary.details) + activeCallSummary.connectedAt + activeCallSummary.snowUrl + activeCallSummary.hadSnowAction;
+    const signature = JSON.stringify(activeCallSummary.details) + activeCallSummary.connectedAt + activeCallSummary.snowUrl + activeCallSummary.hadSnowAction + activeCallSummary.conversationId;
     if (signature !== activeCallSavedSignature || Date.now() - (activeCallSummary.updatedAt || 0) > 10000) {
       activeCallSummary.updatedAt = Date.now(); GM_setValue(ACTIVE_CALL_WINDOW_KEY, activeCallSummary);
       activeCallSavedSignature = signature;
@@ -6146,8 +6154,10 @@
       document.getElementById('gbs-last-call-data')?.remove();
     }
     lastCallSummary = {startedAt:activeCallSummary.connectedAt || activeCallSummary.ringingAt,
-      endedAt:Date.now(),details:activeCallSummary.details,snowUrl:activeCallSummary.snowUrl,hadSnowAction:activeCallSummary.hadSnowAction,wrapupSeconds:29,wrapupObservedAt:Date.now(),wrapupComplete:false};
+      endedAt:Date.now(),details:activeCallSummary.details,conversationId:activeCallSummary.conversationId,apiUserId:activeCallSummary.apiUserId,snowUrl:activeCallSummary.snowUrl,hadSnowAction:activeCallSummary.hadSnowAction,wrapupSeconds:29,wrapupObservedAt:Date.now(),wrapupComplete:false};
     activeCallSummary = null; saveActiveCallWindow(); saveLastCallWindow();
+    applyCachedCallTimings();
+    void refreshTodayCallCache(true);
   }
   let callCardDragging = false;
   const callSnowActions = new Map();
@@ -6213,7 +6223,7 @@
     });
   }
   function callDurationLabel(call) {
-    const seconds = Math.max(0, Math.round((call.endedAt - call.startedAt) / 1000));
+    const seconds = Math.max(0, Math.round(call.apiTiming?.confirmed ? call.apiTiming.talkMs / 1000 : (call.endedAt - call.startedAt) / 1000));
     const hours = Math.floor(seconds / 3600), minutes = Math.floor(seconds % 3600 / 60);
     return `${hours ? String(hours).padStart(2,'0') + ':' : ''}${String(minutes).padStart(2,'0')}:${String(seconds % 60).padStart(2,'0')}`;
   }
@@ -6231,7 +6241,8 @@
       card.style.cssText = `position:fixed;right:${20+index%4*24}px;top:${80+index%6*42}px;width:300px;max-width:calc(100vw - 24px);max-height:70vh;overflow:auto;background:#1d2228;color:#e7f5f8;border:1px solid #22d3ee;border-radius:12px;z-index:2147483643;font:14px/1.5 system-ui`;
       const heading = doc.createElement('div'); heading.textContent = 'Earlier Call data – ';
       const duration = doc.createElement('span'); duration.textContent = callDurationLabel(call); duration.style.color = '#8fb2bd'; heading.append(duration);
-      heading.title = 'Duration estimated from watcher observations';
+      heading.title = call.apiTiming?.confirmed ? 'Genesys-confirmed agent talk duration' : 'Duration estimated from watcher observations';
+      if (call.apiTiming?.confirmed) duration.style.color = '#67e8f9';
       heading.style.cssText = 'position:relative;padding:12px 42px 12px 16px;border-bottom:1px solid #22d3ee70;color:#67e8f9;cursor:move;touch-action:none;user-select:none';
       const close = doc.createElement('button'); close.type='button'; close.textContent='×'; close.setAttribute('aria-label','Close earlier call data');
       close.style.cssText='position:absolute;right:10px;top:8px;background:transparent;border:0;color:#67e8f9;font-size:20px;cursor:pointer';
@@ -6324,10 +6335,10 @@
     heading.textContent = lastCallSummary.wrapupComplete
       ? `Earlier Call data – ${callDurationLabel(lastCallSummary)}`
       : 'Call information — After Call Work';
-    heading.title = lastCallSummary.wrapupComplete ? 'Duration estimated from watcher observations' : '';
+    heading.title = lastCallSummary.wrapupComplete ? (lastCallSummary.apiTiming?.confirmed ? 'Genesys-confirmed agent talk duration' : 'Duration estimated from watcher observations') : '';
     if (lastCallSummary.wrapupComplete) {
       heading.textContent = 'Earlier Call data – ';
-      const duration = doc.createElement('span'); duration.textContent = callDurationLabel(lastCallSummary); duration.style.color = '#8fb2bd'; heading.append(duration);
+      const duration = doc.createElement('span'); duration.textContent = callDurationLabel(lastCallSummary); duration.style.color = lastCallSummary.apiTiming?.confirmed ? '#67e8f9' : '#8fb2bd'; heading.append(duration);
     }
     const close = doc.createElement('button'); close.type = 'button'; close.textContent = '×'; close.setAttribute('aria-label', 'Close last call data');
     close.style.cssText = 'position:absolute;right:10px;top:8px;width:28px;height:28px;padding:0;line-height:28px;background:transparent;border:0;color:inherit;font-size:20px;cursor:pointer';
@@ -6357,8 +6368,8 @@
     appendEarlierSnowButton(doc, body, lastCallSummary);
     const timing = doc.createElement('div');
     timing.style.cssText = 'font-size:12px;color:#8fb2bd;margin-top:10px;user-select:none';
-    timing.textContent = `${callClock(lastCallSummary.startedAt)} – ${callClock(lastCallSummary.endedAt)}`;
-    timing.title = 'Times estimated from watcher observations';
+    timing.textContent = `${callClock(lastCallSummary.apiTiming?.startedAt || lastCallSummary.startedAt)} – ${callClock(lastCallSummary.apiTiming?.endedAt || lastCallSummary.endedAt)}`;
+    timing.title = lastCallSummary.apiTiming?.confirmed ? 'Genesys-confirmed agent timestamps' : 'Times estimated from watcher observations';
     body.appendChild(timing);
     if (!lastCallSummary.wrapupComplete && Number.isFinite(lastCallSummary.wrapupSeconds)) {
       const elapsed = Math.floor((Date.now() - lastCallSummary.wrapupObservedAt) / 1000);
@@ -9423,6 +9434,15 @@ function fitDashboardMetricSpacing(doc) {
     lastMaintenanceAt = Date.now(); tick();
   }, INTERVAL_MS);
   const identityTimer = window.setInterval(() => rememberCurrentAgentName(document), 5000);
+  if (window === window.top) {
+    readTodayCallCache(); discoverCallNetworkBridges(); applyCachedCallTimings();
+  }
+  const callApiTimer = window.setInterval(() => {
+    if (window !== window.top || callCardDragging) return;
+    discoverCallNetworkBridges();
+    void refreshTodayCallCache();
+    void refreshLiveCallApi();
+  }, 5000);
   document.addEventListener('click', recordIncomingCallAction, true);
   const incomingCallTimer = window.setInterval(() => {
     watchIncomingCall(document);
@@ -9443,6 +9463,9 @@ function fitDashboardMetricSpacing(doc) {
     window.clearInterval(updateCheckTimer); updateCheckTimer = 0;
     window.clearInterval(timer);
     window.clearInterval(identityTimer);
+    window.clearInterval(callApiTimer);
+    for (const win of callNetworkBridges) try { win.__gbsCallApiBridge?.stop(); } catch (_) {}
+    callNetworkBridges.clear();
     window.clearInterval(incomingCallTimer);
     document.removeEventListener('click', recordIncomingCallAction, true);
     document.getElementById('gbs-incoming-call-notice')?.remove();
