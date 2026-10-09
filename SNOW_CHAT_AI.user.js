@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.417
+// @version      2.36.418
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -9738,15 +9738,29 @@ function startSNAI(tabIdentity) {
   };
 
   function activeWorkspaceRecordPanel() {
+    const elements = allPageElements();
+    const panelById = id => document.getElementById(id) || elements.find(element => element.id === id);
     const newMatch = location.pathname.match(/\/sub\/new_record\/new_call\/([^/]+)/);
     if (newMatch) {
-      const routedPanel = document.getElementById(`chrome-tab-panel-new_record_${newMatch[1]}`);
+      const routedPanel = panelById(`chrome-tab-panel-new_record_${newMatch[1]}`);
       if (routedPanel) return routedPanel;
     }
-    const recordMatch = location.pathname.match(/\/sub\/record\/[^/]+\/([^/]+)/);
+    const recordMatch = location.pathname.match(/\/sub\/record\/([^/]+)\/([^/]+)/);
     if (recordMatch) {
-      const routedPanel = document.getElementById(`chrome-tab-panel-record_${recordMatch[1]}`);
+      // Saving a new form changes its route, but can retain its new_record panel ID.
+      const form = elements.find(element => {
+        if (element.localName !== 'now-record-form-connected') return false;
+        const props = element.getProperties?.();
+        return props?.table === recordMatch[1] && props?.sysId === recordMatch[2];
+      });
+      let owner = form;
+      while (owner) {
+        if (owner.matches?.('.chrome-tab-panel')) return owner;
+        owner = owner.parentElement || owner.getRootNode?.().host;
+      }
+      const routedPanel = panelById(`chrome-tab-panel-record_${recordMatch[2]}`);
       if (routedPanel) return routedPanel;
+      return null;
     }
     // Compact Workspace URLs can contain a short tab index rather than the
     // panel's internal ID. Resolve the selected New Event tab's aria-controls
@@ -9757,8 +9771,7 @@ function startSNAI(tabIdentity) {
       && comparableLabel(elementLabel(element)).startsWith('new event')
     );
     const controlledPanelId = selectedNewEventTab?.getAttribute('aria-controls');
-    return controlledPanelId ? document.getElementById(controlledPanelId) : null;
-    return null;
+    return controlledPanelId ? panelById(controlledPanelId) : null;
   }
 
   function isWithinDeepRoot(el, root) {
@@ -9780,8 +9793,7 @@ function startSNAI(tabIdentity) {
     return elements.filter((el) => isWithinDeepRoot(el, panel));
   }
 
-  function activeEventFormScroller() {
-    const panel = activeWorkspaceRecordPanel();
+  function activeEventFormScroller(panel = activeWorkspaceRecordPanel()) {
     if (!(panel instanceof Element)) return null;
     const candidates = allPageElements().filter((element) =>
       element instanceof HTMLElement
@@ -20004,7 +20016,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.417' });
+    addLog('info', 'helper-version', { version: '2.36.418' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -20020,27 +20032,41 @@ function startSNAI(tabIdentity) {
   // scanned in the background; AI launchers perform one on-demand read.
   document.dispatchEvent(new CustomEvent('sn-ai-runtime-dispose'));
   let eventSaveScrollFrame=0;
+  const eventSaveScrollTimers=new Set();
   function scrollEventTopOnSave(event) {
     if(!newCallPage&&!/\/(?:new_record|record)\/new_call(?:\/|$)/.test(location.pathname))return;
     const button=event.composedPath().find(node=>node?.matches?.('button,[role="button"]'));
     if(!button||button.disabled||isInspectorNode(button))return;
     const label=String(button.getAttribute('aria-label')||button.textContent||'').trim().replace(/\s+/g,' ');
     if(!/^Save$/i.test(label)&&!/^First Time Fix\s*\/\s*Fulfilment$/i.test(label))return;
+    const panel=newCallPage?null:activeWorkspaceRecordPanel();
+    if(!newCallPage&&!panel)return;
+    for(const timer of eventSaveScrollTimers)clearTimeout(timer);
+    eventSaveScrollTimers.clear();
+    const animate=()=>{
+    if(panel&&(!panel.isConnected||!panel.classList.contains('is-active')||activeWorkspaceRecordPanel()!==panel))return;
     const scroller=newCallPage
       ? document.getElementById('new_call.form_scroll')||document.scrollingElement
-      : activeEventFormScroller();
+      : activeEventFormScroller(panel);
     if(!scroller||scroller.scrollTop<=0)return;
     cancelAnimationFrame(eventSaveScrollFrame);
     const from=scroller.scrollTop,started=performance.now();
     const duration=matchMedia('(prefers-reduced-motion: reduce)').matches?0:220;
     const step=now=>{
-      if(!scroller.isConnected)return;
+      if(!scroller.isConnected||(panel&&(!panel.isConnected||!panel.classList.contains('is-active')||activeWorkspaceRecordPanel()!==panel)))return;
       const progress=duration?Math.min(1,(now-started)/duration):1;
       scroller.scrollTop=from*Math.pow(1-progress,3);
       if(progress<1)eventSaveScrollFrame=requestAnimationFrame(step);
       else eventSaveScrollFrame=0;
     };
     eventSaveScrollFrame=requestAnimationFrame(step);
+    };
+    animate();
+    // Native save can replace the viewport or restore its previous offset.
+    for(const delay of [300,650,1000]) {
+      const timer=setTimeout(()=>{eventSaveScrollTimers.delete(timer);animate();},delay);
+      eventSaveScrollTimers.add(timer);
+    }
     // Capture only the current EVNT viewport. Never prevent, delay, repeat,
     // or change the native save action, and never scroll the side chat.
   }
@@ -20076,6 +20102,8 @@ function startSNAI(tabIdentity) {
   const disposeRuntime = () => {
     document.removeEventListener('click',scrollEventTopOnSave,true);
     cancelAnimationFrame(eventSaveScrollFrame);
+    for(const timer of eventSaveScrollTimers)clearTimeout(timer);
+    eventSaveScrollTimers.clear();
     observer.disconnect();
     state.chatTailObserver?.disconnect();
     if (state.refreshTimer) clearTimeout(state.refreshTimer);
