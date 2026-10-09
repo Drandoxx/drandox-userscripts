@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.421
+// @version      2.36.422
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -20019,7 +20019,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.421' });
+    addLog('info', 'helper-version', { version: '2.36.422' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -21758,7 +21758,9 @@ function installAgentDashboardPopup() {
             if(!li.querySelector('.agent-name')){li.replaceChildren();const label=document.createElement('span'),count=document.createElement('button');label.className='agent-name';count.className='agent-chat-count';count.type='button';count.setAttribute('aria-haspopup','dialog');count.setAttribute('aria-expanded','false');li.append(label,count);}
             const label=li.querySelector('.agent-name'),badge=li.querySelector('.agent-chat-count');
             const count=chatCounts.get(name.trim().toLowerCase())||0;
-            if(label.textContent!==name)label.textContent=name;
+            const displayName=name.trim().split(/\s+/)[0]||name;
+            if(label.textContent!==displayName)label.textContent=displayName;
+            label.title=name;
             if(badge.textContent!==String(count))badge.textContent=String(count);
             badge.dataset.agentName=name;badge.setAttribute('aria-label',name+': '+count+' active chats — show IMS numbers');badge.title='Show '+name+'’s current IMS chats';
           }else if(li.textContent!==name)li.textContent=name;
@@ -21799,6 +21801,20 @@ const SN_AI_CHATS_TODAY_COLUMNS=[
   ['Number','number',12],['UserID','opened_for',11],['Wait time','wait_time',9],['Duration','duration',9],
   ['Opened','opened_at',8],['Closed','closed_at',8],['Short description','short_description',28],['State','state',15]
 ];
+function chatsTodayIcon(name) {
+  const paths={
+    hash:'<path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/>',
+    user:'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+    timer:'<path d="M10 2h4M12 14v-4M4.93 4.93l1.41 1.41"/><circle cx="12" cy="14" r="8"/>',
+    clock:'<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+    'log-in':'<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/>',
+    'log-out':'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
+    'align-left':'<path d="M21 6H3M15 12H3M17 18H3"/>',
+    'circle-dot':'<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="1"/>',
+    'arrow-right':'<path d="M5 12h14m-7-7 7 7-7 7"/>'
+  };
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-'+name+'" aria-hidden="true">'+(paths[name]||'')+'</svg>';
+}
 function groupChatsToday(records) {
   const groups=new Map(),seen=new Set();
   for(const record of records) {
@@ -21830,6 +21846,9 @@ function installChatsTodayPanel() {
     @media(max-width:800px){header{flex-wrap:wrap;padding:8px}h2{font-size:14px}.status{font-size:10px}.panel{top:70px}}
   </style><button type="button" class="launcher" aria-expanded="false" aria-controls="chats-today-panel">Chats Today</button><section class="panel" id="chats-today-panel" role="dialog" aria-label="Chats Today" hidden><header><h2>Chats Today</h2><div class="actions"><button type="button" class="refresh" aria-label="Refresh Chats Today">Refresh</button><button type="button" class="icon close" aria-label="Close Chats Today"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m18 6-12 12M6 6l12 12"/></svg></button></div></header><p class="status" role="status">Not loaded yet</p><div class="groups"></div></section>`;
   const launcher=root.querySelector('.launcher'),panel=root.querySelector('.panel'),status=root.querySelector('.status'),groups=root.querySelector('.groups'),refresh=root.querySelector('.refresh');
+  const iconStyle=document.createElement('style');
+  iconStyle.textContent='th .column-heading{display:flex;align-items:center;gap:5px}th svg{width:13px;height:13px;flex:0 0 13px}td.time-open{position:relative;padding-right:26px}.time-arrow{position:absolute;right:6px;top:50%;transform:translateY(-50%);display:flex;color:var(--sn-theme-a8b8d1,#beb0d1);pointer-events:none}.time-arrow svg{width:14px;height:14px}';
+  root.append(iconStyle);
   const expanded=new Set();
   let request=null,refreshTimer=0,lastSuccess=0,total=0,failures=0,retryAt=0,layoutFrame=0,inboxHost=null;
   const visible=()=>!panel.hidden&&!document.hidden;
@@ -21860,7 +21879,8 @@ function installChatsTodayPanel() {
       const columns=document.createElement('colgroup');
       for(const [,,width] of SN_AI_CHATS_TODAY_COLUMNS){const column=document.createElement('col');column.style.width=width+'%';columns.append(column);}table.append(columns);
       const head=document.createElement('thead'),headRow=document.createElement('tr');
-      for(const [label] of SN_AI_CHATS_TODAY_COLUMNS){const th=document.createElement('th');th.scope='col';th.textContent=label;headRow.append(th);}head.append(headRow);table.append(head);
+      const icons=['hash','user','timer','clock','log-in','log-out','align-left','circle-dot'];
+      SN_AI_CHATS_TODAY_COLUMNS.forEach(([label],index)=>{const th=document.createElement('th');th.scope='col';const heading=document.createElement('span');heading.className='column-heading';heading.innerHTML=chatsTodayIcon(icons[index]);heading.append(document.createTextNode(label));th.append(heading);headRow.append(th);});head.append(headRow);table.append(head);
       const body=document.createElement('tbody');
       for(const record of group.records) {
         const row=document.createElement('tr');row.dataset.active=chatsTodayValue(record.active);
@@ -21869,6 +21889,9 @@ function installChatsTodayPanel() {
         for(const [,field] of SN_AI_CHATS_TODAY_COLUMNS.slice(1)) {
           const cell=document.createElement('td');cell.textContent=['opened_at','closed_at'].includes(field)?chatsTodayTime(record[field]):chatsTodayValue(record[field],true)||'—';
           if(field==='short_description')cell.className='description';else if(field==='state')cell.className='state';else cell.className='nowrap';
+          if(field==='opened_at'&&chatsTodayTime(record.opened_at)!=='—'&&chatsTodayTime(record.closed_at)!=='—'){
+            cell.classList.add('time-open');const arrow=document.createElement('span');arrow.className='time-arrow';arrow.innerHTML=chatsTodayIcon('arrow-right');cell.append(arrow);
+          }
           if(field==='wait_time'||field==='duration')cell.title=chatsTodayValue(record[field]);row.append(cell);
         }
         body.append(row);
