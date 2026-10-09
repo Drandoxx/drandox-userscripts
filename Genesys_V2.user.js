@@ -5922,8 +5922,8 @@
     if (postCall && !measurementState.postCallStartedAt) measurementState.postCallStartedAt = Date.now();
     if (!postCall) measurementState.postCallStartedAt = null;
     const delta = compactMeasurement(sample);
-    if (Object.keys(delta.changes).length || delta.removed.length) {
-      measurementState.samples.push(delta);
+    if (Object.keys(delta.changes).length || delta.removed.length || (postCall && Date.now() - measurementState.postCallStartedAt >= 30000)) {
+      if (Object.keys(delta.changes).length || delta.removed.length) measurementState.samples.push(delta);
       // Bound diagnostic storage; explicitly report any truncated early samples.
       if (measurementState.samples.length > 3000) {measurementState.samples.shift();measurementState.droppedSamples++;}
       const saved = GM_getValue('genesys-v2-call-measurements', {calls:[]});
@@ -5961,6 +5961,11 @@
   }
   function finishActiveCall() {
     if (!activeCallSummary) return;
+    if (lastCallSummary && !lastCallSummary.dismissed) {
+      earlierCallCards.push({...lastCallSummary,wrapupComplete:true});
+      GM_setValue('genesys-v2-earlier-call-cards',earlierCallCards);
+      document.getElementById('gbs-last-call-data')?.remove();
+    }
     lastCallSummary = {startedAt:activeCallSummary.connectedAt || activeCallSummary.ringingAt,
       endedAt:Date.now(),details:activeCallSummary.details,wrapupSeconds:29,wrapupObservedAt:Date.now(),wrapupComplete:false};
     activeCallSummary = null; saveActiveCallWindow(); saveLastCallWindow();
@@ -5968,6 +5973,43 @@
   const LAST_CALL_WINDOW_KEY = 'genesys-v2-last-call-window';
   const LAST_CALL_WINDOW_TTL = 2 * 60 * 60 * 1000;
   let lastCallSummary = null;
+  let earlierCallCards = window === window.top ? GM_getValue('genesys-v2-earlier-call-cards',[]) : [];
+  if (!Array.isArray(earlierCallCards)) earlierCallCards = [];
+  function renderEarlierCallCards(doc) {
+    if (window !== window.top || doc !== document) return;
+    for (const [index,call] of earlierCallCards.entries()) {
+      const id = `gbs-earlier-call-${call.endedAt}`;
+      if (doc.getElementById(id)) continue;
+      const card = doc.createElement('section'); card.id = id;
+      card.style.cssText = `position:fixed;right:${20+index%4*24}px;top:${80+index%6*42}px;width:300px;max-width:calc(100vw - 24px);max-height:70vh;overflow:auto;background:#1d2228;color:#e7f5f8;border:1px solid #22d3ee;border-radius:12px;z-index:2147483643;font:14px/1.5 system-ui`;
+      const heading = doc.createElement('div'); heading.textContent = 'Earlier call data';
+      heading.style.cssText = 'position:relative;padding:12px 42px 12px 16px;border-bottom:1px solid #22d3ee70;color:#67e8f9;cursor:move;touch-action:none;user-select:none';
+      const close = doc.createElement('button'); close.type='button'; close.textContent='×'; close.setAttribute('aria-label','Close earlier call data');
+      close.style.cssText='position:absolute;right:10px;top:8px;background:transparent;border:0;color:#67e8f9;font-size:20px;cursor:pointer';
+      close.addEventListener('click',()=>{earlierCallCards=earlierCallCards.filter(item=>item.endedAt!==call.endedAt);GM_setValue('genesys-v2-earlier-call-cards',earlierCallCards);card.remove();});
+      heading.append(close);
+      heading.addEventListener('pointerdown',event=>{
+        if(event.button!==0||event.target.closest('button'))return;
+        event.preventDefault();const rect=card.getBoundingClientRect(),x=event.clientX,y=event.clientY;
+        heading.setPointerCapture(event.pointerId);
+        const move=e=>{card.style.right='auto';card.style.left=`${Math.max(0,rect.left+e.clientX-x)}px`;card.style.top=`${Math.max(0,rect.top+e.clientY-y)}px`;};
+        const end=()=>{heading.removeEventListener('pointermove',move);heading.removeEventListener('pointerup',end);heading.removeEventListener('pointercancel',end);heading.removeEventListener('lostpointercapture',end);};
+        heading.addEventListener('pointermove',move);heading.addEventListener('pointerup',end);heading.addEventListener('pointercancel',end);heading.addEventListener('lostpointercapture',end);
+      });
+      const body=doc.createElement('div');body.style.padding='12px 16px';
+      for(const [label,value] of call.details){
+        const row=doc.createElement('div');row.style.marginBottom='8px';const title=doc.createElement('div');title.textContent=label;title.style.cssText='color:#8fb2bd;font-size:12px';
+        const content=doc.createElement('div');content.textContent=value;
+        if(/phone number|location|country/i.test(label)){
+          const copy=doc.createElement('button');copy.type='button';copy.setAttribute('aria-label',`Copy ${label}`);copy.style.cssText='margin-left:8px;background:transparent;border:0;color:#67e8f9;cursor:pointer';
+          copy.innerHTML='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="lucide lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2"/></svg>';
+          copy.addEventListener('click',async()=>{try{await doc.defaultView.navigator.clipboard.writeText(value);copy.innerHTML='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="lucide lucide-check"><path d="M20 6 9 17l-5-5"/></svg>';}catch(_){}});content.append(copy);
+        }
+        row.append(title,content);body.append(row);
+      }
+      card.append(heading,body);doc.body.append(card);
+    }
+  }
   if (window === window.top) {
     try {
       const saved = GM_getValue(LAST_CALL_WINDOW_KEY, null);
@@ -5997,9 +6039,7 @@
     let popup = doc.getElementById('gbs-last-call-data');
     // Never show an earlier-call card alongside a new active call.
     if (activeCallSummary) { popup?.remove(); return; }
-    if (lastCallSummary && Date.now() - lastCallSummary.endedAt >= LAST_CALL_WINDOW_TTL) {
-      lastCallSummary = null; saveLastCallWindow();
-    }
+    // User-closed cards are removed; completed cards no longer expire.
     if (!lastCallSummary || lastCallSummary.dismissed) { popup?.remove(); return; }
     if (popup?.__gbsDragging) return;
     const liveDuration = wrapup?.querySelector('[data-testid="wrapup-header-message-duration"]')?.textContent?.trim();
@@ -6089,7 +6129,7 @@
     timing.style.cssText = 'font-size:12px;color:#8fb2bd;margin-top:10px;user-select:none';
     timing.textContent = `Observed call: ${callClock(lastCallSummary.startedAt)} – ${callClock(lastCallSummary.endedAt)} (not verified Genesys duration)`;
     body.appendChild(timing);
-    if (Number.isFinite(lastCallSummary.wrapupSeconds)) {
+    if (!lastCallSummary.wrapupComplete && Number.isFinite(lastCallSummary.wrapupSeconds)) {
       const elapsed = Math.floor((Date.now() - lastCallSummary.wrapupObservedAt) / 1000);
       const remaining = Math.max(0, lastCallSummary.wrapupSeconds - elapsed);
       const row = doc.createElement('div'); row.style.cssText = 'margin-top:10px;padding-top:10px;border-top:1px solid #22d3ee40';
@@ -6109,6 +6149,7 @@
       doc.getElementById('gbs-call-information')?.remove();
       return;
     }
+    renderEarlierCallCards(doc);
     // Old iframe executions can retain their own cards after updating without
     // a full reload. The top document owns every call card; sweep reachable
     // nested documents on each pass, not just when their script runs.
