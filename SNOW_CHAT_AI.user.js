@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.472
+// @version      2.36.473
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -957,7 +957,7 @@ const snAIChatDisplayNames=(()=>{
   function themeText() {
     const palette = { ...SN_THEME_PALETTES.space, ...SN_THEME_PALETTES[selectedSpaceTheme] };
     const light=palette['--sn-theme-mode']==='light';
-    palette['--sn-state-resolved']=light?'#805700':'#e7ca87';
+    palette['--sn-state-resolved']=light?'#187044':'#8cdbac';
     // Table stripes use adjacent neutral surface tones, not the accent hue.
     // Dark surfaces rise gently above their surroundings; light tables use
     // the card surface with a very small foreground tint on alternating rows.
@@ -1577,16 +1577,23 @@ const snAIChatDisplayNames=(()=>{
     .now-alert:is(.-critical,.-negative,.-error) :is(a,.now-text-link):hover {
       color:var(--sn-theme-eee4ff)!important;
     }
+    :host([data-sn-ai-incident-state]) .sn-label-value-pair,
+    :host([data-sn-ai-incident-priority]) .sn-label-value-pair {
+      display:flex!important;flex-direction:column!important;align-items:flex-start!important;gap:2px!important;
+    }
+    :host([data-sn-ai-incident-state]) .sn-label-value-label,
+    :host([data-sn-ai-incident-priority]) .sn-label-value-label { margin:0!important;line-height:1.3!important; }
     :host([data-sn-ai-incident-state]) .sn-label-value-value {
       --sn-state-ink:var(--sn-theme-ac94ec);
       display:inline-flex!important;align-items:center;max-width:100%;width:max-content;
-      padding:2px 8px!important;margin-top:2px;border-radius:5px!important;
+      padding:2px 8px!important;margin:0!important;border-radius:5px!important;
+      font-size:16px!important;min-height:26px!important;box-sizing:border-box!important;
       color:var(--sn-state-ink)!important;background:color-mix(in srgb,var(--sn-state-ink) 14%,var(--sn-theme-251f31))!important;
       border:1px solid color-mix(in srgb,var(--sn-state-ink) 32%,transparent)!important;
       font-weight:600!important;line-height:1.3!important;
     }
-    :host([data-sn-ai-incident-state="resolved"]) .sn-label-value-value { --sn-state-ink:var(--sn-state-resolved,#e7ca87); }
-    :host([data-sn-ai-incident-priority]) .sn-label-value-value { margin-top:2px!important; }
+    :host([data-sn-ai-incident-state="resolved"]) .sn-label-value-value { --sn-state-ink:var(--sn-state-resolved,#8cdbac); }
+    :host([data-sn-ai-incident-priority]) .sn-label-value-value { margin:0!important;display:flex!important;align-items:center!important; }
     :host([data-sn-ai-incident-priority]) now-highlighted-value {
       height:auto!important;min-height:0!important;display:inline-flex!important;
       padding:0!important;border:0!important;background:transparent!important;
@@ -20359,7 +20366,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.472' });
+    addLog('info', 'helper-version', { version: '2.36.473' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
