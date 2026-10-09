@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.548.0
+// @version      1.549.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -5787,6 +5787,41 @@
   }
 
   let measurementState = null;
+  let measurementPreviousFields = {}, measurementPersistedAt = 0;
+  function compactMeasurement(sample) {
+    const fields = {};
+    const flatten = (value, path) => {
+      if (value && typeof value === 'object') {
+        for (const [key, item] of Object.entries(value)) flatten(item, `${path}/${key}`);
+      } else fields[path] = value;
+    };
+    for (const source of sample.sources) {
+      const visual = source.visual;
+      const url = source.url;
+      const remember = (key, value) => {
+        if (!(key in measurementState.elements)) measurementState.elements[key] = value;
+      };
+      remember(`${url}:initialText`,source.text); delete source.text;
+      for (const [index, snapshot] of (visual?.snapshots || []).entries()) remember(`${url}:snapshot:${index}`,snapshot);
+      if (visual) {
+        delete visual.snapshots;
+        for (const item of [...visual.surfaces,...visual.controls,...visual.timers]) {
+          remember(`${url}:${item.path}`,{html:item.html,path:item.path}); delete item.html;
+        }
+      }
+    }
+    // Large text duplicates all fields and countdowns; keep first snapshot,
+    // then retain structured values and explicit timer changes instead.
+    if (!measurementState.initialPopupText) measurementState.initialPopupText = sample.popupText;
+    delete sample.popupText;
+    const at = sample.at; delete sample.at;
+    flatten(sample,'');
+    const changes = {}, removed = [];
+    for (const [path,value] of Object.entries(fields)) if (measurementPreviousFields[path] !== value) changes[path] = value;
+    for (const path of Object.keys(measurementPreviousFields)) if (!(path in fields)) removed.push(path);
+    measurementPreviousFields = fields;
+    return {at,changes,removed};
+  }
   let measurementLastSignature = '', measurementLastSave = 0;
   const callVisualCache = new WeakMap();
   function collectCallVisualDiagnostics(doc, callFrame = false) {
@@ -5872,7 +5907,8 @@
     const sourceText = sources.map(source => source.text).join('\n');
     if (!measurementState && !popup) return;
     if (!measurementState) {
-      measurementState = {startedAt:new Date().toISOString(),sampleIntervalMs:1000,samples:[],droppedSamples:0,limits:'Accessible DOM only; no private native JS or cross-origin iframe access.'};
+      measurementState = {schemaVersion:2,startedAt:new Date().toISOString(),sampleIntervalMs:1000,samples:[],elements:{},droppedSamples:0,limits:'Accessible DOM only; initial elements plus field-path deltas. HTML captured once per element path.'};
+      measurementPreviousFields = {}; measurementPersistedAt = 0;
       measurementLastSignature = ''; measurementLastSave = 0;
     }
     const sourcePhone = sourceText.match(/\+\d[\d ()-]{6,}\d/)?.[0]?.replace(/\D/g,'') || null;
@@ -5881,25 +5917,28 @@
     const sample = {at:new Date().toISOString(),incoming:!!incoming,viewClicked:!!view?.dataset.gbsMeasurementViewed,
       sources,inaccessible,popupText,sourcePhone,popupPhone,phoneMatches:sourcePhone ? sourcePhone === popupPhone : null,
       countdown:sources.find(source => source.countdown)?.countdown || null,popupCountdown:(popup || lastPopup)?.querySelector('[role="timer"]')?.textContent || null};
-    const signature = JSON.stringify({...sample,at:null});
+    const at = sample.at;
     const postCall = !incoming && !popup && (!sample.countdown || /^0+:0+$/.test(sample.countdown));
     if (postCall && !measurementState.postCallStartedAt) measurementState.postCallStartedAt = Date.now();
     if (!postCall) measurementState.postCallStartedAt = null;
-    if (signature !== measurementLastSignature || Date.now()-measurementLastSave >= 5000) {
-      measurementLastSignature = signature; measurementState.samples.push(sample);
+    const delta = compactMeasurement(sample);
+    if (Object.keys(delta.changes).length || delta.removed.length) {
+      measurementState.samples.push(delta);
       // Bound diagnostic storage; explicitly report any truncated early samples.
       if (measurementState.samples.length > 3000) {measurementState.samples.shift();measurementState.droppedSamples++;}
       const saved = GM_getValue('genesys-v2-call-measurements', {calls:[]});
       const calls = Array.isArray(saved.calls) ? saved.calls : [];
       measurementState.durationSeconds = Math.round((Date.now()-Date.parse(measurementState.startedAt))/1000);
-      if (sourcePhone && !measurementState.nativePhoneAt) measurementState.nativePhoneAt = sample.at;
-      if (popupPhone && !measurementState.popupPhoneAt) measurementState.popupPhoneAt = sample.at;
+      if (sourcePhone && !measurementState.nativePhoneAt) measurementState.nativePhoneAt = at;
+      if (popupPhone && !measurementState.popupPhoneAt) measurementState.popupPhoneAt = at;
       if (measurementState.nativePhoneAt && measurementState.popupPhoneAt) measurementState.phoneDelayMs = Date.parse(measurementState.popupPhoneAt)-Date.parse(measurementState.nativePhoneAt);
       if (postCall && Date.now() - measurementState.postCallStartedAt >= 30000) {
-        measurementState.endedAt = sample.at; calls.push(measurementState);
+        measurementState.endedAt = at; calls.push(measurementState);
         GM_setValue('genesys-v2-call-measurements', {calls:calls.slice(-50),active:null});
         measurementState = null;
-      } else GM_setValue('genesys-v2-call-measurements', {calls,active:measurementState});
+      } else if (Date.now() - measurementPersistedAt >= 10000) {
+        GM_setValue('genesys-v2-call-measurements', {calls,active:measurementState}); measurementPersistedAt = Date.now();
+      }
       measurementLastSave = Date.now();
     }
   }
