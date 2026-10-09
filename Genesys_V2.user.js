@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.556.0
+// @version      1.557.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -6109,7 +6109,7 @@
       heading.innerHTML=`<span class="column-heading"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-${name}" aria-hidden="true">${paths}</svg><span>${label}</span></span>`;
     });
     const compactTableStyle=document.createElement('style');
-    compactTableStyle.textContent='table{width:max-content;min-width:0;table-layout:auto}th,td{white-space:nowrap;padding:6px}.column-heading{display:inline-flex;align-items:center;gap:5px}.column-heading svg{width:16px!important;height:16px!important;flex:0 0 16px}.copy{margin-left:4px}';root.append(compactTableStyle);
+    compactTableStyle.textContent='table{width:max-content;min-width:0;table-layout:auto}th,td{white-space:nowrap;padding:6px}.column-heading{display:inline-flex;align-items:center;gap:5px}.column-heading svg{width:16px!important;height:16px!important;flex:0 0 16px}.copy{margin-left:4px}.panel{right:auto;bottom:auto;width:max-content;height:auto;min-width:0;max-width:calc(100vw - 24px);max-height:calc(100dvh - 138px)}.table-wrap{flex:0 1 auto;min-width:0;max-width:100%}header,.status{flex-shrink:0}.status{overflow-wrap:anywhere}tbody tr:nth-child(even){background:#ffffff08}tbody tr:hover{background:#22d3ee12}:host([data-theme="light"]) tbody tr:nth-child(even){background:#143b4a0b}:host([data-theme="light"]) tbody tr:hover{background:#0891b214}@media(max-width:800px){.panel{max-height:calc(100dvh - 130px)}}';root.append(compactTableStyle);
     outlineLucide(root);
     document.body.append(host);
     const panel=root.querySelector('.panel'),launcher=root.querySelector('.launcher'),status=root.querySelector('.status'),tbody=root.querySelector('tbody');
