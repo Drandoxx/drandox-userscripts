@@ -5987,7 +5987,8 @@
       if (doc.getElementById(id)) continue;
       const card = doc.createElement('section'); card.id = id;
       card.style.cssText = `position:fixed;right:${20+index%4*24}px;top:${80+index%6*42}px;width:300px;max-width:calc(100vw - 24px);max-height:70vh;overflow:auto;background:#1d2228;color:#e7f5f8;border:1px solid #22d3ee;border-radius:12px;z-index:2147483643;font:14px/1.5 system-ui`;
-      const heading = doc.createElement('div'); heading.textContent = `Earlier Call data – ${callDurationLabel(call)}`;
+      const heading = doc.createElement('div'); heading.textContent = 'Earlier Call data – ';
+      const duration = doc.createElement('span'); duration.textContent = callDurationLabel(call); duration.style.color = '#8fb2bd'; heading.append(duration);
       heading.title = 'Duration estimated from watcher observations';
       heading.style.cssText = 'position:relative;padding:12px 42px 12px 16px;border-bottom:1px solid #22d3ee70;color:#67e8f9;cursor:move;touch-action:none;user-select:none';
       const close = doc.createElement('button'); close.type='button'; close.textContent='×'; close.setAttribute('aria-label','Close earlier call data');
@@ -6088,6 +6089,10 @@
       ? `Earlier Call data – ${callDurationLabel(lastCallSummary)}`
       : 'Call information — After Call Work';
     heading.title = lastCallSummary.wrapupComplete ? 'Duration estimated from watcher observations' : '';
+    if (lastCallSummary.wrapupComplete) {
+      heading.textContent = 'Earlier Call data – ';
+      const duration = doc.createElement('span'); duration.textContent = callDurationLabel(lastCallSummary); duration.style.color = '#8fb2bd'; heading.append(duration);
+    }
     const close = doc.createElement('button'); close.type = 'button'; close.textContent = '×'; close.setAttribute('aria-label', 'Close last call data');
     close.style.cssText = 'position:absolute;right:10px;top:8px;width:28px;height:28px;padding:0;line-height:28px;background:transparent;border:0;color:inherit;font-size:20px;cursor:pointer';
     close.addEventListener('click', () => {lastCallSummary.dismissed = true; saveLastCallWindow(); popup.remove();}); heading.append(close);
