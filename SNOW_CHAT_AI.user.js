@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.445
+// @version      2.36.446
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -1583,6 +1583,9 @@ const snAIChatDisplayNames=(()=>{
     .now-alert:is(.-critical,.-negative,.-error) :is(a,.now-text-link):hover {
       color:var(--sn-theme-eee4ff)!important;
     }
+    :host([data-sn-ai-event-header]) sn-record-tags-connected,
+    :host([data-sn-ai-event-header]) .sn-heading-row:has(>sn-form-internal-header-label-value-set) { display:none!important; }
+    :host([data-sn-ai-event-header]) .sn-heading-content > .sn-heading-row:first-child { align-items:center!important;flex-wrap:wrap!important; }
     .now-alert.-info { background:color-mix(in srgb,var(--sn-theme-ac94ec) 16%,var(--sn-theme-251f31))!important;color:var(--sn-theme-e6edf9)!important;border:1px solid var(--sn-theme-655573)!important;border-radius:6px!important; }
     .now-alert.-info .now-alert-content,.now-alert.-info .now-alert-content span,
     .now-alert.-info .now-alert-container,.now-alert.-info .now-alert-icon { color:var(--sn-theme-e6edf9)!important; }
@@ -4675,22 +4678,27 @@ const snAIChatDisplayNames=(()=>{
     entry.update();
   }
   function eventFieldShortcut(root) {
+    if (root.host?.localName === 'now-record-common-header' && root.host.getProperties?.().table === 'new_call') root.host.setAttribute('data-sn-ai-event-header', 'true');
+    const eventHeaderRow = form => {
+      const walk = scope => {
+        for (const node of scope.querySelectorAll('*')) {
+          if (node.localName === 'now-record-common-header' && node.getProperties?.().table === 'new_call') {
+            node.setAttribute('data-sn-ai-event-header', 'true');
+            return node.shadowRoot?.querySelector('.sn-heading-content');
+          }
+          if (node.shadowRoot) { const found = walk(node.shadowRoot); if (found) return found; }
+        }
+        return null;
+      };
+      return walk(form);
+    };
     const ancestorForm=node=>{for(let e=node;e;e=e.parentElement||e.getRootNode?.().host)if(e.localName==='form')return e;return null;};
     const fields=new Set(root.querySelectorAll?.('sn-record-reference-connected[name="transferred_to"]')||[]);
     for(let host=root.host;host;host=host.parentElement||host.getRootNode?.().host){if(host.matches?.('sn-record-reference-connected[name="transferred_to"]')){fields.add(host);break;}if(host.localName==='form')break;}
     for(const field of fields) {
       const form=ancestorForm(field);if(!form)continue;
-      // The Details body owns a different shadow root from the record header.
-      // Place the shortcut before its field row, not inside the header title.
-      let header;
-      for(let parent=field;parent&&parent!==form;parent=parent.parentElement||parent.getRootNode?.().host){
-        if(parent.matches?.('.sn-section-form-row')){
-          header=parent.parentElement;
-          header.style.setProperty('padding-top','8px','important');
-          parent.parentElement.style.setProperty('margin-top','0','important');
-          break;
-        }
-      }
+      // Move the complete existing open/copy group into this EVNT's title row.
+      const header = eventHeaderRow(form);
       if(!header)continue;
       for(let parent=header;parent&&parent!==form;parent=parent.parentElement||parent.getRootNode?.().host){
         if(parent.matches?.('.sn-form-column-layout-sections'))parent.style.setProperty('margin-top','0','important');
@@ -4698,7 +4706,8 @@ const snAIChatDisplayNames=(()=>{
       if(field.style.getPropertyValue('display')!=='none')field.style.setProperty('display','none','important');
       const id=field.getAttribute('value');
       const number=String(field.displayValue||field.shadowRoot?.querySelector('now-record-typeahead')?.getAttribute('value')||'').trim();
-      let button=header.querySelector('.sn-ai-event-incident-shortcut');
+      let button=header.querySelector('.sn-ai-event-incident-shortcut') || field.getRootNode()?.querySelector('.sn-ai-event-incident-shortcut');
+      if (button && button.parentElement !== header) header.append(button.closest('.sn-ai-event-incident-actions') || button);
       if(!/^INC\d+$/.test(number)||!id){header.querySelector('.sn-ai-event-incident-actions')?.remove();button?.remove();continue;}
       if(!button){
         button=document.createElement('button');button.type='button';button.className='sn-ai-event-incident-shortcut';
@@ -4710,13 +4719,13 @@ const snAIChatDisplayNames=(()=>{
           if(!parentId)return;
           for(const scope of spaceRoots){const tabs=scope.querySelector?.('sn-workspace-sub-tabs');if(tabs?.dispatch){tabs.dispatch('ITEM_SELECTED',{table:'incident',sys_id:button.dataset.recordId,parent_table:'interaction',parent_sys_id:parentId});return;}}
         });
-        header.prepend(button);
+        header.append(button);
       }
       if(button.dataset.recordId!==id||button.dataset.number!==number){button.dataset.recordId=id;button.dataset.number=number;button.innerHTML='<span>'+number+'</span><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/><path d="m21 3-9 9"/><path d="M15 3h6v6"/></svg>';}
       if (!button.closest('.sn-ai-event-incident-actions')) {
         const group = document.createElement('div');
         group.className = 'sn-ai-event-incident-actions';
-        group.style.cssText = 'display:flex;flex:0 0 auto;align-items:center;align-self:flex-start;gap:8px;margin:0 0 10px 24px;position:relative;width:max-content;';
+        group.style.cssText = 'display:flex;flex:0 0 auto;align-items:center;align-self:center;gap:8px;margin:0 0 0 16px;position:relative;width:max-content;';
         button.before(group); group.append(button);
         button.style.setProperty('margin', '0', 'important');
         const copy = document.createElement('button');
@@ -4744,6 +4753,16 @@ const snAIChatDisplayNames=(()=>{
           resetTimer = setTimeout(() => { copy.innerHTML = copyIcon; popup.hidden = true; }, 2000);
         });
         group.append(copy, popup);
+      }
+      const actionGroup = button.closest('.sn-ai-event-incident-actions');
+      if (actionGroup) {
+        const titleRow = header.querySelector(':scope > .sn-heading-row');
+        if (titleRow && titleRow.nextElementSibling !== actionGroup) titleRow.after(actionGroup);
+        actionGroup.style.setProperty('margin', '6px 0 6px 24px');
+        // Preserve the original Details button's typography, not the smaller
+        // typography inherited from the header.
+        button.style.setProperty('font-size', '16px');
+        button.style.setProperty('line-height', '20px');
       }
     }
     for(const field of root.querySelectorAll?.('sn-record-reference-connected[name="business_service"],sn-record-reference-connected[name="u_impacted_service"]')||[])if(field.style.getPropertyValue('display')!=='none')field.style.setProperty('display','none','important');
@@ -20251,7 +20270,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.445' });
+    addLog('info', 'helper-version', { version: '2.36.446' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -20266,46 +20285,6 @@ function startSNAI(tabIdentity) {
   // Form/route observation remains lightweight. Chat DOM is never observed or
   // scanned in the background; AI launchers perform one on-demand read.
   document.dispatchEvent(new CustomEvent('sn-ai-runtime-dispose'));
-  let eventSaveScrollFrame=0;
-  const eventSaveScrollTimers=new Set();
-  function scrollEventTopOnSave(event) {
-    if(!newCallPage&&!/\/(?:new_record|record)\/new_call(?:\/|$)/.test(location.pathname))return;
-    const button=event.composedPath().find(node=>node?.matches?.('button,[role="button"]'));
-    if(!button||button.disabled||isInspectorNode(button))return;
-    const label=String(button.getAttribute('aria-label')||button.textContent||'').trim().replace(/\s+/g,' ');
-    if(!/^Save$/i.test(label)&&!/^First Time Fix\s*\/\s*Fulfilment$/i.test(label))return;
-    const panel=newCallPage?null:activeWorkspaceRecordPanel();
-    if(!newCallPage&&!panel)return;
-    for(const timer of eventSaveScrollTimers)clearTimeout(timer);
-    eventSaveScrollTimers.clear();
-    const animate=()=>{
-    if(panel&&(!panel.isConnected||!panel.classList.contains('is-active')||activeWorkspaceRecordPanel()!==panel))return;
-    const scroller=newCallPage
-      ? document.getElementById('new_call.form_scroll')||document.scrollingElement
-      : activeEventFormScroller(panel);
-    if(!scroller||scroller.scrollTop<=0)return;
-    cancelAnimationFrame(eventSaveScrollFrame);
-    const from=scroller.scrollTop,started=performance.now();
-    const duration=matchMedia('(prefers-reduced-motion: reduce)').matches?0:220;
-    const step=now=>{
-      if(!scroller.isConnected||(panel&&(!panel.isConnected||!panel.classList.contains('is-active')||activeWorkspaceRecordPanel()!==panel)))return;
-      const progress=duration?Math.min(1,(now-started)/duration):1;
-      scroller.scrollTop=from*Math.pow(1-progress,3);
-      if(progress<1)eventSaveScrollFrame=requestAnimationFrame(step);
-      else eventSaveScrollFrame=0;
-    };
-    eventSaveScrollFrame=requestAnimationFrame(step);
-    };
-    animate();
-    // Native save can replace the viewport or restore its previous offset.
-    for(const delay of [300,650,1000]) {
-      const timer=setTimeout(()=>{eventSaveScrollTimers.delete(timer);animate();},delay);
-      eventSaveScrollTimers.add(timer);
-    }
-    // Capture only the current EVNT viewport. Never prevent, delay, repeat,
-    // or change the native save action, and never scroll the side chat.
-  }
-  document.addEventListener('click',scrollEventTopOnSave,true);
   if (workspacePage) {
     const reportingTimer = setInterval(fillVisibleReportingUserFromName, 1500);
     const rememberReportingEdit = event => {
@@ -20335,10 +20314,6 @@ function startSNAI(tabIdentity) {
   observer.observe(document.documentElement, { childList: true });
 
   const disposeRuntime = () => {
-    document.removeEventListener('click',scrollEventTopOnSave,true);
-    cancelAnimationFrame(eventSaveScrollFrame);
-    for(const timer of eventSaveScrollTimers)clearTimeout(timer);
-    eventSaveScrollTimers.clear();
     observer.disconnect();
     state.chatTailObserver?.disconnect();
     if (state.refreshTimer) clearTimeout(state.refreshTimer);
