@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.558.0
+// @version      1.559.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -6132,8 +6132,20 @@
         button.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(value);clearTimeout(resetCopy);button.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';outlineLucide(button);button.title='Copied';resetCopy=setTimeout(()=>{if(button.isConnected){button.innerHTML=icon;outlineLucide(button);button.title='Copy '+label;}},1600);}catch(_){button.title='Copy failed';}});cell.append(button);}
       return cell;
     }
+    function paintCallRows() {
+      const light=host.dataset.theme==='light';
+      Array.from(tbody.rows).forEach((row,index)=>{
+        const color=light?(index%2?'#dbe7ef':'#f5fafb'):(index%2?'#35414d':'#1d2228');
+        // Cell backgrounds sit above row backgrounds; inline priority resists theme overrides.
+        for(const element of [row,...row.cells]) {
+          element.style.setProperty('background-color',color,'important');
+          element.style.setProperty('background-image','none','important');
+        }
+      });
+    }
     myCallsPanelRender=()=>{
       if(panel.hidden || callCardDragging)return;
+      paintCallRows();
       const fresh=readTodayCallCache(),rows=myTodayCallRows(fresh,currentAgentApiId || fresh.userId,currentAgentName(document));
       const signature=JSON.stringify([fresh.day,fresh.refreshedAt,rows]);if(signature===myCallsPanelCacheSignature)return;myCallsPanelCacheSignature=signature;tbody.replaceChildren();
       for(const c of rows) {
@@ -6146,6 +6158,7 @@
         row.append(date,copyCell(phone,'phone number'),duration,copyCell(location,'location'));tbody.append(row);
       }
       if(!rows.length) {const row=document.createElement('tr'),cell=document.createElement('td');cell.colSpan=4;cell.textContent='No calls recorded for you today.';row.append(cell);tbody.append(row);}
+      paintCallRows();
       status.textContent=`${fresh.userName || currentAgentName(document)} • ${rows.length} calls • ${fresh.refreshedAt?'Updated '+new Date(fresh.refreshedAt).toLocaleTimeString():'Cached data'}${fresh.truncated?' • cache limit reached':''}`;
     };
     // Match SN AI's launcher-origin expansion; epochs prevent a stale close from hiding a reopened panel.
