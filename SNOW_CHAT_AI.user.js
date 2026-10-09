@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.444
+// @version      2.36.445
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -6352,10 +6352,15 @@ function startSNAI(tabIdentity) {
     if (error) error.textContent = message;
   }
 
+  function assertTicketWindowAlive(dialog) {
+    if (!dialog.isConnected || dialog.dataset.ticketDisposed === 'true') throw Object.assign(new Error('Ticket window closed.'), { code: 'AI_STOPPED' });
+  }
+
   function closeTicketBubbleWithUndo(dialog, reason = 'close') {
     if (!dialog) return;
     const closedIMS = normaliseIMS(dialog.dataset.pinnedIms);
-    if (/^(?:close|cancel|escape)/i.test(String(reason))) {
+    if (dialog.dataset.ticketDisposed === 'true') lastClosedTicketBubble = null;
+    else if (/^(?:close|cancel|escape)/i.test(String(reason))) {
       lastClosedTicketBubble = { dialog, id: dialog.dataset.ticketWindowId || dialog.id, closedAt: Date.now() };
     }
     dialog.remove();
@@ -7664,6 +7669,10 @@ function startSNAI(tabIdentity) {
     state.logs = state.logs.filter((entry) => !recordMatchesIMS(entry, requestedIMS));
     clearPublishedIMSData(requestedIMS);
     releaseChatTailReferences();
+    // Await only background cancellation, never bubble removal. Notify the
+    // companion before deleting its persisted job so it cannot continue.
+    const abortWebRequest = activeWebRequestAborts.get(requestedIMS);
+    if (abortWebRequest) await abortWebRequest().catch(() => {});
 
     // Remove persisted work products for this IMS as well. Ticket/AI form data
     // retained in the one-step undo bubble is intentionally separate from chat
@@ -8809,20 +8818,28 @@ function startSNAI(tabIdentity) {
     throw new Error('ChatGPT Web returned no usable JSON object. Retry with “Tell AI to fix it”.');
   }
 
+  const activeWebRequestAborts = new Map();
   function requestChatGPTWeb({ ims, instructions, schema, input, validate }) {
     let activeId = '';
     let stopped = false;
-    const abort = async () => {
+    let abortPromise = null;
+    const abort = () => {
       stopped = true;
+      if (abortPromise) return abortPromise;
+      abortPromise = (async () => {
       const job = await gmGetValue(CHATGPT_WEB_JOB_KEY, null);
       if (job?.id === activeId) {
         const cancelledJob = { ...job, status: 'cancelled', cancelledAt: Date.now() };
         await gmSetValue(CHATGPT_WEB_JOB_KEY, cancelledJob);
         requestChatGPTExtensionWorker('worker-job', cancelledJob);
       }
+      })();
+      return abortPromise;
     };
+    activeWebRequestAborts.set(normaliseIMS(ims), abort);
     const promise = (async () => {
       await waitForPersistentChatGPTWebWindow();
+      if (stopped) throw Object.assign(new Error('AI request stopped.'), { code: 'AI_STOPPED' });
       const initiallyContinueConversation = Boolean(state.webContinueNext);
       const requestedCorrection = String(state.webCorrectionPrompt || '').trim();
       const manualPromptOnly = Boolean(state.webManualPromptOnly);
@@ -8913,7 +8930,9 @@ function startSNAI(tabIdentity) {
           createdAt: Date.now(),
           attempt: attempt + 1,
         };
+        if (stopped) throw Object.assign(new Error('AI request stopped.'), { code: 'AI_STOPPED' });
         await gmSetValue(CHATGPT_WEB_JOB_KEY, workerJob);
+        if (stopped) { await abort(); throw Object.assign(new Error('AI request stopped.'), { code: 'AI_STOPPED' }); }
         requestChatGPTExtensionWorker('worker-job', workerJob);
         await gmSetValue(CHATGPT_WEB_WAKE_KEY, { id: activeId, at: Date.now(), source: 'servicenow-persistent-window-request' });
         const started = Date.now();
@@ -8993,7 +9012,9 @@ function startSNAI(tabIdentity) {
           : 'No response was received from the persistent ChatGPT worker window within 165 seconds. Restore the window and confirm ChatGPT is still signed in.');
       }
       throw new Error('ChatGPT Web could not produce a usable response.');
-    })();
+    })().finally(() => {
+      if (activeWebRequestAborts.get(normaliseIMS(ims)) === abort) activeWebRequestAborts.delete(normaliseIMS(ims));
+    });
     return { promise, abort };
   }
 
@@ -14654,7 +14675,11 @@ function startSNAI(tabIdentity) {
 
   async function collectCompleteChat() {
     const captureIMS = normaliseIMS(activeSelectedIMS());
+    const captureToken = chatCaptureTokens.get(captureIMS);
+    const checkCapture = () => { if (captureToken?.cancelled) throw Object.assign(new Error('Chat capture cancelled.'), { code: 'AI_STOPPED' }); };
+    checkCapture();
     const apiChat = await collectChatFromNativeAPI(captureIMS);
+    checkCapture();
     if (normaliseIMS(activeSelectedIMS()) !== captureIMS) automationFailure('CHAT_CAPTURE_TAB_CHANGED', 'The selected IMS changed during chat capture. No partial transcript was sent to AI.');
     if (apiChat?.length) return apiChat;
     const merged = [];
@@ -14664,6 +14689,7 @@ function startSNAI(tabIdentity) {
     const liveMessageScope = activeLiveMessageScope(initialConversation.elements);
     const currentMessageElements = () => liveMessageScope ? elementsInside(liveMessageScope) : activeConversationElements().elements;
     const mergeCurrent = () => {
+      checkCapture();
       if (normaliseIMS(activeSelectedIMS()) !== captureIMS) automationFailure('CHAT_CAPTURE_TAB_CHANGED', 'The selected IMS changed during chat capture. No partial transcript was sent to AI.');
       // Until the literal system join marker is found, search the entire active
       // Details panel. The marker can be a sibling of the message scroller and
@@ -14799,19 +14825,33 @@ function startSNAI(tabIdentity) {
     return messages;
   }
 
+  function chatAPISessionToken() {
+    // This reader lives outside the KB/UI installation closure. Keep its
+    // bootstrap token resolver in the same scope; never log or persist it.
+    for (const script of document.scripts) {
+      if (script.src) continue;
+      const match = script.textContent.match(/\bg_ck\s*=\s*["']([^"']+)["']/);
+      if (match) return match[1];
+    }
+    return '';
+  }
+
   async function collectChatFromNativeAPI(ims) {
     const context = nativeChatAPIContext();
     if (!context || !ims) return null;
     const started = performance.now();
     const controller = new AbortController();
+    const captureToken = chatCaptureTokens.get(ims);
+    if (captureToken) captureToken.controller = controller;
     const timeout = setTimeout(() => controller.abort(), 8000);
     const checkIdentity = () => {
+      if (captureToken?.cancelled) throw Object.assign(new Error('Chat capture cancelled.'), { code: 'AI_STOPPED' });
       if (normaliseIMS(activeSelectedIMS()) !== ims || location.pathname.match(/\/chat\/([a-f0-9]{32})(?:\/|$)/i)?.[1] !== context.interactionId) throw new Error('CHAT_API_TAB_CHANGED');
     };
     const read = async (url, options = {}) => {
       checkIdentity();
       const response = await fetch(url, { ...options, credentials: 'same-origin', signal: controller.signal,
-        headers: { Accept: 'application/json', 'X-UserToken': kbSessionToken(), ...(options.headers || {}) } });
+        headers: { Accept: 'application/json', 'X-UserToken': chatAPISessionToken(), ...(options.headers || {}) } });
       if (!response.ok) throw new Error(`CHAT_API_HTTP_${response.status}`);
       const json = await response.json();
       checkIdentity();
@@ -14861,7 +14901,7 @@ function startSNAI(tabIdentity) {
       checkIdentity();
       addLog('warn', 'chat-api-scroll-fallback', { ims, reason: error.name === 'AbortError' ? 'timeout' : error.message, durationMs: Math.round(performance.now() - started) });
       return null;
-    } finally { clearTimeout(timeout); }
+    } finally { clearTimeout(timeout); if (captureToken?.controller === controller) captureToken.controller = null; }
   }
 
   async function waitForChatJoinBoundary(scroller, mergeCurrent, boundary) {
@@ -14873,11 +14913,14 @@ function startSNAI(tabIdentity) {
     const observer = new MutationObserver(() => { lastChange = performance.now(); });
     observer.observe(scroller, { childList: true, subtree: true, characterData: true });
     try {
-      scroller.scrollTo({ top: 0, behavior: 'instant' });
+      scroller.scrollTo({ top: 0, behavior: 'smooth' });
       while (performance.now() - started < 30000) {
         await sleep(150);
         mergeCurrent();
         if (boundary.afterJoin) {
+          // Stop the upward animation at the discovered boundary before the
+          // caller begins its single downward collection phase.
+          scroller.scrollTo({ top: scroller.scrollTop, behavior: 'instant' });
           addLog('info', 'chat-capture-join-boundary-loaded', {
             pages: pins, topPins: pins, durationMs: Math.round(performance.now() - started),
           });
@@ -14889,7 +14932,7 @@ function startSNAI(tabIdentity) {
         // Another top request is necessary only if SNOW actually moved away
         // from the top, and that prepend/render has been quiet for 600ms.
         if (scroller.scrollTop > 2 && now - lastChange >= 600 && now - lastPin >= 900 && pins < 40) {
-          scroller.scrollTo({ top: 0, behavior: 'instant' });
+          scroller.scrollTo({ top: 0, behavior: 'smooth' });
           pins += 1; lastPin = now; lastChange = now; geometry = '';
         }
       }
@@ -14900,13 +14943,23 @@ function startSNAI(tabIdentity) {
   }
 
   const chatCaptureInFlight = new Map();
+  const chatCaptureTokens = new Map();
+  function cancelChatCapture(ims) {
+    const token = chatCaptureTokens.get(normaliseIMS(ims));
+    if (token) { token.cancelled = true; token.controller?.abort(); }
+    chatCaptureTokens.delete(normaliseIMS(ims));
+    chatCaptureInFlight.delete(normaliseIMS(ims));
+  }
   async function ensureCompleteChatCacheForAI(ims, options = {}) {
     const requestedIMS = normaliseIMS(ims);
     let cached = getCachedChat(requestedIMS);
     if (!requestedIMS || cached?.complete) return cached;
     if (chatCaptureInFlight.has(requestedIMS)) return chatCaptureInFlight.get(requestedIMS);
+    const captureToken = { cancelled: false, controller: null };
+    chatCaptureTokens.set(requestedIMS, captureToken);
     const capture = (async () => {
     const recovered = compactChatItems(await collectCompleteChat());
+    if (captureToken.cancelled) throw Object.assign(new Error('Chat capture cancelled.'), { code: 'AI_STOPPED' });
     // A single currently rendered virtual-list bubble is not proof of a
     // complete conversation. Keep the cache incomplete in that case so no AI
     // mode silently receives only that bubble.
@@ -14916,7 +14969,10 @@ function startSNAI(tabIdentity) {
     })();
     chatCaptureInFlight.set(requestedIMS, capture);
     try { return await capture; }
-    finally { if (chatCaptureInFlight.get(requestedIMS) === capture) chatCaptureInFlight.delete(requestedIMS); }
+    finally {
+      if (chatCaptureInFlight.get(requestedIMS) === capture) chatCaptureInFlight.delete(requestedIMS);
+      if (chatCaptureTokens.get(requestedIMS) === captureToken) chatCaptureTokens.delete(requestedIMS);
+    }
   }
 
   function visibleBubbleItems(root, agentId = '') {
@@ -17911,9 +17967,23 @@ function startSNAI(tabIdentity) {
       refs.closeButton?.addEventListener('click', (event) => {
         if (!dialog.classList.contains('is-running')) return;
         event.preventDefault();
-        event.stopImmediatePropagation();
-        requestAutomationStop();
-        closeTicketBubbleWithUndo(dialog, 'close-button');
+        // Invoke the mode's own abort handler (including the AI companion),
+        // then dispose immediately. Ordinary close cleanup can still run.
+        dialog.dataset.ticketDisposed = 'true';
+        refs.stopButton?.click();
+        state.stopRequested = true;
+        cancelChatCapture(dialog.dataset.pinnedIms);
+        cancelUIAnimations(dialog);
+        windowSessions.delete(dialog);
+        transitioningWindows.delete(dialog);
+        refs.aiReturnedValues = null;
+        refs.aiProvidedUse = null;
+        refs.feedbackClose = null;
+        dialog.hidden = true;
+        closeTicketBubbleWithUndo(dialog, 'dispose-running');
+      }, true);
+      refs.runButton?.addEventListener('click', () => {
+        if (!state.commandRunning && !state.busy && dialog.dataset.ticketDisposed !== 'true') state.stopRequested = false;
       }, true);
       installTicketCancelConfirmation(dialog);
       refs.fullRetryButton?.addEventListener('click', async (event) => {
@@ -18935,6 +19005,7 @@ function startSNAI(tabIdentity) {
             } else {
             let cacheEntry = getCachedChat(pinnedIMS);
             if (!cacheEntry?.complete) cacheEntry = await ensureCompleteChatCacheForAI(pinnedIMS);
+            assertTicketWindowAlive(cpcDialog);
             chatLoadedForWindow = Boolean(cacheEntry?.complete);
             if (!cacheEntry?.complete) {
               collapsedCommandInput.value = `START CPC ${pinnedIMS}`;
@@ -18948,6 +19019,7 @@ function startSNAI(tabIdentity) {
             setProgress(25);
             titleMain.textContent = `${pinnedIMS} - Asking ${aiProviderDisplayName()}…`;
           const transcript = appendCurrentCaseInstruction(await aiTranscriptWithUserInformation(cacheEntry, 'CPC', pinnedIMS), cpcShell.caseInstruction?.value);
+          assertTicketWindowAlive(cpcDialog);
             if (state.ai.provider === 'codex') {
               aiRequest = requestCodexCPC({ model: state.ai.model, effort: state.ai.reasoningEffort, ims: pinnedIMS, transcript });
             } else if (state.ai.provider === 'web') {
@@ -18959,6 +19031,7 @@ function startSNAI(tabIdentity) {
             }
             setProgress(35);
             const cpcCommand = await aiRequest.promise;
+            assertTicketWindowAlive(cpcDialog);
             aiRequest = null;
             lastCPCAIResponse = cpcCommand;
             if (stoppedFromWindow) throw Object.assign(new Error('CPC AI request stopped.'), { code: 'AI_STOPPED' });
@@ -19179,6 +19252,7 @@ function startSNAI(tabIdentity) {
           } else if (useAI) {
             let cacheEntry = getCachedChat(pinnedIMS);
             if (!cacheEntry?.complete) cacheEntry = await ensureCompleteChatCacheForAI(pinnedIMS);
+            assertTicketWindowAlive(dialog);
             chatLoadedForWindow = Boolean(cacheEntry?.complete);
             if (!cacheEntry?.complete) {
               collapsedCommandInput.value = `START ILS_PRNT ${pinnedIMS}`;
@@ -19192,6 +19266,7 @@ function startSNAI(tabIdentity) {
             setProgress(32);
             titleMain.textContent = `${pinnedIMS} - Asking ${aiProviderDisplayName()}…`;
           const transcript = appendCurrentCaseInstruction(await aiTranscriptWithUserInformation(cacheEntry, 'ILS_PRNT', pinnedIMS), shell.caseInstruction?.value);
+          assertTicketWindowAlive(dialog);
             if (state.ai.provider === 'codex') {
               aiRequest = requestCodexILSPrnt({ model: state.ai.model, effort: state.ai.reasoningEffort, ims: pinnedIMS, transcript });
             } else if (state.ai.provider === 'web') {
@@ -19202,6 +19277,7 @@ function startSNAI(tabIdentity) {
               aiRequest = requestOpenAIILSPrnt({ apiKey, model: state.ai.model, ims: pinnedIMS, transcript });
             }
             const ilsCommand = await aiRequest.promise;
+            assertTicketWindowAlive(dialog);
             aiRequest = null;
             lastILSPrntAIResponse = ilsCommand;
             if (stoppedFromWindow) throw Object.assign(new Error('ILS PRNT request stopped.'), { code: 'AI_STOPPED' });
@@ -19440,6 +19516,7 @@ function startSNAI(tabIdentity) {
           } else {
           let cacheEntry = getCachedChat(pinnedIMS);
           if (!cacheEntry?.complete) cacheEntry = await ensureCompleteChatCacheForAI(pinnedIMS);
+          assertTicketWindowAlive(ftfDialog);
           chatLoadedForWindow = Boolean(cacheEntry?.complete);
           if (!cacheEntry?.complete) {
             collapsedCommandInput.value = `START FTF ${pinnedIMS}`;
@@ -19453,6 +19530,7 @@ function startSNAI(tabIdentity) {
           setProgress(25);
           titleMain.textContent = `${pinnedIMS} - FTF running`;
           const transcript = appendCurrentCaseInstruction(await aiTranscriptWithUserInformation(cacheEntry, 'FTF', pinnedIMS), ftfShell.caseInstruction?.value);
+          assertTicketWindowAlive(ftfDialog);
           if (state.ai.provider === 'codex') {
             aiRequest = requestCodexFTF({ model: state.ai.model, effort: state.ai.reasoningEffort, ims: pinnedIMS, transcript });
           } else if (state.ai.provider === 'web') {
@@ -19464,6 +19542,7 @@ function startSNAI(tabIdentity) {
           }
           setProgress(35);
           const ftfCommand = await aiRequest.promise;
+          assertTicketWindowAlive(ftfDialog);
           aiRequest = null;
           lastFTFAIResponse = ftfCommand;
           if (stoppedFromWindow) throw Object.assign(new Error('FTF request stopped.'), { code: 'AI_STOPPED' });
@@ -19684,6 +19763,7 @@ function startSNAI(tabIdentity) {
           } else {
             let cacheEntry = getCachedChat(pinnedIMS);
             if (!cacheEntry?.complete) cacheEntry = await ensureCompleteChatCacheForAI(pinnedIMS);
+            assertTicketWindowAlive(dialog);
             chatLoadedForWindow = Boolean(cacheEntry?.complete);
             if (!cacheEntry?.complete) {
               collapsedCommandInput.value = `START HP ${pinnedIMS}`;
@@ -19716,6 +19796,7 @@ function startSNAI(tabIdentity) {
             }
             titleMain.textContent = `${pinnedIMS} - Asking ${aiProviderDisplayName()}…`; setProgress(25);
           const requestArgs = { ims: pinnedIMS, transcript: appendCurrentCaseInstruction(await aiTranscriptWithUserInformation(cacheEntry, 'HP', pinnedIMS), shell.caseInstruction?.value), issueType, supplied, genericSchema };
+          assertTicketWindowAlive(dialog);
             if (state.ai.provider === 'codex') aiRequest = requestCodexHP({ model: state.ai.model, effort: state.ai.reasoningEffort, ...requestArgs });
             else if (state.ai.provider === 'web') aiRequest = requestChatGPTWebHP(requestArgs);
             else {
@@ -19723,6 +19804,7 @@ function startSNAI(tabIdentity) {
               aiRequest = requestOpenAIHP({ apiKey, model: state.ai.model, ...requestArgs });
             }
             let command = await aiRequest.promise; aiRequest = null;
+            assertTicketWindowAlive(dialog);
             setStage(3);
             command = await resolveHPValueConflicts(dialog, command, supplied, genericSchema);
             // CI is an operator-only optional lookup. It is intentionally not
@@ -19991,6 +20073,7 @@ function startSNAI(tabIdentity) {
           setProgress(32);
           titleMain.textContent = `${pinnedIMS} - Asking ${aiProviderDisplayName()}…`;
           const transcript = appendCurrentCaseInstruction(await aiTranscriptWithUserInformation(cacheEntry, 'TEXT', pinnedIMS, requestSchema), descriptionShell.caseInstruction?.value);
+          assertTicketWindowAlive(descriptionDialog);
           if (state.ai.provider === 'codex') {
             aiRequest = requestCodexDescription({ model: state.ai.model, effort: state.ai.reasoningEffort, ims: pinnedIMS, transcript, genericSchema: requestSchema });
           } else if (state.ai.provider === 'web') {
@@ -20001,6 +20084,7 @@ function startSNAI(tabIdentity) {
             aiRequest = requestOpenAIDescription({ apiKey, model: state.ai.model, ims: pinnedIMS, transcript, genericSchema: requestSchema });
           }
           const descriptionCommand = await aiRequest.promise;
+          assertTicketWindowAlive(descriptionDialog);
           aiRequest = null;
           lastAIResponse = descriptionCommand;
           if (stoppedFromWindow) throw Object.assign(new Error('Description request stopped.'), { code: 'AI_STOPPED' });
@@ -20167,7 +20251,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.444' });
+    addLog('info', 'helper-version', { version: '2.36.445' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
