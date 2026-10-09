@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.435
+// @version      2.36.436
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -20022,7 +20022,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.435' });
+    addLog('info', 'helper-version', { version: '2.36.436' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -21943,14 +21943,24 @@ function installChatsTodayPanel() {
   const launcher=root.querySelector('.launcher'),panel=root.querySelector('.panel'),status=root.querySelector('.status'),groups=root.querySelector('.groups'),refresh=root.querySelector('.refresh');
   const reset=document.createElement('button');reset.type='button';reset.className='reset';reset.textContent='Reset';reset.title='Restore automatic ordering for all agents';refresh.before(reset);
   const numberStyle=document.createElement('style');numberStyle.textContent='.number,.number:hover{background:color-mix(in srgb,currentColor 12%,transparent);border-radius:4px;box-shadow:0 0 0 3px color-mix(in srgb,currentColor 12%,transparent)}.number,.number:hover,.number:focus,.number:focus-visible,.number:active,.number *{text-decoration:none!important}';root.append(numberStyle);
-  const successTimers=new WeakMap();
-  function showActionSuccess(button,message){
-    const icon=button.querySelector('svg');if(!icon)return;
-    clearTimeout(successTimers.get(button));
-    if(!icon.dataset.originalContent)icon.dataset.originalContent=icon.innerHTML;
-    icon.innerHTML='<path d="M20 6 9 17l-5-5"/>';icon.classList.add('lucide-check');icon.style.color='var(--agent-available,#91d6b2)';
-    const originalTitle=button.dataset.originalTitle||(button.dataset.originalTitle=button.title);button.title=message;
-    successTimers.set(button,setTimeout(()=>{icon.innerHTML=icon.dataset.originalContent;icon.classList.remove('lucide-check');icon.style.color='';button.title=originalTitle;},1500));
+  let refreshFeedbackRunning=false;
+  async function showRefreshSuccess(){
+    if(refreshFeedbackRunning)return;refreshFeedbackRunning=true;
+    const icon=refresh.querySelector('svg'),original=icon.innerHTML,title=refresh.title;
+    const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const pause=ms=>new Promise(resolve=>setTimeout(resolve,reduced?0:ms));
+    const animate=async(frames,duration)=>{const animation=icon.animate(frames,{duration:reduced?0:duration,easing:'ease-in-out',fill:'forwards'});try{await animation.finished;}finally{animation.cancel();}};
+    try{
+      await animate([{transform:'rotate(0deg)'},{transform:'rotate(360deg)'}],800);
+      await pause(100);
+      await animate([{transform:'scale(1)'},{transform:'scale(0)'}],120);
+      icon.innerHTML='<path d="M20 6 9 17l-5-5"/>';icon.classList.replace('lucide-refresh-cw','lucide-check');icon.style.color='var(--agent-available,#91d6b2)';refresh.title='Chats refreshed successfully';
+      await animate([{transform:'scale(0)'},{transform:'scale(1)'}],150);
+      await pause(1500);
+      await animate([{transform:'scale(1)'},{transform:'scale(0)'}],120);
+      icon.innerHTML=original;icon.classList.replace('lucide-check','lucide-refresh-cw');icon.style.color='';refresh.title=title;
+      await animate([{transform:'scale(0)'},{transform:'scale(1)'}],150);
+    }finally{icon.innerHTML=original;icon.classList.replace('lucide-check','lucide-refresh-cw');icon.style.color='';refresh.title=title;refreshFeedbackRunning=false;}
   }
   refresh.classList.add('icon');refresh.title='Refresh Chats Today';
   refresh.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-refresh-cw"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>';
@@ -22035,7 +22045,7 @@ function installChatsTodayPanel() {
     groups.scrollTop=scrollTop;
     position();
   }
-  async function load() {
+  async function load(manual=false) {
     if(request||!visible())return;
     if(Date.now()<retryAt){status.textContent='Rate limited · Retry in '+Math.ceil((retryAt-Date.now())/1000)+' seconds';schedule();return;}
     stop();const controller=new AbortController();request=controller;status.classList.remove('error');
@@ -22054,12 +22064,12 @@ function installChatsTodayPanel() {
         if(offset>=99500)throw new Error('Too many results to display safely');
       }
       if(controller.signal.aborted||panel.hidden)return;
-      render(rows);lastSuccess=Date.now();failures=0;status.textContent=total+' interactions · Updated 0 seconds ago';const icon=refresh.querySelector('svg');icon.getAnimations().forEach(animation=>animation.cancel());icon.animate([{transform:'rotate(0deg)'},{transform:'rotate(360deg)'}],{duration:400,easing:'ease-in-out'}).finished.then(()=>showActionSuccess(refresh,'Chats refreshed successfully')).catch(()=>{});
+      render(rows);lastSuccess=Date.now();failures=0;status.textContent=total+' interactions · Updated 0 seconds ago';if(manual===true)showRefreshSuccess().catch(()=>{});
     }catch(error){if(request===controller&&!panel.hidden){failures++;status.classList.add('error');status.textContent=(error.name==='AbortError'?'Refresh timed out':error.message)+(lastSuccess?' · Previous results kept':'');}}
     finally{clearTimeout(timeout);if(request===controller){request=null;schedule();}}
   }
   launcher.addEventListener('click',()=>{if(!panel.hidden){close();return;}const epoch=++openEpoch;panel.style.visibility='hidden';panel.style.pointerEvents='none';panel.hidden=false;launcher.setAttribute('aria-expanded','true');position();const ready=load();openDataBubble(launcher,panel,ready,()=>openEpoch===epoch&&!panel.hidden,position);});
-  root.querySelector('.close').addEventListener('click',()=>close());refresh.addEventListener('click',load);
+  root.querySelector('.close').addEventListener('click',()=>close());refresh.addEventListener('click',()=>load(true));
   reset.addEventListener('click',()=>{sorts.clear();render(currentRecords);});
   document.addEventListener('sn-ai-new-chat-arrived',()=>close(false));
   document.addEventListener('sn-ai-autoaccepted-ims',()=>close(false));
