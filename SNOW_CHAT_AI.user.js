@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.470
+// @version      2.36.471
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -1589,6 +1589,7 @@ const snAIChatDisplayNames=(()=>{
     :host([data-sn-ai-incident-priority]) .sn-label-value-value { margin-top:2px!important; }
     :host-context([data-sn-ai-incident-priority]) .now-highlighted-value {
       display:inline-flex!important;align-items:center!important;gap:5px!important;
+      height:auto!important;min-height:26px!important;box-sizing:border-box!important;
       padding:2px 8px!important;border-radius:5px!important;
       border:1px solid color-mix(in srgb,currentColor 32%,transparent)!important;
       font-size:16px!important;font-weight:600!important;line-height:1.3!important;
@@ -4753,7 +4754,7 @@ const snAIChatDisplayNames=(()=>{
     entry.update();
   }
   function eventFieldShortcut(root) {
-    if(root.host?.localName==='sn-form-internal-header-label-value'){
+    if(['sn-form-internal-header-label-value','sn-form-internal-header-label-highlighted-value'].includes(root.host?.localName)){
       const host=root.host,props=host.getProperties?.();
       let incident=false;
       for(let owner=host;owner;owner=owner.parentElement||owner.getRootNode?.().host){
@@ -20354,7 +20355,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.470' });
+    addLog('info', 'helper-version', { version: '2.36.471' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -22192,6 +22193,11 @@ const SN_AI_CHATS_TODAY_COLUMNS=[
   ['Number','number'],['UserID','opened_for'],['Wait time','wait_time'],['Opened','opened_at'],
   ['Closed','closed_at'],['Duration','duration'],['Short description','short_description'],['EVNT Number','event_numbers'],['Ticket Number','ticket_numbers']
 ];
+function chatsTodayDescriptions(record) {
+  return record.event_pairs?.length
+    ? record.event_pairs.map(pair=>pair.shortDescription||'—')
+    : [chatsTodayValue(record.short_description,true)||'—'];
+}
 function chatsTodayColumnWidths(records,measure) {
   return SN_AI_CHATS_TODAY_COLUMNS.map(([label,field])=>{
     const sortable=['wait_time','opened_at','closed_at','duration'].includes(field);
@@ -22201,7 +22207,7 @@ function chatsTodayColumnWidths(records,measure) {
     for(const record of records){
       const value=field==='duration'?chatsTodayDuration(record):field==='wait_time'?chatsTodayWaitTime(record[field]):['opened_at','closed_at'].includes(field)?chatsTodayTime(record[field]):chatsTodayValue(record[field],true)||'—';
       const arrow=(field==='opened_at'&&chatsTodayTime(record.opened_at)!=='—'&&chatsTodayTime(record.closed_at)!=='—'||field==='event_numbers'&&record.event_numbers&&record.ticket_numbers)?20:0;
-      const lines=field==='event_numbers'||field==='ticket_numbers'?String(value).split('\n'):[value];
+      const lines=field==='short_description'?chatsTodayDescriptions(record):field==='event_numbers'||field==='ticket_numbers'?String(value).split('\n'):[value];
       width=Math.max(width,...lines.map(line=>measure(line,false,field==='number'||field==='event_numbers'||field==='ticket_numbers')+arrow+6));
     }
     return Math.ceil(width)+cellPadding;
@@ -22356,6 +22362,14 @@ function installChatsTodayPanel() {
         if(ongoing){button.classList.add('ongoing');button.title='Work in Progress · Open in main tab row';button.setAttribute('aria-label',button.textContent+' · Work in Progress');}
         button.addEventListener('click',()=>{try{openWorkspaceIMSMainTab({sys_id:chatsTodayValue(record.sys_id),number:chatsTodayValue(record.number)});}catch(error){status.textContent=error.message;status.classList.add('error');}});numberCell.append(button);row.append(numberCell);
         for(const [,field] of SN_AI_CHATS_TODAY_COLUMNS.slice(1)) {
+          if(field==='short_description'&&record.event_pairs?.length){
+            const cell=document.createElement('td');cell.className='description';
+            for(const description of chatsTodayDescriptions(record)){
+              const line=document.createElement('div');line.className='record-pair-line description-pair-line';
+              line.style.height='auto';line.style.minHeight='28px';line.textContent=description;cell.append(line);
+            }
+            row.append(cell);continue;
+          }
           if(field==='event_numbers'||field==='ticket_numbers'){
             const cell=document.createElement('td');cell.className='nowrap';
             const pairs=record.event_pairs||[];
@@ -22381,6 +22395,19 @@ function installChatsTodayPanel() {
         body.append(row);
       }
       table.append(body);wrap.append(table);detail.append(wrap);groups.append(detail);
+      // Keep each wrapped EVNT description aligned with its own EVNT/ticket pair.
+      const alignDescriptions=()=>{for(const row of body.rows){
+        const descriptions=row.querySelectorAll('.description-pair-line');
+        descriptions.forEach((line,index)=>{
+          line.style.height='auto';
+          const height=Math.max(28,line.getBoundingClientRect().height);
+          for(const cell of [row.cells[6],row.cells[7],row.cells[8]]){
+            const paired=cell?.children[index];if(paired)paired.style.height=height+'px';
+          }
+        });
+      }};
+      alignDescriptions();
+      detail.addEventListener('toggle',()=>{if(detail.open)alignDescriptions();});
     }
     if(!total){const empty=document.createElement('p');empty.className='empty';empty.textContent='No interactions found for today.';groups.append(empty);}
     groups.scrollTop=scrollTop;
@@ -22407,14 +22434,14 @@ function installChatsTodayPanel() {
       const events=[];
       const eventQuery='u_link_to_interaction.u_work_queue=f7879842618d2300964fe119fb67115a^opened_atONToday@javascript:gs.beginningOfToday()@javascript:gs.endOfToday()^u_link_to_interactionISNOTEMPTY^opened_by.u_primary_group=8767499910d5b00036179bfd88ecc8bb^ORDERBYopened_at^ORDERBYsys_id';
       for(let offset=0;;offset+=limit){
-        const response=await fetch('/api/now/table/new_call?sysparm_query='+encodeURIComponent(eventQuery)+'&sysparm_fields=sys_id,number,u_link_to_interaction,transferred_to&sysparm_display_value=all&sysparm_exclude_reference_link=true&sysparm_limit='+limit+'&sysparm_offset='+offset,{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':page.g_ck},signal:controller.signal});
+        const response=await fetch('/api/now/table/new_call?sysparm_query='+encodeURIComponent(eventQuery)+'&sysparm_fields=sys_id,number,short_description,u_link_to_interaction,transferred_to&sysparm_display_value=all&sysparm_exclude_reference_link=true&sysparm_limit='+limit+'&sysparm_offset='+offset,{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':page.g_ck},signal:controller.signal});
         if(!response.ok)throw new Error('Unable to load linked EVNTs ('+response.status+').');
         const batch=(await response.json()).result;if(!Array.isArray(batch))throw new Error('Invalid EVNT results');events.push(...batch);
         if(batch.length<limit)break;if(offset>=99500)throw new Error('Too many EVNT results');
       }
       const linked=new Map();
       for(const event of events){const id=chatsTodayValue(event.u_link_to_interaction);if(!linked.has(id))linked.set(id,[]);linked.get(id).push(event);}
-      for(const row of rows){const matches=linked.get(chatsTodayValue(row.sys_id))||[];row.event_pairs=matches.map(event=>({eventId:chatsTodayValue(event.sys_id),eventNumber:chatsTodayValue(event.number,true),ticketId:chatsTodayValue(event.transferred_to),ticketNumber:chatsTodayValue(event.transferred_to,true)}));row.event_numbers=row.event_pairs.map(pair=>pair.eventNumber||'—').join('\n');row.ticket_numbers=row.event_pairs.map(pair=>pair.ticketNumber||'—').join('\n');}
+      for(const row of rows){const matches=linked.get(chatsTodayValue(row.sys_id))||[];row.event_pairs=matches.map(event=>({eventId:chatsTodayValue(event.sys_id),eventNumber:chatsTodayValue(event.number,true),shortDescription:chatsTodayValue(event.short_description,true),ticketId:chatsTodayValue(event.transferred_to),ticketNumber:chatsTodayValue(event.transferred_to,true)}));row.event_numbers=row.event_pairs.map(pair=>pair.eventNumber||'—').join('\n');row.ticket_numbers=row.event_pairs.map(pair=>pair.ticketNumber||'—').join('\n');}
       if(controller.signal.aborted||panel.hidden)return;
       render(rows);lastSuccess=Date.now();failures=0;status.textContent=total+' interactions · Updated 0 seconds ago';if(manual===true)showRefreshSuccess().catch(()=>{});
     }catch(error){if(request===controller&&!panel.hidden){failures++;status.classList.add('error');status.textContent=(error.name==='AbortError'?'Refresh timed out':error.message)+(lastSuccess?' · Previous results kept':'');}}
