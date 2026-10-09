@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.440
+// @version      2.36.441
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -13062,42 +13062,43 @@ function startSNAI(tabIdentity) {
     automationFailure(failureCode, message, { field: fieldLabel, optionValue, actual: lastActual, attempts: maxAttempts });
   }
 
-  async function commitTextWithTouch(field, text, resolveField) {
-    // Activate Workspace's touched state before editing. Give its event
-    // handlers time to process input before committing the focus transition.
-    field.click();
-    field.focus({ preventScroll: true });
-    await sleep(60);
+  async function commitTextToFormModel(field, text, resolveField) {
     field = resolveField() || field;
-    if (field.isConnected === false) return false;
-    field.focus({ preventScroll: true });
-    setNativeValue(field, text);
-    await sleep(100);
-    // Input/change can replace the control synchronously. Commit the current
-    // component, not a detached input whose blur never reaches Workspace.
-    const edited = resolveField();
-    if (!edited || edited.isConnected === false) return false;
-    edited.focus({ preventScroll: true });
-    if (String(edited.value ?? '') !== text) setNativeValue(edited, text);
-    edited.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-    await sleep(60);
-    const beforeBlur = resolveField();
-    if (!beforeBlur || beforeBlur.isConnected === false) return false;
-    beforeBlur.focus({ preventScroll: true });
-    beforeBlur.blur();
-    await sleep(60);
-    const current = resolveField();
-    if (!current || current.isConnected === false) return false;
-    // Clicking a populated input clears Workspace's stale mandatory state
-    // on affected forms. Do not hide validation errors or alter requiredness.
-    if (current.tagName === 'INPUT') {
-      current.click();
-      current.focus({ preventScroll: true });
-      await sleep(60);
-      current.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-      current.blur();
+    if (!field || field.isConnected === false) return false;
+    const binding = workspaceTextBinding(field);
+    if (binding) {
+      const { owner, props, name } = binding;
+      if (typeof props.onValueChange !== 'function') return false;
+      // Use the same bound callback as a native Workspace edit. DOM value and
+      // synthetic input/change alone can leave GFORM's value empty. The first
+      // callback argument is unused; name (not fieldName) is the record key.
+      props.onValueChange.call(owner, 'change', name, text, text);
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        await sleep(50);
+        const current = resolveField();
+        if (!current || current.isConnected === false) continue;
+        const retained = workspaceTextBinding(current);
+        if (retained && String(retained.props.formData.fields[name]?.value ?? '') === text &&
+            String(current.value ?? '') === text && current.getAttribute('aria-invalid') !== 'true') return true;
+      }
+      return false;
     }
-    return true;
+    // Classic/native forms retain their normal input/change path.
+    setNativeValue(field, text);
+    return String((resolveField() || field).value ?? '') === text;
+  }
+
+  function workspaceTextBinding(field) {
+    const seen = new Set();
+    for (let node = field; node && !seen.has(node); node = node.parentElement || node.getRootNode?.().host) {
+      seen.add(node);
+      if (node.localName !== 'sn-record-input-connected') continue;
+      const props = node.getProperties?.();
+      const name = props?.name || props?.fieldName || field.name;
+      if (!name || !props?.formData?.fields || !Object.prototype.hasOwnProperty.call(props.formData.fields, name)) return null;
+      return { owner: node, props, name };
+    }
+    return null;
   }
 
   async function autoText(fieldLabel, value, code, maxLength) {
@@ -13129,10 +13130,10 @@ function startSNAI(tabIdentity) {
           node = node.parentElement || (node.getRootNode?.() instanceof ShadowRoot ? node.getRootNode().host : null);
         }
       }
-      await commitTextWithTouch(field, text, () => findControlByLabel(fieldLabel));
+      const modelCommitted = await commitTextToFormModel(field, text, () => findControlByLabel(fieldLabel));
       const committed = await waitStableValue(fieldLabel, text, 'exact', 2200, 450);
       addLog(committed.stable ? 'info' : 'warn', 'auto-text-attempt', { field: fieldLabel, attempt, expected: text, actual: committed.actual, stable: committed.stable });
-      if (committed.stable && findControlByLabel(fieldLabel)?.getAttribute('aria-invalid') !== 'true') return committed.actual;
+      if (modelCommitted && committed.stable && findControlByLabel(fieldLabel)?.getAttribute('aria-invalid') !== 'true') return committed.actual;
       await sleep(retryPause(attempt));
     }
     automationFailure(code, `${fieldLabel} did not retain its text after 10 attempts.`, { attempts: 10 });
@@ -13197,7 +13198,7 @@ function startSNAI(tabIdentity) {
     for (let attempt = 1; attempt <= 10; attempt += 1) {
       const field = dynamicDescriptionControl(fieldMetadata);
       if (!field) automationFailure(`${code}_FIELD_MISSING`, `${fieldMetadata.label} was not found.`, { attempt, name: fieldMetadata.name || '' });
-      await commitTextWithTouch(field, text, () => dynamicDescriptionControl(fieldMetadata));
+      const modelCommitted = await commitTextToFormModel(field, text, () => dynamicDescriptionControl(fieldMetadata));
       let stableSince = 0;
       const committed = await waitUntil(() => {
         const current = dynamicDescriptionControl(fieldMetadata);
@@ -13211,7 +13212,7 @@ function startSNAI(tabIdentity) {
         return Date.now() - stableSince >= 450 ? { actual } : null;
       }, 2200, 45);
       addLog(committed ? 'info' : 'warn', 'auto-description-field-attempt', { field: fieldMetadata.label, name: fieldMetadata.name || '', attempt, expected: text, actual: readableDescriptionFieldValue(fieldMetadata), stable: Boolean(committed) });
-      if (committed) return committed.actual;
+      if (modelCommitted && committed) return committed.actual;
       await sleep(retryPause(attempt));
     }
     automationFailure(code, `${fieldMetadata.label} did not retain its complete text after 10 attempts.`, { name: fieldMetadata.name || '', length: text.length });
@@ -13333,27 +13334,6 @@ function startSNAI(tabIdentity) {
     return fieldsToFill;
   }
 
-  // Workspace occasionally defers its internal value reconciliation until a
-  // control receives focus. Give every ticket text field a short final focus
-  // pass after all values have been committed, before verification.
-  async function settleFilledTicketTextFields(genericSchema,usesKnowledge=false) {
-    const targets = [
-      { label: 'Short Description' },
-      { label: 'Description' },
-      ...uniqueDescriptionFields(genericSchema?.fieldsUnderDescription),
-    ];
-    const seen = new Set();
-    for (const target of targets) {
-      const field = target.name ? dynamicDescriptionControl(target) : findControlByLabel(target.label);
-      if (!field || seen.has(field) || !isVisible(field)) continue;
-      seen.add(field);
-      await commitTextWithTouch(field, String(field.value ?? ''), () =>
-        target.name ? dynamicDescriptionControl(target) : findControlByLabel(target.label));
-    }
-    // Final text validation must not leave CPC/ILS above the KB section.
-    if (usesKnowledge && findControlByLabel('Attached Knowledge')) await waitForControlByLabel('Attached Knowledge', 4200);
-  }
-
   async function autoCPC(rawData) {
     const data = validateAndNormaliseWizardData('CPC', rawData);
     if (!state.autoSession || state.autoSession.profile !== 'CPC') automationFailure('CPC_SESSION_NOT_READY', 'Run START CPC IMS... first.');
@@ -13399,7 +13379,6 @@ function startSNAI(tabIdentity) {
         'What error message do you see?': 'NA',
       }, 'CPC');
       await autoLookup('Attached Knowledge', '*5058', { expected: 'KB0005058', match: 'prefix', first: true, code: 'CPC_KB_COMMIT_FAILED' });
-      await settleFilledTicketTextFields(genericSchema);
       // Template and dependent-routing updates can restore the New Event's
       // default Location after a previously confirmed reference selection.
       // Reassert and verify the requested location at the final stable point;
@@ -13606,7 +13585,6 @@ function startSNAI(tabIdentity) {
         "If we need to contact you, when's the best time?": 'NA',
         'What error message do you see?': 'NA',
       }, 'FTF');
-      await settleFilledTicketTextFields(genericSchema);
       const verification = verifyTicketProfile('FTF', { 'Short Description': data.shortDescription, Description: description });
       if (!verification.ok) automationFailure('FTF_FINAL_VERIFICATION_FAILED', 'FTF values did not pass final verification.', { mismatches: verification.mismatches });
       const warnings = automationWarnings('FTF', state.autoSession.ims);
@@ -13644,7 +13622,6 @@ function startSNAI(tabIdentity) {
       await autoText('Description', description, 'ILS_PRNT_DESCRIPTION_COMMIT_FAILED');
       await fillMappedFieldsUnderDescription(genericSchema, { 'What error message do you see?': 'NA' }, 'ILS_PRNT');
       await autoLookup('Attached Knowledge', '*10029', { expected: 'KB0010029', match: 'prefix', first: true, code: 'ILS_PRNT_KB_COMMIT_FAILED' });
-      await settleFilledTicketTextFields(genericSchema);
       const verification = verifyTicketProfile('ILS_PRNT', { 'Short Description': shortDescription, Description: description });
       if (!verification.ok) automationFailure('ILS_PRNT_FINAL_VERIFICATION_FAILED', 'ILS PRNT values did not pass final verification.', { mismatches: verification.mismatches });
       const result = { kind: 'auto-complete', ok: true, profile: 'ILS_PRNT', ims: state.autoSession.ims, saved: false, durationMs: Math.round(performance.now() - started), shortDescription, description };
@@ -13697,7 +13674,6 @@ function startSNAI(tabIdentity) {
       const fieldsToFill = await fillMappedFieldsUnderDescription(genericSchema, data.fieldsUnderDescription, 'HP');
       await autoLookup('Attached Knowledge', 'KB0009934', { expected: 'KB0009934', match: 'prefix', first: true, code: 'HP_KB_COMMIT_FAILED' });
       await autoLookup('Assignment Group', 'HP', { expected: 'HP', code: 'HP_ASSIGNMENT_GROUP_COMMIT_FAILED' });
-      await settleFilledTicketTextFields(genericSchema);
       const verification = verifyTicketProfile('HP', {
         'Template Name': templateName,
         Priority: priority,
@@ -13826,7 +13802,6 @@ function startSNAI(tabIdentity) {
         ...(Array.isArray(latestSchema?.fieldsUnderDescription) ? latestSchema.fieldsUnderDescription : []),
       ]);
       const fieldsToFill = data.skipOptionalFields ? [] : await fillMappedFieldsUnderDescription({ fieldsUnderDescription: schemaFields }, data.fieldsUnderDescription, 'TEXT');
-      await settleFilledTicketTextFields({ fieldsUnderDescription: schemaFields });
       const mismatches = [
         ...(reportingUser.skipped ? [] : [['Reporting User', reportingUser.value]]),
         ...(contactNumber ? [['Contact Number', contactNumber]] : []),
@@ -20031,7 +20006,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.440' });
+    addLog('info', 'helper-version', { version: '2.36.441' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
