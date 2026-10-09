@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.549.0
+// @version      1.550.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -5969,6 +5969,55 @@
     lastCallSummary = {startedAt:activeCallSummary.connectedAt || activeCallSummary.ringingAt,
       endedAt:Date.now(),details:activeCallSummary.details,wrapupSeconds:29,wrapupObservedAt:Date.now(),wrapupComplete:false};
     activeCallSummary = null; saveActiveCallWindow(); saveLastCallWindow();
+  }
+  let callCardDragging = false;
+  function installCallCardDrag(card, heading, savePosition) {
+    const win = card.ownerDocument.defaultView;
+    heading.addEventListener('pointerdown', event => {
+      if (event.button !== 0 || event.target.closest('button,a,input')) return;
+      event.preventDefault(); event.stopPropagation();
+      const rect = card.getBoundingClientRect(), id = event.pointerId;
+      const startX = event.clientX, startY = event.clientY;
+      const maxX = Math.max(0, win.innerWidth - rect.width), maxY = Math.max(0, win.innerHeight - 40);
+      let x = rect.left, y = rect.top, frame = 0, active = true;
+      callCardDragging = card.__gbsDragging = true;
+      card.style.right = 'auto'; card.style.left = rect.left + 'px'; card.style.top = rect.top + 'px';
+      card.style.setProperty('transition','none','important');
+      card.style.setProperty('animation','none','important');
+      card.style.setProperty('will-change','transform');
+      card.style.setProperty('contain','layout paint');
+      const paint = () => {
+        frame = 0;
+        card.style.setProperty('transform','translate3d(' + (x-rect.left) + 'px,' + (y-rect.top) + 'px,0)','important');
+      };
+      const move = e => {
+        if (!active || e.pointerId !== id) return;
+        if (!(e.buttons & 1)) return end();
+        const samples = e.getCoalescedEvents?.();
+        const latest = samples?.length ? samples[samples.length-1] : e;
+        x = Math.max(0,Math.min(maxX,rect.left + latest.clientX-startX));
+        y = Math.max(0,Math.min(maxY,rect.top + latest.clientY-startY));
+        if (!frame) frame = win.requestAnimationFrame(paint);
+      };
+      const end = () => {
+        if (!active) return;
+        active = false;
+        if (frame) win.cancelAnimationFrame(frame);
+        heading.removeEventListener('pointermove',move);
+        for (const name of ['pointerup','pointercancel','lostpointercapture']) heading.removeEventListener(name,end);
+        win.removeEventListener('blur',end);
+        if (heading.hasPointerCapture(id)) heading.releasePointerCapture(id);
+        card.style.left = x + 'px'; card.style.top = y + 'px';
+        card.style.setProperty('transform','none','important');
+        card.style.removeProperty('will-change'); card.style.removeProperty('contain');
+        callCardDragging = card.__gbsDragging = false;
+        savePosition?.(x,y);
+      };
+      heading.setPointerCapture(id);
+      heading.addEventListener('pointermove',move);
+      for (const name of ['pointerup','pointercancel','lostpointercapture']) heading.addEventListener(name,end);
+      win.addEventListener('blur',end);
+    });
   }
   function callDurationLabel(call) {
     const seconds = Math.max(0, Math.round((call.endedAt - call.startedAt) / 1000));
