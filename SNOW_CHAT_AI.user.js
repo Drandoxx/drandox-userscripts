@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.451
+// @version      2.36.452
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -4788,7 +4788,7 @@ const snAIChatDisplayNames=(()=>{
         copy.innerHTML = copyIcon;
         const popup = document.createElement('span');
         popup.setAttribute('role', 'status'); popup.hidden = true;
-        popup.style.cssText = 'position:absolute;bottom:calc(100% + 7px);right:0;white-space:nowrap;padding:5px 9px;border-radius:6px;background:var(--sn-theme-241d33);color:var(--sn-theme-e6edf9);border:1px solid var(--sn-theme-74618b);font-size:12px;pointer-events:none;z-index:20;';
+        popup.style.cssText = 'position:absolute;bottom:calc(100% + 7px);right:0;white-space:nowrap;padding:5px 9px;border-radius:6px;background:var(--sn-theme-251f31)!important;color:var(--sn-theme-e6edf9);border:1px solid var(--sn-theme-655573);box-shadow:0 3px 12px #0005;font-size:12px;pointer-events:none;z-index:20;';
         let resetTimer;
         copy.addEventListener('click', async () => {
           const value = button.dataset.number;
@@ -4805,9 +4805,35 @@ const snAIChatDisplayNames=(()=>{
           resetTimer = setTimeout(() => { copy.innerHTML = copyIcon; popup.hidden = true; }, 2000);
         });
         group.append(copy, popup);
+        const teams = document.createElement('button');
+        teams.type = 'button'; teams.className = 'sn-ai-teams-cpc-copy';
+        teams.title = 'Copy Teams CPC message'; teams.setAttribute('aria-label', teams.title);
+        teams.style.cssText = copy.style.cssText + 'position:relative;overflow:visible;';
+        const badge = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" aria-hidden="true" style="position:absolute;left:-4px;bottom:-3px;filter:drop-shadow(0 1px 2px #0008)"><circle cx="17" cy="5" r="4" fill="#a7a5ff"/><path d="M11 10h11v8a5 5 0 0 1-10 0Z" fill="#7775dc"/><rect x="1" y="7" width="14" height="14" rx="2" fill="#5552b5"/><path d="M4 11h8M8 11v7" stroke="white" stroke-width="2"/></svg>';
+        teams.innerHTML = copyIcon + badge;
+        let teamsTimer;
+        teams.addEventListener('click', async () => {
+          const value = button.dataset.number + ' - ' + teams.dataset.messageTitle;
+          try {
+            if (typeof GM_setClipboard === 'function') await GM_setClipboard(value, 'text');
+            else await navigator.clipboard.writeText(value);
+            teams.innerHTML = snCopySuccessIcon.replace('width="24" height="24"','width="18" height="18"') + badge;
+            popup.textContent = 'Teams CPC message copied'; popup.hidden = false;
+          } catch { popup.textContent = 'Could not copy Teams CPC message'; popup.hidden = false; }
+          clearTimeout(resetTimer); clearTimeout(teamsTimer);
+          teamsTimer = setTimeout(() => { teams.innerHTML = copyIcon + badge; copy.innerHTML = copyIcon; popup.hidden = true; }, 2000);
+        });
+        group.append(teams);
       }
       const actionGroup = button.closest('.sn-ai-event-incident-actions');
       if (actionGroup) {
+        const teams = actionGroup.querySelector('.sn-ai-teams-cpc-copy');
+        const messageTitle = String(header.querySelector('.subheading')?.textContent || '').trim();
+        if (teams) {
+          teams.dataset.messageTitle = messageTitle;
+          const eligible = /\b(?:CPC|TCND)\b/i.test(messageTitle) && /\b(?:ON|OFF|ENABLE|DISABLE)\b/i.test(messageTitle);
+          teams.style.setProperty('display', eligible ? 'inline-flex' : 'none', 'important');
+        }
         const titleRow = header.querySelector(':scope > .sn-heading-row');
         if (titleRow && titleRow.nextElementSibling !== actionGroup) titleRow.after(actionGroup);
         actionGroup.style.setProperty('margin', '6px 0 6px 24px');
@@ -20322,7 +20348,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.451' });
+    addLog('info', 'helper-version', { version: '2.36.452' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
