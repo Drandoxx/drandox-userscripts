@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.476
+// @version      2.36.477
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -20370,7 +20370,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.476' });
+    addLog('info', 'helper-version', { version: '2.36.477' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -22235,7 +22235,7 @@ function chatsTodaySearchMatch(text,query) {
 function chatsTodayRecordMatches(record,query) {
   const normalized=chatsTodaySearchText(query);if(!normalized)return true;
   const fields=['number','opened_for','assigned_to','event_numbers','ticket_numbers'];
-  return [...fields.map(field=>chatsTodayValue(record[field],true)),...chatsTodayDescriptions(record)]
+  return [...fields.map(field=>chatsTodayValue(record[field],true)),...chatsTodayDescriptions(record),...(record.event_pairs||[]).flatMap(pair=>pair.searchDetails||[])]
     .some(value=>chatsTodaySearchMatch(chatsTodaySearchText(value),normalized));
 }
 function chatsTodayDescriptions(record) {
@@ -22490,14 +22490,14 @@ function installChatsTodayPanel() {
       const events=[];
       const eventQuery='u_link_to_interaction.u_work_queue=f7879842618d2300964fe119fb67115a^opened_atONToday@javascript:gs.beginningOfToday()@javascript:gs.endOfToday()^u_link_to_interactionISNOTEMPTY^opened_by.u_primary_group=8767499910d5b00036179bfd88ecc8bb^ORDERBYopened_at^ORDERBYsys_id';
       for(let offset=0;;offset+=limit){
-        const response=await fetch('/api/now/table/new_call?sysparm_query='+encodeURIComponent(eventQuery)+'&sysparm_fields=sys_id,number,short_description,u_link_to_interaction,transferred_to&sysparm_display_value=all&sysparm_exclude_reference_link=true&sysparm_limit='+limit+'&sysparm_offset='+offset,{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':page.g_ck},signal:controller.signal});
+        const response=await fetch('/api/now/table/new_call?sysparm_query='+encodeURIComponent(eventQuery)+'&sysparm_fields=sys_id,number,short_description,description,u_reporting_user,caller,caller.name,u_location,u_opco,company,u_contact_number,u_link_to_interaction,transferred_to&sysparm_display_value=all&sysparm_exclude_reference_link=true&sysparm_limit='+limit+'&sysparm_offset='+offset,{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':page.g_ck},signal:controller.signal});
         if(!response.ok)throw new Error('Unable to load linked EVNTs ('+response.status+').');
         const batch=(await response.json()).result;if(!Array.isArray(batch))throw new Error('Invalid EVNT results');events.push(...batch);
         if(batch.length<limit)break;if(offset>=99500)throw new Error('Too many EVNT results');
       }
       const linked=new Map();
       for(const event of events){const id=chatsTodayValue(event.u_link_to_interaction);if(!linked.has(id))linked.set(id,[]);linked.get(id).push(event);}
-      for(const row of rows){const matches=linked.get(chatsTodayValue(row.sys_id))||[];row.event_pairs=matches.map(event=>({eventId:chatsTodayValue(event.sys_id),eventNumber:chatsTodayValue(event.number,true),shortDescription:chatsTodayValue(event.short_description,true),ticketId:chatsTodayValue(event.transferred_to),ticketNumber:chatsTodayValue(event.transferred_to,true)}));row.event_numbers=row.event_pairs.map(pair=>pair.eventNumber||'—').join('\n');row.ticket_numbers=row.event_pairs.map(pair=>pair.ticketNumber||'—').join('\n');}
+      for(const row of rows){const matches=linked.get(chatsTodayValue(row.sys_id))||[];row.event_pairs=matches.map(event=>({eventId:chatsTodayValue(event.sys_id),eventNumber:chatsTodayValue(event.number,true),shortDescription:chatsTodayValue(event.short_description,true),searchDetails:['description','u_reporting_user','caller','caller.name','u_location','u_opco','company','u_contact_number'].map(field=>chatsTodayValue(event[field],true)).filter(Boolean),ticketId:chatsTodayValue(event.transferred_to),ticketNumber:chatsTodayValue(event.transferred_to,true)}));row.event_numbers=row.event_pairs.map(pair=>pair.eventNumber||'—').join('\n');row.ticket_numbers=row.event_pairs.map(pair=>pair.ticketNumber||'—').join('\n');}
       if(controller.signal.aborted||panel.hidden)return;
       render(rows);lastSuccess=Date.now();failures=0;status.textContent=total+' interactions · Updated 0 seconds ago';if(manual===true)showRefreshSuccess().catch(()=>{});
     }catch(error){if(request===controller&&!panel.hidden){failures++;status.classList.add('error');status.textContent=(error.name==='AbortError'?'Refresh timed out':error.message)+(lastSuccess?' · Previous results kept':'');}}
