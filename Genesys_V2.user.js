@@ -5797,7 +5797,7 @@
   const callNetworkChanges = [], callNetworkSignatures = new Map();
   const callNetworkFields = new Map();
   const callNetworkBridges = new Set();
-  let currentAgentApiId = null, callCacheBusy = false, lastLiveApiAt = 0, liveApiBusy = false, pendingEndedCallRefresh = false;
+  let currentAgentApiId = null, callCacheBusy = false, lastLiveApiAt = 0, liveApiBusy = false, pendingEndedCallRefresh = false, nextCallApiAttemptAt = 0;
   function callDayKey(date = new Date()) {
     return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
   }
@@ -5994,6 +5994,7 @@
   async function refreshTodayCallCache(force=false) {
     if(force)pendingEndedCallRefresh=true;
     if(window!==window.top || callCacheBusy || callCardDragging)return;
+    if(!force && Date.now()<nextCallApiAttemptAt)return;
     force=force || pendingEndedCallRefresh;
     const cache=readTodayCallCache(),bridge=readyCallApiBridge();
     if(!bridge || (!force && Date.now()-cache.refreshedAt<60000))return;
@@ -6019,7 +6020,8 @@
       }
       const fresh=readTodayCallCache();fresh.refreshedAt=Date.now();fresh.savedAt=Date.now();GM_setValue(CALL_CACHE_KEY,fresh);
       pendingEndedCallRefresh=false;
-    } catch(error) {console.warn('[Genesys V2] Call API:',error.message);}
+      nextCallApiAttemptAt=0;
+    } catch(error) {nextCallApiAttemptAt=Date.now()+60000;console.warn('[Genesys V2] Call API:',error.message);}
     finally {callCacheBusy=false;if(GM_getValue(key,{})?.token===token)GM_deleteValue(key);}
   }
   async function refreshLiveCallApi() {
