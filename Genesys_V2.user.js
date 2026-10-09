@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.559.0
+// @version      1.560.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -6113,13 +6113,13 @@
     outlineLucide(root);
     const readableRowsStyle=document.createElement('style');
     readableRowsStyle.textContent=`
+      :host{--panel:#161616;--head:#262626;--line:#393939;--muted:#c6c6c6;color:#f4f4f4;--call-row:#202020;--call-stripe:#292929}
+      :host([data-theme="light"]){--panel:#ffffff;--head:#e8e8e8;--line:#c6c6c6;--muted:#525252;color:#161616;--call-row:#ffffff;--call-stripe:#f0f0f0}
+      .panel{border-color:#3c6269}.copy{color:#67e8f9;background:transparent}.copy:hover{background:#393939}.status{color:var(--muted)}
+      :host([data-theme="light"]) .copy{color:#006878}:host([data-theme="light"]) .copy:hover{background:#e0e0e0}
       .panel{top:auto!important;bottom:60px!important;max-height:calc(100vh - 138px);max-height:calc(100dvh - 138px)}
-      tbody tr:nth-child(odd)>td{background:#1d2228!important}
-      tbody tr:nth-child(even)>td{background:#2a333c!important}
-      tbody tr:hover>td{background:#263e48!important}
-      :host([data-theme="light"]) tbody tr:nth-child(odd)>td{background:#f5fafb!important}
-      :host([data-theme="light"]) tbody tr:nth-child(even)>td{background:#dfeaf0!important}
-      :host([data-theme="light"]) tbody tr:hover>td{background:#cfe6ee!important}
+      tbody tr:nth-child(odd)>td{background:var(--call-row)!important}
+      tbody tr:nth-child(even)>td{background:var(--call-stripe)!important}
       @media(max-width:800px){.panel{max-height:calc(100vh - 130px);max-height:calc(100dvh - 130px)}}
     `;root.append(readableRowsStyle);
     document.body.append(host);
@@ -6133,9 +6133,8 @@
       return cell;
     }
     function paintCallRows() {
-      const light=host.dataset.theme==='light';
       Array.from(tbody.rows).forEach((row,index)=>{
-        const color=light?(index%2?'#dbe7ef':'#f5fafb'):(index%2?'#35414d':'#1d2228');
+        const color=index%2?'var(--call-stripe)':'var(--call-row)';
         // Cell backgrounds sit above row backgrounds; inline priority resists theme overrides.
         for(const element of [row,...row.cells]) {
           element.style.setProperty('background-color',color,'important');
