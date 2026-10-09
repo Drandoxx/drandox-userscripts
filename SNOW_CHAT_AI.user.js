@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.427
+// @version      2.36.428
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -20021,7 +20021,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.427' });
+    addLog('info', 'helper-version', { version: '2.36.428' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -21847,10 +21847,24 @@ function chatsTodaySeconds(field) {
 function chatsTodayWaitTime(field) {
   const seconds=chatsTodaySeconds(field);return seconds===null?chatsTodayValue(field,true)||'—':Math.round(seconds)+' s';
 }
+function chatsTodayDurationSeconds(record) {
+  const exact=chatsTodaySeconds(record.duration);
+  if(exact!==null&&exact>=0)return exact;
+  const opened=chatsTodayValue(record.opened_at),closed=chatsTodayValue(record.closed_at);
+  if(!opened||!closed)return null;
+  const seconds=(Date.parse(closed.replace(' ','T')+'Z')-Date.parse(opened.replace(' ','T')+'Z'))/1000;
+  return Number.isFinite(seconds)&&seconds>=0?seconds:null;
+}
+function chatsTodayDuration(record) {
+  const value=chatsTodayDurationSeconds(record);if(value===null)return '—';
+  const seconds=Math.floor(value),hours=Math.floor(seconds/3600),minutes=Math.floor(seconds/60)%60;
+  return (hours?hours+':'+String(minutes).padStart(2,'0'):String(minutes))+':'+String(seconds%60).padStart(2,'0');
+}
 function sortChatsToday(records,sort) {
   if(!sort)return records;
   const value=record=>{
-    if(['wait_time','duration'].includes(sort.field))return chatsTodaySeconds(record[sort.field]);
+    if(sort.field==='duration')return chatsTodayDurationSeconds(record);
+    if(sort.field==='wait_time')return chatsTodaySeconds(record.wait_time);
     const raw=chatsTodayValue(record[sort.field]);const time=raw?Date.parse(raw.replace(' ','T')+'Z'):NaN;return Number.isFinite(time)?time:null;
   };
   return [...records].sort((a,b)=>{const x=value(a),y=value(b);if(x===null)return y===null?0:1;if(y===null)return -1;return (x-y)*(sort.direction==='ascending'?1:-1)||chatsTodayValue(a.number).localeCompare(chatsTodayValue(b.number));});
@@ -21871,7 +21885,7 @@ function chatsTodayColumnWidths(records,measure) {
     const sortable=['wait_time','opened_at','closed_at','duration'].includes(field);
     let width=measure(field==='wait_time'?'':label,true)+18+(sortable?18:0);
     for(const record of records){
-      const value=field==='wait_time'?chatsTodayWaitTime(record[field]):['opened_at','closed_at'].includes(field)?chatsTodayTime(record[field]):chatsTodayValue(record[field],true)||'—';
+      const value=field==='duration'?chatsTodayDuration(record):field==='wait_time'?chatsTodayWaitTime(record[field]):['opened_at','closed_at'].includes(field)?chatsTodayTime(record[field]):chatsTodayValue(record[field],true)||'—';
       const arrow=field==='opened_at'&&chatsTodayTime(record.opened_at)!=='—'&&chatsTodayTime(record.closed_at)!=='—'?20:0;
       width=Math.max(width,measure(value,false,field==='number')+arrow);
     }
@@ -21991,7 +22005,7 @@ function installChatsTodayPanel() {
         if(ongoing){button.classList.add('ongoing');button.title='Work in Progress · Open in main tab row';button.setAttribute('aria-label',button.textContent+' · Work in Progress');}
         button.addEventListener('click',()=>{try{openWorkspaceIMSMainTab({sys_id:chatsTodayValue(record.sys_id),number:chatsTodayValue(record.number)});close();}catch(error){status.textContent=error.message;status.classList.add('error');}});numberCell.append(button);row.append(numberCell);
         for(const [,field] of SN_AI_CHATS_TODAY_COLUMNS.slice(1)) {
-          const cell=document.createElement('td');cell.textContent=field==='wait_time'?chatsTodayWaitTime(record[field]):['opened_at','closed_at'].includes(field)?chatsTodayTime(record[field]):chatsTodayValue(record[field],true)||'—';
+          const cell=document.createElement('td');cell.textContent=field==='duration'?chatsTodayDuration(record):field==='wait_time'?chatsTodayWaitTime(record[field]):['opened_at','closed_at'].includes(field)?chatsTodayTime(record[field]):chatsTodayValue(record[field],true)||'—';
           if(field==='short_description')cell.className='description';else if(field==='state')cell.className='state';else cell.className='nowrap';
           if(field==='opened_at'&&chatsTodayTime(record.opened_at)!=='—'&&chatsTodayTime(record.closed_at)!=='—'){
             cell.classList.add('time-open');const arrow=document.createElement('span');arrow.className='time-arrow';arrow.innerHTML=chatsTodayIcon('arrow-right');cell.append(arrow);
