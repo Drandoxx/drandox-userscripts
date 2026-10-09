@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.555.0
+// @version      1.556.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -6098,6 +6098,18 @@
         element.style.setProperty('stroke-linejoin','round','important');
       }
     }
+    const columns=[
+      ['Start time','clock','<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>'],
+      ['Phone number','phone','<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.96.36 1.91.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.58 2.81.7A2 2 0 0 1 22 16.92z"/>'],
+      ['Duration','timer','<path d="M10 2h4M12 14v-4M4.93 4.93l1.42 1.42"/><circle cx="12" cy="14" r="8"/>'],
+      ['Location','map-pin','<path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="3"/>']
+    ];
+    root.querySelectorAll('th').forEach((heading,index)=>{
+      const [label,name,paths]=columns[index];heading.scope='col';
+      heading.innerHTML=`<span class="column-heading"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-${name}" aria-hidden="true">${paths}</svg><span>${label}</span></span>`;
+    });
+    const compactTableStyle=document.createElement('style');
+    compactTableStyle.textContent='table{width:max-content;min-width:0;table-layout:auto}th,td{white-space:nowrap;padding:6px}.column-heading{display:inline-flex;align-items:center;gap:5px}.column-heading svg{width:16px!important;height:16px!important;flex:0 0 16px}.copy{margin-left:4px}';root.append(compactTableStyle);
     outlineLucide(root);
     document.body.append(host);
     const panel=root.querySelector('.panel'),launcher=root.querySelector('.launcher'),status=root.querySelector('.status'),tbody=root.querySelector('tbody');
