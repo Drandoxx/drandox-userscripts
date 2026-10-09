@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.420
+// @version      2.36.421
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -20019,7 +20019,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.420' });
+    addLog('info', 'helper-version', { version: '2.36.421' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -21791,6 +21791,14 @@ function chatsTodayValue(field,display=false) {
   if(field&&typeof field==='object')return String((display?field.display_value:field.value)??field.value??'');
   return String(field??'');
 }
+function chatsTodayTime(field) {
+  // Use SNOW's session-local display value, not the UTC storage timestamp.
+  return chatsTodayValue(field,true).match(/\b\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AP]M)?\b/i)?.[0]||'—';
+}
+const SN_AI_CHATS_TODAY_COLUMNS=[
+  ['Number','number',12],['UserID','opened_for',11],['Wait time','wait_time',9],['Duration','duration',9],
+  ['Opened','opened_at',8],['Closed','closed_at',8],['Short description','short_description',28],['State','state',15]
+];
 function groupChatsToday(records) {
   const groups=new Map(),seen=new Set();
   for(const record of records) {
@@ -21818,7 +21826,7 @@ function installChatsTodayPanel() {
     .panel{position:fixed;top:78px;right:12px;bottom:60px;left:300px;pointer-events:auto;display:flex;flex-direction:column;min-width:0;background:var(--sn-theme-191621,#191621);border:1px solid var(--sn-theme-655573,#74618b);border-radius:12px;box-shadow:0 8px 32px #0006;overflow:hidden}
     header{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--sn-theme-251f31,#241c33);border-bottom:1px solid var(--sn-theme-423750,#423750)}h2{font-size:17px;margin:0}header .actions{margin-left:auto;display:flex;gap:6px}.icon{display:grid;place-items:center;width:30px;height:30px;padding:0;border:0;background:transparent}.icon svg{width:18px;height:18px}
     .status{font-size:11px;color:var(--sn-theme-a8b8d1,#beb0d1);padding:7px 14px;margin:0}.error{color:var(--now-color_alert--critical-3,#ed7d86)}.groups{overflow:auto;flex:1;min-height:0;padding:0 12px 12px}.empty{padding:12px;color:var(--sn-theme-a8b8d1,#beb0d1)}
-    details{border:1px solid var(--sn-theme-423750,#423750);border-radius:8px;margin:6px 0;overflow:hidden}summary{cursor:pointer;padding:10px 12px;background:var(--sn-theme-251f31,#241c33);font-weight:600}summary .count{font-weight:400;color:var(--sn-theme-a8b8d1,#beb0d1);margin-left:8px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:920px;font-size:12px}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--sn-theme-423750,#423750);vertical-align:top}th{color:var(--sn-theme-a8b8d1,#beb0d1);font-weight:500;background:var(--sn-theme-251f31,#241c33)}tbody tr:last-child td{border-bottom:0}.number{white-space:nowrap;color:var(--sn-theme-ac94ec,#ac94ec);background:transparent;border:0;padding:0;font-weight:600}.number:hover{background:transparent;text-decoration:underline}.description{min-width:180px;max-width:340px;overflow-wrap:anywhere}.nowrap{white-space:nowrap}.state{white-space:nowrap;color:var(--sn-theme-a8b8d1,#beb0d1)}tr[data-active="true"] .state{color:var(--agent-available,#91d6b2)}
+    details{border:1px solid var(--sn-theme-423750,#423750);border-radius:8px;margin:6px 0;overflow:hidden}summary{cursor:pointer;padding:10px 12px;background:var(--sn-theme-251f31,#241c33);font-weight:600}summary .count{font-weight:400;color:var(--sn-theme-a8b8d1,#beb0d1);margin-left:8px}.table-wrap{overflow:auto}table{width:100%;table-layout:fixed;border-collapse:collapse;min-width:920px;font-size:12px}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--sn-theme-423750,#423750);vertical-align:top}th{color:var(--sn-theme-a8b8d1,#beb0d1);font-weight:500;background:var(--sn-theme-251f31,#241c33)}tbody tr:last-child td{border-bottom:0}.number{white-space:nowrap;color:var(--sn-theme-ac94ec,#ac94ec);background:transparent;border:0;padding:0;font-weight:600}.number:hover{background:transparent;text-decoration:underline}.description{overflow-wrap:anywhere}.nowrap{white-space:nowrap}.state{white-space:nowrap;color:var(--sn-theme-a8b8d1,#beb0d1)}tr[data-active="true"] .state{color:var(--agent-available,#91d6b2)}
     @media(max-width:800px){header{flex-wrap:wrap;padding:8px}h2{font-size:14px}.status{font-size:10px}.panel{top:70px}}
   </style><button type="button" class="launcher" aria-expanded="false" aria-controls="chats-today-panel">Chats Today</button><section class="panel" id="chats-today-panel" role="dialog" aria-label="Chats Today" hidden><header><h2>Chats Today</h2><div class="actions"><button type="button" class="refresh" aria-label="Refresh Chats Today">Refresh</button><button type="button" class="icon close" aria-label="Close Chats Today"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m18 6-12 12M6 6l12 12"/></svg></button></div></header><p class="status" role="status">Not loaded yet</p><div class="groups"></div></section>`;
   const launcher=root.querySelector('.launcher'),panel=root.querySelector('.panel'),status=root.querySelector('.status'),groups=root.querySelector('.groups'),refresh=root.querySelector('.refresh');
@@ -21849,15 +21857,17 @@ function installChatsTodayPanel() {
       const title=document.createElement('span'),count=document.createElement('span');title.textContent=group.name;count.className='count';count.textContent='('+group.records.length+')';summary.append(title,count);detail.append(summary);
       detail.addEventListener('toggle',()=>{if(detail.open)expanded.add(group.id);else expanded.delete(group.id);});
       const wrap=document.createElement('div');wrap.className='table-wrap';const table=document.createElement('table');
+      const columns=document.createElement('colgroup');
+      for(const [,,width] of SN_AI_CHATS_TODAY_COLUMNS){const column=document.createElement('col');column.style.width=width+'%';columns.append(column);}table.append(columns);
       const head=document.createElement('thead'),headRow=document.createElement('tr');
-      for(const label of ['Number','Wait time','Duration','Opened for','Opened','Work Queue','Short description','State']){const th=document.createElement('th');th.scope='col';th.textContent=label;headRow.append(th);}head.append(headRow);table.append(head);
+      for(const [label] of SN_AI_CHATS_TODAY_COLUMNS){const th=document.createElement('th');th.scope='col';th.textContent=label;headRow.append(th);}head.append(headRow);table.append(head);
       const body=document.createElement('tbody');
       for(const record of group.records) {
         const row=document.createElement('tr');row.dataset.active=chatsTodayValue(record.active);
         const numberCell=document.createElement('td'),button=document.createElement('button');button.type='button';button.className='number';button.textContent=chatsTodayValue(record.number);button.title='Open in main tab row';
         button.addEventListener('click',()=>{try{openWorkspaceIMSMainTab({sys_id:chatsTodayValue(record.sys_id),number:chatsTodayValue(record.number)});close();}catch(error){status.textContent=error.message;status.classList.add('error');}});numberCell.append(button);row.append(numberCell);
-        for(const field of ['wait_time','duration','opened_for','opened_at','u_work_queue','short_description','state']) {
-          const cell=document.createElement('td');cell.textContent=chatsTodayValue(record[field],true)||'—';
+        for(const [,field] of SN_AI_CHATS_TODAY_COLUMNS.slice(1)) {
+          const cell=document.createElement('td');cell.textContent=['opened_at','closed_at'].includes(field)?chatsTodayTime(record[field]):chatsTodayValue(record[field],true)||'—';
           if(field==='short_description')cell.className='description';else if(field==='state')cell.className='state';else cell.className='nowrap';
           if(field==='wait_time'||field==='duration')cell.title=chatsTodayValue(record[field]);row.append(cell);
         }
@@ -21879,7 +21889,7 @@ function installChatsTodayPanel() {
       const rows=[],limit=500;
       for(let offset=0;;offset+=limit) {
         const query=SN_AI_CHATS_TODAY_QUERY+'^ORDERBYassigned_to^ORDERBYDESCopened_at^ORDERBYsys_id';
-        const response=await fetch('/api/now/table/interaction?sysparm_query='+encodeURIComponent(query)+'&sysparm_fields=sys_id,number,wait_time,duration,opened_for,assigned_to,opened_at,u_work_queue,short_description,state,type,active&sysparm_display_value=all&sysparm_exclude_reference_link=true&sysparm_limit='+limit+'&sysparm_offset='+offset,{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':page.g_ck},signal:controller.signal});
+        const response=await fetch('/api/now/table/interaction?sysparm_query='+encodeURIComponent(query)+'&sysparm_fields=sys_id,number,wait_time,duration,opened_for,assigned_to,opened_at,closed_at,short_description,state,type,active&sysparm_display_value=all&sysparm_exclude_reference_link=true&sysparm_limit='+limit+'&sysparm_offset='+offset,{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':page.g_ck},signal:controller.signal});
         if(response.status===429){const header=response.headers.get('Retry-After');const seconds=/^\d+$/.test(header||'')?Number(header):header?Math.max(0,(Date.parse(header)-Date.now())/1000):60;retryAt=Date.now()+(Number.isFinite(seconds)?seconds:60)*1000;throw new Error('ServiceNow rate limit reached');}
         if(!response.ok)throw new Error('Unable to load Chats Today ('+response.status+').');
         const batch=(await response.json()).result;if(!Array.isArray(batch))throw new Error('Invalid interaction results');rows.push(...batch);
