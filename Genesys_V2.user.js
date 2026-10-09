@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.547.0
+// @version      1.548.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -5032,15 +5032,11 @@
     try { record = GM_getValue(LAST_CALL_DATA_KEY, null); } catch (_) {}
     const latest = record?.observations?.at(-1);
     info.textContent = record ? (latest?.callText || 'Answered call recorded; waiting for available details.') : 'No answered call recorded yet.';
-    const download = doc.createElement('button');
-    download.className = 'gbs-settings-save'; download.textContent = 'Download gathered data'; download.disabled = !record;
-    download.addEventListener('click', () => {
-      const url = doc.defaultView.URL.createObjectURL(new Blob([JSON.stringify(record, null, 2)], { type: 'application/json' }));
-      const link = doc.createElement('a'); link.href = url; link.download = 'genesys-v2-last-call.json'; link.click();
-      doc.defaultView.setTimeout(() => doc.defaultView.URL.revokeObjectURL(url), 1000);
-    });
     lastCall.style.cssText = 'padding:18px;border:1px solid #22d3ee70;border-radius:12px;background:#242a30';
-    const historyDownload = doc.createElement('button'); historyDownload.className = 'gbs-settings-save'; historyDownload.textContent = 'Download incoming-call history';
+    const historyDownload = doc.createElement('button'); historyDownload.type = 'button'; historyDownload.textContent = 'Download incoming-call history';
+    historyDownload.style.cssText = 'display:block;padding:10px 14px;border:1px solid #22d3ee;border-radius:8px;background:#1d2228;color:#a5f3fc;cursor:pointer;font:inherit;transition:background .15s,color .15s';
+    historyDownload.addEventListener('mouseenter', () => { historyDownload.style.background = '#0891b2'; historyDownload.style.color = '#ffffff'; });
+    historyDownload.addEventListener('mouseleave', () => { historyDownload.style.background = '#1d2228'; historyDownload.style.color = '#a5f3fc'; });
     historyDownload.addEventListener('click', () => {
       const history = GM_getValue(CALL_HISTORY_KEY, []);
       const url = URL.createObjectURL(new Blob([JSON.stringify(history, null, 2)], { type: 'application/json' }));
@@ -5083,7 +5079,7 @@
       if (!measurementInfo.isConnected) { clearInterval(measurementInfoTimer); return; }
       refreshMeasurementInfo();
     },1000);
-    lastCall.append(title, info, download, historyDownload, measurementDownload, measurementInfo, removeMeasurements); body.appendChild(lastCall);
+    lastCall.append(title, info, historyDownload, measurementDownload, measurementInfo, removeMeasurements); body.appendChild(lastCall);
     checkbox.checked = showAdminCallButton(doc);
     popover.querySelector('.gbs-settings-footer .gbs-settings-save').addEventListener('click', () => {
       if (!isSavedAdmin(doc)) return;
