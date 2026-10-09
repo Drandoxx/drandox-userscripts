@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.454
+// @version      2.36.455
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -524,10 +524,6 @@ const snAIChatDisplayNames=(()=>{
   const lastTypedIMS = new Map();
   const manualChatKeys=new WeakMap();
   let autoGreetEnabled=false, autoGreetChanged=false, lastOperatorActivity=Date.now(), incomingAcceptedAt=0;
-  const clampGreetDelay=value=>Math.max(3,Math.min(10,Math.round(Number(value)||5)));
-  let autoGreetDelaySeconds=5,autoGreetDelayChanged=false;
-  Promise.resolve(GM_getValue('sn-ai-auto-greet-delay-v1',5)).then(value=>{if(!autoGreetDelayChanged)autoGreetDelaySeconds=clampGreetDelay(value);});
-  document.addEventListener('sn-ai-auto-greet-delay',event=>{autoGreetDelayChanged=true;autoGreetDelaySeconds=clampGreetDelay(event.detail);});
   const greetSeenHosts=new WeakSet(), greetAttempted=new Set();
   try { JSON.parse(sessionStorage.getItem('sn-ai-greet-attempts-v1')||'[]').forEach(id=>greetAttempted.add(id)); } catch {}
   Promise.resolve(GM_getValue('sn-ai-auto-greet-v1',false)).then(value=>{if(!autoGreetChanged)autoGreetEnabled=value===true;});
@@ -535,23 +531,12 @@ const snAIChatDisplayNames=(()=>{
   // An accepted incoming offer is required: opening an old IMS never greets it.
   const autoGreetOffers=new Map();
   const pendingGreetingIds=new Set();
-  let greetingFocusEpoch=0;
-  // Losing keyboard focus does not mean the window is invisible. In particular
-  // another application can have focus while this chat remains on screen.
-  const greetingWindowActive=()=>!document.hidden;
   function rememberGreetingAttempt(id){
     greetAttempted.add(id);pendingGreetingIds.delete(id);
     try{sessionStorage.setItem('sn-ai-greet-attempts-v1',JSON.stringify([...greetAttempted].slice(-500)));}catch{}
   }
-  function skipInactiveGreetings(){
-    greetingFocusEpoch++;
-    autoGreetOffers.clear();
-    for(const id of [...pendingGreetingIds])rememberGreetingAttempt(id);
-  }
-  document.addEventListener('visibilitychange',()=>{if(!greetingWindowActive())skipInactiveGreetings();});
   document.addEventListener('sn-ai-autoaccepted-ims',event=>{
     const ims=event.detail?.ims;if(!/^IMS\d+$/.test(ims||''))return;
-    if(!greetingWindowActive())return;
     autoGreetOffers.set(ims,event.detail.acceptedAt||Date.now());
     for(const scope of spaceRoots)for(const input of scope.querySelectorAll?.('sn-chat-input')||[])queueNewChatGreeting(input);
   });
@@ -563,8 +548,6 @@ const snAIChatDisplayNames=(()=>{
     if(host?.localName!=='sn-chat-input'||greetSeenHosts.has(host))return;
     const id=host.sysId||host.getAttribute('sys-id');
     if(!autoGreetEnabled||!id||greetAttempted.has(id)||!autoGreetOffers.size)return;
-    if(!greetingWindowActive()){rememberGreetingAttempt(id);return;}
-    const focusEpoch=greetingFocusEpoch;
     pendingGreetingIds.add(id);
     greetSeenHosts.add(host);
     let record;
@@ -572,16 +555,15 @@ const snAIChatDisplayNames=(()=>{
     const acceptedAt=autoGreetOffers.get(record?.number?.value);
     if(!acceptedAt||Date.now()-acceptedAt>180000){greetSeenHosts.delete(host);return;}
     const started=Date.now(), activity=lastOperatorActivity;
-    const greetDelayMs=autoGreetDelaySeconds*1000;
+    const greetDelayMs=0;
     const ownElements=()=>{const list=[];const visit=root=>{for(const node of root.querySelectorAll('*')){list.push(node);if(node.shadowRoot)visit(node.shadowRoot);}};if(host.shadowRoot)visit(host.shadowRoot);return list;};
     const input=()=>ownElements().find(node=>node.matches('textarea[name="CHAT_INPUT#CHAT_TEXTAREA"]'));
-    const safe=()=>autoGreetEnabled&&greetingWindowActive()&&focusEpoch===greetingFocusEpoch&&host.isConnected&&(host.sysId||host.getAttribute('sys-id'))===id&&host.isChatOwner===true&&host.getBoundingClientRect().width>0&&lastOperatorActivity===activity&&!input()?.disabled&&!input()?.readOnly&&ownElements().some(node=>node.matches('[role="tab"][aria-selected="true"]')&&/Public Chat/i.test(node.textContent));
+    const safe=()=>autoGreetEnabled&&host.isConnected&&(host.sysId||host.getAttribute('sys-id'))===id&&host.isChatOwner===true&&lastOperatorActivity===activity&&!input()?.disabled&&!input()?.readOnly&&ownElements().some(node=>node.matches('[role="tab"][aria-selected="true"]')&&/Public Chat/i.test(node.textContent));
     const wait=async predicate=>{for(let i=0;i<20;i++){if(!safe())return null;const result=predicate();if(result)return result;await new Promise(resolve=>setTimeout(resolve,100));}return null;};
     setTimeout(async()=>{
       // Wait for native controls to mount; never insert a command into a partial/error view.
       let loaded=false;
       for(let i=0;i<480;i++){
-        if(!greetingWindowActive()||focusEpoch!==greetingFocusEpoch){rememberGreetingAttempt(id);return;}
         if(!autoGreetEnabled||!host.isConnected||lastOperatorActivity!==activity||greetAttempted.has(id))return;
         const field=input(),nodes=ownElements();
         if(field?.value.trim())return;
@@ -591,18 +573,20 @@ const snAIChatDisplayNames=(()=>{
         await new Promise(resolve=>setTimeout(resolve,250));
       }
       if(!loaded||!safe()||Date.now()-started<greetDelayMs||!input()||input().value.trim())return;
-      // Do not greet an already-serviced conversation after remount/reload.
+      // Select the greeting from the latest human message in this new offer.
       let chat=host;
       while(chat&&chat.localName!=='sn-agent-chat')chat=chat.parentElement||chat.getRootNode()?.host;
       const agentMessages=chat?.shadowRoot?.querySelectorAll('now-chat-message')||[];
-      if([...agentMessages].some(message=>message.shadowRoot?.querySelector('.now-chat-message.agent.right')))return;
       rememberGreetingAttempt(id);
       try {
-        host.dispatch('CHAT_INPUT#MESSAGE_ENTERED',{message:'/r w',command:'r',query:'w',currentParamIndex:0,caretPos:4});
-        const option=await wait(()=>ownElements().find(node=>node.id==='quickaction-param-w'));
+        const lastMessage=[...agentMessages].filter(message=>message.shadowRoot?.querySelector('.now-chat-message:not(.system)')).at(-1);
+        const userLast=Boolean(lastMessage?.shadowRoot?.querySelector('.now-chat-message:not(.right):not(.system)'));
+        const query=userLast?'q':'w', command='/r '+query;
+        host.dispatch('CHAT_INPUT#MESSAGE_ENTERED',{message:command,command:'r',query,currentParamIndex:0,caretPos:4});
+        const option=await wait(()=>ownElements().find(node=>node.id==='quickaction-param-'+query));
         if(!option)return;
         const expected=option.querySelector('.sn-action-menu-display-value')?.textContent.trim();
-        if(!expected||!safe()||input().value.trim()!=='/r w')return;
+        if(!expected||!safe()||input().value.trim()!==command)return;
         option.click();
         const ready=await wait(()=>input()?.value.trim()===expected);
         const send=ownElements().find(node=>node.matches('button[aria-label="Send Message"]'));
@@ -16550,32 +16534,6 @@ function startSNAI(tabIdentity) {
       greetSetting.dataset.generalAutoGreet='';
       const greetSwitch=document.createElement('input');greetSwitch.type='checkbox';greetSwitch.setAttribute('role','switch');
       greetSetting.append('Auto greet new users',greetSwitch);generalPanel.append(greetSetting);
-      const greetDescription=document.createElement('span');
-      greetDescription.style.cssText='display:flex;align-items:center;gap:10px;flex-wrap:wrap';
-      const greetDelayControl=document.createElement('span');greetDelayControl.className='sn-ai-delay-stepper';
-      const greetDelayInput=document.createElement('input');greetDelayInput.type='number';
-      greetDelayInput.min='3';greetDelayInput.max='10';greetDelayInput.step='1';greetDelayInput.value='5';
-      greetDelayInput.setAttribute('aria-label','Automatic greeting delay in seconds');
-      greetDelayInput.style.cssText='width:27px;min-width:0;padding:7px 0;border:0;background:transparent;color:var(--sn-theme-e6edf9);text-align:right';
-      const clampDelay=value=>Math.max(3,Math.min(10,Math.round(Number(value)||5)));
-      let greetDelayChanged=false;
-      greetDelayInput.addEventListener('change',()=>{
-        greetDelayChanged=true;greetDelayInput.value=String(clampDelay(greetDelayInput.value));
-        gmSetValue('sn-ai-auto-greet-delay-v1',Number(greetDelayInput.value)).catch(console.warn);
-        document.dispatchEvent(new CustomEvent('sn-ai-auto-greet-delay',{detail:Number(greetDelayInput.value)}));
-      });
-      gmGetValue('sn-ai-auto-greet-delay-v1',5).then(value=>{if(!greetDelayChanged)greetDelayInput.value=String(clampDelay(value));});
-      const greetStep=(text,amount)=>{
-        const button=document.createElement('button');button.type='button';button.textContent=text;
-        button.setAttribute('aria-label',amount<0?'Decrease greeting delay':'Increase greeting delay');
-        button.style.cssText='width:26px;min-width:26px;padding:6px 0;border:0;border-radius:0;background:transparent;color:var(--sn-theme-a8b8d1);font:18px system-ui;cursor:pointer;box-shadow:none';
-        button.addEventListener('click',event=>{event.preventDefault();greetDelayInput.value=String(clampDelay(Number(greetDelayInput.value)+amount));greetDelayInput.dispatchEvent(new Event('change',{bubbles:true}));});
-        return button;
-      };
-      const greetSeconds=document.createElement('span');greetSeconds.textContent='s';
-      greetDelayControl.append(greetStep('−',-1),greetDelayInput,greetSeconds,greetStep('+',1));
-      greetDescription.append('Auto greet new users after',greetDelayControl);
-      greetSetting.replaceChildren(greetDescription,greetSwitch);
       let greetSettingChanged=false;
       gmGetValue('sn-ai-auto-greet-v1',false).then(value=>{if(!greetSettingChanged)greetSwitch.checked=value===true;});
       greetSwitch.addEventListener('change',()=>{greetSettingChanged=true;gmSetValue('sn-ai-auto-greet-v1',greetSwitch.checked);document.dispatchEvent(new CustomEvent('sn-ai-auto-greet',{detail:greetSwitch.checked}));});
@@ -20348,7 +20306,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.454' });
+    addLog('info', 'helper-version', { version: '2.36.455' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
