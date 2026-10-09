@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.554.0
+// @version      1.555.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -6085,15 +6085,28 @@
     iconStyle.textContent='svg,svg *{fill:none!important;stroke:currentColor!important;stroke-width:2!important;stroke-linecap:round!important;stroke-linejoin:round!important}.copy{min-width:24px;min-height:24px;align-items:center;justify-content:center}.copy svg{width:16px!important;height:16px!important}.icon svg{width:18px!important;height:18px!important}';root.append(iconStyle);
     root.querySelector('th').textContent='Start time';
     const refreshIcon=root.querySelector('.refresh svg');refreshIcon.setAttribute('class','lucide lucide-refresh-cw');
+    for(const svg of root.querySelectorAll('svg')) {svg.setAttribute('xmlns','http://www.w3.org/2000/svg');svg.setAttribute('aria-hidden','true');svg.setAttribute('stroke-linecap','round');svg.setAttribute('stroke-linejoin','round');}
     refreshIcon.innerHTML='<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>';
     root.querySelector('.close svg').setAttribute('class','lucide lucide-x');
+    // Inline important declarations also resist third-party dark-mode SVG recoloring.
+    function outlineLucide(scope) {
+      for(const element of scope.querySelectorAll('svg,svg *')) {
+        element.style.setProperty('fill','none','important');
+        element.style.setProperty('stroke','currentColor','important');
+        element.style.setProperty('stroke-width','2','important');
+        element.style.setProperty('stroke-linecap','round','important');
+        element.style.setProperty('stroke-linejoin','round','important');
+      }
+    }
+    outlineLucide(root);
     document.body.append(host);
     const panel=root.querySelector('.panel'),launcher=root.querySelector('.launcher'),status=root.querySelector('.status'),tbody=root.querySelector('tbody');
     function copyCell(value,label) {
       const cell=document.createElement('td');cell.append(document.createTextNode(value || '—'));
       if(value) {const button=document.createElement('button');button.type='button';button.className='copy';button.setAttribute('aria-label','Copy '+label);
-        const icon='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="lucide lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2"/></svg>';button.innerHTML=icon;
-        button.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(value);button.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="lucide lucide-check"><path d="M20 6 9 17l-5-5"/></svg>';setTimeout(()=>{if(button.isConnected)button.innerHTML=icon;},1600);}catch(_){button.title='Copy failed';}});cell.append(button);}
+        const icon='<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-copy" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';button.innerHTML=icon;outlineLucide(button);
+        let resetCopy=null;
+        button.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(value);clearTimeout(resetCopy);button.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';outlineLucide(button);button.title='Copied';resetCopy=setTimeout(()=>{if(button.isConnected){button.innerHTML=icon;outlineLucide(button);button.title='Copy '+label;}},1600);}catch(_){button.title='Copy failed';}});cell.append(button);}
       return cell;
     }
     myCallsPanelRender=()=>{
@@ -6131,7 +6144,34 @@
     }
     launcher.addEventListener('click',()=>{void togglePanel(panel.hidden||closing);});
     root.querySelector('.close').addEventListener('click',()=>{void togglePanel(false);});
-    root.querySelector('.refresh').addEventListener('click',async()=>{status.textContent='Refreshing…';try{await refreshTodayCallCache(true);}finally{myCallsPanelCacheSignature='';myCallsPanelRender();}});
+    const refresh=root.querySelector('.refresh');refresh.title='Refresh My calls Today';
+    let refreshFeedbackRunning=false;
+    async function showRefreshSuccess() {
+      const icon=refresh.querySelector('svg'),original=icon.innerHTML,title=refresh.title;
+      const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const pause=ms=>new Promise(resolve=>setTimeout(resolve,reduced?0:ms));
+      const animate=async(frames,duration)=>{const animation=icon.animate(frames,{duration:reduced?0:duration,easing:'ease-in-out',fill:'forwards'});try{await animation.finished;}finally{animation.cancel();}};
+      try {
+        await animate([{transform:'rotate(0deg)'},{transform:'rotate(360deg)'}],533);
+        await pause(100);
+        await animate([{transform:'scale(1)'},{transform:'scale(0)'}],120);
+        icon.innerHTML='<path d="M20 6 9 17l-5-5"/>';outlineLucide(refresh);icon.classList.replace('lucide-refresh-cw','lucide-check');icon.style.color='#91d6b2';refresh.title='Calls refreshed successfully';
+        await animate([{transform:'scale(0)'},{transform:'scale(1)'}],150);
+        await pause(1500);
+        await animate([{transform:'scale(1)'},{transform:'scale(0)'}],120);
+        icon.innerHTML=original;icon.classList.replace('lucide-check','lucide-refresh-cw');icon.style.color='';refresh.title=title;
+        await animate([{transform:'scale(0)'},{transform:'scale(1)'}],150);
+      } finally {icon.innerHTML=original;icon.classList.replace('lucide-check','lucide-refresh-cw');icon.style.color='';refresh.title=title;}
+    }
+    refresh.addEventListener('click',async()=>{
+      if(refreshFeedbackRunning)return;refreshFeedbackRunning=true;refresh.disabled=true;
+      const previous=readTodayCallCache().refreshedAt;status.textContent='Refreshing…';
+      try {await refreshTodayCallCache(true);myCallsPanelCacheSignature='';myCallsPanelRender();
+        if(readTodayCallCache().refreshedAt>previous)await showRefreshSuccess();
+        else status.textContent+=' • Refresh unavailable or already running; cached calls retained.';
+      } catch(_){status.textContent='Refresh failed; cached calls retained.';}
+      finally {refreshFeedbackRunning=false;refresh.disabled=false;}
+    });
   }
   let measurementPreviousFields = {}, measurementPersistedAt = 0;
   function compactMeasurement(sample) {
