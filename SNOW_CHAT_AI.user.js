@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.415
+// @version      2.36.416
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -536,7 +536,9 @@ const snAIChatDisplayNames=(()=>{
   const autoGreetOffers=new Map();
   const pendingGreetingIds=new Set();
   let greetingFocusEpoch=0;
-  const greetingWindowActive=()=>!document.hidden&&document.hasFocus();
+  // Losing keyboard focus does not mean the window is invisible. In particular
+  // another application can have focus while this chat remains on screen.
+  const greetingWindowActive=()=>!document.hidden;
   function rememberGreetingAttempt(id){
     greetAttempted.add(id);pendingGreetingIds.delete(id);
     try{sessionStorage.setItem('sn-ai-greet-attempts-v1',JSON.stringify([...greetAttempted].slice(-500)));}catch{}
@@ -546,7 +548,6 @@ const snAIChatDisplayNames=(()=>{
     autoGreetOffers.clear();
     for(const id of [...pendingGreetingIds])rememberGreetingAttempt(id);
   }
-  window.addEventListener('blur',skipInactiveGreetings);
   document.addEventListener('visibilitychange',()=>{if(!greetingWindowActive())skipInactiveGreetings();});
   document.addEventListener('sn-ai-autoaccepted-ims',event=>{
     const ims=event.detail?.ims;if(!/^IMS\d+$/.test(ims||''))return;
@@ -4455,11 +4456,14 @@ const snAIChatDisplayNames=(()=>{
     if (!message) return;
     for (let p = message; p; p = p.parentElement || p.getRootNode?.().host) if (p.localName === 'sn-agent-chat') { host = p; break; }
     const m = message.message, props = host?.getProperties?.();
-    if (!m || !props?.interaction || m.is_system || m.internal || m.isBotMessage || m.transitory || m.errorMessage) return;
+    if (!m || !props?.interaction || m.internal || m.isBotMessage || m.transitory || m.errorMessage) return;
+    const systemText=String(m.body||m.text||m.message||message.shadowRoot?.textContent||message.textContent||'').trim();
+    const joined=m.is_system&&/\bhas joined\.?\s*$/i.test(systemText);
+    if(m.is_system&&!joined)return;
     const sender = String(m.created_by || '');
     const agent = props.user?.userName;
     const time = Number(m.timestamp?.valueOf?.());
-    if (!agent || !sender || !Number.isFinite(time) || time <= 0) return;
+    if (!agent || (!sender&&!joined) || !Number.isFinite(time) || time <= 0) return;
     const state = imsTimerState(props.interaction);
     state.usedAt=Date.now();
     state.ims=imsPreviewRecords.get(props.interaction)?.number?.value||state.ims;
@@ -4468,7 +4472,7 @@ const snAIChatDisplayNames=(()=>{
     // the latest agent message (including the persisted reload watermark).
     state.last = Math.max(state.last||0,time);
     state.agentTimes=Array.isArray(state.agentTimes)?state.agentTimes:[];
-    if (sender.toLowerCase() === String(agent).toLowerCase()) {
+    if (joined || sender.toLowerCase() === String(agent).toLowerCase()) {
       if(!state.agentTimes.includes(time))state.agentTimes.push(time);
       // Retain the first agent message in the current wait period, not merely
       // the most recent messages in a long conversation.
@@ -4480,7 +4484,10 @@ const snAIChatDisplayNames=(()=>{
     state.agentTimes=state.agentTimes.filter(t=>t>customer);
     const firstAgent=state.agentTimes[0]||0;
     if(firstAgent){
-      state.left=state.left>customer?Math.min(state.left,firstAgent):firstAgent;
+      // The exact first agent message after the latest user reply owns this
+      // start. Consecutive agent messages do not reset it; stale saved starts
+      // must not precede the actual message after history is reconciled.
+      state.left=firstAgent;
       state.right=0;state.provisional=0;
     }else if(customer){state.left=0;state.right=customer;state.provisional=0;}
     else if(!state.left){state.left=firstAgent;}
@@ -19997,7 +20004,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.415' });
+    addLog('info', 'helper-version', { version: '2.36.416' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
