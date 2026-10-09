@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.442
+// @version      2.36.443
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -14678,23 +14678,7 @@ function startSNAI(tabIdentity) {
     };
     // At the top SNOW can prepend another history page and rebase scrollTop.
     // Reaching zero once is not proof that the oldest messages have loaded.
-    const loadJoinBoundary = async (scroller) => {
-      const started = performance.now();
-      for (let page = 0; page < 40 && performance.now() - started < 30000; page += 1) {
-        scroller.scrollTo({ top: 0, behavior: 'instant' });
-        // Allow the asynchronous history request and virtual-list mount to
-        // settle before looking again. Re-pin to the new top on each pass.
-        for (let sample = 0; sample < 6; sample += 1) {
-          await sleep(150);
-          mergeCurrent();
-          if (boundary.afterJoin) {
-            addLog('info', 'chat-capture-join-boundary-loaded', { pages: page + 1, durationMs: Math.round(performance.now() - started) });
-            return;
-          }
-        }
-      }
-      automationFailure('CHAT_JOIN_MARKER_NOT_LOADED', 'Older chat history did not finish loading the agent join marker. The current tab was kept open; no partial transcript was sent to AI.');
-    };
+    const loadJoinBoundary = scroller => waitForChatJoinBoundary(scroller, mergeCurrent, boundary);
     // Workspace virtualizes chat rows, so a direct scrollTop assignment makes
     // the UI visibly jump and triggers an expensive one-frame relayout. Keep
     // the same bounded scan distance, but move in compositor-friendly frames.
@@ -14758,6 +14742,41 @@ function startSNAI(tabIdentity) {
       if (transcriptMessages.length) return transcriptMessages;
     }
     return [];
+  }
+
+  async function waitForChatJoinBoundary(scroller, mergeCurrent, boundary) {
+    const started = performance.now();
+    let lastChange = started, lastPin = started, pins = 1;
+    let geometry = '';
+    // History prepends rebase scrollTop while virtual rows are mounting. Never
+    // interrupt that work with a timed 900ms top jump. Observe only this chat.
+    const observer = new MutationObserver(() => { lastChange = performance.now(); });
+    observer.observe(scroller, { childList: true, subtree: true, characterData: true });
+    try {
+      scroller.scrollTo({ top: 0, behavior: 'instant' });
+      while (performance.now() - started < 30000) {
+        await sleep(150);
+        mergeCurrent();
+        if (boundary.afterJoin) {
+          addLog('info', 'chat-capture-join-boundary-loaded', {
+            pages: pins, topPins: pins, durationMs: Math.round(performance.now() - started),
+          });
+          return;
+        }
+        const now = performance.now();
+        const current = `${Math.round(scroller.scrollTop)}|${scroller.scrollHeight}|${scroller.clientHeight}`;
+        if (current !== geometry) { geometry = current; lastChange = now; }
+        // Another top request is necessary only if SNOW actually moved away
+        // from the top, and that prepend/render has been quiet for 600ms.
+        if (scroller.scrollTop > 2 && now - lastChange >= 600 && now - lastPin >= 900 && pins < 40) {
+          scroller.scrollTo({ top: 0, behavior: 'instant' });
+          pins += 1; lastPin = now; lastChange = now; geometry = '';
+        }
+      }
+      automationFailure('CHAT_JOIN_MARKER_NOT_LOADED', 'Older chat history did not finish loading the agent join marker. The current tab was kept open; no partial transcript was sent to AI.');
+    } finally {
+      observer.disconnect();
+    }
   }
 
   const chatCaptureInFlight = new Map();
@@ -20028,7 +20047,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.442' });
+    addLog('info', 'helper-version', { version: '2.36.443' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
