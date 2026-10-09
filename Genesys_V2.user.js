@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.550.0
+// @version      1.551.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -5788,6 +5788,182 @@
   }
 
   let measurementState = null;
+  // Only call-related responses are retained. Authorization stays in memory
+  // inside the native request bridge and is never logged or written to GM.
+  const CALL_CACHE_KEY = 'genesys-v2-today-call-cache';
+  const CALL_API_ORIGIN = 'https://api.mypurecloud.de';
+  const callNetworkChanges = [], callNetworkSignatures = new Map();
+  const callNetworkBridges = new Set();
+  let currentAgentApiId = null, callCacheBusy = false, lastLiveApiAt = 0;
+  function callDayKey(date = new Date()) {
+    return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+  }
+  function todayCallInterval(now = new Date()) {
+    const start = new Date(now.getFullYear(),now.getMonth(),now.getDate());
+    const end = new Date(now.getFullYear(),now.getMonth(),now.getDate()+1);
+    return `${start.toISOString()}/${end.toISOString()}`;
+  }
+  function readTodayCallCache() {
+    const saved = GM_getValue(CALL_CACHE_KEY,null), now = Date.now(), day = callDayKey();
+    if (!saved || saved.day !== day || now - saved.savedAt >= 86400000) {
+      if (saved) GM_deleteValue(CALL_CACHE_KEY);
+      return {schemaVersion:1,day,savedAt:now,refreshedAt:0,conversations:{}};
+    }
+    return saved;
+  }
+  function compactApiConversation(c) {
+    if (!c || !/^[a-f0-9-]{36}$/i.test(c.conversationId || c.id || '')) return null;
+    const id = c.conversationId || c.id;
+    return {
+      conversationId:id,conversationStart:c.conversationStart || c.startTime || null,
+      conversationEnd:c.conversationEnd || c.endTime || null,
+      participants:(c.participants || []).map(p=>({
+        participantId:p.participantId || p.id,purpose:p.purpose,userId:p.userId,name:p.participantName || p.name,
+        state:p.state,connectedTime:p.connectedTime,startTime:p.startTime,endTime:p.endTime,
+        sessions:(p.sessions || []).map(s=>({sessionId:s.sessionId,mediaType:s.mediaType,ani:s.ani,dnis:s.dnis,
+          metrics:(s.metrics || []).map(m=>({name:m.name,value:m.value,emitDate:m.emitDate})),
+          segments:(s.segments || []).map(t=>({segmentType:t.segmentType,segmentStart:t.segmentStart,segmentEnd:t.segmentEnd,
+            queueId:t.queueId,wrapUpCode:t.wrapUpCode,disconnectType:t.disconnectType}))})),
+        calls:(p.calls || []).map(x=>({id:x.id,state:x.state,connectedTime:x.connectedTime,disconnectedTime:x.disconnectedTime,
+          held:x.held,muted:x.muted,afterCallWork:x.afterCallWork}))
+      }))
+    };
+  }
+  function agentApiTiming(conversation, userId) {
+    if (!userId) return null; // Never confirm a different agent's timing.
+    const agent = conversation?.participants?.find(p=>p.purpose==='agent' && p.userId===userId);
+    if (!agent) return null;
+    const sessions = agent.sessions || [], metrics = sessions.flatMap(s=>s.metrics || []);
+    const sum = name => metrics.filter(m=>m.name===name && Number.isFinite(m.value)).reduce((n,m)=>n+m.value,0);
+    const talks = sessions.flatMap(s=>s.segments || []).filter(s=>s.segmentType==='interact');
+    const talkComplete = metrics.some(m=>m.name==='tTalkComplete');
+    const talkMs = metrics.some(m=>m.name==='tTalk') ? sum('tTalk') : talks.reduce((n,s)=>n+Math.max(0,Date.parse(s.segmentEnd)-Date.parse(s.segmentStart)),0);
+    const starts = talks.map(s=>Date.parse(s.segmentStart)).filter(Number.isFinite), ends = talks.map(s=>Date.parse(s.segmentEnd)).filter(Number.isFinite);
+    return {talkMs,acwMs:sum('tAcw'),handleMs:sum('tHandle'),confirmed:talkComplete,
+      startedAt:starts.length?Math.min(...starts):null,endedAt:ends.length?Math.max(...ends):null};
+  }
+  function rememberCallApi(path,status,data) {
+    if (path==='/api/v2/users/me' && data?.id) {currentAgentApiId=data.id;return;}
+    const raw = data?.conversations || data?.entities || (data?.conversationId || data?.participants ? [data] : []);
+    const projected = raw.map(compactApiConversation).filter(Boolean);
+    const signature = JSON.stringify(projected);
+    if (measurementState && callNetworkSignatures.get(path)!==signature) {
+      callNetworkChanges.push({at:new Date().toISOString(),path,status,conversations:projected});
+      if (callNetworkChanges.length>120) callNetworkChanges.shift();
+      callNetworkSignatures.set(path,signature);
+      if (callNetworkSignatures.size>100) callNetworkSignatures.delete(callNetworkSignatures.keys().next().value);
+    }
+    if (!projected.length) return;
+    const cache=readTodayCallCache();
+    for(const c of projected) {
+      if (callDayKey(new Date(c.conversationStart))!==cache.day) continue;
+      const old=cache.conversations[c.conversationId] || {};
+      const analytics=path.includes('/analytics/');
+      cache.conversations[c.conversationId]={...old,[analytics?'analytics':'live']:c,updatedAt:Date.now()};
+      if (!analytics && currentAgentApiId && activeCallSummary) {
+        const own=c.participants.find(p=>p.purpose==='agent' && p.userId===currentAgentApiId);
+        const connected=own?.state==='connected' || own?.calls?.some(x=>['connected','alerting','contacting'].includes(x.state));
+        if (connected && !activeCallSummary.conversationId) {activeCallSummary.conversationId=c.conversationId;activeCallSummary.apiUserId=currentAgentApiId;saveActiveCallWindow();}
+      }
+    }
+    cache.savedAt=Date.now(); GM_setValue(CALL_CACHE_KEY,cache);
+    applyCachedCallTimings(cache);
+  }
+  function applyCachedCallTimings(cache = readTodayCallCache()) {
+    let changed=false;
+    for(const call of [lastCallSummary,...earlierCallCards].filter(Boolean)) {
+      const timing=agentApiTiming(cache.conversations[call.conversationId]?.analytics,call.apiUserId);
+      if (!timing?.confirmed) continue;
+      if(JSON.stringify(call.apiTiming)!==JSON.stringify(timing)) {call.apiTiming=timing;changed=true;}
+      const card=document.getElementById(`gbs-earlier-call-${call.endedAt}`);
+      const duration=card?.firstElementChild?.querySelector('span');
+      if(duration) {duration.textContent=callDurationLabel(call);duration.style.color='#67e8f9';card.firstElementChild.title='Genesys-confirmed agent talk duration';}
+    }
+    if(changed) {saveLastCallWindow();GM_setValue('genesys-v2-earlier-call-cards',earlierCallCards);const card=document.getElementById('gbs-last-call-data');if(card)delete card.dataset.signature;}
+  }
+  function installCallNetworkBridge(win) {
+    if (!win || callNetworkBridges.has(win)) return;
+    try {
+      if (win.__gbsCallApiBridge) {callNetworkBridges.add(win);return;}
+      let authorization=null;
+      const nativeFetch=win.fetch, proto=win.XMLHttpRequest.prototype;
+      const originalOpen=proto.open, originalHeader=proto.setRequestHeader, originalSend=proto.send;
+      const observed = url => {try{const u=new URL(url,win.location.href);return u.origin===CALL_API_ORIGIN?u:null;}catch(_){return null;}};
+      const relevant = path => path==='/api/v2/users/me' || /^\/api\/v2\/(analytics\/)?conversations(?:\/|$)/.test(path);
+      const consume=(u,status,data)=>{if(relevant(u.pathname))rememberCallApi(u.pathname,status,data);};
+      const wrappedFetch=function(input,options) {
+        const u=observed(typeof input==='string'?input:input?.url);
+        if(u) {try{authorization=new win.Headers(options?.headers || input?.headers).get('authorization') || authorization;}catch(_){}}
+        const request=nativeFetch.apply(this,arguments);
+        if(u && relevant(u.pathname)) request.then(response=>{
+          if(response.ok && !(Number(response.headers.get('content-length'))>2000000)) response.clone().json().then(data=>consume(u,response.status,data)).catch(()=>{});
+        }).catch(()=>{});
+        return request;
+      };
+      const requests=new WeakMap();
+      const wrappedOpen=function(method,url) {requests.set(this,{u:observed(url)});return originalOpen.apply(this,arguments);};
+      const wrappedHeader=function(name,value) {if(requests.get(this)?.u && String(name).toLowerCase()==='authorization')authorization=String(value);return originalHeader.apply(this,arguments);};
+      const wrappedSend=function() {
+        const u=requests.get(this)?.u;
+        if(u && relevant(u.pathname)) this.addEventListener('load',()=>{
+          try{if(this.status>=200 && this.status<300 && (this.responseType==='json' || !this.responseType || this.responseType==='text')) {
+            if(this.responseType!=='json' && this.responseText.length>2000000)return;
+            consume(u,this.status,this.responseType==='json'?this.response:JSON.parse(this.responseText));
+          }}catch(_){}
+        },{once:true});
+        return originalSend.apply(this,arguments);
+      };
+      win.fetch=wrappedFetch;proto.open=wrappedOpen;proto.setRequestHeader=wrappedHeader;proto.send=wrappedSend;
+      const bridge={ready:()=>!!authorization,request:async(path,body)=>{
+        if(!authorization)throw Error('Waiting for native Genesys authentication');
+        const response=await nativeFetch.call(win,CALL_API_ORIGIN+path,{method:body?'POST':'GET',headers:{Authorization:authorization,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
+        if(!response.ok)throw Error(`Call API HTTP ${response.status}`);
+        return response.json();
+      },stop:()=>{if(win.fetch===wrappedFetch)win.fetch=nativeFetch;if(proto.open===wrappedOpen)proto.open=originalOpen;if(proto.setRequestHeader===wrappedHeader)proto.setRequestHeader=originalHeader;if(proto.send===wrappedSend)proto.send=originalSend;delete win.__gbsCallApiBridge;authorization=null;}};
+      win.__gbsCallApiBridge=bridge;callNetworkBridges.add(win);
+    } catch (_) { /* Inaccessible frames remain handled by existing DOM logging. */ }
+  }
+  function discoverCallNetworkBridges(doc=document,depth=0) {
+    if(depth>6)return;
+    try{installCallNetworkBridge(doc===document?PAGE_WINDOW:doc.defaultView);}catch(_){}
+    doc.querySelectorAll('iframe').forEach(frame=>{try{const nested=accessibleFrameDocument(frame);if(nested)discoverCallNetworkBridges(nested,depth+1);}catch(_){}});
+  }
+  function readyCallApiBridge() {
+    for(const win of callNetworkBridges)try{if(win.__gbsCallApiBridge?.ready())return win.__gbsCallApiBridge;}catch(_){}
+    return null;
+  }
+  async function refreshTodayCallCache(force=false) {
+    if(window!==window.top || callCacheBusy || callCardDragging)return;
+    const cache=readTodayCallCache(),bridge=readyCallApiBridge();
+    if(!bridge || (!force && Date.now()-cache.refreshedAt<60000))return;
+    const key='genesys-v2-call-api-request-lock',token=Date.now()+':'+Math.random();
+    if(GM_getValue(key,{expires:0}).expires>Date.now())return;
+    GM_setValue(key,{token,expires:Date.now()+55000});
+    if(GM_getValue(key,{})?.token!==token)return;
+    callCacheBusy=true;
+    try {
+      if(!currentAgentApiId)rememberCallApi('/api/v2/users/me',200,await bridge.request('/api/v2/users/me'));
+      const interval=todayCallInterval();
+      for(let page=1;page<=20;page++) {
+        const data=await bridge.request('/api/v2/analytics/conversations/details/query',{interval,order:'desc',orderBy:'conversationStart',paging:{pageSize:100,pageNumber:page},segmentFilters:[{type:'and',predicates:[{dimension:'userId',value:currentAgentApiId}]}]});
+        rememberCallApi('/api/v2/analytics/conversations/details/query',200,data);
+        if((data.conversations || []).length<100 || page*100>=data.totalHits)break;
+      }
+      // Explicit per-ID lookup catches the just-ended call before list indexing.
+      if(force && lastCallSummary?.conversationId) {
+        const path=`/api/v2/analytics/conversations/${lastCallSummary.conversationId}/details`;
+        rememberCallApi(path,200,await bridge.request(path));
+      }
+      const fresh=readTodayCallCache();fresh.refreshedAt=Date.now();fresh.savedAt=Date.now();GM_setValue(CALL_CACHE_KEY,fresh);
+    } catch(error) {console.warn('[Genesys V2] Call API:',error.message);}
+    finally {callCacheBusy=false;if(GM_getValue(key,{})?.token===token)GM_deleteValue(key);}
+  }
+  async function refreshLiveCallApi() {
+    const bridge=readyCallApiBridge(),id=activeCallSummary?.conversationId;
+    if(!id || !bridge || callCardDragging || Date.now()-lastLiveApiAt<5000)return;
+    lastLiveApiAt=Date.now();
+    try{const path=`/api/v2/conversations/${id}`;rememberCallApi(path,200,await bridge.request(path));}catch(_){}
+  }
   let measurementPreviousFields = {}, measurementPersistedAt = 0;
   function compactMeasurement(sample) {
     const fields = {};
