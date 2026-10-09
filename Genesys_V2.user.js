@@ -5795,7 +5795,7 @@
   const callNetworkChanges = [], callNetworkSignatures = new Map();
   const callNetworkFields = new Map();
   const callNetworkBridges = new Set();
-  let currentAgentApiId = null, callCacheBusy = false, lastLiveApiAt = 0;
+  let currentAgentApiId = null, callCacheBusy = false, lastLiveApiAt = 0, liveApiBusy = false;
   function callDayKey(date = new Date()) {
     return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
   }
@@ -5821,12 +5821,13 @@
       participants:(c.participants || []).map(p=>({
         participantId:p.participantId || p.id,purpose:p.purpose,userId:p.userId,name:p.participantName || p.name,
         state:p.state,connectedTime:p.connectedTime,startTime:p.startTime,endTime:p.endTime,
+        wrapup:p.wrapup ? {startTime:p.wrapup.startTime,endTime:p.wrapup.endTime} : null,
         sessions:(p.sessions || []).map(s=>({sessionId:s.sessionId,mediaType:s.mediaType,ani:s.ani,dnis:s.dnis,
           metrics:(s.metrics || []).map(m=>({name:m.name,value:m.value,emitDate:m.emitDate})),
           segments:(s.segments || []).map(t=>({segmentType:t.segmentType,segmentStart:t.segmentStart,segmentEnd:t.segmentEnd,
             queueId:t.queueId,wrapUpCode:t.wrapUpCode,disconnectType:t.disconnectType}))})),
         calls:(p.calls || []).map(x=>({id:x.id,state:x.state,connectedTime:x.connectedTime,disconnectedTime:x.disconnectedTime,
-          held:x.held,muted:x.muted,afterCallWork:x.afterCallWork}))
+          held:x.held,muted:x.muted,afterCallWork:x.afterCallWork ? {startTime:x.afterCallWork.startTime,endTime:x.afterCallWork.endTime,state:x.afterCallWork.state} : null}))
       }))
     };
   }
@@ -5871,22 +5872,29 @@
     if (!projected.length) return;
     const cache=readTodayCallCache();
     const liveCandidates=projected.filter(c=>c.participants.some(p=>p.purpose==='agent' && p.userId===currentAgentApiId && (p.state==='connected' || p.calls?.some(x=>['connected','alerting','contacting'].includes(x.state)))));
+    let cacheChanged=false;
     for(const c of projected) {
-      if (callDayKey(new Date(c.conversationStart))!==cache.day) continue;
       const old=cache.conversations[c.conversationId] || {};
       const analytics=path.includes('/analytics/');
-      cache.conversations[c.conversationId]={...old,[analytics?'analytics':'live']:c,updatedAt:Date.now()};
+      const started=c.conversationStart || old.analytics?.conversationStart || old.live?.conversationStart;
+      if(started ? callDayKey(new Date(started))!==cache.day : analytics || !liveCandidates.some(x=>x.conversationId===c.conversationId))continue;
+      const kind=analytics?'analytics':'live';
+      if(JSON.stringify(old[kind])!==JSON.stringify(c)) {cache.conversations[c.conversationId]={...old,[kind]:c,updatedAt:Date.now()};cacheChanged=true;}
       if (!analytics && currentAgentApiId && activeCallSummary) {
         const own=c.participants.find(p=>p.purpose==='agent' && p.userId===currentAgentApiId);
         const connected=own?.state==='connected' || own?.calls?.some(x=>['connected','alerting','contacting'].includes(x.state));
         if (connected && liveCandidates.length===1 && !activeCallSummary.conversationId) {activeCallSummary.conversationId=c.conversationId;activeCallSummary.apiUserId=currentAgentApiId;saveActiveCallWindow();}
+        if(activeCallSummary.conversationId===c.conversationId) {
+          const connectedAt=Date.parse(own?.connectedTime || own?.calls?.find(x=>x.connectedTime)?.connectedTime);
+          if(Number.isFinite(connectedAt) && activeCallSummary.connectedAt!==connectedAt) {activeCallSummary.connectedAt=connectedAt;saveActiveCallWindow();}
+        }
       }
     }
     cache.savedAt=Date.now();
     // Keep the current day bounded, even if an unfiltered native list is seen.
     const entries=Object.entries(cache.conversations).sort((a,b)=>b[1].updatedAt-a[1].updatedAt);
     if(entries.length>2000) {cache.conversations=Object.fromEntries(entries.slice(0,2000));cache.truncated=true;}
-    GM_setValue(CALL_CACHE_KEY,cache);
+    if(cacheChanged) GM_setValue(CALL_CACHE_KEY,cache);
     applyCachedCallTimings(cache);
   }
   function applyCachedCallTimings(cache = readTodayCallCache()) {
@@ -5917,6 +5925,7 @@
       if (win.__gbsCallApiBridge) {callNetworkBridges.add(win);return;}
       let authorization=null;
       const nativeFetch=win.fetch, proto=win.XMLHttpRequest.prototype;
+      const NativeWebSocket=win.WebSocket;
       const originalOpen=proto.open, originalHeader=proto.setRequestHeader, originalSend=proto.send;
       const observed = url => {try{const u=new URL(url,win.location.href);return u.origin===CALL_API_ORIGIN?u:null;}catch(_){return null;}};
       const relevant = path => path==='/api/v2/users/me' || /^\/api\/v2\/analytics\/conversations\/(details\/query|[a-f0-9-]{36}\/details)$/.test(path) || /^\/api\/v2\/conversations(?:\/[a-f0-9-]{36}|\/calls)?$/.test(path);
@@ -5944,12 +5953,27 @@
         return originalSend.apply(this,arguments);
       };
       win.fetch=wrappedFetch;proto.open=wrappedOpen;proto.setRequestHeader=wrappedHeader;proto.send=wrappedSend;
+      let wrappedSocket=null;
+      if(NativeWebSocket) {
+        wrappedSocket=new Proxy(NativeWebSocket,{construct(target,args,newTarget){
+          const socket=Reflect.construct(target,args,newTarget);
+          socket.addEventListener('message',event=>{
+            if(typeof event.data!=='string' || event.data.length>2000000)return;
+            try {
+              const message=JSON.parse(event.data),body=message.eventBody;
+              if(body?.participants && (body.id || body.conversationId))rememberCallApi('/api/v2/conversations/'+(body.conversationId || body.id),200,body);
+            }catch(_){}
+          });
+          return socket;
+        }});
+        win.WebSocket=wrappedSocket;
+      }
       const bridge={ready:()=>!!authorization,request:async(path,body)=>{
         if(!authorization)throw Error('Waiting for native Genesys authentication');
         const response=await nativeFetch.call(win,CALL_API_ORIGIN+path,{method:body?'POST':'GET',headers:{Authorization:authorization,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
         if(!response.ok)throw Error(`Call API HTTP ${response.status}`);
         return response.json();
-      },stop:()=>{if(win.fetch===wrappedFetch)win.fetch=nativeFetch;if(proto.open===wrappedOpen)proto.open=originalOpen;if(proto.setRequestHeader===wrappedHeader)proto.setRequestHeader=originalHeader;if(proto.send===wrappedSend)proto.send=originalSend;delete win.__gbsCallApiBridge;authorization=null;}};
+      },stop:()=>{if(win.fetch===wrappedFetch)win.fetch=nativeFetch;if(proto.open===wrappedOpen)proto.open=originalOpen;if(proto.setRequestHeader===wrappedHeader)proto.setRequestHeader=originalHeader;if(proto.send===wrappedSend)proto.send=originalSend;if(win.WebSocket===wrappedSocket)win.WebSocket=NativeWebSocket;delete win.__gbsCallApiBridge;authorization=null;}};
       win.__gbsCallApiBridge=bridge;callNetworkBridges.add(win);
     } catch (_) { /* Inaccessible frames remain handled by existing DOM logging. */ }
   }
@@ -5992,12 +6016,13 @@
   }
   async function refreshLiveCallApi() {
     const bridge=readyCallApiBridge();
-    if(!activeCallSummary || !bridge || !currentAgentApiId || callCardDragging || Date.now()-lastLiveApiAt<5000)return;
+    if(!activeCallSummary || !bridge || !currentAgentApiId || liveApiBusy || callCardDragging || Date.now()-lastLiveApiAt<5000)return;
     lastLiveApiAt=Date.now();
+    liveApiBusy=true;
     try {
       const path=activeCallSummary.conversationId ? `/api/v2/conversations/${activeCallSummary.conversationId}` : '/api/v2/conversations/calls?communicationType=call';
       rememberCallApi(path.split('?')[0],200,await bridge.request(path));
-    } catch(_){}
+    } catch(_){} finally {liveApiBusy=false;}
   }
   let measurementPreviousFields = {}, measurementPersistedAt = 0;
   function compactMeasurement(sample) {
