@@ -5795,7 +5795,7 @@
   const callNetworkChanges = [], callNetworkSignatures = new Map();
   const callNetworkFields = new Map();
   const callNetworkBridges = new Set();
-  let currentAgentApiId = null, callCacheBusy = false, lastLiveApiAt = 0, liveApiBusy = false;
+  let currentAgentApiId = null, callCacheBusy = false, lastLiveApiAt = 0, liveApiBusy = false, pendingEndedCallRefresh = false;
   function callDayKey(date = new Date()) {
     return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
   }
@@ -5821,6 +5821,7 @@
       participants:(c.participants || []).map(p=>({
         participantId:p.participantId || p.id,purpose:p.purpose,userId:p.userId,name:p.participantName || p.name,
         state:p.state,connectedTime:p.connectedTime,startTime:p.startTime,endTime:p.endTime,
+        wrapupRequired:p.wrapupRequired,wrapupTimeoutMs:p.wrapupTimeoutMs,
         wrapup:p.wrapup ? {startTime:p.wrapup.startTime,endTime:p.wrapup.endTime} : null,
         sessions:(p.sessions || []).map(s=>({sessionId:s.sessionId,mediaType:s.mediaType,ani:s.ani,dnis:s.dnis,
           metrics:(s.metrics || []).map(m=>({name:m.name,value:m.value,emitDate:m.emitDate})),
@@ -5887,6 +5888,8 @@
         if(activeCallSummary.conversationId===c.conversationId) {
           const connectedAt=Date.parse(own?.connectedTime || own?.calls?.find(x=>x.connectedTime)?.connectedTime);
           if(Number.isFinite(connectedAt) && activeCallSummary.connectedAt!==connectedAt) {activeCallSummary.connectedAt=connectedAt;saveActiveCallWindow();}
+          const ended=own?.state==='disconnected' || (own?.calls?.length && own.calls.every(x=>['disconnected','terminated'].includes(x.state)));
+          if(ended && activeCallSummary.connectedAt)finishActiveCall();
         }
       }
     }
@@ -5987,7 +5990,9 @@
     return null;
   }
   async function refreshTodayCallCache(force=false) {
+    if(force)pendingEndedCallRefresh=true;
     if(window!==window.top || callCacheBusy || callCardDragging)return;
+    force=force || pendingEndedCallRefresh;
     const cache=readTodayCallCache(),bridge=readyCallApiBridge();
     if(!bridge || (!force && Date.now()-cache.refreshedAt<60000))return;
     const key='genesys-v2-call-api-request-lock',token=Date.now()+':'+Math.random();
@@ -6011,6 +6016,7 @@
         rememberCallApi(path,200,await bridge.request(path));
       }
       const fresh=readTodayCallCache();fresh.refreshedAt=Date.now();fresh.savedAt=Date.now();GM_setValue(CALL_CACHE_KEY,fresh);
+      pendingEndedCallRefresh=false;
     } catch(error) {console.warn('[Genesys V2] Call API:',error.message);}
     finally {callCacheBusy=false;if(GM_getValue(key,{})?.token===token)GM_deleteValue(key);}
   }
