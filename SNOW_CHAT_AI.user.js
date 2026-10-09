@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.461
+// @version      2.36.462
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -22301,7 +22301,7 @@ function installChatsTodayPanel() {
         const numberCell=document.createElement('td'),button=document.createElement('button');button.type='button';button.className='number';button.textContent=chatsTodayValue(record.number);button.title='Open in main tab row';
         const ongoing=/^work[ _]in[ _]progress$/i.test(chatsTodayValue(record.state,true).trim());
         if(ongoing){button.classList.add('ongoing');button.title='Work in Progress · Open in main tab row';button.setAttribute('aria-label',button.textContent+' · Work in Progress');}
-        button.addEventListener('click',()=>{try{openWorkspaceIMSMainTab({sys_id:chatsTodayValue(record.sys_id),number:chatsTodayValue(record.number)});close();}catch(error){status.textContent=error.message;status.classList.add('error');}});numberCell.append(button);row.append(numberCell);
+        button.addEventListener('click',()=>{try{openWorkspaceIMSMainTab({sys_id:chatsTodayValue(record.sys_id),number:chatsTodayValue(record.number)});}catch(error){status.textContent=error.message;status.classList.add('error');}});numberCell.append(button);row.append(numberCell);
         for(const [,field] of SN_AI_CHATS_TODAY_COLUMNS.slice(1)) {
           if(field==='event_numbers'||field==='ticket_numbers'){
             const cell=document.createElement('td');cell.className='nowrap';
@@ -22311,7 +22311,7 @@ function installChatsTodayPanel() {
               const line=document.createElement('div');line.className='record-pair-line';
               const eventColumn=field==='event_numbers',number=eventColumn?pair.eventNumber:pair.ticketNumber,id=eventColumn?pair.eventId:pair.ticketId;
               if(number&&id){const link=document.createElement('button');link.type='button';link.className='number '+(eventColumn?'event-link':'ticket-link');link.textContent=number;link.title='Open in main tab row';
-                link.addEventListener('click',()=>{try{const table=eventColumn?'new_call':/^INC/i.test(number)?'incident':/^SCTASK/i.test(number)?'sc_task':/^RITM/i.test(number)?'sc_req_item':'task';openWorkspaceIMSMainTab({table,sys_id:id,number});close();}catch(error){status.textContent=error.message;status.classList.add('error');}});line.append(link);
+                link.addEventListener('click',()=>{try{const table=eventColumn?'new_call':/^INC/i.test(number)?'incident':/^SCTASK/i.test(number)?'sc_task':/^RITM/i.test(number)?'sc_req_item':'task';openWorkspaceIMSMainTab({table,sys_id:id,number});}catch(error){status.textContent=error.message;status.classList.add('error');}});line.append(link);
               }else line.textContent='—';
               if(eventColumn&&pair.eventNumber&&pair.ticketNumber){const arrow=document.createElement('span');arrow.className='time-arrow';arrow.innerHTML=chatsTodayIcon('arrow-right');line.append(arrow);}
               cell.append(line);
@@ -22371,7 +22371,6 @@ function installChatsTodayPanel() {
   root.querySelector('.close').addEventListener('click',()=>close());refresh.addEventListener('click',()=>load(true));
   reset.addEventListener('click',()=>{sorts.clear();render(currentRecords);});
   document.addEventListener('sn-ai-new-chat-arrived',()=>close(false));
-  document.addEventListener('sn-ai-autoaccepted-ims',()=>close(false));
   root.addEventListener('keydown',event=>{if(event.key==='Escape'&&!panel.hidden){event.stopPropagation();close();}});
   window.addEventListener('resize',schedulePosition);
   document.addEventListener('sn-ai-agent-inbox-ready',schedulePosition);
