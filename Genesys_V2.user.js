@@ -4613,7 +4613,7 @@
     if (doc.__gbsComponentRenderFrame) return;
     doc.__gbsComponentRenderFrame = doc.defaultView.requestAnimationFrame(() => {
       doc.__gbsComponentRenderFrame = 0;
-      sortDocument(doc);
+      if (!callCardDragging) sortDocument(doc);
     });
   }
 
@@ -6044,14 +6044,7 @@
       close.style.cssText='position:absolute;right:10px;top:8px;background:transparent;border:0;color:#67e8f9;font-size:20px;cursor:pointer';
       close.addEventListener('click',()=>{earlierCallCards=earlierCallCards.filter(item=>item.endedAt!==call.endedAt);GM_setValue('genesys-v2-earlier-call-cards',earlierCallCards);card.remove();});
       heading.append(close);
-      heading.addEventListener('pointerdown',event=>{
-        if(event.button!==0||event.target.closest('button'))return;
-        event.preventDefault();const rect=card.getBoundingClientRect(),x=event.clientX,y=event.clientY;
-        heading.setPointerCapture(event.pointerId);
-        const move=e=>{card.style.right='auto';card.style.left=`${Math.max(0,rect.left+e.clientX-x)}px`;card.style.top=`${Math.max(0,rect.top+e.clientY-y)}px`;};
-        const end=()=>{heading.removeEventListener('pointermove',move);heading.removeEventListener('pointerup',end);heading.removeEventListener('pointercancel',end);heading.removeEventListener('lostpointercapture',end);};
-        heading.addEventListener('pointermove',move);heading.addEventListener('pointerup',end);heading.addEventListener('pointercancel',end);heading.addEventListener('lostpointercapture',end);
-      });
+      installCallCardDrag(card, heading);
       const body=doc.createElement('div');body.style.padding='12px 16px';
       for(const [label,value] of call.details){
         const row=doc.createElement('div');row.style.marginBottom='8px';const title=doc.createElement('div');title.textContent=label;title.style.cssText='color:#8fb2bd;font-size:12px';
@@ -6145,28 +6138,9 @@
     const close = doc.createElement('button'); close.type = 'button'; close.textContent = '×'; close.setAttribute('aria-label', 'Close last call data');
     close.style.cssText = 'position:absolute;right:10px;top:8px;width:28px;height:28px;padding:0;line-height:28px;background:transparent;border:0;color:inherit;font-size:20px;cursor:pointer';
     close.addEventListener('click', () => {lastCallSummary.dismissed = true; saveLastCallWindow(); popup.remove();}); heading.append(close);
-    heading.addEventListener('pointerdown', event => {
-      if (event.button !== 0 || event.target === close) return;
-      event.preventDefault(); const rect = popup.getBoundingClientRect(), x = event.clientX, y = event.clientY;
-      popup.__gbsDragging = true; heading.setPointerCapture(event.pointerId);
-      popup.style.setProperty('transition', 'none', 'important');
-      const move = e => {
-        if (!(e.buttons & 1)) return end();
-        popup.style.right = 'auto';
-        popup.style.left = `${Math.max(0, Math.min(doc.defaultView.innerWidth - rect.width, rect.left + e.clientX - x))}px`;
-        popup.style.top = `${Math.max(0, Math.min(doc.defaultView.innerHeight - 40, rect.top + e.clientY - y))}px`;
-      };
-      const end = () => {
-        popup.__gbsDragging = false;
-        const position = popup.getBoundingClientRect();
-        lastCallSummary.left = position.left; lastCallSummary.top = position.top; saveLastCallWindow();
-        heading.removeEventListener('pointermove', move); heading.removeEventListener('pointerup', end);
-        heading.removeEventListener('pointercancel', end); heading.removeEventListener('lostpointercapture', end);
-        doc.defaultView.removeEventListener('blur', end);
-      };
-      heading.addEventListener('pointermove', move); heading.addEventListener('pointerup', end);
-      heading.addEventListener('pointercancel', end); heading.addEventListener('lostpointercapture', end);
-      doc.defaultView.addEventListener('blur', end);
+    installCallCardDrag(popup, heading, (left, top) => {
+      if (!lastCallSummary) return;
+      lastCallSummary.left = left; lastCallSummary.top = top; saveLastCallWindow();
     });
     const body = doc.createElement('div'); body.style.padding = '12px 16px';
     for (const [label, value] of lastCallSummary.details) {
@@ -6329,62 +6303,7 @@
       // Native global transitions must not interpolate pointer coordinates.
       popup.style.setProperty('transition', 'none', 'important');
       popup.style.setProperty('animation', 'none', 'important');
-      heading.addEventListener('pointerdown', event => {
-        if (event.button !== 0) return;
-        event.preventDefault();
-        const bounds = popup.getBoundingClientRect();
-        popup.__gbsDragging = true;
-        const offsetX = event.clientX - bounds.left, offsetY = event.clientY - bounds.top;
-        const maxX = Math.max(0, doc.defaultView.innerWidth - bounds.width);
-        const maxY = Math.max(0, doc.defaultView.innerHeight - 50);
-        let x = bounds.left, y = bounds.top, frame = 0;
-        popup.style.right = 'auto';
-        popup.style.left = `${bounds.left}px`;
-        popup.style.top = `${bounds.top}px`;
-        popup.style.setProperty('will-change', 'transform');
-        popup.style.setProperty('contain', 'layout paint');
-        const paint = () => {
-          frame = 0;
-          popup.style.setProperty('transform', `translate3d(${x - bounds.left}px,${y - bounds.top}px,0)`, 'important');
-        };
-        // Pointer capture avoids inserting a viewport-sized layer on every
-        // drag. That layer forced Genesys to repaint its full application and
-        // made a compositor-only card transform feel severely delayed.
-        const pointerId = event.pointerId;
-        heading.setPointerCapture(pointerId);
-        let active = true;
-        const end = () => {
-          if (!active) return;
-          active = false;
-          popup.__gbsDragging = false;
-          if (heading.hasPointerCapture(pointerId)) heading.releasePointerCapture(pointerId);
-          if (frame) doc.defaultView.cancelAnimationFrame(frame);
-          popup.style.left = `${x}px`;
-          popup.style.top = `${y}px`;
-          popup.style.setProperty('transform', 'none', 'important');
-          popup.style.removeProperty('will-change');
-          popup.style.removeProperty('contain');
-          heading.removeEventListener('pointermove', move);
-          heading.removeEventListener('pointerup', end);
-          heading.removeEventListener('pointercancel', end);
-          heading.removeEventListener('lostpointercapture', end);
-          doc.defaultView.removeEventListener('blur', end);
-        };
-        const move = moveEvent => {
-          if (!active) return;
-          if (!(moveEvent.buttons & 1)) { end(); return; }
-          const samples = moveEvent.getCoalescedEvents?.() || [moveEvent];
-          const latest = samples[samples.length - 1];
-          x = Math.max(0, Math.min(maxX, latest.clientX - offsetX));
-          y = Math.max(0, Math.min(maxY, latest.clientY - offsetY));
-          if (!frame) frame = doc.defaultView.requestAnimationFrame(paint);
-        };
-        heading.addEventListener('pointermove', move);
-        heading.addEventListener('pointerup', end);
-        heading.addEventListener('pointercancel', end);
-        heading.addEventListener('lostpointercapture', end);
-        doc.defaultView.addEventListener('blur', end);
-      });
+      installCallCardDrag(popup, heading);
     }
     const snowAction = scopes.flatMap(scope => [...scope.querySelectorAll('a,button,input[type="button"]')])
       .find(element => visible(element) && /open in snow/i.test(element.textContent || element.value || ''));
@@ -9217,6 +9136,7 @@ function fitDashboardMetricSpacing(doc) {
   }
 
   function tick() {
+    if (callCardDragging) return;
     MANAGED_DOCUMENTS.add(document);
     refreshEmbeddedFrameRegistrations(document);
     const reachable = collectReachableDocuments(document);
@@ -9301,7 +9221,7 @@ function fitDashboardMetricSpacing(doc) {
   document.addEventListener('click', recordIncomingCallAction, true);
   const incomingCallTimer = window.setInterval(() => {
     watchIncomingCall(document);
-    try { measureCallPopup(document); } catch (error) { console.warn('[Genesys V2] Call measurement', error); }
+    try { if (!callCardDragging) measureCallPopup(document); } catch (error) { console.warn('[Genesys V2] Call measurement', error); }
     try { syncCallInformationPopup(document); } catch (_) { /* Native call panel may still be mounting. */ }
   }, 1000);
   watchIncomingCall(document);
@@ -9309,7 +9229,7 @@ function fitDashboardMetricSpacing(doc) {
   // without imposing the old every-second full-tree traversal.
   let lastShadowSweepAt = 0;
   const shadowTimer = window.setInterval(() => {
-    if (document.hidden || (lowPowerMode() && Date.now() - lastShadowSweepAt < 90000)) return;
+    if (callCardDragging || document.hidden || (lowPowerMode() && Date.now() - lastShadowSweepAt < 90000)) return;
     lastShadowSweepAt = Date.now();
     refreshShadowThemes();
     sortReachableEmbeddedDocuments(document);
