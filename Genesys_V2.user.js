@@ -6508,10 +6508,12 @@
     // exposes Mute/Hold/Hang up before the agent has answered it.
     const incoming = Boolean(incomingAction) || (callTestEnabled(doc) && Boolean(testCallSession
       && !testCallSession.answeredAt && !testCallSession.finishedAt && !testCallSession.timeoutAt));
+    if(incoming)completePreviousWrapupOnIncoming();
     const selected = [...doc.querySelectorAll('.selected-interaction-container')].find(visible);
     const wrapup = [...collectReachableDocuments()].flatMap(frameDoc => [...frameDoc.querySelectorAll('[data-testid="wrapup-main-container"], .wrapup-message-container')]).find(element => element.querySelector('[data-testid="wrapup-header-message-duration"]'));
     let popup = doc.getElementById('gbs-call-information');
-    if (wrapup && !incoming) {
+    const currentConnected = /Interaction State\s*:\s*Connected/i.test(selected?.innerText || '');
+    if (wrapup && !incoming && !currentConnected) {
       finishActiveCall(); syncLastCallDataPopup(doc, wrapup); return;
     }
     if (!selected && !incoming) {
@@ -6787,6 +6789,9 @@
   }
   function watchNativeWrapupEnd(doc) {
     if (window !== window.top || doc !== document || themeMode(doc) === 'light') return;
+    if(doc.querySelector('.messenger-shown [data-action="answerInteraction"]') || /Interaction State\s*:\s*Connected/i.test(doc.querySelector('.selected-interaction-container')?.innerText || '')) {
+      nativeWrapupWatch=null;return;
+    }
     const timers = [...collectReachableDocuments()].flatMap(frameDoc => [...frameDoc.querySelectorAll('[data-testid="wrapup-header-message-duration"]')]);
     const timer = timers.find(element => {
       const bounds = element.getBoundingClientRect();
