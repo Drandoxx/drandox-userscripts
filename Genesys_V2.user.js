@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.551.0
+// @version      1.552.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -5013,18 +5013,27 @@
     const checkbox = popover.querySelector('[data-admin-call-button]');
     const body = popover.querySelector('.gbs-settings-body');
     body.style.cssText = 'display:grid;gap:18px';
+    const switchStyle=doc.createElement('style');
+    switchStyle.textContent='.gbs-admin-switch{position:relative;display:inline-flex;width:48px;height:28px;flex:none}.gbs-admin-switch input{position:absolute;inset:0;width:100%!important;height:100%!important;margin:0!important;opacity:0;cursor:pointer;z-index:1}.gbs-admin-switch-track{position:absolute;inset:0;border:1px solid #5a737c;border-radius:999px;background:#39444b;pointer-events:none}.gbs-admin-switch-track::after{content:"";position:absolute;left:3px;top:3px;width:20px;height:20px;border-radius:50%;background:#e7f5f8;transition:transform .12s ease}.gbs-admin-switch input:checked+.gbs-admin-switch-track{background:#22d3ee;border-color:#67e8f9}.gbs-admin-switch input:checked+.gbs-admin-switch-track::after{transform:translateX(20px);background:#08252d}.gbs-admin-switch input:focus-visible+.gbs-admin-switch-track{outline:2px solid #67e8f9;outline-offset:3px}@media(prefers-reduced-motion:reduce){.gbs-admin-switch-track::after{transition:none}}';
+    body.append(switchStyle);
+    const switchControl=(input,label)=>{
+      input.setAttribute('role','switch');input.setAttribute('aria-label',label);
+      const wrapper=doc.createElement('span');wrapper.className='gbs-admin-switch';
+      const track=doc.createElement('span');track.className='gbs-admin-switch-track';track.setAttribute('aria-hidden','true');
+      wrapper.append(input,track);return wrapper;
+    };
     const testCard = doc.createElement('label');
     testCard.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:18px;background:#242a30;border:1px solid #22d3ee80;border-radius:12px';
     testCard.appendChild(doc.createTextNode('Call Test mode ON/OFF'));
     const testToggle = doc.createElement('input'); testToggle.type = 'checkbox'; testToggle.checked = callTestEnabled(doc); testToggle.style.accentColor = '#22d3ee';
     testToggle.checked = GM_getValue(CALL_TEST_MODE_KEY,false) === true;
-    testCard.appendChild(testToggle); body.prepend(testCard);
+    testCard.appendChild(switchControl(testToggle,'Call Test mode')); body.prepend(testCard);
     const popupOnlyCard=doc.createElement('label');
     popupOnlyCard.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:16px;padding:18px;background:#242a30;border:1px solid #22d3ee80;border-radius:12px';
     const popupOnlyText=doc.createElement('span');popupOnlyText.textContent='Custom popup only — admin test';
     const hint=doc.createElement('small');hint.textContent='Hide native incoming alerts and Agent Workspace; disable its menu button. Background call controls still load.';hint.style.cssText='display:block;color:#8fb2bd;margin-top:6px';popupOnlyText.append(hint);
     const popupOnlyToggle=doc.createElement('input');popupOnlyToggle.type='checkbox';popupOnlyToggle.setAttribute('role','switch');popupOnlyToggle.setAttribute('aria-label','Custom popup only — admin test');popupOnlyToggle.checked=popupOnlyCallEnabled(doc);popupOnlyToggle.style.cssText='accent-color:#22d3ee;width:24px;height:24px;flex:none';
-    popupOnlyCard.append(popupOnlyText,popupOnlyToggle);body.prepend(popupOnlyCard);
+    popupOnlyCard.append(popupOnlyText,switchControl(popupOnlyToggle,'Custom popup only — admin test'));body.prepend(popupOnlyCard);
     const lastCall = doc.createElement('section');
     const title = doc.createElement('h3'); title.textContent = 'Last Call data';
     const info = doc.createElement('pre');
