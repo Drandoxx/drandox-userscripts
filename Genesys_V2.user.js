@@ -5917,7 +5917,7 @@
       const duration=card?.firstElementChild?.querySelector('span');
       if(duration) {duration.textContent=callDurationLabel(call);duration.style.color='#67e8f9';card.firstElementChild.title='Genesys-confirmed agent talk duration';}
     }
-    if(changed) {saveLastCallWindow();GM_setValue('genesys-v2-earlier-call-cards',earlierCallCards);const card=document.getElementById('gbs-last-call-data');if(card)delete card.dataset.signature;}
+    if(changed) {saveLastCallWindow();GM_setValue('genesys-v2-earlier-call-cards',earlierCallCards);const card=document.getElementById('gbs-last-call-data');if(card)delete card.dataset.renderSignature;}
   }
   function installCallNetworkBridge(win) {
     if (!win || callNetworkBridges.has(win)) return;
@@ -6291,6 +6291,14 @@
     return call?.details?.find(([label])=>/phone number/i.test(label))?.[1]?.replace(/\D/g,'') || '';
   }
   let nativeCallTimerElement = null;
+  function completePreviousWrapupOnIncoming() {
+    if (!lastCallSummary || lastCallSummary.wrapupComplete) return;
+    lastCallSummary.wrapupComplete=true;lastCallSummary.wrapupSeconds=0;
+    lastCallSummary.wrapupObservedAt=Date.now();nativeCallTimerElement=null;
+    saveLastCallWindow();
+    const card=document.getElementById('gbs-last-call-data');
+    if(card) {delete card.dataset.renderSignature;card.querySelector('[role="timer"]')?.parentElement?.remove();}
+  }
   function updateCallClockDisplay() {
     if(window!==window.top)return;
     const timer=document.querySelector('#gbs-last-call-data [role="timer"]');
@@ -6401,6 +6409,8 @@
       lastCallSummary.wrapupComplete = true; saveLastCallWindow();
       closeWorkspaceForWrapup(doc);
     }
+    const renderSignature=JSON.stringify([lastCallSummary.details,lastCallSummary.wrapupComplete,callDurationLabel(lastCallSummary),lastCallSummary.apiTiming,lastCallSummary.snowUrl,lastCallSummary.hadSnowAction]);
+    if(popup?.dataset.renderSignature===renderSignature)return;
     // Reuse the existing card, preserving its screen position across phases.
     if (!popup) {
       popup = activeCallSummary ? null : doc.getElementById('gbs-call-information');
@@ -6423,7 +6433,7 @@
     heading.style.cssText = 'position:relative;padding:12px 42px 12px 16px;border-bottom:1px solid #22d3ee70;color:#67e8f9;font-weight:600;user-select:none;cursor:move;touch-action:none;overflow-wrap:anywhere';
     heading.textContent = lastCallSummary.wrapupComplete
       ? `Earlier Call data – ${callDurationLabel(lastCallSummary)}`
-      : 'Call information — After Call Work';
+      : `Earlier Call data – ${callDurationLabel(lastCallSummary)}`;
     heading.title = lastCallSummary.wrapupComplete ? (lastCallSummary.apiTiming?.confirmed ? 'Genesys-confirmed agent talk duration' : 'Duration estimated from watcher observations') : '';
     if (lastCallSummary.wrapupComplete) {
       heading.textContent = 'Earlier Call data – ';
@@ -6472,6 +6482,7 @@
       row.append(title, value); body.appendChild(row);
     }
     popup.replaceChildren(heading, body);
+    popup.dataset.renderSignature=renderSignature;
   }
 
   function syncCallInformationPopup(doc) {
