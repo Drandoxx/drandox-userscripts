@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.458
+// @version      2.36.459
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -20314,7 +20314,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.458' });
+    addLog('info', 'helper-version', { version: '2.36.459' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -22149,7 +22149,7 @@ function chatsTodaySortIcon(direction) {
   return '<svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-triangle" style="width:9px;height:9px;'+(direction==='descending'?'transform:rotate(180deg)':'')+'"><path d="M13.73 4a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/></svg>';
 }
 const SN_AI_CHATS_TODAY_COLUMNS=[
-  ['Number','number'],['UserID','opened_for'],['Wait time','wait_time'],['Opened','opened_at'],
+  ['Number','number'],['UserID','opened_for'],['EVNT Number','event_numbers'],['Ticket Number','ticket_numbers'],['Wait time','wait_time'],['Opened','opened_at'],
   ['Closed','closed_at'],['Duration','duration'],['Short description','short_description']
 ];
 function chatsTodayColumnWidths(records,measure) {
@@ -22158,7 +22158,7 @@ function chatsTodayColumnWidths(records,measure) {
     let width=measure(field==='wait_time'?'':label,true)+18+(sortable?18:0);
     for(const record of records){
       const value=field==='duration'?chatsTodayDuration(record):field==='wait_time'?chatsTodayWaitTime(record[field]):['opened_at','closed_at'].includes(field)?chatsTodayTime(record[field]):chatsTodayValue(record[field],true)||'—';
-      const arrow=field==='opened_at'&&chatsTodayTime(record.opened_at)!=='—'&&chatsTodayTime(record.closed_at)!=='—'?20:0;
+      const arrow=(field==='opened_at'&&chatsTodayTime(record.opened_at)!=='—'&&chatsTodayTime(record.closed_at)!=='—'||field==='event_numbers'&&record.event_numbers&&record.ticket_numbers)?20:0;
       width=Math.max(width,measure(value,false,field==='number')+arrow);
     }
     return Math.ceil(width)+18+(field==='state'?12:0);
@@ -22283,7 +22283,7 @@ function installChatsTodayPanel() {
       const columns=document.createElement('colgroup');
       for(const width of widths){const column=document.createElement('col');column.style.width=width+'px';columns.append(column);}table.append(columns);table.style.width=contentWidth+'px';table.style.minWidth=contentWidth+'px';
       const head=document.createElement('thead'),headRow=document.createElement('tr');
-      const icons=['hash','user','timer','log-in','log-out','clock','align-left','circle-dot'];
+      const icons=['hash','user','hash','hash','timer','log-in','log-out','clock','align-left'];
       SN_AI_CHATS_TODAY_COLUMNS.forEach(([label,field],index)=>{
         const th=document.createElement('th');th.scope='col';const heading=document.createElement('span');heading.className='column-heading';heading.innerHTML=chatsTodayIcon(icons[index]);if(field!=='wait_time')heading.append(document.createTextNode(label));
         if(['wait_time','opened_at','closed_at','duration'].includes(field)){
@@ -22302,7 +22302,7 @@ function installChatsTodayPanel() {
         for(const [,field] of SN_AI_CHATS_TODAY_COLUMNS.slice(1)) {
           const cell=document.createElement('td');cell.textContent=field==='duration'?chatsTodayDuration(record):field==='wait_time'?chatsTodayWaitTime(record[field]):['opened_at','closed_at'].includes(field)?chatsTodayTime(record[field]):chatsTodayValue(record[field],true)||'—';
           if(field==='short_description')cell.className='description';else if(field==='state')cell.className='state';else cell.className='nowrap';
-          if(field==='opened_at'&&chatsTodayTime(record.opened_at)!=='—'&&chatsTodayTime(record.closed_at)!=='—'){
+          if(field==='opened_at'&&chatsTodayTime(record.opened_at)!=='—'&&chatsTodayTime(record.closed_at)!=='—'||field==='event_numbers'&&record.event_numbers&&record.ticket_numbers){
             cell.classList.add('time-open');const arrow=document.createElement('span');arrow.className='time-arrow';arrow.innerHTML=chatsTodayIcon('arrow-right');cell.append(arrow);
           }
           if(field==='wait_time'||field==='duration')cell.title=chatsTodayValue(record[field]);row.append(cell);
@@ -22333,6 +22333,17 @@ function installChatsTodayPanel() {
         if(batch.length<limit)break;
         if(offset>=99500)throw new Error('Too many results to display safely');
       }
+      const events=[];
+      const eventQuery='u_link_to_interaction.u_work_queue=f7879842618d2300964fe119fb67115a^opened_atONToday@javascript:gs.beginningOfToday()@javascript:gs.endOfToday()^u_link_to_interactionISNOTEMPTY^opened_by.u_primary_group=8767499910d5b00036179bfd88ecc8bb^ORDERBYopened_at^ORDERBYsys_id';
+      for(let offset=0;;offset+=limit){
+        const response=await fetch('/api/now/table/new_call?sysparm_query='+encodeURIComponent(eventQuery)+'&sysparm_fields=sys_id,number,u_link_to_interaction,transferred_to&sysparm_display_value=all&sysparm_exclude_reference_link=true&sysparm_limit='+limit+'&sysparm_offset='+offset,{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':page.g_ck},signal:controller.signal});
+        if(!response.ok)throw new Error('Unable to load linked EVNTs ('+response.status+').');
+        const batch=(await response.json()).result;if(!Array.isArray(batch))throw new Error('Invalid EVNT results');events.push(...batch);
+        if(batch.length<limit)break;if(offset>=99500)throw new Error('Too many EVNT results');
+      }
+      const linked=new Map();
+      for(const event of events){const id=chatsTodayValue(event.u_link_to_interaction);if(!linked.has(id))linked.set(id,[]);linked.get(id).push(event);}
+      for(const row of rows){const matches=linked.get(chatsTodayValue(row.sys_id))||[];row.event_numbers=matches.map(event=>chatsTodayValue(event.number,true)).join(', ');row.ticket_numbers=[...new Set(matches.map(event=>chatsTodayValue(event.transferred_to,true)).filter(Boolean))].join(', ');}
       if(controller.signal.aborted||panel.hidden)return;
       render(rows);lastSuccess=Date.now();failures=0;status.textContent=total+' interactions · Updated 0 seconds ago';if(manual===true)showRefreshSuccess().catch(()=>{});
     }catch(error){if(request===controller&&!panel.hidden){failures++;status.classList.add('error');status.textContent=(error.name==='AbortError'?'Refresh timed out':error.message)+(lastSuccess?' · Previous results kept':'');}}
