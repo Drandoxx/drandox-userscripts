@@ -5793,6 +5793,7 @@
   const CALL_CACHE_KEY = 'genesys-v2-today-call-cache';
   const CALL_API_ORIGIN = 'https://api.mypurecloud.de';
   const callNetworkChanges = [], callNetworkSignatures = new Map();
+  const callNetworkFields = new Map();
   const callNetworkBridges = new Set();
   let currentAgentApiId = null, callCacheBusy = false, lastLiveApiAt = 0;
   function callDayKey(date = new Date()) {
@@ -5843,15 +5844,29 @@
       startedAt:starts.length?Math.min(...starts):null,endedAt:ends.length?Math.max(...ends):null};
   }
   function rememberCallApi(path,status,data) {
-    if (path==='/api/v2/users/me' && data?.id) {currentAgentApiId=data.id;return;}
+    if (path==='/api/v2/users/me' && data?.id) {
+      currentAgentApiId=data.id;
+      const cache=readTodayCallCache();
+      if(cache.userId && cache.userId!==data.id)cache.conversations={};
+      cache.userId=data.id;GM_setValue(CALL_CACHE_KEY,cache);return;
+    }
     const raw = data?.conversations || data?.entities || (data?.conversationId || data?.participants ? [data] : []);
     const projected = raw.map(compactApiConversation).filter(Boolean);
-    const signature = JSON.stringify(projected);
-    if (measurementState && callNetworkSignatures.get(path)!==signature) {
-      callNetworkChanges.push({at:new Date().toISOString(),path,status,conversations:projected});
-      if (callNetworkChanges.length>120) callNetworkChanges.shift();
-      callNetworkSignatures.set(path,signature);
-      if (callNetworkSignatures.size>100) callNetworkSignatures.delete(callNetworkSignatures.keys().next().value);
+    if (measurementState) {
+      for(const c of projected.filter(c=>c.conversationId===activeCallSummary?.conversationId || c.conversationId===lastCallSummary?.conversationId || c.participants.some(p=>p.userId===currentAgentApiId))) {
+        const fields={},flatten=(value,key)=>{
+          if(value && typeof value==='object')for(const [name,item]of Object.entries(value))flatten(item,key+'/'+name);
+          else if(value!==undefined)fields[key]=value;
+        };
+        flatten(c,'');
+        const old=callNetworkFields.get(c.conversationId) || {},changes={},removed=[];
+        for(const [key,value]of Object.entries(fields))if(old[key]!==value)changes[key]=value;
+        for(const key of Object.keys(old))if(!(key in fields))removed.push(key);
+        if(Object.keys(changes).length || removed.length)callNetworkChanges.push({at:new Date().toISOString(),path,status,id:c.conversationId,changes,removed});
+        callNetworkFields.set(c.conversationId,fields);
+      }
+      while(callNetworkFields.size>50)callNetworkFields.delete(callNetworkFields.keys().next().value);
+      while(callNetworkChanges.length>120)callNetworkChanges.shift();
     }
     if (!projected.length) return;
     const cache=readTodayCallCache();
@@ -5866,12 +5881,26 @@
         if (connected && !activeCallSummary.conversationId) {activeCallSummary.conversationId=c.conversationId;activeCallSummary.apiUserId=currentAgentApiId;saveActiveCallWindow();}
       }
     }
-    cache.savedAt=Date.now(); GM_setValue(CALL_CACHE_KEY,cache);
+    cache.savedAt=Date.now();
+    // Keep the current day bounded, even if an unfiltered native list is seen.
+    const entries=Object.entries(cache.conversations).sort((a,b)=>b[1].updatedAt-a[1].updatedAt);
+    if(entries.length>2000) {cache.conversations=Object.fromEntries(entries.slice(0,2000));cache.truncated=true;}
+    GM_setValue(CALL_CACHE_KEY,cache);
     applyCachedCallTimings(cache);
   }
   function applyCachedCallTimings(cache = readTodayCallCache()) {
     let changed=false;
     for(const call of [lastCallSummary,...earlierCallCards].filter(Boolean)) {
+      if(!call.conversationId && currentAgentApiId) {
+        const phone=call.details?.find(([label])=>/phone number/i.test(label))?.[1]?.replace(/\D/g,'');
+        if(phone) {
+          const matches=Object.values(cache.conversations).map(e=>e.analytics).filter(c=>{
+            const timing=agentApiTiming(c,currentAgentApiId);
+            return timing?.startedAt && timing?.endedAt && timing.startedAt<=call.endedAt && timing.endedAt>=call.startedAt && c.participants.some(p=>p.sessions.some(s=>(s.ani || '').replace(/\D/g,'')===phone || (s.dnis || '').replace(/\D/g,'')===phone));
+          });
+          if(matches.length===1) {call.conversationId=matches[0].conversationId;call.apiUserId=currentAgentApiId;changed=true;}
+        }
+      }
       const timing=agentApiTiming(cache.conversations[call.conversationId]?.analytics,call.apiUserId);
       if (!timing?.confirmed) continue;
       if(JSON.stringify(call.apiTiming)!==JSON.stringify(timing)) {call.apiTiming=timing;changed=true;}
@@ -5889,7 +5918,7 @@
       const nativeFetch=win.fetch, proto=win.XMLHttpRequest.prototype;
       const originalOpen=proto.open, originalHeader=proto.setRequestHeader, originalSend=proto.send;
       const observed = url => {try{const u=new URL(url,win.location.href);return u.origin===CALL_API_ORIGIN?u:null;}catch(_){return null;}};
-      const relevant = path => path==='/api/v2/users/me' || /^\/api\/v2\/(analytics\/)?conversations(?:\/|$)/.test(path);
+      const relevant = path => path==='/api/v2/users/me' || /^\/api\/v2\/analytics\/conversations\/(details\/query|[a-f0-9-]{36}\/details)$/.test(path) || /^\/api\/v2\/conversations(?:\/[a-f0-9-]{36}|\/calls)?$/.test(path);
       const consume=(u,status,data)=>{if(relevant(u.pathname))rememberCallApi(u.pathname,status,data);};
       const wrappedFetch=function(input,options) {
         const u=observed(typeof input==='string'?input:input?.url);
@@ -5959,10 +5988,13 @@
     finally {callCacheBusy=false;if(GM_getValue(key,{})?.token===token)GM_deleteValue(key);}
   }
   async function refreshLiveCallApi() {
-    const bridge=readyCallApiBridge(),id=activeCallSummary?.conversationId;
-    if(!id || !bridge || callCardDragging || Date.now()-lastLiveApiAt<5000)return;
+    const bridge=readyCallApiBridge();
+    if(!activeCallSummary || !bridge || !currentAgentApiId || callCardDragging || Date.now()-lastLiveApiAt<5000)return;
     lastLiveApiAt=Date.now();
-    try{const path=`/api/v2/conversations/${id}`;rememberCallApi(path,200,await bridge.request(path));}catch(_){}
+    try {
+      const path=activeCallSummary.conversationId ? `/api/v2/conversations/${activeCallSummary.conversationId}` : '/api/v2/conversations/calls?communicationType=call';
+      rememberCallApi(path.split('?')[0],200,await bridge.request(path));
+    } catch(_){}
   }
   let measurementPreviousFields = {}, measurementPersistedAt = 0;
   function compactMeasurement(sample) {
@@ -6085,7 +6117,7 @@
     if (!measurementState && !popup) return;
     if (!measurementState) {
       measurementState = {schemaVersion:3,startedAt:new Date().toISOString(),sampleIntervalMs:1000,samples:[],elements:{},network:[],droppedSamples:0,limits:'Accessible DOM and call-only API projections; changes only, no credentials. Network bounded to 120 events / 500KB.'};
-      callNetworkChanges.length = 0; callNetworkSignatures.clear();
+      callNetworkChanges.length = 0; callNetworkSignatures.clear(); callNetworkFields.clear();
       measurementPreviousFields = {}; measurementPersistedAt = 0;
       measurementLastSignature = ''; measurementLastSave = 0;
     }
