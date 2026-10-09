@@ -4864,12 +4864,16 @@
   const ADMIN_CALL_BUTTON_KEY = 'genesys-v2-admin-show-call-button';
   const LAST_CALL_DATA_KEY = 'genesys-v2-last-call-data';
   const CALL_TEST_MODE_KEY = 'genesys-v2-call-test-mode';
+  const POPUP_ONLY_CALL_MODE_KEY = 'genesys-v2-popup-only-call-test';
   const CALL_HISTORY_KEY = 'genesys-v2-call-history';
   const SNOW_NEW_CALL_URL = 'https://kingfisher.service-now.com/now/nav/ui/classic/params/target/new_call.do%3Fsys_id%3D-1%26sysparm_stack%3Dnew_call_list.do';
   let testCallSession = null;
   let testNativeAnswer = null;
+  function popupOnlyCallEnabled(doc) {
+    try { return isSavedAdmin(doc) && GM_getValue(POPUP_ONLY_CALL_MODE_KEY,false) === true; } catch (_) { return false; }
+  }
   function callTestEnabled(doc) {
-    try { return isSavedAdmin(doc) && GM_getValue(CALL_TEST_MODE_KEY, false) === true; } catch (_) { return false; }
+    try { return isSavedAdmin(doc) && (GM_getValue(CALL_TEST_MODE_KEY, false) === true || popupOnlyCallEnabled(doc)); } catch (_) { return false; }
   }
   function persistTestCall() {
     if (!testCallSession) return;
@@ -4884,10 +4888,12 @@
   function syncCallTestLayout(doc) {
     const on = callTestEnabled(doc);
     doc.documentElement.classList.toggle('gbs-call-test-mode', on);
+    doc.documentElement.classList.toggle('gbs-popup-only-call-mode', popupOnlyCallEnabled(doc));
     let style = doc.getElementById('gbs-call-test-layout');
     if (!style) {
       style = doc.createElement('style'); style.id = 'gbs-call-test-layout';
       style.textContent = `html.gbs-call-test-mode .command-panel.active.agent{position:fixed!important;left:-20000px!important;right:auto!important;top:0!important;width:1000px!important;height:100vh!important;opacity:0!important;pointer-events:none!important;transform:none!important;contain:layout paint!important}html.gbs-call-test-mode .gbs-agent-workspace-resizer{display:none!important}html.gbs-call-test-mode main.center-stage{width:100%!important;max-width:100%!important;flex:1 1 auto!important}html.gbs-call-test-mode .messenger-message:has([data-action="answerInteraction"]){display:none!important}`;
+      style.textContent += `html.gbs-popup-only-call-mode .command-panel.agent{position:fixed!important;left:-20000px!important;right:auto!important;top:0!important;width:1000px!important;height:100vh!important;opacity:0!important;pointer-events:none!important;transform:none!important;contain:layout paint!important}html.gbs-popup-only-call-mode .messenger-message:has([data-action="openAcdInteraction"]),html.gbs-popup-only-call-mode #gbs-incoming-call-notice{display:none!important}html.gbs-popup-only-call-mode [data-test-id="command-bar-agent"],html.gbs-popup-only-call-mode button[aria-label="Agent Workspace"]{cursor:not-allowed!important;opacity:.45!important}html.gbs-popup-only-call-mode .gbs-workspace-open-scene{display:none!important}`;
       doc.head.appendChild(style);
     }
   }
@@ -4901,24 +4907,12 @@
     }
   }
   function watchIncomingCall(doc) {
-    if (window === window.top && themeMode(doc) !== 'light') {
+    if (window === window.top && (themeMode(doc) !== 'light' || popupOnlyCallEnabled(doc))) {
       const view = doc.querySelector('.messenger-shown [data-action="openAcdInteraction"] a');
       if (view && !view.dataset.gbsAutoViewed) { view.dataset.gbsAutoViewed = 'true'; view.click(); }
     }
     const action = doc.querySelector('.messenger-shown [data-action="answerInteraction"], .messenger-shown [data-action="openAcdInteraction"]');
     const alert = action?.closest('.messenger-message');
-    if (alert) {
-      alert.style.setProperty('background', '#1d2228', 'important');
-      alert.style.setProperty('color', '#e7f5f8', 'important');
-      alert.style.setProperty('border', '1px solid #22d3ee', 'important');
-      alert.style.setProperty('box-shadow', '0 0 14px #22d3ee45', 'important');
-      alert.style.setProperty('border-radius', '10px', 'important');
-      alert.querySelectorAll('.messenger-actions a').forEach(link => {
-        if (link.dataset.gbsIncomingStyled) return;
-        link.dataset.gbsIncomingStyled = 'true';
-        link.style.cssText += ';color:#a5f3fc!important;background:#243039!important;border:1px solid #22d3ee!important;border-radius:5px!important;padding:7px 12px!important;display:inline-block!important;';
-      });
-    }
     if (alert && !incomingCallPresent) {
       doc.getElementById('gbs-incoming-call-notice')?.remove();
       const notice = doc.createElement('div');
@@ -5023,7 +5017,14 @@
     testCard.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:18px;background:#242a30;border:1px solid #22d3ee80;border-radius:12px';
     testCard.appendChild(doc.createTextNode('Call Test mode ON/OFF'));
     const testToggle = doc.createElement('input'); testToggle.type = 'checkbox'; testToggle.checked = callTestEnabled(doc); testToggle.style.accentColor = '#22d3ee';
+    testToggle.checked = GM_getValue(CALL_TEST_MODE_KEY,false) === true;
     testCard.appendChild(testToggle); body.prepend(testCard);
+    const popupOnlyCard=doc.createElement('label');
+    popupOnlyCard.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:16px;padding:18px;background:#242a30;border:1px solid #22d3ee80;border-radius:12px';
+    const popupOnlyText=doc.createElement('span');popupOnlyText.textContent='Custom popup only — admin test';
+    const hint=doc.createElement('small');hint.textContent='Hide native incoming alerts and Agent Workspace; disable its menu button. Background call controls still load.';hint.style.cssText='display:block;color:#8fb2bd;margin-top:6px';popupOnlyText.append(hint);
+    const popupOnlyToggle=doc.createElement('input');popupOnlyToggle.type='checkbox';popupOnlyToggle.setAttribute('role','switch');popupOnlyToggle.setAttribute('aria-label','Custom popup only — admin test');popupOnlyToggle.checked=popupOnlyCallEnabled(doc);popupOnlyToggle.style.cssText='accent-color:#22d3ee;width:24px;height:24px;flex:none';
+    popupOnlyCard.append(popupOnlyText,popupOnlyToggle);body.prepend(popupOnlyCard);
     const lastCall = doc.createElement('section');
     const title = doc.createElement('h3'); title.textContent = 'Last Call data';
     const info = doc.createElement('pre');
@@ -5086,6 +5087,7 @@
       if (!isSavedAdmin(doc)) return;
       try { doc.defaultView.localStorage.setItem(ADMIN_CALL_BUTTON_KEY, String(checkbox.checked)); } catch (_) {}
       GM_setValue(CALL_TEST_MODE_KEY, testToggle.checked);
+      GM_setValue(POPUP_ONLY_CALL_MODE_KEY,popupOnlyToggle.checked);
       syncCallTestLayout(doc);
       ensureCallDeveloperToggle(doc);
       closeSettings(doc);
@@ -9551,6 +9553,13 @@ function fitDashboardMetricSpacing(doc) {
     lastMaintenanceAt = Date.now(); tick();
   }, INTERVAL_MS);
   const identityTimer = window.setInterval(() => rememberCurrentAgentName(document), 5000);
+  const blockPopupOnlyWorkspace = event => {
+    if(!event.isTrusted || !popupOnlyCallEnabled(document))return;
+    if(event.type==='keydown' && !['Enter',' ','Spacebar'].includes(event.key))return;
+    if(event.target.closest?.('[data-test-id="command-bar-agent"],button[aria-label="Agent Workspace"]')) {event.preventDefault();event.stopImmediatePropagation();}
+  };
+  document.addEventListener('click',blockPopupOnlyWorkspace,true);
+  document.addEventListener('keydown',blockPopupOnlyWorkspace,true);
   if (window === window.top) {
     readTodayCallCache(); discoverCallNetworkBridges(); applyCachedCallTimings();
   }
@@ -9581,6 +9590,8 @@ function fitDashboardMetricSpacing(doc) {
     window.clearInterval(updateCheckTimer); updateCheckTimer = 0;
     window.clearInterval(timer);
     window.clearInterval(identityTimer);
+    document.removeEventListener('click',blockPopupOnlyWorkspace,true);
+    document.removeEventListener('keydown',blockPopupOnlyWorkspace,true);
     window.clearInterval(callApiTimer);
     window.clearInterval(callClockTimer);
     for (const win of callNetworkBridges) try { win.__gbsCallApiBridge?.stop(); } catch (_) {}
