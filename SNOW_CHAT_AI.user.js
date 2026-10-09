@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.464
+// @version      2.36.465
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -20314,7 +20314,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.464' });
+    addLog('info', 'helper-version', { version: '2.36.465' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -22157,14 +22157,14 @@ function chatsTodayColumnWidths(records,measure) {
     const sortable=['wait_time','opened_at','closed_at','duration'].includes(field);
     // Include the Lucide icon/gap, both cell paddings and the last column's extra padding.
     const cellPadding=field==='ticket_numbers'?28:16;
-    let width=measure(field==='wait_time'?'':label,true)+18+cellPadding+4+(sortable?18:0);
+    let width=measure(field==='wait_time'?'':label,true)+18+(sortable?12:0);
     for(const record of records){
       const value=field==='duration'?chatsTodayDuration(record):field==='wait_time'?chatsTodayWaitTime(record[field]):['opened_at','closed_at'].includes(field)?chatsTodayTime(record[field]):chatsTodayValue(record[field],true)||'—';
       const arrow=(field==='opened_at'&&chatsTodayTime(record.opened_at)!=='—'&&chatsTodayTime(record.closed_at)!=='—'||field==='event_numbers'&&record.event_numbers&&record.ticket_numbers)?20:0;
       const lines=field==='event_numbers'||field==='ticket_numbers'?String(value).split('\n'):[value];
-      width=Math.max(width,...lines.map(line=>measure(line,false,field==='number'||field==='event_numbers'||field==='ticket_numbers')+arrow));
+      width=Math.max(width,...lines.map(line=>measure(line,false,field==='number'||field==='event_numbers'||field==='ticket_numbers')+arrow+6));
     }
-    return Math.ceil(width)+18+(field==='state'?12:0);
+    return Math.ceil(width)+cellPadding;
   });
 }
 function chatsTodayIcon(name) {
@@ -22280,6 +22280,13 @@ function installChatsTodayPanel() {
       if(!context)return text.length*7;
       context.font=(header?'500 ':bold?'600 ':'')+'12px system-ui';return context.measureText(text).width;
     });
+    // Use natural column widths without distributing spare table width.
+    // Only the description wraps when the Inbox/viewport constrains the panel.
+    position();
+    const inboxRight=inboxHost?.getBoundingClientRect().right||0;
+    const available=Math.max(20,innerWidth-Math.max(12,inboxRight+12)-12-52);
+    const naturalWidth=widths.reduce((sum,width)=>sum+width,0);
+    if(naturalWidth>available)widths[6]=Math.max(120,widths[6]-(naturalWidth-available));
     contentWidth=widths.reduce((sum,width)=>sum+width,0);
     for(const group of grouped) {
       const detail=document.createElement('details'),summary=document.createElement('summary');detail.open=expanded.has(group.id);detail.dataset.agentId=group.id;
@@ -22287,7 +22294,7 @@ function installChatsTodayPanel() {
       detail.addEventListener('toggle',()=>{if(detail.open)expanded.add(group.id);else expanded.delete(group.id);});
       const wrap=document.createElement('div');wrap.className='table-wrap';const table=document.createElement('table');
       const columns=document.createElement('colgroup');
-      widths.forEach((width,index)=>{const column=document.createElement('col');if(SN_AI_CHATS_TODAY_COLUMNS[index][1]!=='short_description')column.style.width=width+'px';columns.append(column);});table.append(columns);table.style.width='100%';table.style.minWidth=Math.max(0,contentWidth-widths[6]+100)+'px';
+      widths.forEach(width=>{const column=document.createElement('col');column.style.width=width+'px';columns.append(column);});table.append(columns);table.style.width=contentWidth+'px';table.style.minWidth=contentWidth+'px';
       const head=document.createElement('thead'),headRow=document.createElement('tr');
       const icons=['hash','user','timer','log-in','log-out','clock','align-left','hash','hash'];
       SN_AI_CHATS_TODAY_COLUMNS.forEach(([label,field],index)=>{
