@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.423
+// @version      2.36.424
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -2992,6 +2992,7 @@ const snAIChatDisplayNames=(()=>{
   let rejectEnabled = false;
   const rejectControls = new Set();
   const incomingActions = new WeakMap();
+  const incomingPopupOffers = new WeakSet();
   const proxyRejects = new Set();
   const installIncomingAction = (card, native, kind) => {
     const root = card.shadowRoot;
@@ -5133,6 +5134,7 @@ const snAIChatDisplayNames=(()=>{
         installIncomingAction(ancestor, element, 'Reject');
       }
       if (element.matches('button.now-button.-positive') && element.textContent.trim() === 'Accept') {
+        if(!incomingPopupOffers.has(ancestor)){incomingPopupOffers.add(ancestor);document.dispatchEvent(new CustomEvent('sn-ai-new-chat-arrived'));}
         element.setAttribute('data-sn-ai-inbox-accept', '');
         const host = element.getRootNode()?.host;
         if (host?.matches('now-button')) host.setAttribute('data-sn-ai-inbox-accept-host', '');
@@ -20019,7 +20021,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.423' });
+    addLog('info', 'helper-version', { version: '2.36.424' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -21001,6 +21003,7 @@ function startSNAI(tabIdentity) {
         if (!/^(accept|accept chat|accept work item)$/.test(name)) continue;
         if (inboxPolicy.seen.has(button)) continue;
         inboxPolicy.seen.add(button);
+        document.dispatchEvent(new CustomEvent('sn-ai-new-chat-arrived'));
         inboxLog('accept-button-found', { html: button.outerHTML, enabled: !button.disabled, autoAccept: inboxPolicy.autoAccept });
         if (!inboxPolicy.autoAccept) continue;
         const detectedAt = Date.now();
@@ -21582,6 +21585,41 @@ function startSNAI(tabIdentity) {
     readOfficialUpdateState().then(renderOfficialUpdateState).catch(error => console.warn('[SN AI update]', error.message));
   }, 1000);
 }
+const snAIDataBubbleSessions=new WeakMap();
+function cancelDataBubble(element) {
+  const session=snAIDataBubbleSessions.get(element);if(!session)return;
+  session.flight?.cancel();session.growth?.cancel();session.flyer.remove();snAIDataBubbleSessions.delete(element);
+}
+async function closeDataBubble(element) {
+  const style=getComputedStyle(element),transform=style.transform,opacity=style.opacity;
+  cancelDataBubble(element);
+  if(element.hidden||style.visibility==='hidden'||!element.isConnected)return;
+  element.style.pointerEvents='none';
+  const session={flyer:document.createElement('div')};snAIDataBubbleSessions.set(element,session);
+  session.growth=element.animate([{transform:transform==='none'?'scale(1)':transform,opacity},{transform:'scale(.06)',opacity:.16}],{duration:matchMedia('(prefers-reduced-motion: reduce)').matches?0:220,easing:'cubic-bezier(.55,.02,.78,.28)',fill:'both'});
+  await session.growth.finished.catch(()=>{});
+  if(snAIDataBubbleSessions.get(element)===session){session.growth.cancel();snAIDataBubbleSessions.delete(element);}
+}
+async function openDataBubble(anchor,element,ready,isCurrent,position) {
+  cancelDataBubble(element);
+  element.style.visibility='hidden';element.style.pointerEvents='none';position();
+  const start=anchor.getBoundingClientRect(),target=element.getBoundingClientRect(),style=getComputedStyle(anchor);
+  const flyer=document.createElement('div');flyer.textContent=anchor.textContent;
+  flyer.style.cssText='position:fixed;z-index:2147483647;pointer-events:none;display:flex;align-items:center;justify-content:center;box-sizing:border-box;';
+  Object.assign(flyer.style,{left:start.left+'px',top:start.top+'px',width:start.width+'px',height:start.height+'px',background:style.background,color:style.color,border:style.border,borderRadius:style.borderRadius,font:style.font});
+  document.body.append(flyer);
+  const session={flyer};snAIDataBubbleSessions.set(element,session);
+  const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  session.flight=flyer.animate([{transform:'translate(0, 0) scale(1)',opacity:1},{transform:`translate(${target.left+target.width/2-start.left-start.width/2}px, ${target.top+target.height/2-start.top-start.height/2}px) scale(.92)`,opacity:1}],{duration:reduced?0:430,easing:'cubic-bezier(.22,.78,.25,1)',fill:'forwards'});
+  await Promise.all([Promise.resolve(ready).catch(()=>{}),session.flight.finished.catch(()=>{})]);
+  if(snAIDataBubbleSessions.get(element)!==session||!isCurrent()){if(snAIDataBubbleSessions.get(element)===session)cancelDataBubble(element);return;}
+  position();const rect=element.getBoundingClientRect();
+  element.style.transformOrigin=Math.max(0,Math.min(rect.width,start.left+start.width/2-rect.left))+'px '+Math.max(0,Math.min(rect.height,start.top+start.height/2-rect.top))+'px';
+  session.flyer.remove();element.style.visibility='';element.style.pointerEvents='';
+  session.growth=element.animate([{transform:'scale(.06)',opacity:.2},{transform:'scale(1)',opacity:1}],{duration:reduced?0:240,easing:'cubic-bezier(.2,.82,.24,1)',fill:'both'});
+  await session.growth.finished.catch(()=>{});
+  if(snAIDataBubbleSessions.get(element)===session){session.growth.cancel();snAIDataBubbleSessions.delete(element);}
+}
 function openWorkspaceIMSMainTab(record) {
   let tabs=null;
   const findTabs=root=>{for(const element of root.querySelectorAll('*')){
@@ -21625,8 +21663,9 @@ function installAgentDashboardPopup() {
   let agentChatQuery='',agentChatPopup=null;
   const closeAgentChats=()=>{
     if(!agentChatPopup)return;
-    agentChatPopup.controller.abort();agentChatPopup.anchor.setAttribute('aria-expanded','false');
-    agentChatPopup.host.remove();agentChatPopup=null;
+    const popup=agentChatPopup;agentChatPopup=null;
+    popup.controller.abort();popup.anchor.setAttribute('aria-expanded','false');
+    closeDataBubble(popup.host).then(()=>popup.host.remove());
   };
   const positionAgentChats=()=>{
     const popup=agentChatPopup;if(!popup)return;
@@ -21654,7 +21693,7 @@ function installAgentDashboardPopup() {
   async function showAgentChats(anchor) {
     if(agentChatPopup?.anchor===anchor){closeAgentChats();return;}
     closeAgentChats();
-    const popupHost=document.createElement('div');popupHost.style.cssText='position:fixed;z-index:2147483647;display:block;box-sizing:border-box;overflow:auto;';
+    const popupHost=document.createElement('div');popupHost.style.cssText='position:fixed;z-index:2147483647;display:block;box-sizing:border-box;overflow:auto;visibility:hidden;pointer-events:none;';
     const popupRoot=popupHost.attachShadow({mode:'open'});
     popupRoot.innerHTML='<style>:host{font:12px/1.4 system-ui;color:var(--sn-theme-e6edf9,#eee6ff)}*{box-sizing:border-box}.box{padding:8px;background:var(--sn-theme-251f31,#241c33);border:1px solid var(--sn-theme-655573,#74618b);border-radius:8px;box-shadow:0 6px 20px #0005}h4{font:inherit;font-weight:600;margin:0 0 6px;overflow-wrap:anywhere}.list{display:grid;gap:4px}button{font:inherit;color:inherit;padding:5px 8px;border:1px solid var(--sn-theme-423750,#423750);border-radius:5px;background:var(--sn-theme-302951,#302951);cursor:pointer;text-align:left}button:hover{background:var(--sn-theme-49365a,#49365a)}button:focus-visible{outline:2px solid var(--sn-theme-ac94ec,#ac94ec)}p{margin:0;color:var(--sn-theme-a8b8d1,#beb0d1)}</style><section class="box" role="dialog"><h4></h4><div class="list" role="status"><p>Loading chats…</p></div></section>';
     const name=anchor.dataset.agentName,controller=new AbortController();
@@ -21663,6 +21702,7 @@ function installAgentDashboardPopup() {
     popupRoot.querySelector('section').setAttribute('aria-label',name+' current IMS chats');
     anchor.setAttribute('aria-expanded','true');document.body.append(popupHost);positionAgentChats();
     const list=popupRoot.querySelector('.list');
+    const ready=(async()=>{
     const timeout=setTimeout(()=>controller.abort(),15000);
     try {
       const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
@@ -21684,12 +21724,16 @@ function installAgentDashboardPopup() {
       positionAgentChats();
     }catch(error){if(agentChatPopup===popup){list.replaceChildren();const message=document.createElement('p');message.textContent=error.name==='AbortError'?'Chat lookup timed out. Click the count to retry.':error.message;list.append(message);positionAgentChats();}}
     finally{clearTimeout(timeout);}
+    })();
+    await openDataBubble(anchor,popupHost,ready,()=>agentChatPopup===popup,positionAgentChats);
   }
   root.addEventListener('click',event=>{const badge=event.composedPath().find(element=>element?.matches?.('button.agent-chat-count'));if(badge)showAgentChats(badge);});
   document.addEventListener('pointerdown',event=>{if(agentChatPopup&&!event.composedPath().includes(agentChatPopup.host)&&!event.composedPath().includes(agentChatPopup.anchor))closeAgentChats();},true);
   document.addEventListener('keydown',event=>{if(event.key==='Escape'&&agentChatPopup){const anchor=agentChatPopup.anchor;closeAgentChats();anchor.focus();}},true);
   window.addEventListener('resize',positionAgentChats);
   document.addEventListener('scroll',positionAgentChats,true);
+  document.addEventListener('sn-ai-new-chat-arrived',closeAgentChats);
+  document.addEventListener('sn-ai-autoaccepted-ims',closeAgentChats);
   let agentColors={};try{agentColors=JSON.parse(localStorage.getItem('sn-ai-agent-name-colors-v1')||'{}');}catch{}
   const agentHue=name=>{
     const key=name.normalize('NFKC').trim().toLowerCase();let hash=2166136261;
@@ -21797,19 +21841,39 @@ function chatsTodayTime(field) {
   // Use SNOW's session-local display value, not the UTC storage timestamp.
   return chatsTodayValue(field,true).match(/\b\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AP]M)?\b/i)?.[0]||'—';
 }
+function chatsTodaySeconds(field) {
+  const raw=chatsTodayValue(field);if(!raw)return null;
+  if(/^\d+(?:\.\d+)?$/.test(raw))return Number(raw);
+  const timestamp=Date.parse(raw.replace(' ','T')+'Z');return Number.isFinite(timestamp)?timestamp/1000:null;
+}
+function chatsTodayWaitTime(field) {
+  const seconds=chatsTodaySeconds(field);return seconds===null?chatsTodayValue(field,true)||'—':Math.round(seconds)+' s';
+}
+function sortChatsToday(records,sort) {
+  if(!sort)return records;
+  const value=record=>{
+    if(['wait_time','duration'].includes(sort.field))return chatsTodaySeconds(record[sort.field]);
+    const raw=chatsTodayValue(record[sort.field]);const time=raw?Date.parse(raw.replace(' ','T')+'Z'):NaN;return Number.isFinite(time)?time:null;
+  };
+  return [...records].sort((a,b)=>{const x=value(a),y=value(b);if(x===null)return y===null?0:1;if(y===null)return -1;return (x-y)*(sort.direction==='ascending'?1:-1)||chatsTodayValue(a.number).localeCompare(chatsTodayValue(b.number));});
+}
+function nextChatsTodaySort(previous,field) {
+  return {field,direction:previous?.field===field&&previous.direction==='ascending'?'descending':'ascending'};
+}
 const SN_AI_CHATS_TODAY_COLUMNS=[
   ['Number','number'],['UserID','opened_for'],['Wait time','wait_time'],['Opened','opened_at'],
   ['Closed','closed_at'],['Duration','duration'],['Short description','short_description'],['State','state']
 ];
 function chatsTodayColumnWidths(records,measure) {
   return SN_AI_CHATS_TODAY_COLUMNS.map(([label,field])=>{
-    let width=measure(label,true)+18; // Lucide header icon plus its gap.
+    const sortable=['wait_time','opened_at','closed_at','duration'].includes(field);
+    let width=measure(field==='wait_time'?'':label,true)+18+(sortable?18:0);
     for(const record of records){
-      const value=['opened_at','closed_at'].includes(field)?chatsTodayTime(record[field]):chatsTodayValue(record[field],true)||'—';
+      const value=field==='wait_time'?chatsTodayWaitTime(record[field]):['opened_at','closed_at'].includes(field)?chatsTodayTime(record[field]):chatsTodayValue(record[field],true)||'—';
       const arrow=field==='opened_at'&&chatsTodayTime(record.opened_at)!=='—'&&chatsTodayTime(record.closed_at)!=='—'?20:0;
       width=Math.max(width,measure(value,false,field==='number')+arrow);
     }
-    return Math.ceil(width)+18; // Cell padding plus a little breathing room.
+    return Math.ceil(width)+18+(field==='state'?12:0);
   });
 }
 function chatsTodayIcon(name) {
@@ -21822,7 +21886,9 @@ function chatsTodayIcon(name) {
     'log-out':'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
     'align-left':'<path d="M21 6H3M15 12H3M17 18H3"/>',
     'circle-dot':'<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="1"/>',
-    'arrow-right':'<path d="M5 12h14m-7-7 7 7-7 7"/>'
+    'arrow-right':'<path d="M5 12h14m-7-7 7 7-7 7"/>',
+    'arrow-up':'<path d="M12 19V5m-7 7 7-7 7 7"/>',
+    'arrow-down':'<path d="M12 5v14m-7-7 7 7 7-7"/>'
   };
   return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-'+name+'" aria-hidden="true">'+(paths[name]||'')+'</svg>';
 }
@@ -21861,9 +21927,11 @@ function installChatsTodayPanel() {
   iconStyle.textContent='th .column-heading{display:flex;align-items:center;gap:5px}th svg{width:13px;height:13px;flex:0 0 13px}td.time-open{position:relative;padding-right:26px}.time-arrow{position:absolute;right:6px;top:50%;transform:translateY(-50%);display:flex;color:var(--sn-theme-a8b8d1,#beb0d1);pointer-events:none}.time-arrow svg{width:14px;height:14px}';
   root.append(iconStyle);
   iconStyle.textContent+='table .description{white-space:nowrap}';
+  iconStyle.textContent+='summary,thead{user-select:none}th:last-child,td:last-child{padding-right:20px}.sort-button{display:flex;align-items:center;gap:5px;border:0;border-radius:0;background:transparent;padding:0;color:inherit;text-align:left}.sort-button:hover{background:transparent}.sort-button .column-heading{gap:5px}';
   const expanded=new Set();
+  const sorts=new Map();let currentRecords=[],openEpoch=0,closing=false;
   let request=null,refreshTimer=0,lastSuccess=0,total=0,failures=0,retryAt=0,layoutFrame=0,inboxHost=null,contentWidth=0;
-  const visible=()=>!panel.hidden&&!document.hidden;
+  const visible=()=>!panel.hidden&&!closing&&!document.hidden;
   function position() {
     let inboxRight=0;
     const find=rootNode=>{for(const element of rootNode.querySelectorAll('*')){
@@ -21874,15 +21942,20 @@ function installChatsTodayPanel() {
     const rect=inboxHost?.getBoundingClientRect();if(rect?.width>0&&rect.height>0)inboxRight=rect.right;
     // Never cover the Inbox, even if the remaining report area is narrow.
     const left=Math.min(innerWidth-20,Math.max(12,inboxRight+12));
-    panel.style.left=left+'px';panel.style.right='auto';
+    panel.style.left='auto';panel.style.right='12px';
     panel.style.width=Math.min(Math.max(330,contentWidth+30),Math.max(20,innerWidth-left-12))+'px';
     panel.style.top=Math.min(78,Math.max(8,innerHeight*.12))+'px';
   }
   function schedulePosition(){if(!panel.hidden&&!layoutFrame)layoutFrame=requestAnimationFrame(()=>{layoutFrame=0;position();});}
   function stop(){clearTimeout(refreshTimer);refreshTimer=0;}
   function schedule(){stop();if(visible())refreshTimer=setTimeout(load,Math.max(30000*Math.pow(2,Math.min(failures,2)),retryAt-Date.now()));}
-  function close(){panel.hidden=true;launcher.setAttribute('aria-expanded','false');stop();request?.abort();request=null;refresh.disabled=false;refresh.removeAttribute('aria-busy');launcher.focus();}
+  function close(focus=true){
+    if(panel.hidden||closing)return;
+    const epoch=++openEpoch;closing=true;launcher.setAttribute('aria-expanded','false');stop();request?.abort();request=null;refresh.disabled=false;refresh.removeAttribute('aria-busy');
+    closeDataBubble(panel).then(()=>{if(openEpoch===epoch){panel.hidden=true;closing=false;}if(focus)launcher.focus();});
+  }
   function render(records) {
+    currentRecords=records;
     const scrollTop=groups.scrollTop;groups.replaceChildren();
     const grouped=groupChatsToday(records);total=grouped.reduce((sum,group)=>sum+group.records.length,0);
     const canvas=document.createElement('canvas'),context=canvas.getContext('2d');
@@ -21892,7 +21965,7 @@ function installChatsTodayPanel() {
     });
     contentWidth=widths.reduce((sum,width)=>sum+width,0);
     for(const group of grouped) {
-      const detail=document.createElement('details'),summary=document.createElement('summary');detail.open=expanded.has(group.id);
+      const detail=document.createElement('details'),summary=document.createElement('summary');detail.open=expanded.has(group.id);detail.dataset.agentId=group.id;
       const title=document.createElement('span'),count=document.createElement('span');title.textContent=group.name;count.className='count';count.textContent='('+group.records.length+')';summary.append(title,count);detail.append(summary);
       detail.addEventListener('toggle',()=>{if(detail.open)expanded.add(group.id);else expanded.delete(group.id);});
       const wrap=document.createElement('div');wrap.className='table-wrap';const table=document.createElement('table');
@@ -21900,14 +21973,21 @@ function installChatsTodayPanel() {
       for(const width of widths){const column=document.createElement('col');column.style.width=width+'px';columns.append(column);}table.append(columns);table.style.width=contentWidth+'px';table.style.minWidth=contentWidth+'px';
       const head=document.createElement('thead'),headRow=document.createElement('tr');
       const icons=['hash','user','timer','log-in','log-out','clock','align-left','circle-dot'];
-      SN_AI_CHATS_TODAY_COLUMNS.forEach(([label],index)=>{const th=document.createElement('th');th.scope='col';const heading=document.createElement('span');heading.className='column-heading';heading.innerHTML=chatsTodayIcon(icons[index]);heading.append(document.createTextNode(label));th.append(heading);headRow.append(th);});head.append(headRow);table.append(head);
+      SN_AI_CHATS_TODAY_COLUMNS.forEach(([label,field],index)=>{
+        const th=document.createElement('th');th.scope='col';const heading=document.createElement('span');heading.className='column-heading';heading.innerHTML=chatsTodayIcon(icons[index]);if(field!=='wait_time')heading.append(document.createTextNode(label));
+        if(['wait_time','opened_at','closed_at','duration'].includes(field)){
+          const sort=sorts.get(group.id),active=sort?.field===field;if(active){th.setAttribute('aria-sort',sort.direction);heading.insertAdjacentHTML('beforeend',chatsTodayIcon(sort.direction==='ascending'?'arrow-up':'arrow-down'));}
+          const button=document.createElement('button');button.type='button';button.className='sort-button';button.dataset.sortField=field;button.setAttribute('aria-label','Sort by '+label);button.title=label+(active?' · '+sort.direction:'');button.append(heading);
+          button.addEventListener('click',()=>{sorts.set(group.id,nextChatsTodaySort(sorts.get(group.id),field));render(currentRecords);const replacement=[...groups.querySelectorAll('details')].find(d=>d.dataset.agentId===group.id)?.querySelector('[data-sort-field="'+field+'"]');replacement?.focus({preventScroll:true});});th.append(button);
+        }else th.append(heading);headRow.append(th);
+      });head.append(headRow);table.append(head);
       const body=document.createElement('tbody');
-      for(const record of group.records) {
+      for(const record of sortChatsToday(group.records,sorts.get(group.id))) {
         const row=document.createElement('tr');row.dataset.active=chatsTodayValue(record.active);
         const numberCell=document.createElement('td'),button=document.createElement('button');button.type='button';button.className='number';button.textContent=chatsTodayValue(record.number);button.title='Open in main tab row';
         button.addEventListener('click',()=>{try{openWorkspaceIMSMainTab({sys_id:chatsTodayValue(record.sys_id),number:chatsTodayValue(record.number)});close();}catch(error){status.textContent=error.message;status.classList.add('error');}});numberCell.append(button);row.append(numberCell);
         for(const [,field] of SN_AI_CHATS_TODAY_COLUMNS.slice(1)) {
-          const cell=document.createElement('td');cell.textContent=['opened_at','closed_at'].includes(field)?chatsTodayTime(record[field]):chatsTodayValue(record[field],true)||'—';
+          const cell=document.createElement('td');cell.textContent=field==='wait_time'?chatsTodayWaitTime(record[field]):['opened_at','closed_at'].includes(field)?chatsTodayTime(record[field]):chatsTodayValue(record[field],true)||'—';
           if(field==='short_description')cell.className='description';else if(field==='state')cell.className='state';else cell.className='nowrap';
           if(field==='opened_at'&&chatsTodayTime(record.opened_at)!=='—'&&chatsTodayTime(record.closed_at)!=='—'){
             cell.classList.add('time-open');const arrow=document.createElement('span');arrow.className='time-arrow';arrow.innerHTML=chatsTodayIcon('arrow-right');cell.append(arrow);
@@ -21945,8 +22025,10 @@ function installChatsTodayPanel() {
     }catch(error){if(request===controller&&!panel.hidden){failures++;status.classList.add('error');status.textContent=(error.name==='AbortError'?'Refresh timed out':error.message)+(lastSuccess?' · Previous results kept':'');}}
     finally{clearTimeout(timeout);if(request===controller){request=null;refresh.disabled=false;refresh.removeAttribute('aria-busy');schedule();}}
   }
-  launcher.addEventListener('click',()=>{if(!panel.hidden){close();return;}panel.hidden=false;launcher.setAttribute('aria-expanded','true');position();load();});
-  root.querySelector('.close').addEventListener('click',close);refresh.addEventListener('click',load);
+  launcher.addEventListener('click',()=>{if(!panel.hidden){close();return;}const epoch=++openEpoch;panel.style.visibility='hidden';panel.style.pointerEvents='none';panel.hidden=false;launcher.setAttribute('aria-expanded','true');position();const ready=load();openDataBubble(launcher,panel,ready,()=>openEpoch===epoch&&!panel.hidden,position);});
+  root.querySelector('.close').addEventListener('click',()=>close());refresh.addEventListener('click',load);
+  document.addEventListener('sn-ai-new-chat-arrived',()=>close(false));
+  document.addEventListener('sn-ai-autoaccepted-ims',()=>close(false));
   root.addEventListener('keydown',event=>{if(event.key==='Escape'&&!panel.hidden){event.stopPropagation();close();}});
   window.addEventListener('resize',schedulePosition);
   document.addEventListener('sn-ai-agent-inbox-ready',schedulePosition);
