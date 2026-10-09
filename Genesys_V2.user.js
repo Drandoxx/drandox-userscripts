@@ -5953,7 +5953,7 @@
   let activeCallSavedSignature = '';
   function saveActiveCallWindow() {
     if (!activeCallSummary) { GM_deleteValue(ACTIVE_CALL_WINDOW_KEY); activeCallSavedSignature = ''; return; }
-    const signature = JSON.stringify(activeCallSummary.details) + activeCallSummary.connectedAt;
+    const signature = JSON.stringify(activeCallSummary.details) + activeCallSummary.connectedAt + activeCallSummary.snowUrl + activeCallSummary.hadSnowAction;
     if (signature !== activeCallSavedSignature || Date.now() - (activeCallSummary.updatedAt || 0) > 10000) {
       activeCallSummary.updatedAt = Date.now(); GM_setValue(ACTIVE_CALL_WINDOW_KEY, activeCallSummary);
       activeCallSavedSignature = signature;
@@ -5967,10 +5967,24 @@
       document.getElementById('gbs-last-call-data')?.remove();
     }
     lastCallSummary = {startedAt:activeCallSummary.connectedAt || activeCallSummary.ringingAt,
-      endedAt:Date.now(),details:activeCallSummary.details,wrapupSeconds:29,wrapupObservedAt:Date.now(),wrapupComplete:false};
+      endedAt:Date.now(),details:activeCallSummary.details,snowUrl:activeCallSummary.snowUrl,hadSnowAction:activeCallSummary.hadSnowAction,wrapupSeconds:29,wrapupObservedAt:Date.now(),wrapupComplete:false};
     activeCallSummary = null; saveActiveCallWindow(); saveLastCallWindow();
   }
   let callCardDragging = false;
+  const callSnowActions = new Map();
+  function appendEarlierSnowButton(doc, body, call) {
+    if (!call.hadSnowAction && !call.snowUrl) return;
+    const button = doc.createElement('button'); button.type = 'button';
+    button.textContent = 'Open in SNOW';
+    button.style.cssText = 'margin-top:8px;padding:8px 12px;background:#22343b;color:#a5f3fc;border:1px solid #22d3ee;border-radius:5px;cursor:pointer';
+    button.addEventListener('click', () => {
+      const native = callSnowActions.get(call.startedAt);
+      if (call.snowUrl) doc.defaultView.open(call.snowUrl, '_blank', 'noopener');
+      else if (native?.isConnected) native.click();
+      else doc.defaultView.open(SNOW_NEW_CALL_URL, '_blank', 'noopener');
+    });
+    body.append(button);
+  }
   function installCallCardDrag(card, heading, savePosition) {
     const win = card.ownerDocument.defaultView;
     heading.addEventListener('pointerdown', event => {
@@ -6056,6 +6070,7 @@
         }
         row.append(title,content);body.append(row);
       }
+      appendEarlierSnowButton(doc, body, call);
       card.append(heading,body);doc.body.append(card);
     }
   }
@@ -6160,6 +6175,7 @@
       }
       row.append(title, content); body.appendChild(row);
     }
+    appendEarlierSnowButton(doc, body, lastCallSummary);
     const timing = doc.createElement('div');
     timing.style.cssText = 'font-size:12px;color:#8fb2bd;margin-top:10px;user-select:none';
     timing.textContent = `${callClock(lastCallSummary.startedAt)} – ${callClock(lastCallSummary.endedAt)}`;
@@ -6308,6 +6324,16 @@
     const snowAction = scopes.flatMap(scope => [...scope.querySelectorAll('a,button,input[type="button"]')])
       .find(element => visible(element) && /open in snow/i.test(element.textContent || element.value || ''));
     popup.__gbsSnowAction = snowAction;
+    if (snowAction && activeCallSummary) {
+      activeCallSummary.hadSnowAction = true;
+      callSnowActions.set(activeCallSummary.connectedAt || activeCallSummary.ringingAt, snowAction);
+      const raw = snowAction.getAttribute('href') || snowAction.getAttribute('data-url');
+      try {
+        const url = new URL(raw, snowAction.ownerDocument.location.href);
+        if (raw && url.protocol === 'https:' && url.hostname === 'kingfisher.service-now.com') activeCallSummary.snowUrl = url.href;
+      } catch (_) { /* Button-only actions may not expose a persistent URL. */ }
+      saveActiveCallWindow();
+    }
     const resolveCallControl = (root, control) => {
       const candidates = [...(root?.querySelectorAll(control.selector) || [])];
       if (control.mute) {
