@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.443
+// @version      2.36.444
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -14388,7 +14388,7 @@ function startSNAI(tabIdentity) {
       && /^[\p{L}\p{N}][\p{L}\p{N} ._'’@()\-]*$/u.test(speaker));
   };
 
-  const isAutomatedTranscriptSpeaker = (value) => /^(?:virtual\s+agent|system)$/i.test(normalise(value));
+  const isAutomatedTranscriptSpeaker = (value) => /^(?:virtual[ ._]+agent|system)$/i.test(normalise(value));
 
   function parseTranscriptRowText(value) {
     const text = normalise(value);
@@ -14654,6 +14654,9 @@ function startSNAI(tabIdentity) {
 
   async function collectCompleteChat() {
     const captureIMS = normaliseIMS(activeSelectedIMS());
+    const apiChat = await collectChatFromNativeAPI(captureIMS);
+    if (normaliseIMS(activeSelectedIMS()) !== captureIMS) automationFailure('CHAT_CAPTURE_TAB_CHANGED', 'The selected IMS changed during chat capture. No partial transcript was sent to AI.');
+    if (apiChat?.length) return apiChat;
     const merged = [];
     const seen = new Set();
     const boundary = { afterJoin: false, agentId: '' };
@@ -14742,6 +14745,123 @@ function startSNAI(tabIdentity) {
       if (transcriptMessages.length) return transcriptMessages;
     }
     return [];
+  }
+
+  function nativeChatAPIContext() {
+    const interactionId = location.pathname.match(/\/chat\/([a-f0-9]{32})(?:\/|$)/i)?.[1];
+    if (!interactionId) return null;
+    for (const el of allPageElements()) {
+      if (el.localName !== 'sn-connect-conversation') continue;
+      const props = el.getProperties?.();
+      if (props?.interaction !== interactionId || props.table !== 'sys_cs_conversation' || !/^[a-f0-9]{32}$/i.test(props.sysid || '')) continue;
+      return { interactionId, conversationId: props.sysid, closed: props.interactionData?.activeInteraction === false };
+    }
+    return { interactionId, conversationId: '', closed: true };
+  }
+
+  function nativeAPIChatMessages(records) {
+    const rows = [...records].sort((a, b) => String(a.sequence).localeCompare(String(b.sequence)));
+    const payloadOf = row => {
+      if (row.messageType === 'text') return null;
+      try { return JSON.parse(row.payload); } catch { return null; }
+    };
+    const boundary = rows.findIndex(row => row.system && joinMarkerMatch(payloadOf(row)?.message));
+    if (boundary < 0) return null;
+    const agents = new Set();
+    const messages = [];
+    for (const row of rows.slice(boundary)) {
+      const payload = payloadOf(row);
+      if (row.system) {
+        const join = joinMarkerMatch(payload?.message);
+        if (join) agents.add(normalise(join[1]).toLowerCase());
+        continue;
+      }
+      if (row.internal || row.transitory || row.isBotMessage || /^(?:virtual[ ._]agent|system)$/i.test(row.createdBy || '')) continue;
+      let text = '';
+      if (row.messageType === 'text') text = String(row.payload || '');
+      else if (payload?.uiType === 'OutputText') {
+        if (payload.plainTextMessage) text = payload.plainTextMessage;
+        else {
+          const node = document.createElement('div');
+          node.innerHTML = String(payload.value || '');
+          text = node.textContent || '';
+        }
+      } else if (/^Output(?:Image|File|Attachment)$/.test(payload?.uiType || '')) {
+        text = `[Attachment: ${payload.alt_text || payload.fileName || payload.name || 'image/file'}]`;
+      } else if (payload?.uiType === 'ContextualAction') continue;
+      else throw new Error('CHAT_API_UNSUPPORTED_MESSAGE');
+      text = normalise(text);
+      if (!text || isChatSummaryText(text)) continue;
+      const author = normalise(row.createdBy || row.senderName);
+      if (!author) throw new Error('CHAT_API_AUTHOR_MISSING');
+      messages.push({ source: agents.has(author.toLowerCase()) || agents.has(normalise(row.senderName).toLowerCase()) ? 'agent-message' : 'user-message', speaker: author, text });
+    }
+    return messages;
+  }
+
+  async function collectChatFromNativeAPI(ims) {
+    const context = nativeChatAPIContext();
+    if (!context || !ims) return null;
+    const started = performance.now();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    const checkIdentity = () => {
+      if (normaliseIMS(activeSelectedIMS()) !== ims || location.pathname.match(/\/chat\/([a-f0-9]{32})(?:\/|$)/i)?.[1] !== context.interactionId) throw new Error('CHAT_API_TAB_CHANGED');
+    };
+    const read = async (url, options = {}) => {
+      checkIdentity();
+      const response = await fetch(url, { ...options, credentials: 'same-origin', signal: controller.signal,
+        headers: { Accept: 'application/json', 'X-UserToken': kbSessionToken(), ...(options.headers || {}) } });
+      if (!response.ok) throw new Error(`CHAT_API_HTTP_${response.status}`);
+      const json = await response.json();
+      checkIdentity();
+      if (json.errors?.length) throw new Error('CHAT_API_QUERY_FAILED');
+      return json;
+    };
+    try {
+      if (context.closed) {
+        const json = await read(`/api/now/table/interaction/${context.interactionId}?sysparm_fields=number,state,active,transcript&sysparm_display_value=false`);
+        const record = json.result;
+        if (normaliseIMS(record?.number) !== ims) throw new Error('CHAT_API_RECORD_MISMATCH');
+        if (record.active === 'false' || record.active === false || /^closed/.test(record.state || '')) {
+          const chat = parseTranscriptMessages(record.transcript);
+          if (chat.length >= 2) {
+            addLog('info', 'chat-api-transcript-complete', { ims, blocks: chat.length, durationMs: Math.round(performance.now() - started) });
+            return chat;
+          }
+        }
+      }
+      if (!context.conversationId) throw new Error('CHAT_API_CONVERSATION_MISSING');
+      // This is the read-only query used by sn-connect-conversation itself.
+      // Sequence, not messageId, is the native older-history boundary.
+      const query = 'query snConnectConversation($sysId:String!$boundaryId:String$limit:Int=100$before:Boolean=true){now{cs{conversation(sysId:$sysId){messages(boundaryId:$boundaryId limit:$limit before:$before){internal transitory conversationSysId createdAt system messageType payload createdBy isBotMessage sequence senderName messageId}}}}}';
+      const records = new Map(), boundaries = new Set();
+      let boundaryId, exhausted = false, pages = 0;
+      for (; pages < 40; pages += 1) {
+        const json = await read('/api/now/graphql', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ operationName: 'snConnectConversation', query, variables: { sysId: context.conversationId, limit: 100, before: true, ...(boundaryId ? { boundaryId } : {}) } }) });
+        const rows = json.data?.now?.cs?.conversation?.messages;
+        if (!Array.isArray(rows)) throw new Error('CHAT_API_MESSAGES_MISSING');
+        if (!rows.length) { exhausted = true; break; }
+        for (const row of rows) {
+          if (row.conversationSysId !== context.conversationId || !row.messageId || !row.sequence) throw new Error('CHAT_API_MESSAGE_IDENTITY');
+          records.set(row.messageId, row);
+        }
+        boundaryId = rows.map(row => String(row.sequence)).sort()[0];
+        if (boundaries.has(boundaryId)) throw new Error('CHAT_API_PAGING_STALLED');
+        boundaries.add(boundaryId);
+      }
+      if (!exhausted) throw new Error('CHAT_API_HISTORY_INCOMPLETE');
+      const chat = nativeAPIChatMessages([...records.values()]);
+      if (!chat || chat.length < 2) throw new Error('CHAT_API_JOIN_OR_MESSAGES_MISSING');
+      addLog('info', 'chat-api-messages-complete', { ims, pages: pages + 1, records: records.size, blocks: chat.length, durationMs: Math.round(performance.now() - started) });
+      return chat;
+    } catch (error) {
+      // Never cache a partial API page or suppress a record-switch safeguard.
+      checkIdentity();
+      addLog('warn', 'chat-api-scroll-fallback', { ims, reason: error.name === 'AbortError' ? 'timeout' : error.message, durationMs: Math.round(performance.now() - started) });
+      return null;
+    } finally { clearTimeout(timeout); }
   }
 
   async function waitForChatJoinBoundary(scroller, mergeCurrent, boundary) {
@@ -20047,7 +20167,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.443' });
+    addLog('info', 'helper-version', { version: '2.36.444' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
