@@ -1,11 +1,11 @@
 {
     "ok":  true,
-    "checkedAt":  "2026-10-09T11:34:19.4479868Z",
+    "checkedAt":  "2026-10-09T11:41:54.3212747Z",
     "releases":  [
                      {
                          "id":  "sn-ai",
                          "name":  "SN AI",
-                         "version":  "2.36.419",
+                         "version":  "2.36.420",
                          "available":  true,
                          "fileName":  "SNOW_CHAT_AI.user.js",
                          "downloadUrl":  "https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/SNOW_CHAT_AI.user.js"
