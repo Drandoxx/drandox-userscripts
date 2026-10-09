@@ -6222,7 +6222,7 @@
   let callCardDragging = false;
   const callSnowActions = new Map();
   function appendEarlierSnowButton(doc, body, call) {
-    if (!call.hadSnowAction && !call.snowUrl) return;
+    if (!call.snowUrl && !callSnowActions.get(call.startedAt)?.isConnected) return;
     const button = doc.createElement('button'); button.type = 'button';
     button.textContent = 'Open in SNOW';
     button.style.cssText = 'margin-top:8px;padding:8px 12px;background:#22343b;color:#a5f3fc;border:1px solid #22d3ee;border-radius:5px;cursor:pointer';
@@ -6230,7 +6230,7 @@
       const native = callSnowActions.get(call.startedAt);
       if (call.snowUrl) doc.defaultView.open(call.snowUrl, '_blank', 'noopener');
       else if (native?.isConnected) native.click();
-      else doc.defaultView.open(SNOW_NEW_CALL_URL, '_blank', 'noopener');
+      else button.remove();
     });
     body.append(button);
   }
@@ -6703,7 +6703,7 @@
       timer.title='Elapsed time from the connected timestamp; final talk duration is confirmed by Genesys';
       timer.textContent=callDurationLabel({startedAt:activeCallSummary.connectedAt,endedAt:Date.now()});body.append(timer);
     }
-    if (incoming || snowAction || callTestEnabled(doc)) {
+    if (snowAction) {
       const button = doc.createElement('button');
       button.type = 'button';
       button.textContent = 'Open in SNOW';
@@ -6711,7 +6711,7 @@
       button.addEventListener('click', () => {
         const action = popup.__gbsSnowAction;
         if (action?.isConnected && visible(action)) action.click();
-        else if (callTestEnabled(doc)) doc.defaultView.open(SNOW_NEW_CALL_URL, '_blank', 'noopener');
+        else button.remove();
       });
       body.appendChild(button);
     }
