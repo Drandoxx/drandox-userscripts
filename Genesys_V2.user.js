@@ -5970,6 +5970,11 @@
       endedAt:Date.now(),details:activeCallSummary.details,wrapupSeconds:29,wrapupObservedAt:Date.now(),wrapupComplete:false};
     activeCallSummary = null; saveActiveCallWindow(); saveLastCallWindow();
   }
+  function callDurationLabel(call) {
+    const seconds = Math.max(0, Math.round((call.endedAt - call.startedAt) / 1000));
+    const hours = Math.floor(seconds / 3600), minutes = Math.floor(seconds % 3600 / 60);
+    return `${hours ? String(hours).padStart(2,'0') + ':' : ''}${String(minutes).padStart(2,'0')}:${String(seconds % 60).padStart(2,'0')}`;
+  }
   const LAST_CALL_WINDOW_KEY = 'genesys-v2-last-call-window';
   const LAST_CALL_WINDOW_TTL = 2 * 60 * 60 * 1000;
   let lastCallSummary = null;
@@ -5982,7 +5987,8 @@
       if (doc.getElementById(id)) continue;
       const card = doc.createElement('section'); card.id = id;
       card.style.cssText = `position:fixed;right:${20+index%4*24}px;top:${80+index%6*42}px;width:300px;max-width:calc(100vw - 24px);max-height:70vh;overflow:auto;background:#1d2228;color:#e7f5f8;border:1px solid #22d3ee;border-radius:12px;z-index:2147483643;font:14px/1.5 system-ui`;
-      const heading = doc.createElement('div'); heading.textContent = 'Earlier call data';
+      const heading = doc.createElement('div'); heading.textContent = `Earlier Call data – ${callDurationLabel(call)}`;
+      heading.title = 'Duration estimated from watcher observations';
       heading.style.cssText = 'position:relative;padding:12px 42px 12px 16px;border-bottom:1px solid #22d3ee70;color:#67e8f9;cursor:move;touch-action:none;user-select:none';
       const close = doc.createElement('button'); close.type='button'; close.textContent='×'; close.setAttribute('aria-label','Close earlier call data');
       close.style.cssText='position:absolute;right:10px;top:8px;background:transparent;border:0;color:#67e8f9;font-size:20px;cursor:pointer';
@@ -6014,7 +6020,7 @@
     try {
       const saved = GM_getValue(LAST_CALL_WINDOW_KEY, null);
       if (saved && Array.isArray(saved.details) && Number.isFinite(saved.endedAt)
-          && Date.now() - saved.endedAt < LAST_CALL_WINDOW_TTL) lastCallSummary = saved;
+          ) lastCallSummary = saved;
       else GM_deleteValue(LAST_CALL_WINDOW_KEY);
     } catch (_) { /* Optional persisted call window unavailable. */ }
   }
@@ -6079,8 +6085,9 @@
     const heading = doc.createElement('div');
     heading.style.cssText = 'position:relative;padding:12px 42px 12px 16px;border-bottom:1px solid #22d3ee70;color:#67e8f9;font-weight:600;user-select:none;cursor:move;touch-action:none;overflow-wrap:anywhere';
     heading.textContent = lastCallSummary.wrapupComplete
-      ? 'Earlier call data'
+      ? `Earlier Call data – ${callDurationLabel(lastCallSummary)}`
       : 'Call information — After Call Work';
+    heading.title = lastCallSummary.wrapupComplete ? 'Duration estimated from watcher observations' : '';
     const close = doc.createElement('button'); close.type = 'button'; close.textContent = '×'; close.setAttribute('aria-label', 'Close last call data');
     close.style.cssText = 'position:absolute;right:10px;top:8px;width:28px;height:28px;padding:0;line-height:28px;background:transparent;border:0;color:inherit;font-size:20px;cursor:pointer';
     close.addEventListener('click', () => {lastCallSummary.dismissed = true; saveLastCallWindow(); popup.remove();}); heading.append(close);
@@ -6127,7 +6134,8 @@
     }
     const timing = doc.createElement('div');
     timing.style.cssText = 'font-size:12px;color:#8fb2bd;margin-top:10px;user-select:none';
-    timing.textContent = `Observed call: ${callClock(lastCallSummary.startedAt)} – ${callClock(lastCallSummary.endedAt)} (not verified Genesys duration)`;
+    timing.textContent = `${callClock(lastCallSummary.startedAt)} – ${callClock(lastCallSummary.endedAt)}`;
+    timing.title = 'Times estimated from watcher observations';
     body.appendChild(timing);
     if (!lastCallSummary.wrapupComplete && Number.isFinite(lastCallSummary.wrapupSeconds)) {
       const elapsed = Math.floor((Date.now() - lastCallSummary.wrapupObservedAt) / 1000);
