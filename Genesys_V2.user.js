@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.560.0
+// @version      1.561.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -5852,6 +5852,20 @@
     return {talkMs,acwMs:sum('tAcw'),handleMs:sum('tHandle'),confirmed:talkComplete,
       startedAt:starts.length?Math.min(...starts):null,endedAt:ends.length?Math.max(...ends):null};
   }
+  function updateMeasurementPhoneTiming(record, sourcePhone, popupPhone, at) {
+    if(sourcePhone && !record.nativePhoneAt){record.nativePhoneAt=at;record.nativePhone=sourcePhone;}
+    if(popupPhone && !record.popupPhoneAt){record.popupPhoneAt=at;record.popupPhone=popupPhone;}
+    if(!record.nativePhoneAt || !record.popupPhoneAt)return;
+    if(!record.nativePhone || record.nativePhone!==record.popupPhone){
+      record.phoneDelayMs=null;record.phoneTimingStatus='different-numbers';return;
+    }
+    const offset=Date.parse(record.popupPhoneAt)-Date.parse(record.nativePhoneAt);
+    if(!Number.isFinite(offset))return;
+    record.phoneObservationOffsetMs=offset;
+    record.phoneDelayMs=Math.max(0,offset);
+    record.popupLeadMs=Math.max(0,-offset);
+    record.phoneTimingStatus=offset<0?'popup-observed-first':'native-observed-first';
+  }
   function rememberCallApi(path,status,data) {
     if (path==='/api/v2/users/me' && data?.id) {
       currentAgentApiId=data.id;
@@ -6328,7 +6342,7 @@
     const sourceText = sources.map(source => source.text).join('\n');
     if (!measurementState && !popup) return;
     if (!measurementState) {
-      measurementState = {schemaVersion:3,startedAt:new Date().toISOString(),sampleIntervalMs:1000,samples:[],elements:{},network:[],droppedSamples:0,limits:'Accessible DOM and call-only API projections; changes only, no credentials. Network bounded to 120 events / 500KB.'};
+      measurementState = {schemaVersion:4,startedAt:new Date().toISOString(),sampleIntervalMs:1000,samples:[],elements:{},network:[],droppedSamples:0,limits:'Accessible DOM and call-only API projections; changes only, no credentials. Network bounded to 120 events / 500KB. Phone timestamps measure observation order, not ringing latency.'};
       callNetworkChanges.length = 0; callNetworkSignatures.clear(); callNetworkFields.clear();
       measurementPreviousFields = {}; measurementPersistedAt = 0;
       measurementLastSignature = ''; measurementLastSave = 0;
@@ -6340,6 +6354,14 @@
       sources,inaccessible,popupText,sourcePhone,popupPhone,phoneMatches:sourcePhone ? sourcePhone === popupPhone : null,
       countdown:sources.find(source => source.countdown)?.countdown || null,popupCountdown:(popup || lastPopup)?.querySelector('[role="timer"]')?.textContent || null};
     const at = sample.at;
+    updateMeasurementPhoneTiming(measurementState,sourcePhone,popupPhone,at);
+    // Bind to the observed call ID, never infer exact timing from another cached call.
+    measurementState.conversationId ||= activeCallSummary?.conversationId;
+    if(measurementState.conversationId) {
+      const cache=readTodayCallCache(),entry=cache.conversations[measurementState.conversationId];
+      const timing=agentApiTiming(entry?.analytics,currentAgentApiId || cache.userId);
+      if(timing?.confirmed)measurementState.genesysTiming={talkSeconds:timing.talkMs/1000,afterCallWorkSeconds:timing.acwMs/1000,handleSeconds:timing.handleMs/1000,startedAt:timing.startedAt,endedAt:timing.endedAt,confirmed:true};
+    }
     const postCall = !incoming && !popup && (!sample.countdown || /^0+:0+$/.test(sample.countdown));
     if (postCall && !measurementState.postCallStartedAt) measurementState.postCallStartedAt = Date.now();
     if (!postCall) measurementState.postCallStartedAt = null;
@@ -6356,9 +6378,7 @@
       // Bound diagnostic storage; explicitly report any truncated early samples.
       if (measurementState.samples.length > 3000) {measurementState.samples.shift();measurementState.droppedSamples++;}
       measurementState.durationSeconds = Math.round((Date.now()-Date.parse(measurementState.startedAt))/1000);
-      if (sourcePhone && !measurementState.nativePhoneAt) measurementState.nativePhoneAt = at;
-      if (popupPhone && !measurementState.popupPhoneAt) measurementState.popupPhoneAt = at;
-      if (measurementState.nativePhoneAt && measurementState.popupPhoneAt) measurementState.phoneDelayMs = Date.parse(measurementState.popupPhoneAt)-Date.parse(measurementState.nativePhoneAt);
+      measurementState.recordingDurationSeconds=measurementState.durationSeconds;
       if (postCall && Date.now() - measurementState.postCallStartedAt >= 30000) {
         const saved = GM_getValue('genesys-v2-call-measurements', {calls:[]});
         const calls = Array.isArray(saved.calls) ? saved.calls : [];
