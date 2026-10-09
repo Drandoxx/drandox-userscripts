@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.552.0
+// @version      1.553.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -6084,6 +6084,13 @@
       .panel{position:fixed;top:78px;left:12px;right:12px;bottom:60px;max-width:960px;pointer-events:auto;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 32px #0006;overflow:hidden}header{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--head);border-bottom:1px solid var(--line)}h2{font-size:17px;margin:0}.actions{margin-left:auto;display:flex;gap:6px}.icon{display:grid;place-items:center;width:30px;height:30px;padding:0;border:0;background:transparent}.icon svg{width:18px;height:18px}.status{font-size:11px;color:var(--muted);padding:7px 14px;margin:0}
       .table-wrap{overflow:auto;flex:1;min-height:0;padding:0 12px 12px}table{width:100%;border-collapse:collapse;min-width:600px;font-size:12px}th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:top}th{position:sticky;top:0;background:var(--head);color:var(--muted);font-weight:500;user-select:none}.copy{display:inline-flex;vertical-align:middle;margin-left:6px;padding:2px;border:0;background:transparent;color:#22d3ee}.copy svg{width:16px;height:16px}.duration{white-space:nowrap}.estimated{color:var(--muted)}.confirmed{color:#22d3ee}@media(max-width:800px){.panel{top:70px}header{flex-wrap:wrap;padding:8px}h2{font-size:14px}}
     </style><button class="launcher" type="button" aria-expanded="false">My calls Today</button><section class="panel" role="dialog" aria-label="My calls Today" hidden><header><h2>My calls Today</h2><div class="actions"><button class="icon refresh" type="button" aria-label="Refresh my calls"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 7a7 7 0 0 1 12-1l2 3M18 17a7 7 0 0 1-12 1l-2-3"/></svg></button><button class="icon close" type="button" aria-label="Close my calls"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 6-12 12M6 6l12 12"/></svg></button></div></header><p class="status" role="status"></p><div class="table-wrap"><table><thead><tr><th>Date</th><th>Phone number</th><th>Duration</th><th>Location</th></tr></thead><tbody></tbody></table></div></section>`;
+    // Keep Lucide geometry outlined even if the global shadow-root theme styles paths.
+    const iconStyle=document.createElement('style');
+    iconStyle.textContent='svg,svg *{fill:none!important;stroke:currentColor!important;stroke-width:2!important;stroke-linecap:round!important;stroke-linejoin:round!important}.copy{min-width:24px;min-height:24px;align-items:center;justify-content:center}.copy svg{width:16px!important;height:16px!important}.icon svg{width:18px!important;height:18px!important}';root.append(iconStyle);
+    root.querySelector('th').textContent='Start time';
+    const refreshIcon=root.querySelector('.refresh svg');refreshIcon.setAttribute('class','lucide lucide-refresh-cw');
+    refreshIcon.innerHTML='<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>';
+    root.querySelector('.close svg').setAttribute('class','lucide lucide-x');
     document.body.append(host);
     const panel=root.querySelector('.panel'),launcher=root.querySelector('.launcher'),status=root.querySelector('.status'),tbody=root.querySelector('tbody');
     function copyCell(value,label) {
@@ -6441,7 +6448,7 @@
       if (doc.getElementById(id)) continue;
       const card = doc.createElement('section'); card.id = id;
       card.style.cssText = `position:fixed;right:${20+index%4*24}px;top:${80+index%6*42}px;width:300px;max-width:calc(100vw - 24px);max-height:70vh;overflow:auto;background:#1d2228;color:#e7f5f8;border:1px solid #22d3ee;border-radius:12px;z-index:2147483643;font:14px/1.5 system-ui`;
-      const heading = doc.createElement('div'); heading.textContent = 'Earlier Call data – ';
+      const heading = doc.createElement('div'); heading.textContent = 'After-Call data – ';
       const duration = doc.createElement('span'); duration.textContent = callDurationLabel(call); duration.style.color = '#8fb2bd'; heading.append(duration);
       heading.title = call.apiTiming?.confirmed ? 'Genesys-confirmed agent talk duration' : 'Duration estimated from watcher observations';
       if (call.apiTiming?.confirmed) duration.style.color = '#67e8f9';
@@ -6538,11 +6545,11 @@
     const heading = doc.createElement('div');
     heading.style.cssText = 'position:relative;padding:12px 42px 12px 16px;border-bottom:1px solid #22d3ee70;color:#67e8f9;font-weight:600;user-select:none;cursor:move;touch-action:none;overflow-wrap:anywhere';
     heading.textContent = lastCallSummary.wrapupComplete
-      ? `Earlier Call data – ${callDurationLabel(lastCallSummary)}`
-      : `Earlier Call data – ${callDurationLabel(lastCallSummary)}`;
+      ? `After-Call data – ${callDurationLabel(lastCallSummary)}`
+      : `After-Call data – ${callDurationLabel(lastCallSummary)}`;
     heading.title = lastCallSummary.wrapupComplete ? (lastCallSummary.apiTiming?.confirmed ? 'Genesys-confirmed agent talk duration' : 'Duration estimated from watcher observations') : '';
     if (lastCallSummary.wrapupComplete) {
-      heading.textContent = 'Earlier Call data – ';
+      heading.textContent = 'After-Call data – ';
       const duration = doc.createElement('span'); duration.textContent = callDurationLabel(lastCallSummary); duration.style.color = lastCallSummary.apiTiming?.confirmed ? '#67e8f9' : '#8fb2bd'; heading.append(duration);
     }
     const close = doc.createElement('button'); close.type = 'button'; close.textContent = '×'; close.setAttribute('aria-label', 'Close last call data');
