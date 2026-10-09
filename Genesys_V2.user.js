@@ -5929,13 +5929,13 @@
     if (!win || callNetworkBridges.has(win)) return;
     try {
       if (win.__gbsCallApiBridge) {callNetworkBridges.add(win);return;}
-      let authorization=null;
+      let authorization=null, stopped=false;
       const nativeFetch=win.fetch, proto=win.XMLHttpRequest.prototype;
       const NativeWebSocket=win.WebSocket;
       const originalOpen=proto.open, originalHeader=proto.setRequestHeader, originalSend=proto.send;
       const observed = url => {try{const u=new URL(url,win.location.href);return u.origin===CALL_API_ORIGIN?u:null;}catch(_){return null;}};
       const relevant = path => path==='/api/v2/users/me' || /^\/api\/v2\/analytics\/conversations\/(details\/query|[a-f0-9-]{36}\/details)$/.test(path) || /^\/api\/v2\/conversations(?:\/[a-f0-9-]{36}|\/calls)?$/.test(path);
-      const consume=(u,status,data)=>{if(relevant(u.pathname))rememberCallApi(u.pathname,status,data);};
+      const consume=(u,status,data)=>{if(!stopped && relevant(u.pathname))rememberCallApi(u.pathname,status,data);};
       const wrappedFetch=function(input,options) {
         const u=observed(typeof input==='string'?input:input?.url);
         if(u) {try{authorization=new win.Headers(options?.headers || input?.headers).get('authorization') || authorization;}catch(_){}}
@@ -5967,7 +5967,7 @@
             if(typeof event.data!=='string' || event.data.length>2000000)return;
             try {
               const message=JSON.parse(event.data),body=message.eventBody;
-              if(body?.participants && (body.id || body.conversationId))rememberCallApi('/api/v2/conversations/'+(body.conversationId || body.id),200,body);
+              if(!stopped && body?.participants && (body.id || body.conversationId))rememberCallApi('/api/v2/conversations/'+(body.conversationId || body.id),200,body);
             }catch(_){}
           });
           return socket;
@@ -5982,7 +5982,7 @@
           if(!response.ok)throw Error(`Call API HTTP ${response.status}`);
           return await response.json();
         } finally {window.clearTimeout(timeout);}
-      },stop:()=>{if(win.fetch===wrappedFetch)win.fetch=nativeFetch;if(proto.open===wrappedOpen)proto.open=originalOpen;if(proto.setRequestHeader===wrappedHeader)proto.setRequestHeader=originalHeader;if(proto.send===wrappedSend)proto.send=originalSend;if(win.WebSocket===wrappedSocket)win.WebSocket=NativeWebSocket;delete win.__gbsCallApiBridge;authorization=null;}};
+      },stop:()=>{stopped=true;if(win.fetch===wrappedFetch)win.fetch=nativeFetch;if(proto.open===wrappedOpen)proto.open=originalOpen;if(proto.setRequestHeader===wrappedHeader)proto.setRequestHeader=originalHeader;if(proto.send===wrappedSend)proto.send=originalSend;if(win.WebSocket===wrappedSocket)win.WebSocket=NativeWebSocket;delete win.__gbsCallApiBridge;authorization=null;}};
       win.__gbsCallApiBridge=bridge;callNetworkBridges.add(win);
     } catch (_) { /* Inaccessible frames remain handled by existing DOM logging. */ }
   }
