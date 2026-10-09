@@ -1,6 +1,6 @@
 {
     "ok":  true,
-    "checkedAt":  "2026-10-09T17:40:37.4145570Z",
+    "checkedAt":  "2026-10-09T17:43:09.0758518Z",
     "releases":  [
                      {
                          "id":  "sn-ai",
@@ -13,7 +13,7 @@
                      {
                          "id":  "genesys-v2",
                          "name":  "Genesys V2",
-                         "version":  "1.558.0",
+                         "version":  "1.559.0",
                          "available":  true,
                          "fileName":  "Genesys_V2.user.js",
                          "downloadUrl":  "https://raw.githubusercontent.com/Drandoxx/drandox-userscripts/main/Genesys_V2.user.js"
