@@ -6099,7 +6099,7 @@
       const signature=JSON.stringify([fresh.day,fresh.refreshedAt,rows]);if(signature===myCallsPanelCacheSignature)return;myCallsPanelCacheSignature=signature;tbody.replaceChildren();
       for(const c of rows) {
         const row=document.createElement('tr');row.dataset.conversationId=c.conversationId;row.title='Conversation ID: '+c.conversationId;
-        const date=document.createElement('td'),stamp=Date.parse(c.conversationStart);date.textContent=Number.isFinite(stamp)?new Intl.DateTimeFormat(undefined,{dateStyle:'short',timeStyle:'medium'}).format(new Date(stamp)):'—';
+        const date=document.createElement('td'),stamp=Date.parse(c.conversationStart);date.textContent=Number.isFinite(stamp)?new Intl.DateTimeFormat(undefined,{hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(new Date(stamp)):'—';
         const {phone,location}=myCallPhoneAndLocation(c),duration=document.createElement('td'),timing=agentApiTiming(c,currentAgentApiId || fresh.userId);
         duration.className='duration '+(timing?.confirmed?'confirmed':'estimated');
         const own=c.participants.find(p=>p.userId===(currentAgentApiId || fresh.userId)),connected=Date.parse(own?.connectedTime || own?.calls?.find(x=>x.connectedTime)?.connectedTime);
@@ -6109,8 +6109,25 @@
       if(!rows.length) {const row=document.createElement('tr'),cell=document.createElement('td');cell.colSpan=4;cell.textContent='No calls recorded for you today.';row.append(cell);tbody.append(row);}
       status.textContent=`${fresh.userName || currentAgentName(document)} • ${rows.length} calls • ${fresh.refreshedAt?'Updated '+new Date(fresh.refreshedAt).toLocaleTimeString():'Cached data'}${fresh.truncated?' • cache limit reached':''}`;
     };
-    launcher.addEventListener('click',()=>{panel.hidden=!panel.hidden;launcher.setAttribute('aria-expanded',String(!panel.hidden));if(!panel.hidden){myCallsPanelCacheSignature='';myCallsPanelRender();void refreshTodayCallCache();}});
-    root.querySelector('.close').addEventListener('click',()=>{panel.hidden=true;launcher.setAttribute('aria-expanded','false');launcher.focus();});
+    // Match SN AI's launcher-origin expansion; epochs prevent a stale close from hiding a reopened panel.
+    let animation=null,epoch=0,closing=false;
+    async function togglePanel(open) {
+      const current=++epoch;animation?.cancel();closing=!open;
+      launcher.setAttribute('aria-expanded',String(open));
+      if(open) {
+        panel.hidden=false;myCallsPanelCacheSignature='';myCallsPanelRender();void refreshTodayCallCache();
+        const anchor=launcher.getBoundingClientRect(),rect=panel.getBoundingClientRect();
+        panel.style.transformOrigin=`${Math.max(0,Math.min(rect.width,anchor.left+anchor.width/2-rect.left))}px ${Math.max(0,Math.min(rect.height,anchor.top+anchor.height/2-rect.top))}px`;
+      }
+      panel.style.pointerEvents='none';
+      animation=panel.animate(open?[{transform:'scale(.06)',opacity:.2},{transform:'scale(1)',opacity:1}]:[{transform:'scale(1)',opacity:1},{transform:'scale(.06)',opacity:.16}],{duration:matchMedia('(prefers-reduced-motion: reduce)').matches?0:open?240:220,easing:open?'cubic-bezier(.2,.82,.24,1)':'cubic-bezier(.55,.02,.78,.28)',fill:'both'});
+      await animation.finished.catch(()=>{});
+      if(current!==epoch)return;
+      animation.cancel();animation=null;panel.hidden=!open;panel.style.pointerEvents='';closing=false;
+      if(!open)launcher.focus();
+    }
+    launcher.addEventListener('click',()=>{void togglePanel(panel.hidden||closing);});
+    root.querySelector('.close').addEventListener('click',()=>{void togglePanel(false);});
     root.querySelector('.refresh').addEventListener('click',async()=>{status.textContent='Refreshing…';try{await refreshTodayCallCache(true);}finally{myCallsPanelCacheSignature='';myCallsPanelRender();}});
   }
   let measurementPreviousFields = {}, measurementPersistedAt = 0;
