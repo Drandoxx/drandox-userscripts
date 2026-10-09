@@ -5870,6 +5870,7 @@
     }
     if (!projected.length) return;
     const cache=readTodayCallCache();
+    const liveCandidates=projected.filter(c=>c.participants.some(p=>p.purpose==='agent' && p.userId===currentAgentApiId && (p.state==='connected' || p.calls?.some(x=>['connected','alerting','contacting'].includes(x.state)))));
     for(const c of projected) {
       if (callDayKey(new Date(c.conversationStart))!==cache.day) continue;
       const old=cache.conversations[c.conversationId] || {};
@@ -5878,7 +5879,7 @@
       if (!analytics && currentAgentApiId && activeCallSummary) {
         const own=c.participants.find(p=>p.purpose==='agent' && p.userId===currentAgentApiId);
         const connected=own?.state==='connected' || own?.calls?.some(x=>['connected','alerting','contacting'].includes(x.state));
-        if (connected && !activeCallSummary.conversationId) {activeCallSummary.conversationId=c.conversationId;activeCallSummary.apiUserId=currentAgentApiId;saveActiveCallWindow();}
+        if (connected && liveCandidates.length===1 && !activeCallSummary.conversationId) {activeCallSummary.conversationId=c.conversationId;activeCallSummary.apiUserId=currentAgentApiId;saveActiveCallWindow();}
       }
     }
     cache.savedAt=Date.now();
@@ -5974,6 +5975,8 @@
       if(!currentAgentApiId)rememberCallApi('/api/v2/users/me',200,await bridge.request('/api/v2/users/me'));
       const interval=todayCallInterval();
       for(let page=1;page<=20;page++) {
+        if(GM_getValue(key,{})?.token!==token)break;
+        GM_setValue(key,{token,expires:Date.now()+55000});
         const data=await bridge.request('/api/v2/analytics/conversations/details/query',{interval,order:'desc',orderBy:'conversationStart',paging:{pageSize:100,pageNumber:page},segmentFilters:[{type:'and',predicates:[{dimension:'userId',value:currentAgentApiId}]}]});
         rememberCallApi('/api/v2/analytics/conversations/details/query',200,data);
         if((data.conversations || []).length<100 || page*100>=data.totalHits)break;
@@ -6259,6 +6262,34 @@
     const hours = Math.floor(seconds / 3600), minutes = Math.floor(seconds % 3600 / 60);
     return `${hours ? String(hours).padStart(2,'0') + ':' : ''}${String(minutes).padStart(2,'0')}:${String(seconds % 60).padStart(2,'0')}`;
   }
+  function callPhoneKey(call) {
+    return call?.details?.find(([label])=>/phone number/i.test(label))?.[1]?.replace(/\D/g,'') || '';
+  }
+  let nativeCallTimerElement = null;
+  function updateCallClockDisplay() {
+    if(window!==window.top)return;
+    const timer=document.querySelector('#gbs-last-call-data [role="timer"]');
+    if(lastCallSummary && !lastCallSummary.wrapupComplete) {
+      const text=nativeCallTimerElement?.isConnected ? nativeCallTimerElement.textContent.trim() : '';
+      if(/^\d+:\d{2}$/.test(text) && text!==lastCallSummary.nativeCountdown) {
+        const [m,s]=text.split(':').map(Number);
+        lastCallSummary.nativeCountdown=text;lastCallSummary.wrapupSeconds=m*60+s;lastCallSummary.wrapupObservedAt=Date.now();
+      }
+      const left=Math.max(0,lastCallSummary.wrapupSeconds-Math.floor((Date.now()-lastCallSummary.wrapupObservedAt)/1000));
+      const label=String(Math.floor(left/60)).padStart(2,'0')+':'+String(left%60).padStart(2,'0');
+      if(timer && timer.textContent!==label)timer.textContent=label;
+      if(left===0) {
+        timer?.parentElement?.remove();lastCallSummary.wrapupComplete=true;saveLastCallWindow();
+        if(!activeCallSummary)closeWorkspaceForWrapup(document);
+        syncLastCallDataPopup(document,null);
+      }
+    }
+    const live=document.querySelector('#gbs-call-information [data-gbs-live-duration]');
+    if(live && activeCallSummary?.connectedAt) {
+      const text=callDurationLabel({startedAt:activeCallSummary.connectedAt,endedAt:Date.now()});
+      if(live.textContent!==text)live.textContent=text;
+    }
+  }
   const LAST_CALL_WINDOW_KEY = 'genesys-v2-last-call-window';
   const LAST_CALL_WINDOW_TTL = 2 * 60 * 60 * 1000;
   let lastCallSummary = null;
@@ -6323,12 +6354,13 @@
       return;
     }
     let popup = doc.getElementById('gbs-last-call-data');
-    // Never show an earlier-call card alongside a new active call.
-    if (activeCallSummary) { popup?.remove(); return; }
+    // A different caller must not hide the previous call's data.
+    if (activeCallSummary && callPhoneKey(activeCallSummary) && callPhoneKey(activeCallSummary)===callPhoneKey(lastCallSummary)) { popup?.remove(); return; }
     // User-closed cards are removed; completed cards no longer expire.
     if (!lastCallSummary || lastCallSummary.dismissed) { popup?.remove(); return; }
     if (popup?.__gbsDragging) return;
     const liveDuration = wrapup?.querySelector('[data-testid="wrapup-header-message-duration"]')?.textContent?.trim();
+    if(wrapup) nativeCallTimerElement=wrapup.querySelector('[data-testid="wrapup-header-message-duration"]');
     if (!lastCallSummary.wrapupComplete && liveDuration && /^\d{1,2}:\d{2}$/.test(liveDuration)) {
       const [minutes, seconds] = liveDuration.split(':').map(Number);
       if (lastCallSummary.nativeCountdown !== liveDuration) {
@@ -6346,7 +6378,7 @@
     }
     // Reuse the existing card, preserving its screen position across phases.
     if (!popup) {
-      popup = doc.getElementById('gbs-call-information');
+      popup = activeCallSummary ? null : doc.getElementById('gbs-call-information');
       if (popup) { popup.id = 'gbs-last-call-data'; delete popup.dataset.details; }
     }
     doc.querySelectorAll('#gbs-last-call-data').forEach(element => { if (element !== popup) element.remove(); });
@@ -6519,7 +6551,7 @@
     if (details.size) activeCallSummary.details = [...details];
     else for (const [label, value] of activeCallSummary.details) details.set(label, value);
     saveActiveCallWindow();
-    doc.getElementById('gbs-last-call-data')?.remove();
+    syncLastCallDataPopup(doc, null);
     if (!popup) {
       popup = doc.createElement('section');
       popup.id = 'gbs-call-information';
@@ -6581,6 +6613,7 @@
       return { ...control, native, label: control.mute ? (muted ? 'Unmute' : 'Mute') : control.hangup ? 'Hang up' : nativeLabel || control.fallback };
     });
     const signature = JSON.stringify([...details]) + state + Boolean(snowAction)
+      + Boolean(activeCallSummary?.connectedAt)
       + (incoming ? Math.floor((Date.now() - (testCallSession?.startedMs || Date.now())) / 1000) : '')
       + JSON.stringify(callControls.map(control => [control.label, Boolean(control.native), control.native?.disabled, control.native?.getAttribute('aria-disabled'), control.native?.getAttribute('aria-pressed')]));
     if (popup.dataset.details === signature) return;
@@ -6626,6 +6659,11 @@
       }
       row.append(title, content);
       body.appendChild(row);
+    }
+    if (!incoming && activeCallSummary?.connectedAt) {
+      const timer=doc.createElement('div'); timer.dataset.gbsLiveDuration='true';timer.style.cssText='color:#8fb2bd;font-size:12px;user-select:none;margin:8px 0';
+      timer.title='Elapsed time from the connected timestamp; final talk duration is confirmed by Genesys';
+      timer.textContent=callDurationLabel({startedAt:activeCallSummary.connectedAt,endedAt:Date.now()});body.append(timer);
     }
     if (incoming || snowAction || callTestEnabled(doc)) {
       const button = doc.createElement('button');
@@ -9475,6 +9513,7 @@ function fitDashboardMetricSpacing(doc) {
     void refreshTodayCallCache();
     void refreshLiveCallApi();
   }, 5000);
+  const callClockTimer=window.setInterval(updateCallClockDisplay,250);
   document.addEventListener('click', recordIncomingCallAction, true);
   const incomingCallTimer = window.setInterval(() => {
     watchIncomingCall(document);
@@ -9496,6 +9535,7 @@ function fitDashboardMetricSpacing(doc) {
     window.clearInterval(timer);
     window.clearInterval(identityTimer);
     window.clearInterval(callApiTimer);
+    window.clearInterval(callClockTimer);
     for (const win of callNetworkBridges) try { win.__gbsCallApiBridge?.stop(); } catch (_) {}
     callNetworkBridges.clear();
     window.clearInterval(incomingCallTimer);
