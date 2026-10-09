@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.462
+// @version      2.36.463
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -20314,7 +20314,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.460' });
+    addLog('info', 'helper-version', { version: '2.36.463' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -22215,6 +22215,7 @@ function installChatsTodayPanel() {
   </style><button type="button" class="launcher" aria-expanded="false" aria-controls="chats-today-panel">Chats Today</button><section class="panel" id="chats-today-panel" role="dialog" aria-label="Chats Today" hidden><header><h2>Chats Today</h2><div class="actions"><button type="button" class="refresh" aria-label="Refresh Chats Today">Refresh</button><button type="button" class="icon close" aria-label="Close Chats Today"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m18 6-12 12M6 6l12 12"/></svg></button></div></header><p class="status" role="status">Not loaded yet</p><div class="groups"></div></section>`;
   const launcher=root.querySelector('.launcher'),panel=root.querySelector('.panel'),status=root.querySelector('.status'),groups=root.querySelector('.groups'),refresh=root.querySelector('.refresh');
   const reset=document.createElement('button');reset.type='button';reset.className='reset';reset.textContent='Reset';reset.title='Restore automatic ordering for all agents';refresh.before(reset);
+  const alignmentStyle=document.createElement('style');alignmentStyle.textContent='th,td{vertical-align:middle}.groups{scrollbar-gutter:stable}.record-pair-line .time-arrow{top:auto;right:auto;transform:none!important;align-items:center;justify-content:center}';root.append(alignmentStyle);
   const numberStyle=document.createElement('style');numberStyle.textContent='.number,.number:hover{background:color-mix(in srgb,currentColor 12%,transparent);border-radius:4px;box-shadow:0 0 0 3px color-mix(in srgb,currentColor 12%,transparent)}.number,.number:hover,.number:focus,.number:focus-visible,.number:active,.number *{text-decoration:none!important}.number.event-link{color:var(--sn-theme-9de2f5)}.number.ticket-link{color:#e7ca87}.record-pair-line{height:28px;display:flex;align-items:center;justify-content:space-between;gap:10px}.record-pair-line .time-arrow{position:static;display:inline-flex;flex:0 0 16px}';root.append(numberStyle);
   let refreshFeedbackRunning=false;
   async function showRefreshSuccess(){
@@ -22257,7 +22258,8 @@ function installChatsTodayPanel() {
     // Never cover the Inbox, even if the remaining report area is narrow.
     const left=Math.min(innerWidth-20,Math.max(12,inboxRight+12));
     panel.style.left='auto';panel.style.right='12px';
-    panel.style.width=Math.min(Math.max(330,contentWidth+30),Math.max(20,innerWidth-left-12))+'px';
+    // Include group padding, borders and the vertical scrollbar gutter.
+    panel.style.width=Math.min(Math.max(330,contentWidth+52),Math.max(20,innerWidth-left-12))+'px';
     panel.style.top=Math.min(78,Math.max(8,innerHeight*.12))+'px';
   }
   function schedulePosition(){if(!panel.hidden&&!layoutFrame)layoutFrame=requestAnimationFrame(()=>{layoutFrame=0;position();});}
@@ -22284,7 +22286,7 @@ function installChatsTodayPanel() {
       detail.addEventListener('toggle',()=>{if(detail.open)expanded.add(group.id);else expanded.delete(group.id);});
       const wrap=document.createElement('div');wrap.className='table-wrap';const table=document.createElement('table');
       const columns=document.createElement('colgroup');
-      for(const width of widths){const column=document.createElement('col');column.style.width=width+'px';columns.append(column);}table.append(columns);table.style.width=contentWidth+'px';table.style.minWidth=contentWidth+'px';
+      widths.forEach((width,index)=>{const column=document.createElement('col');if(SN_AI_CHATS_TODAY_COLUMNS[index][1]!=='short_description')column.style.width=width+'px';columns.append(column);});table.append(columns);table.style.width='100%';table.style.minWidth=Math.max(0,contentWidth-widths[6]+100)+'px';
       const head=document.createElement('thead'),headRow=document.createElement('tr');
       const icons=['hash','user','timer','log-in','log-out','clock','align-left','hash','hash'];
       SN_AI_CHATS_TODAY_COLUMNS.forEach(([label,field],index)=>{
