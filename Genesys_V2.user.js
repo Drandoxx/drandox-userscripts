@@ -5863,11 +5863,12 @@
           else if(value!==undefined)fields[key]=value;
         };
         flatten(c,'');
-        const old=callNetworkFields.get(c.conversationId) || {},changes={},removed=[];
+        const fieldKey=path+':'+c.conversationId;
+        const old=callNetworkFields.get(fieldKey) || {},changes={},removed=[];
         for(const [key,value]of Object.entries(fields))if(old[key]!==value)changes[key]=value;
         for(const key of Object.keys(old))if(!(key in fields))removed.push(key);
         if(Object.keys(changes).length || removed.length)callNetworkChanges.push({at:new Date().toISOString(),path,status,id:c.conversationId,changes,removed});
-        callNetworkFields.set(c.conversationId,fields);
+        callNetworkFields.set(fieldKey,fields);
       }
       while(callNetworkFields.size>50)callNetworkFields.delete(callNetworkFields.keys().next().value);
       while(callNetworkChanges.length>120)callNetworkChanges.shift();
@@ -5975,9 +5976,12 @@
       }
       const bridge={ready:()=>!!authorization,request:async(path,body)=>{
         if(!authorization)throw Error('Waiting for native Genesys authentication');
-        const response=await nativeFetch.call(win,CALL_API_ORIGIN+path,{method:body?'POST':'GET',headers:{Authorization:authorization,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
-        if(!response.ok)throw Error(`Call API HTTP ${response.status}`);
-        return response.json();
+        const controller=new win.AbortController(),timeout=window.setTimeout(()=>controller.abort(),15000);
+        try {
+          const response=await nativeFetch.call(win,CALL_API_ORIGIN+path,{signal:controller.signal,method:body?'POST':'GET',headers:{Authorization:authorization,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
+          if(!response.ok)throw Error(`Call API HTTP ${response.status}`);
+          return await response.json();
+        } finally {window.clearTimeout(timeout);}
       },stop:()=>{if(win.fetch===wrappedFetch)win.fetch=nativeFetch;if(proto.open===wrappedOpen)proto.open=originalOpen;if(proto.setRequestHeader===wrappedHeader)proto.setRequestHeader=originalHeader;if(proto.send===wrappedSend)proto.send=originalSend;if(win.WebSocket===wrappedSocket)win.WebSocket=NativeWebSocket;delete win.__gbsCallApiBridge;authorization=null;}};
       win.__gbsCallApiBridge=bridge;callNetworkBridges.add(win);
     } catch (_) { /* Inaccessible frames remain handled by existing DOM logging. */ }
@@ -6001,6 +6005,7 @@
     const key='genesys-v2-call-api-request-lock',token=Date.now()+':'+Math.random();
     if(GM_getValue(key,{expires:0}).expires>Date.now())return;
     GM_setValue(key,{token,expires:Date.now()+55000});
+    await new Promise(resolve=>window.setTimeout(resolve,25));
     if(GM_getValue(key,{})?.token!==token)return;
     callCacheBusy=true;
     try {
@@ -9595,6 +9600,7 @@ function fitDashboardMetricSpacing(doc) {
   installAvatarShadowStyleHook(document);
   resetLayoutPreferencesOnce(document);
   MANAGED_DOCUMENTS.add(document);
+  if(window===window.top)installCallNetworkBridge(PAGE_WINDOW);
   tick();
   // The app becomes usable before its optional nested web components are
   // present. Delay their expensive full-tree Shadow DOM scan until idle.
