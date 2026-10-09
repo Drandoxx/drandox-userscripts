@@ -5077,6 +5077,7 @@
     });
     const measurementInfoTimer = setInterval(() => {
       if (!measurementInfo.isConnected) { clearInterval(measurementInfoTimer); return; }
+      if (callCardDragging) return;
       refreshMeasurementInfo();
     },1000);
     lastCall.append(title, info, historyDownload, measurementDownload, measurementInfo, removeMeasurements); body.appendChild(lastCall);
@@ -5926,17 +5927,19 @@
       if (Object.keys(delta.changes).length || delta.removed.length) measurementState.samples.push(delta);
       // Bound diagnostic storage; explicitly report any truncated early samples.
       if (measurementState.samples.length > 3000) {measurementState.samples.shift();measurementState.droppedSamples++;}
-      const saved = GM_getValue('genesys-v2-call-measurements', {calls:[]});
-      const calls = Array.isArray(saved.calls) ? saved.calls : [];
       measurementState.durationSeconds = Math.round((Date.now()-Date.parse(measurementState.startedAt))/1000);
       if (sourcePhone && !measurementState.nativePhoneAt) measurementState.nativePhoneAt = at;
       if (popupPhone && !measurementState.popupPhoneAt) measurementState.popupPhoneAt = at;
       if (measurementState.nativePhoneAt && measurementState.popupPhoneAt) measurementState.phoneDelayMs = Date.parse(measurementState.popupPhoneAt)-Date.parse(measurementState.nativePhoneAt);
       if (postCall && Date.now() - measurementState.postCallStartedAt >= 30000) {
+        const saved = GM_getValue('genesys-v2-call-measurements', {calls:[]});
+        const calls = Array.isArray(saved.calls) ? saved.calls : [];
         measurementState.endedAt = at; calls.push(measurementState);
         GM_setValue('genesys-v2-call-measurements', {calls:calls.slice(-50),active:null});
         measurementState = null;
       } else if (Date.now() - measurementPersistedAt >= 10000) {
+        const saved = GM_getValue('genesys-v2-call-measurements', {calls:[]});
+        const calls = Array.isArray(saved.calls) ? saved.calls : [];
         GM_setValue('genesys-v2-call-measurements', {calls,active:measurementState}); measurementPersistedAt = Date.now();
       }
       measurementLastSave = Date.now();
