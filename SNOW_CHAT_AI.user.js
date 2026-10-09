@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.460
+// @version      2.36.461
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -22155,7 +22155,9 @@ const SN_AI_CHATS_TODAY_COLUMNS=[
 function chatsTodayColumnWidths(records,measure) {
   return SN_AI_CHATS_TODAY_COLUMNS.map(([label,field])=>{
     const sortable=['wait_time','opened_at','closed_at','duration'].includes(field);
-    let width=measure(field==='wait_time'?'':label,true)+18+(sortable?18:0);
+    // Include the Lucide icon/gap, both cell paddings and the last column's extra padding.
+    const cellPadding=field==='ticket_numbers'?28:16;
+    let width=measure(field==='wait_time'?'':label,true)+18+cellPadding+4+(sortable?18:0);
     for(const record of records){
       const value=field==='duration'?chatsTodayDuration(record):field==='wait_time'?chatsTodayWaitTime(record[field]):['opened_at','closed_at'].includes(field)?chatsTodayTime(record[field]):chatsTodayValue(record[field],true)||'—';
       const arrow=(field==='opened_at'&&chatsTodayTime(record.opened_at)!=='—'&&chatsTodayTime(record.closed_at)!=='—'||field==='event_numbers'&&record.event_numbers&&record.ticket_numbers)?20:0;
@@ -22236,7 +22238,7 @@ function installChatsTodayPanel() {
   refresh.classList.add('icon');refresh.title='Refresh Chats Today';
   refresh.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-refresh-cw"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>';
   const iconStyle=document.createElement('style');
-  iconStyle.textContent='th .column-heading{display:flex;align-items:center;gap:5px}th svg{width:13px;height:13px;flex:0 0 13px}td.time-open{position:relative;padding-right:26px}.time-arrow{position:absolute;right:6px;top:50%;transform:translateY(-50%);display:flex;color:var(--sn-theme-a8b8d1,#beb0d1);pointer-events:none}.time-arrow svg{width:14px;height:14px}';
+  iconStyle.textContent='th .column-heading{display:flex;align-items:center;gap:5px;white-space:nowrap}th svg{width:13px;height:13px;flex:0 0 13px}td.time-open{position:relative;padding-right:26px}.time-arrow{position:absolute;right:6px;top:50%;transform:translateY(-50%);display:flex;color:var(--sn-theme-a8b8d1,#beb0d1);pointer-events:none}.time-arrow svg{width:14px;height:14px}';
   root.append(iconStyle);
   iconStyle.textContent+='table .description{white-space:nowrap}';
   iconStyle.textContent+='summary,thead{user-select:none}th:last-child,td:last-child{padding-right:20px}.number.ongoing{color:var(--agent-available,#91d6b2);background:color-mix(in srgb,currentColor 12%,transparent);border-radius:4px;box-shadow:0 0 0 3px color-mix(in srgb,currentColor 12%,transparent)}.sort-button{display:flex;align-items:center;gap:5px;border:0;border-radius:0;background:transparent;padding:0;color:inherit;text-align:left}.sort-button:hover{background:transparent}.sort-button .column-heading{gap:5px}';
