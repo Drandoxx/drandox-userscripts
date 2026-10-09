@@ -5852,7 +5852,7 @@
       currentAgentApiId=data.id;
       const cache=readTodayCallCache();
       if(cache.userId && cache.userId!==data.id)cache.conversations={};
-      cache.userId=data.id;GM_setValue(CALL_CACHE_KEY,cache);return;
+      cache.userId=data.id;cache.userName=data.name || currentAgentName(document);GM_setValue(CALL_CACHE_KEY,cache);return;
     }
     const raw = data?.conversations || data?.entities || (data?.conversationId || data?.participants ? [data] : []);
     const projected = raw.map(compactApiConversation).filter(Boolean);
@@ -6033,6 +6033,71 @@
       const path=activeCallSummary.conversationId ? `/api/v2/conversations/${activeCallSummary.conversationId}` : '/api/v2/conversations/calls?communicationType=call';
       rememberCallApi(path.split('?')[0],200,await bridge.request(path));
     } catch(_){} finally {liveApiBusy=false;}
+  }
+  function myTodayCallRows(cache,userId,userName) {
+    const normalized=String(userName || '').trim().toLowerCase();
+    return Object.values(cache.conversations || {}).map(entry=>entry.analytics || entry.live).filter(c=>c && c.participants.some(p=>
+      p.purpose==='agent' && (userId ? p.userId===userId : normalized && String(p.name || '').trim().toLowerCase()===normalized)))
+      .sort((a,b)=>Date.parse(b.conversationStart)-Date.parse(a.conversationStart));
+  }
+  function myCallPhoneAndLocation(c) {
+    const customers=c.participants.filter(p=>p.purpose==='customer' || p.purpose==='external');
+    const candidates=customers.flatMap(p=>[p.address,...(p.sessions || []).flatMap(s=>[s.ani,s.dnis])]).filter(Boolean);
+    const phone=candidates.map(value=>String(value).match(/\+\d[\d ()-]{5,}\d/)?.[0]?.replace(/[ ()-]/g,'')).find(Boolean) || '';
+    const location=customers.map(p=>p.name).find(value=>value && !/^\+?[\d ()-]+$/.test(value) && !/^(tel|sip):/i.test(value)) || '';
+    return {phone,location};
+  }
+  function myCallDurationText(ms) {
+    if(!Number.isFinite(ms))return '—';
+    const seconds=Math.max(0,Math.round(ms/1000));
+    return `${String(Math.floor(seconds/3600)).padStart(2,'0')}:${String(Math.floor(seconds%3600/60)).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`;
+  }
+  let myCallsPanelRender = null, myCallsPanelCacheSignature = '';
+  function ensureMyCallsTodayPanel() {
+    if(window!==window.top || !document.body)return;
+    const cache=readTodayCallCache(),name=currentAgentName(document);
+    const compatible=cache.userId && (!cache.userName || !name || String(cache.userName).trim().toLowerCase()===name);
+    let host=document.getElementById('gbs-my-calls-today');
+    if(!compatible) {host?.remove();myCallsPanelRender=null;return;}
+    if(host) {host.dataset.theme=themeMode(document);return;}
+    host=document.createElement('div');host.id='gbs-my-calls-today';
+    // SN AI Chats Today's isolated launcher/panel pattern: no input-blocking backdrop.
+    host.style.cssText='position:fixed;inset:0;z-index:2147483000;pointer-events:none';host.dataset.theme=themeMode(document);
+    const root=host.attachShadow({mode:'open'});
+    root.innerHTML=`<style>
+      :host{font:13px/1.4 system-ui;color:#e7f5f8;--panel:#1d2228;--head:#242a30;--line:#397382;--muted:#8fb2bd}*{box-sizing:border-box}[hidden]{display:none!important}:host([data-theme="light"]){color:#182c35;--panel:#f5fafb;--head:#e1eef1;--line:#70a5af;--muted:#466a76}
+      button{font:inherit;color:inherit;border:1px solid var(--line);border-radius:7px;background:var(--head);padding:6px 10px;cursor:pointer}button:hover{background:#22d3ee25}button:focus-visible{outline:2px solid #22d3ee;outline-offset:2px}.launcher{position:fixed;left:16px;bottom:14px;pointer-events:auto;color:#67e8f9;border-color:#22d3ee;box-shadow:0 4px 16px #0005}:host([data-theme="light"]) .launcher{color:#006878}
+      .panel{position:fixed;top:78px;left:12px;right:12px;bottom:60px;max-width:960px;pointer-events:auto;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 32px #0006;overflow:hidden}header{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--head);border-bottom:1px solid var(--line)}h2{font-size:17px;margin:0}.actions{margin-left:auto;display:flex;gap:6px}.icon{display:grid;place-items:center;width:30px;height:30px;padding:0;border:0;background:transparent}.icon svg{width:18px;height:18px}.status{font-size:11px;color:var(--muted);padding:7px 14px;margin:0}
+      .table-wrap{overflow:auto;flex:1;min-height:0;padding:0 12px 12px}table{width:100%;border-collapse:collapse;min-width:600px;font-size:12px}th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:top}th{position:sticky;top:0;background:var(--head);color:var(--muted);font-weight:500;user-select:none}.copy{display:inline-flex;vertical-align:middle;margin-left:6px;padding:2px;border:0;background:transparent;color:#22d3ee}.copy svg{width:16px;height:16px}.duration{white-space:nowrap}.estimated{color:var(--muted)}.confirmed{color:#22d3ee}@media(max-width:800px){.panel{top:70px}header{flex-wrap:wrap;padding:8px}h2{font-size:14px}}
+    </style><button class="launcher" type="button" aria-expanded="false">My calls Today</button><section class="panel" role="dialog" aria-label="My calls Today" hidden><header><h2>My calls Today</h2><div class="actions"><button class="icon refresh" type="button" aria-label="Refresh my calls"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 7a7 7 0 0 1 12-1l2 3M18 17a7 7 0 0 1-12 1l-2-3"/></svg></button><button class="icon close" type="button" aria-label="Close my calls"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 6-12 12M6 6l12 12"/></svg></button></div></header><p class="status" role="status"></p><div class="table-wrap"><table><thead><tr><th>Date</th><th>Phone number</th><th>Duration</th><th>Location</th></tr></thead><tbody></tbody></table></div></section>`;
+    document.body.append(host);
+    const panel=root.querySelector('.panel'),launcher=root.querySelector('.launcher'),status=root.querySelector('.status'),tbody=root.querySelector('tbody');
+    function copyCell(value,label) {
+      const cell=document.createElement('td');cell.append(document.createTextNode(value || '—'));
+      if(value) {const button=document.createElement('button');button.type='button';button.className='copy';button.setAttribute('aria-label','Copy '+label);
+        const icon='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="lucide lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2"/></svg>';button.innerHTML=icon;
+        button.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(value);button.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="lucide lucide-check"><path d="M20 6 9 17l-5-5"/></svg>';setTimeout(()=>{if(button.isConnected)button.innerHTML=icon;},1600);}catch(_){button.title='Copy failed';}});cell.append(button);}
+      return cell;
+    }
+    myCallsPanelRender=()=>{
+      if(panel.hidden || callCardDragging)return;
+      const fresh=readTodayCallCache(),rows=myTodayCallRows(fresh,currentAgentApiId || fresh.userId,currentAgentName(document));
+      const signature=JSON.stringify([fresh.day,fresh.refreshedAt,rows]);if(signature===myCallsPanelCacheSignature)return;myCallsPanelCacheSignature=signature;tbody.replaceChildren();
+      for(const c of rows) {
+        const row=document.createElement('tr');row.dataset.conversationId=c.conversationId;row.title='Conversation ID: '+c.conversationId;
+        const date=document.createElement('td'),stamp=Date.parse(c.conversationStart);date.textContent=Number.isFinite(stamp)?new Intl.DateTimeFormat(undefined,{dateStyle:'short',timeStyle:'medium'}).format(new Date(stamp)):'—';
+        const {phone,location}=myCallPhoneAndLocation(c),duration=document.createElement('td'),timing=agentApiTiming(c,currentAgentApiId || fresh.userId);
+        duration.className='duration '+(timing?.confirmed?'confirmed':'estimated');
+        const own=c.participants.find(p=>p.userId===(currentAgentApiId || fresh.userId)),connected=Date.parse(own?.connectedTime || own?.calls?.find(x=>x.connectedTime)?.connectedTime);
+        duration.textContent=myCallDurationText(timing?.confirmed?timing.talkMs:Number.isFinite(connected)?Math.max(0,Date.now()-connected):timing?.talkMs);duration.title=timing?.confirmed?'Genesys-confirmed agent talk duration':'Provisional agent duration; awaiting completed analytics';
+        row.append(date,copyCell(phone,'phone number'),duration,copyCell(location,'location'));tbody.append(row);
+      }
+      if(!rows.length) {const row=document.createElement('tr'),cell=document.createElement('td');cell.colSpan=4;cell.textContent='No calls recorded for you today.';row.append(cell);tbody.append(row);}
+      status.textContent=`${fresh.userName || currentAgentName(document)} • ${rows.length} calls • ${fresh.refreshedAt?'Updated '+new Date(fresh.refreshedAt).toLocaleTimeString():'Cached data'}${fresh.truncated?' • cache limit reached':''}`;
+    };
+    launcher.addEventListener('click',()=>{panel.hidden=!panel.hidden;launcher.setAttribute('aria-expanded',String(!panel.hidden));if(!panel.hidden){myCallsPanelCacheSignature='';myCallsPanelRender();void refreshTodayCallCache();}});
+    root.querySelector('.close').addEventListener('click',()=>{panel.hidden=true;launcher.setAttribute('aria-expanded','false');launcher.focus();});
+    root.querySelector('.refresh').addEventListener('click',async()=>{status.textContent='Refreshing…';try{await refreshTodayCallCache(true);}finally{myCallsPanelCacheSignature='';myCallsPanelRender();}});
   }
   let measurementPreviousFields = {}, measurementPersistedAt = 0;
   function compactMeasurement(sample) {
@@ -6906,13 +6971,13 @@
           const style = doc.defaultView.getComputedStyle(modal);
           return bounds.width > 0 && bounds.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
         });
-      if (themeMode(doc) !== 'light' && panelVisible && !modalOpen) {
+      if ((themeMode(doc) !== 'light' && panelVisible || popupOnlyCallEnabled(doc)) && !modalOpen) {
         for (let wrapper = host; wrapper && !wrapper.matches('main.center-stage'); wrapper = wrapper.parentElement) {
           if (wrapper.hasAttribute('inert')) wrapper.removeAttribute('inert');
         }
       }
       const stage = host.closest('main.center-stage');
-      if (!stage || (panel && agentWorkspaceIsFullscreen(panel))) {
+      if (!stage || (!callTestEnabled(doc) && panel && agentWorkspaceIsFullscreen(panel))) {
         ['width', 'flex', 'max-width', 'float'].forEach(property => {
           if (host.style.getPropertyValue(property)) host.style.removeProperty(property);
         });
@@ -6972,6 +7037,7 @@
   }
 
   function startAgentWorkspaceOpenAnimation(doc, toggle) {
+    if(callTestEnabled(doc))return;
     const body = doc.body;
     if (!body || body.dataset.gbsAgentWorkspaceOpening === 'true') return;
     const targetWidth = Math.round(savedAgentWorkspaceRatio(doc) * (doc.defaultView.innerWidth || 1200));
@@ -9570,6 +9636,7 @@ function fitDashboardMetricSpacing(doc) {
     discoverCallNetworkBridges();
     void refreshTodayCallCache();
     void refreshLiveCallApi();
+    ensureMyCallsTodayPanel();myCallsPanelRender?.();
   }, 5000);
   const callClockTimer=window.setInterval(updateCallClockDisplay,250);
   document.addEventListener('click', recordIncomingCallAction, true);
@@ -9598,6 +9665,7 @@ function fitDashboardMetricSpacing(doc) {
     window.clearInterval(callClockTimer);
     for (const win of callNetworkBridges) try { win.__gbsCallApiBridge?.stop(); } catch (_) {}
     callNetworkBridges.clear();
+    document.getElementById('gbs-my-calls-today')?.remove();myCallsPanelRender=null;
     window.clearInterval(incomingCallTimer);
     document.removeEventListener('click', recordIncomingCallAction, true);
     document.getElementById('gbs-incoming-call-notice')?.remove();
