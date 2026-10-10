@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.565.0
+// @version      1.566.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -6082,7 +6082,7 @@
         }});
         win.WebSocket=wrappedSocket;
       }
-      const bridge={ready:()=>!!authorization,request:async(path,body,method)=>{
+      const bridge={ready:()=>!!authorization,openSocket:uri=>new NativeWebSocket(uri),request:async(path,body,method)=>{
         if(!authorization)throw Error('Waiting for native Genesys authentication');
         const controller=new win.AbortController(),timeout=window.setTimeout(()=>controller.abort(),15000);
         try {
@@ -6131,7 +6131,7 @@
       const uri=new URL(channel.connectUri);
       if(!channel.id || uri.protocol!=='wss:' || !uri.hostname.endsWith('.mypurecloud.de'))throw Error('Invalid notification channel');
       if(callPushStopped || generation!==callPushGeneration)return;
-      socket=new PAGE_WINDOW.WebSocket(uri.href);callPushSocket=socket;
+      socket=bridge.openSocket(uri.href);callPushSocket=socket;
       callPushCreatedAt=callPushLastMessageAt=Date.now();
       socket.addEventListener('message',event=>{
         if(callPushSocket!==socket || typeof event.data!=='string' || event.data.length>2000000)return;
