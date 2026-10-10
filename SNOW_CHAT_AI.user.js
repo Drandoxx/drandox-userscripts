@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.488
+// @version      2.36.489
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -6591,6 +6591,13 @@ function startSNAI(tabIdentity) {
       }
       if (message.action === 'worker-result' && message.result?.id) {
         const result = message.result;
+        state.diagnosticCompanionResults ||= new Set();
+        const resultKey = [result.id, result.status, result.completedAt, result.companionVersion || 'unknown'].join(':');
+        if (!state.diagnosticCompanionResults.has(resultKey)) {
+          state.diagnosticCompanionResults.add(resultKey);
+          if (state.diagnosticCompanionResults.size > 200) state.diagnosticCompanionResults.delete(state.diagnosticCompanionResults.values().next().value);
+          recordCompactDiagnostic('info', 'extension-result-version', { jobId: result.id, status: result.status, companionVersion: result.companionVersion || 'unknown', completedAt: result.completedAt });
+        }
         gmSetValue(CHATGPT_WEB_RESULT_KEY, result).catch(() => {});
         gmSetValue(CHATGPT_WEB_JOB_KEY, { id: result.id, status: result.status, completedAt: result.completedAt || Date.now() }).catch(() => {});
       }
@@ -7563,7 +7570,7 @@ function startSNAI(tabIdentity) {
       if(key==='responseContent'&&action==='ai-response-data'){safe[key]=String(value);continue;}
       if(key==='network'&&action==='form-network'){safe[key]=value;continue;}
       if(key==='responseShape'&&action.startsWith('extension-')){safe[key]=value;continue;}
-      if(!/^(mode|code|message|error|field|label|phase|status|profile|provider|jobId|commandId|ims|attempt|timeoutMs|durationMs|elapsedMs|waitMs|length|fields|ok|source|reason|stage|workerCount|receivedAt|submittedAt|startedAt|completedAt|textLength|assistantCount|observedAssistantMutations|generating|responseSource|conversationId|fetchStatus|fetchError|version)$/i.test(key))continue;
+      if(!/^(mode|code|message|error|field|label|phase|status|profile|provider|jobId|commandId|ims|attempt|timeoutMs|durationMs|elapsedMs|waitMs|length|fields|ok|source|reason|stage|workerCount|receivedAt|submittedAt|startedAt|completedAt|textLength|assistantCount|observedAssistantMutations|generating|responseSource|conversationId|fetchStatus|fetchError|version|companionVersion)$/i.test(key))continue;
       if(typeof value==='number'||typeof value==='boolean')safe[key]=value;
       else if(typeof value==='string')safe[key]=value.replace(/\b(Bearer\s+)[^\s]+/gi,'$1[redacted]').slice(0,180);
     }
@@ -7631,7 +7638,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.488',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.489',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -20638,7 +20645,7 @@ function startSNAI(tabIdentity) {
     requestCodexFTF=withValidatedAICorrection(requestCodexFTF,'FTF');
     requestCodexHP=withValidatedAICorrection(requestCodexHP,'HP');
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
-    addLog('info', 'helper-version', { version: '2.36.488' });
+    addLog('info', 'helper-version', { version: '2.36.489' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
