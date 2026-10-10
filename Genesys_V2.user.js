@@ -4868,8 +4868,11 @@
   const SNOW_NEW_CALL_URL = 'https://kingfisher.service-now.com/now/nav/ui/classic/params/target/new_call.do%3Fsys_id%3D-1%26sysparm_stack%3Dnew_call_list.do';
   let testCallSession = null;
   let testNativeAnswer = null;
+  function callPopupsEnabled() {
+    try{return GM_getValue('genesys-v2-call-popups-enabled',false)===true;}catch(_){return false;}
+  }
   function popupOnlyCallEnabled(doc) {
-    try { return isSavedAdmin(doc) && GM_getValue(POPUP_ONLY_CALL_MODE_KEY,false) === true; } catch (_) { return false; }
+    try { return callPopupsEnabled() && isSavedAdmin(doc) && GM_getValue(POPUP_ONLY_CALL_MODE_KEY,false) === true; } catch (_) { return false; }
   }
   function callTestEnabled(doc) {
     // One switch controls the entire test workflow; legacy saved flags are ignored.
@@ -4910,6 +4913,7 @@
     }
   }
   function watchIncomingCall(doc) {
+    if(!callPopupsEnabled())return;
     if (window === window.top && (themeMode(doc) !== 'light' || popupOnlyCallEnabled(doc))) {
       const view = doc.querySelector('.messenger-shown [data-action="openAcdInteraction"] a');
       if (view && !view.dataset.gbsAutoViewed) { view.dataset.gbsAutoViewed = 'true'; view.click(); }
@@ -5180,6 +5184,15 @@
       collectReachableDocuments().forEach(applyPowerMode);
     });
     powerCard.appendChild(powerSelect); popover.querySelector('.gbs-settings-body').appendChild(powerCard);
+    const callPopupRow=doc.createElement('label');callPopupRow.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;border:1px solid #397382;border-radius:8px;margin-top:14px';
+    callPopupRow.append(doc.createTextNode('Show call and After-Call popups'));
+    const callPopupToggle=doc.createElement('input');callPopupToggle.type='checkbox';callPopupToggle.setAttribute('role','switch');callPopupToggle.setAttribute('aria-label','Show call and After-Call popups');callPopupToggle.checked=callPopupsEnabled();callPopupToggle.style.cssText='accent-color:#22d3ee;width:22px;height:22px';
+    callPopupToggle.addEventListener('change',()=>{
+      GM_setValue('genesys-v2-call-popups-enabled',callPopupToggle.checked);
+      if(!callPopupToggle.checked){activeCallSummary=null;saveActiveCallWindow();}
+      collectReachableDocuments().forEach(syncCallTestLayout);
+      performanceEvent('popup-setting-changed',{enabled:callPopupToggle.checked});syncCallInformationPopup(doc);
+    });callPopupRow.append(callPopupToggle);popover.querySelector('.gbs-settings-body').append(callPopupRow);
     const updateFooter = doc.createElement('div'); updateFooter.className = 'gbs-settings-footer';
     const updateButton = doc.createElement('button'); updateButton.type = 'button'; updateButton.textContent = 'Check for updates'; updateButton.className = 'gbs-settings-check-updates';
     updateButton.addEventListener('click', () => checkGenesysUpdates(true));
@@ -6540,6 +6553,7 @@
   let earlierCallCards = window === window.top ? GM_getValue('genesys-v2-earlier-call-cards',[]) : [];
   if (!Array.isArray(earlierCallCards)) earlierCallCards = [];
   function renderEarlierCallCards(doc) {
+    if(!callPopupsEnabled())return;
     if (window !== window.top || doc !== document) return;
     for (const [index,call] of earlierCallCards.entries()) {
       const id = `gbs-earlier-call-${call.endedAt}`;
@@ -6591,6 +6605,7 @@
     }).format(new Date(value));
   }
   function syncLastCallDataPopup(doc, wrapup) {
+    if(!callPopupsEnabled())return;
     // Compare documents, not Window/WindowProxy identities: Tampermonkey's
     // sandbox can expose different wrappers for defaultView and window.top.
     if (window !== window.top || doc !== document) {
@@ -6697,6 +6712,10 @@
   }
 
   function syncCallInformationPopup(doc) {
+    if(!callPopupsEnabled()) {
+      doc.querySelectorAll('#gbs-call-information,#gbs-last-call-data,[id^="gbs-earlier-call-"],#gbs-incoming-call-notice').forEach(card=>card.remove());
+      return;
+    }
     if (window !== window.top || doc !== document) {
       doc.getElementById('gbs-last-call-data')?.remove();
       doc.getElementById('gbs-call-information')?.remove();
@@ -9680,13 +9699,14 @@ function fitDashboardMetricSpacing(doc) {
     if(!lightweightPerformance)return callback();
     const start=performance.now();
     try{return callback();}finally{
-      const ms=performance.now()-start,stats=lightweightPerformance.work[name] ||= {count:0,totalMs:0,maxMs:0};
+      const mode=callPopupsEnabled()?'popups-enabled':'popups-disabled';
+      const ms=performance.now()-start,stats=lightweightPerformance.work[mode+':'+name] ||= {count:0,totalMs:0,maxMs:0};
       stats.count++;stats.totalMs+=ms;stats.maxMs=Math.max(stats.maxMs,ms);
     }
   }
   function performanceEvent(type,fields={}) {
     if(!lightweightPerformance)return;
-    lightweightPerformance.events.push({at:Date.now(),type,...fields});
+    lightweightPerformance.events.push({at:Date.now(),type,popupsEnabled:callPopupsEnabled(),...fields});
     if(lightweightPerformance.events.length>40)lightweightPerformance.events.shift();
   }
   function performanceReport() {
@@ -9733,13 +9753,13 @@ function fitDashboardMetricSpacing(doc) {
     }catch(_){}
     const sample=()=>{
       const now=performance.now(),lag=Math.max(0,now-last-5000);last=now;
-      const state=document.getElementById('gbs-call-information')?.querySelector('.gbs-call-status')?.textContent || (document.querySelector('.messenger-shown [data-action="answerInteraction"]')?'incoming':document.getElementById('gbs-call-information')?'call-popup':'idle');
+      const state=document.querySelector('.messenger-shown [data-action="answerInteraction"]')?'incoming':document.querySelector('[data-testid="wrapup-header-message-duration"]')?'wrapup':document.querySelector('.selected-interaction-container')?'native-interaction':document.getElementById('gbs-call-information')?'call-popup':'idle';
       if(state!==lastCallState){performanceEvent('call-ui-transition',{state:String(state).slice(0,40)});lastCallState=state;}
       if(lag>250 && !document.hidden)performanceEvent('event-loop-delay',{ms:Math.round(lag),state});
       if(now-lastMinute<60000)return;lastMinute=now;
       const cache=GM_getValue(CALL_CACHE_KEY,null),serialized=cache?JSON.stringify(cache):'';
       const memory=performance.memory;
-      lightweightPerformance.samples.push({at:Date.now(),hidden:document.hidden,powerMode:lowPowerMode()?'low':'normal',state,heapUsedBytes:memory?.usedJSHeapSize??null,heapLimitBytes:memory?.jsHeapSizeLimit??null,callCacheUtf8Bytes:new TextEncoder().encode(serialized).length,cachedCalls:Object.keys(cache?.conversations||{}).length,managedDocuments:MANAGED_DOCUMENTS.size,trackedFrameWindows:callNetworkBridges.size,earlierCards:earlierCallCards.length});
+      lightweightPerformance.samples.push({at:Date.now(),popupsEnabled:callPopupsEnabled(),hidden:document.hidden,powerMode:lowPowerMode()?'low':'normal',state,heapUsedBytes:memory?.usedJSHeapSize??null,heapLimitBytes:memory?.jsHeapSizeLimit??null,callCacheUtf8Bytes:new TextEncoder().encode(serialized).length,cachedCalls:Object.keys(cache?.conversations||{}).length,managedDocuments:MANAGED_DOCUMENTS.size,trackedFrameWindows:callNetworkBridges.size,earlierCards:earlierCallCards.length});
       if(lightweightPerformance.samples.length>60)lightweightPerformance.samples.shift();
       try{sessionStorage.setItem(PERFORMANCE_LOG_KEY,JSON.stringify(performanceReport()));}catch(_){}
     };
