@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.498
+// @version      2.36.499
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7664,7 +7664,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.498',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.499',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -7677,6 +7677,7 @@ function startSNAI(tabIdentity) {
     return {running:Boolean(dialog||state.commandRunning),dialog,ims:normaliseIMS(dialog?.dataset.pinnedIms||state.autoSession?.ims||currentInteractionIMS())};
   }
   function releaseAutomationFreeze(reason='finished',suspend=true){
+    if(['stop','bubble-close','pagehide'].includes(reason))for(const id of aiResponsePreviews.keys())clearAIResponsePreview(id);
     for(const overlay of automationFreeze.overlays)overlay.remove();
     if(automationFreeze.regions.length)recordCompactDiagnostic('info','automation-unfrozen',{ims:automationFreeze.ims,reason});
     automationFreeze.overlays=[];automationFreeze.regions=[];
@@ -7693,7 +7694,7 @@ function startSNAI(tabIdentity) {
   }
   function refreshAutomationFreeze(){
     const activity=automationFreezeActivity();
-    if(!activity.running){releaseAutomationFreeze('finished',false);automationFreeze.suspended=false;automationFreeze.owner=null;return;}
+    if(!activity.running){for(const [id,entry] of aiResponsePreviews)if(entry.responseComplete)clearAIResponsePreview(id);releaseAutomationFreeze('finished',false);automationFreeze.suspended=false;automationFreeze.owner=null;return;}
     if(automationFreeze.suspended)return;
     const ims=activity.ims;
     if(!ims||normaliseIMS(currentInteractionIMS())!==ims){releaseAutomationFreeze('different-ims',false);return;}
@@ -9262,7 +9263,7 @@ function startSNAI(tabIdentity) {
     };
   }
   const aiResponsePreviews=new Map();
-  function clearAIResponsePreview(id){const entry=aiResponsePreviews.get(id);entry?.animation?.cancel();if(entry?.reposition)window.removeEventListener('resize',entry.reposition);entry?.panel?.remove();aiResponsePreviews.delete(id);}
+  function clearAIResponsePreview(id){const entry=aiResponsePreviews.get(id);if(entry?.typingTimer)clearTimeout(entry.typingTimer);entry?.animation?.cancel();if(entry?.reposition)window.removeEventListener('resize',entry.reposition);entry?.panel?.remove();aiResponsePreviews.delete(id);}
   function startAIResponsePreview(id,ims,provider){
     for(const key of aiResponsePreviews.keys())clearAIResponsePreview(key);
     if(!state.aiResponsePreview||provider!=='chatgpt')return;
@@ -9275,12 +9276,29 @@ function startSNAI(tabIdentity) {
     const logo=document.createElement('div');logo.style.cssText='order:-1;display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;color:var(--sn-theme-ac94ec,#ac94ec);font-weight:850;font-size:16px;letter-spacing:1px';logo.textContent='📺 SN AI TV';
     const live=document.createElement('span');live.textContent='● LIVE';live.style.cssText='font-size:10px;letter-spacing:2px;color:#81d8ab;background:#81d8ab15;border:1px solid #81d8ab55;border-radius:20px;padding:3px 7px';logo.append(live);
     const reposition=()=>{const launcher=document.getElementById?.('sn-ai-chats-today')?.shadowRoot?.querySelector('.launcher');const rect=launcher?.getBoundingClientRect();panel.style.bottom=rect&&rect.height>0?`${Math.max(64,innerHeight-rect.top+12)}px`:'64px';};
-    panel.append(heading,body,note,logo);document.documentElement.append(panel);reposition();window.addEventListener('resize',reposition);aiResponsePreviews.set(id,{panel,heading,body,ims,reposition});
+    panel.append(heading,body,note,logo);document.documentElement.append(panel);reposition();window.addEventListener('resize',reposition);aiResponsePreviews.set(id,{panel,heading,body,ims,reposition,displayedText:'',targetText:'',responseComplete:false});
   }
   function updateAIResponsePreview(preview){
     const entry=aiResponsePreviews.get(preview?.jobId);if(!entry||!state.aiResponsePreview)return;
-    entry.heading.textContent=`ChatGPT · ${entry.ims} · ${preview.generating?'Generating response…':'Receiving response…'}${preview.truncated?' (latest portion)':''}`;
-    entry.body.textContent=String(preview.text||'');entry.body.scrollTop=entry.body.scrollHeight;
+    if(entry.responseComplete&&!preview.complete)return;
+    entry.heading.textContent=`ChatGPT · ${entry.ims} · ${preview.complete?'Response playback · filling ticket…':preview.generating?'Generating response…':'Receiving response…'}${preview.truncated?' (latest portion)':''}`;
+    const next=String(preview.text||'').slice(-30000);
+    const reduced=typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if(next!==entry.targetText){
+      if(entry.typingTimer)clearTimeout(entry.typingTimer);
+      entry.targetText=next;
+      const from=next.startsWith(entry.displayedText)?entry.displayedText.length:0;
+      const started=Date.now(),duration=Math.min(650,Math.max(120,(next.length-from)/8));
+      const tick=()=>{
+        if(aiResponsePreviews.get(preview.jobId)!==entry)return;
+        const progress=reduced?1:Math.min(1,(Date.now()-started)/duration);
+        entry.displayedText=next.slice(0,from+Math.ceil((next.length-from)*progress));
+        entry.body.textContent=entry.displayedText;entry.body.scrollTop=entry.body.scrollHeight;
+        if(progress<1)entry.typingTimer=setTimeout(tick,25);
+        else{entry.typingTimer=0;if(entry.responseComplete)entry.heading.textContent=`ChatGPT · ${entry.ims} · Filling and verifying ticket…`;}
+      };
+      tick();
+    }
     if(!(typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches)&&entry.body.animate){
       entry.animation?.cancel();entry.animation=entry.body.animate([{boxShadow:'inset 0 2px 12px #0004,0 0 12px #ac94ec70'},{boxShadow:'inset 0 2px 12px #0004,0 0 0 #ac94ec00'}],{duration:420,easing:'ease-out'});
     }
@@ -9443,6 +9461,7 @@ function startSNAI(tabIdentity) {
             }
           }
           if (result?.id === activeId && result.status === 'complete') {
+            updateAIResponsePreview({jobId:activeId,text:result.text,complete:true});
             let parsedResponse = null;
             try {
               // Give every ticket window one rendered validation phase before
@@ -9454,6 +9473,7 @@ function startSNAI(tabIdentity) {
               parsedResponse = parseChatGPTWebJSON(result.text);
               validateAIShape(parsedResponse,schema);
               const validated = validate(parsedResponse);
+              const preview=aiResponsePreviews.get(activeId);if(preview)preview.responseComplete=true;
               document.dispatchEvent(new CustomEvent('sn-ai-web-progress', { detail: { stage: 'job-response-validated', jobId: activeId } }));
               await Promise.all([gmDeleteValue(CHATGPT_WEB_JOB_KEY), gmDeleteValue(CHATGPT_WEB_RESULT_KEY), gmDeleteValue(CHATGPT_WEB_ACK_KEY)]);
               return validated;
@@ -9482,7 +9502,7 @@ function startSNAI(tabIdentity) {
       }
       throw new Error('ChatGPT Web could not produce a usable response.');
     })().finally(() => {
-      clearAIResponsePreview(activeId);
+      if(!aiResponsePreviews.get(activeId)?.responseComplete)clearAIResponsePreview(activeId);
       if (activeWebRequestAborts.get(normaliseIMS(ims)) === abort) activeWebRequestAborts.delete(normaliseIMS(ims));
     });
     return { promise, abort };
@@ -20881,7 +20901,7 @@ function startSNAI(tabIdentity) {
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
     installAutomationFreeze();
     document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
-    addLog('info', 'helper-version', { version: '2.36.498' });
+    addLog('info', 'helper-version', { version: '2.36.499' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
