@@ -6025,10 +6025,15 @@
       win.__gbsCallApiBridge=bridge;callNetworkBridges.add(win);
     } catch (_) { /* Inaccessible frames remain handled by existing DOM logging. */ }
   }
-  function discoverCallNetworkBridges(doc=document,depth=0) {
+  function discoverCallNetworkBridges(doc=document,depth=0,seenWindows=new Set()) {
     if(depth>6)return;
+    if(doc.defaultView)seenWindows.add(doc===document?PAGE_WINDOW:doc.defaultView);
     try{installCallNetworkBridge(doc===document?PAGE_WINDOW:doc.defaultView);}catch(_){}
-    doc.querySelectorAll('iframe').forEach(frame=>{try{const nested=accessibleFrameDocument(frame);if(nested)discoverCallNetworkBridges(nested,depth+1);}catch(_){}});
+    doc.querySelectorAll('iframe').forEach(frame=>{try{const nested=accessibleFrameDocument(frame);if(nested)discoverCallNetworkBridges(nested,depth+1,seenWindows);}catch(_){}});
+    if(depth===0)for(const win of callNetworkBridges)if(!seenWindows.has(win)) {
+      try{win.__gbsCallApiBridge?.stop();}catch(_){}
+      callNetworkBridges.delete(win);
+    }
   }
   function readyCallApiBridge() {
     for(const win of callNetworkBridges)try{if(win.__gbsCallApiBridge?.ready())return win.__gbsCallApiBridge;}catch(_){}
@@ -6171,8 +6176,8 @@
         const color=index%2?'var(--call-stripe)':'var(--call-row)';
         // Cell backgrounds sit above row backgrounds; inline priority resists theme overrides.
         for(const element of [row,...row.cells]) {
-          element.style.setProperty('background-color',color,'important');
-          element.style.setProperty('background-image','none','important');
+          if(element.style.getPropertyValue('background-color')!==color)element.style.setProperty('background-color',color,'important');
+          if(element.style.getPropertyValue('background-image')!=='none')element.style.setProperty('background-image','none','important');
         }
       });
     }
@@ -6725,7 +6730,8 @@
     // Old iframe executions can retain their own cards after updating without
     // a full reload. The top document owns every call card; sweep reachable
     // nested documents on each pass, not just when their script runs.
-    for (const frameDoc of collectReachableDocuments()) {
+    const reachableCallDocuments=collectReachableDocuments();
+    for (const frameDoc of reachableCallDocuments) {
       if (frameDoc !== doc) frameDoc.querySelectorAll('#gbs-last-call-data, #gbs-call-information').forEach(card => card.remove());
     }
     // Customer details stay in the live DOM only; never persist or transmit them.
@@ -6740,7 +6746,7 @@
       && !testCallSession.answeredAt && !testCallSession.finishedAt && !testCallSession.timeoutAt));
     if(incoming)completePreviousWrapupOnIncoming();
     const selected = [...doc.querySelectorAll('.selected-interaction-container')].find(visible);
-    const wrapup = [...collectReachableDocuments()].flatMap(frameDoc => [...frameDoc.querySelectorAll('[data-testid="wrapup-main-container"], .wrapup-message-container')]).find(element => element.querySelector('[data-testid="wrapup-header-message-duration"]'));
+    const wrapup = [...reachableCallDocuments].flatMap(frameDoc => [...frameDoc.querySelectorAll('[data-testid="wrapup-main-container"], .wrapup-message-container')]).find(element => element.querySelector('[data-testid="wrapup-header-message-duration"]'));
     let popup = doc.getElementById('gbs-call-information');
     const currentConnected = /Interaction State\s*:\s*Connected/i.test(selected?.innerText || '');
     if (wrapup && !incoming && !currentConnected) {
@@ -9549,7 +9555,9 @@ function fitDashboardMetricSpacing(doc) {
     syncHoverCardToggleVisuals(doc);
     ensureInteractionQueueResizer(doc);
     ensureSelectedInteractionResizer(doc);
-    syncCallInformationPopup(doc);
+    // The dedicated 1-second incoming-call timer owns popup refreshes.
+    // Maintenance visits every managed iframe; repeating the top-page popup
+    // scan here did the same work twice and swept iframe cards unnecessarily.
     closeWorkspaceAfterCallEnds(doc);
     ensureAgentWorkspaceResizer(doc);
     syncAnalyticsHostWidth(doc);
