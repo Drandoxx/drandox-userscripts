@@ -9258,6 +9258,7 @@ function startSNAI(tabIdentity) {
     let abortPromise = null;
     const abort = () => {
       stopped = true;
+      clearAIResponsePreview(activeId);
       if (abortPromise) return abortPromise;
       abortPromise = (async () => {
       const job = await gmGetValue(CHATGPT_WEB_JOB_KEY, null);
@@ -9349,6 +9350,7 @@ function startSNAI(tabIdentity) {
           id: activeId,
           status: 'pending',
           ims,
+          responsePreview: Boolean(state.aiResponsePreview),
         prompt,
         provider: state.ai.webService === 'gemini' ? 'gemini' : 'chatgpt',
           continueConversation,
@@ -9362,6 +9364,7 @@ function startSNAI(tabIdentity) {
           attempt: attempt + 1,
         };
         if (stopped) throw Object.assign(new Error('AI request stopped.'), { code: 'AI_STOPPED' });
+        startAIResponsePreview(activeId,ims,workerJob.provider);
         await gmSetValue(CHATGPT_WEB_JOB_KEY, workerJob);
         if (stopped) { await abort(); throw Object.assign(new Error('AI request stopped.'), { code: 'AI_STOPPED' }); }
         requestChatGPTExtensionWorker('worker-job', workerJob);
@@ -9445,6 +9448,7 @@ function startSNAI(tabIdentity) {
       }
       throw new Error('ChatGPT Web could not produce a usable response.');
     })().finally(() => {
+      clearAIResponsePreview(activeId);
       if (activeWebRequestAborts.get(normaliseIMS(ims)) === abort) activeWebRequestAborts.delete(normaliseIMS(ims));
     });
     return { promise, abort };
