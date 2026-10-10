@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.491
+// @version      2.36.492
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -6502,6 +6502,7 @@ function startSNAI(tabIdentity) {
 
   function closeTicketBubbleWithUndo(dialog, reason = 'close') {
     if (!dialog) return;
+    releaseAutomationFreeze('bubble-close');
     const closedIMS = normaliseIMS(dialog.dataset.pinnedIms);
     if (dialog.dataset.ticketDisposed === 'true') lastClosedTicketBubble = null;
     else if (/^(?:close|cancel|escape)/i.test(String(reason))) {
@@ -7585,7 +7586,7 @@ function startSNAI(tabIdentity) {
       if(key==='responseContent'&&action==='ai-response-data'){safe[key]=String(value);continue;}
       if(key==='network'&&action==='form-network'){safe[key]=value;continue;}
       if(key==='responseShape'&&action.startsWith('extension-')){safe[key]=value;continue;}
-      if(!/^(mode|code|message|error|field|label|phase|status|profile|provider|jobId|commandId|ims|attempt|timeoutMs|durationMs|elapsedMs|waitMs|length|fields|ok|source|reason|stage|workerCount|receivedAt|submittedAt|startedAt|completedAt|textLength|assistantCount|observedAssistantMutations|generating|responseSource|conversationId|fetchStatus|fetchError|version|companionVersion)$/i.test(key))continue;
+      if(!/^(mode|code|message|error|field|label|phase|status|profile|provider|jobId|commandId|ims|attempt|timeoutMs|durationMs|elapsedMs|waitMs|length|fields|ok|source|reason|stage|workerCount|receivedAt|submittedAt|startedAt|completedAt|textLength|assistantCount|observedAssistantMutations|generating|responseSource|conversationId|fetchStatus|fetchError|version|companionVersion|area|eventType|targetTag|targetId|targetRole|blocked|x|y)$/i.test(key))continue;
       if(typeof value==='number'||typeof value==='boolean')safe[key]=value;
       else if(typeof value==='string')safe[key]=value.replace(/\b(Bearer\s+)[^\s]+/gi,'$1[redacted]').slice(0,180);
     }
@@ -7653,11 +7654,88 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.491',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.492',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
     document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
+  }
+  const automationFreeze={regions:[],overlays:[],timer:0,frame:0,suspended:false,owner:null,ims:'',commandId:''};
+  function automationFreezeActivity(){
+    const root=document.getElementById(ROOT_ID);
+    const dialog=root?.querySelector('[data-pinned-ims].is-running');
+    return {running:Boolean(dialog||state.commandRunning),dialog,ims:normaliseIMS(dialog?.dataset.pinnedIms||state.autoSession?.ims||currentInteractionIMS())};
+  }
+  function releaseAutomationFreeze(reason='finished',suspend=true){
+    for(const overlay of automationFreeze.overlays)overlay.remove();
+    if(automationFreeze.regions.length)recordCompactDiagnostic('info','automation-unfrozen',{ims:automationFreeze.ims,reason});
+    automationFreeze.overlays=[];automationFreeze.regions=[];
+    if(suspend)automationFreeze.suspended=true;
+  }
+  function positionAutomationFreeze(){
+    automationFreeze.frame=0;
+    automationFreeze.regions.forEach((region,index)=>{
+      const overlay=automationFreeze.overlays[index],rect=region.root.getBoundingClientRect();
+      const left=Math.max(0,rect.left),top=Math.max(0,rect.top),right=Math.min(innerWidth,rect.right),bottom=Math.min(innerHeight,rect.bottom);
+      overlay.hidden=!region.root.isConnected||right<=left||bottom<=top;
+      Object.assign(overlay.style,{left:left+'px',top:top+'px',width:Math.max(0,right-left)+'px',height:Math.max(0,bottom-top)+'px'});
+    });
+  }
+  function refreshAutomationFreeze(){
+    const activity=automationFreezeActivity();
+    if(!activity.running){releaseAutomationFreeze('finished',false);automationFreeze.suspended=false;automationFreeze.owner=null;return;}
+    if(automationFreeze.suspended)return;
+    const ims=activity.ims;
+    if(!ims||normaliseIMS(currentInteractionIMS())!==ims){releaseAutomationFreeze('different-ims',false);return;}
+    const regions=[],panel=activeWorkspaceRecordPanel();
+    if(panel&&isVisible(panel))regions.push({root:panel,area:'form'});
+    const interactionId=location.pathname.match(/\/chat\/([a-f0-9]{32})(?:\/|$)/i)?.[1];
+    if(interactionId){
+      for(const element of allPageElements()){
+        if(element.localName!=='sn-connect-conversation'||!isVisible(element))continue;
+        if(element.getProperties?.()?.interaction===interactionId)regions.push({root:element,area:'chat'});
+      }
+    }
+    if(automationFreeze.regions.length===regions.length&&regions.every((region,index)=>automationFreeze.regions[index].root===region.root)){positionAutomationFreeze();return;}
+    releaseAutomationFreeze('regions-updated',false);
+    automationFreeze.ims=ims;automationFreeze.owner=activity.dialog;automationFreeze.commandId=state.activeCommandId;
+    automationFreeze.regions=regions;
+    for(const region of regions){
+      const overlay=document.createElement('div');overlay.dataset.snAutomationFrozen=region.area;
+      overlay.setAttribute('aria-label','Frozen while SN AI is running. Use Stop or close the AI bubble to unlock.');
+      overlay.title='Frozen while SN AI is running — Stop or close the AI bubble to unlock';
+      overlay.style.cssText='position:fixed;z-index:2147483646;box-sizing:border-box;pointer-events:auto;touch-action:none;cursor:not-allowed;border:2px solid #b5eaff99;border-radius:8px;background:linear-gradient(135deg,#d8f5ff18,transparent 22%,transparent 78%,#8fdcff18);box-shadow:inset 0 0 13px 2px #a4e6ff55,inset 0 0 3px #f4fcffbb;';
+      document.body.append(overlay);automationFreeze.overlays.push(overlay);
+    }
+    positionAutomationFreeze();
+    if(regions.length)recordCompactDiagnostic('info','automation-frozen',{ims,fields:regions.length});
+  }
+  function installAutomationFreeze(){
+    if(location.hostname!=='kingfisher.service-now.com')return;
+    const position=()=>{if(!automationFreeze.frame&&automationFreeze.overlays.length)automationFreeze.frame=requestAnimationFrame(positionAutomationFreeze);};
+    const humanEvent=event=>{
+      if(!event.isTrusted)return;
+      const activity=automationFreezeActivity();if(!activity.running)return;
+      const path=event.composedPath(),target=path.find(node=>node instanceof Element);
+      const inspector=path.some(node=>node?.id===ROOT_ID);
+      const overlay=path.find(node=>node?.dataset?.snAutomationFrozen);
+      const region=automationFreeze.regions.find(item=>path.includes(item.root)||target&&isWithinDeepRoot(target,item.root));
+      const blocked=!inspector&&Boolean(overlay||region);
+      if(event.type==='pointerdown'||event.type==='click'&&event.detail===0){
+        recordCompactDiagnostic('info','human-click',{ims:activity.ims,eventType:event.type,area:inspector?'ai-controls':overlay?.dataset.snAutomationFrozen||region?.area||'outside',targetTag:target?.localName||'',targetId:target?.id||'',targetRole:target?.getAttribute('role')||'',blocked,x:Math.round(event.clientX||0),y:Math.round(event.clientY||0)});
+      }
+      if(blocked){event.preventDefault();event.stopImmediatePropagation();if(event.type==='keydown'||event.type==='paste'||event.type==='drop')recordCompactDiagnostic('info','human-input-blocked',{ims:activity.ims,eventType:event.type,area:overlay?.dataset.snAutomationFrozen||region?.area,blocked:true});}
+    };
+    for(const type of ['pointerdown','click','dblclick','contextmenu','wheel','keydown','keypress','beforeinput','paste','drop'])window.addEventListener(type,humanEvent,{capture:true,passive:false});
+    window.addEventListener('scroll',position,true);window.addEventListener('resize',position);
+    window.addEventListener('pagehide',()=>releaseAutomationFreeze('pagehide'));
+    // Only poll while a run is active. The timer also re-resolves controls
+    // replaced by Workspace without changing their native field behaviour.
+    const schedule=()=>{refreshAutomationFreeze();if(automationFreeze.timer)clearTimeout(automationFreeze.timer);automationFreeze.timer=automationFreezeActivity().running?setTimeout(schedule,350):0;};
+    const observer=new MutationObserver(records=>{if(!automationFreeze.timer&&records.some(record=>record.type==='childList'||record.attributeName==='class'))schedule();});
+    const root=document.getElementById(ROOT_ID);if(root)observer.observe(root,{subtree:true,childList:true,attributes:true,attributeFilter:['class']});
+    document.addEventListener('sn-ai-progress',event=>{if(/^(command-started|command-finished|command-failed)$/.test(event.detail?.action||''))schedule();});
+    schedule();
   }
   function addLog(level, action, details = {}) {
     recordCompactDiagnostic(level,action,details);
@@ -12410,6 +12488,7 @@ function startSNAI(tabIdentity) {
   }
 
   function requestAutomationStop() {
+    releaseAutomationFreeze('stop');
     if (!state.commandRunning && !state.busy) {
       state.lastAction = 'No automation is currently running.';
       updateStopButtons();
@@ -17987,6 +18066,7 @@ function startSNAI(tabIdentity) {
         state.commandRunning = false;
         state.activeCommandId = '';
         state.stopRequested = false;
+        refreshAutomationFreeze();
         updateStopButtons();
       }
       refresh();
@@ -20672,7 +20752,8 @@ function startSNAI(tabIdentity) {
     requestCodexFTF=withValidatedAICorrection(requestCodexFTF,'FTF');
     requestCodexHP=withValidatedAICorrection(requestCodexHP,'HP');
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
-    addLog('info', 'helper-version', { version: '2.36.491' });
+    installAutomationFreeze();
+    addLog('info', 'helper-version', { version: '2.36.492' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
