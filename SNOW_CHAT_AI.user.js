@@ -11561,26 +11561,40 @@ function startSNAI(tabIdentity) {
   }
 
   async function createNewEventFromWorkspace() {
-    // Details selection is asynchronous. Never click a stale action from the
-    // previous panel while Workspace is still switching its routed form.
-    const details=findOuterDetailsTab();
-    if(!details)throw new Error('NEW_EVENT_DETAILS_NOT_FOUND: IMS Details tab is unavailable.');
-    if(details.getAttribute('aria-selected')!=='true')clickableAncestor(details).click();
-    let action=await waitUntil(()=>findOuterDetailsTab()?.getAttribute('aria-selected')==='true'?findNewEventCreationAction():null,5000,45);
-    if(!action)throw new Error('NEW_EVENT_ACTION_NOT_READY: IMS Details did not expose Create a new Event.');
     const before=new Set(allPageElements().filter(el=>el.getAttribute('role')==='tab').map(el=>el.id+'|'+el.getAttribute('aria-controls')));
-    // Prefer the real native button inside the connected shadow component.
-    // Clicking a focusable wrapper can focus it without dispatching its action.
-    const nativeButton=action.shadowRoot?.querySelector('button:not([disabled])');
-    if(nativeButton)action=nativeButton;
-    clickableAncestor(action).click();
-    const opened=await waitUntil(()=>allPageElements().find(el=>el.getAttribute('role')==='tab'&&isVisible(el)&&!isInspectorNode(el)&&
+    const findCreated=()=>allPageElements().find(el=>el.getAttribute('role')==='tab'&&isVisible(el)&&!isInspectorNode(el)&&
       (comparableLabel(elementLabel(el)).includes('new event')||String(el.getAttribute('aria-controls')||'').includes('chrome-tab-panel-new_record_'))&&
-      !before.has(el.id+'|'+el.getAttribute('aria-controls'))),12000,60);
-    if(!opened)throw new Error('NEW_EVENT_TAB_NOT_IDENTIFIED: no newly created Event tab was found.');
+      !before.has(el.id+'|'+el.getAttribute('aria-controls')));
+    const pressEnter=el=>{el.focus?.();for(const type of ['keydown','keyup'])el.dispatchEvent(new KeyboardEvent(type,{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,composed:true,cancelable:true}));};
+    let opened=null;
+    for(let attempt=1;attempt<=3&&!opened;attempt++){
+      assertAutomationNotStopped();opened=findCreated();if(opened)break;
+      const details=findOuterDetailsTab();
+      if(!details)continue;
+      if(details.getAttribute('aria-selected')!=='true'){
+        clickableAncestor(details).click();
+        if(!await waitUntil(()=>findOuterDetailsTab()?.getAttribute('aria-selected')==='true',350,45))pressEnter(findOuterDetailsTab()||details);
+      }
+      let action=await waitUntil(()=>findOuterDetailsTab()?.getAttribute('aria-selected')==='true'?findNewEventCreationAction():null,3000,45);
+      opened=findCreated();if(opened)break;
+      if(!action){addLog('warn','new-event-create-retry',{attempt,stage:'details-not-ready'});continue;}
+      const nativeButton=action.shadowRoot?.querySelector('button:not([disabled])');
+      action=nativeButton||clickableAncestor(action);
+      action.click();
+      opened=await waitUntil(findCreated,12000,60);
+      if(!opened){
+        // Retry the native keyboard action only after confirming no draft
+        // appeared. Do not click Create twice while a new tab is present.
+        action=findNewEventCreationAction();
+        if(action){pressEnter(action.shadowRoot?.querySelector('button:not([disabled])')||clickableAncestor(action));opened=await waitUntil(findCreated,12000,60);}
+        if(!opened)addLog('warn','new-event-create-retry',{attempt,stage:'create-not-confirmed'});
+      }
+    }
+    if(!opened)throw new Error('NEW_EVENT_CREATION_FAILED: native Details/Create actions did not open a draft after 3 attempts.');
     const createdIMS=normaliseIMS(state.startContext?.ims||activeSelectedIMS()||currentInteractionIMS());
     state.createdEvent={ims:createdIMS,tabId:opened.id,controls:opened.getAttribute('aria-controls'),path:''};
     clickableAncestor(opened).click();
+    if(!await waitUntil(()=>opened.getAttribute('aria-selected')==='true',350,45))pressEnter(opened);
     await waitUntil(()=>/\/sub\/new_record\/new_call\//.test(location.pathname),12000,60);
     state.createdEvent.path=location.pathname;
     const form = await waitForControlByLabel('Location', 12000);
