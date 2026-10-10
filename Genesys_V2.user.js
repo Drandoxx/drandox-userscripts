@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.564.0
+// @version      1.565.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -5834,6 +5834,13 @@
   }
   let callPopupDirty=true,callPopupScheduled=false,lastPopupFallbackAt=0;
   const callScopeObservers=new Map();
+  const callScopeTextCache=new WeakMap();
+  function callScopeText(scope) {
+    if(!scope)return '';
+    const cached=callScopeTextCache.get(scope);
+    if(cached && Date.now()-cached.at<15000)return cached.text;
+    const text=scope.innerText || '';callScopeTextCache.set(scope,{at:Date.now(),text});return text;
+  }
   function requestCallPopupRefresh() {
     callPopupDirty=true;
     if(!callPopupsEnabled() || callPopupScheduled || typeof window.requestAnimationFrame!=='function')return;
@@ -5843,7 +5850,7 @@
   function watchCallScope(scope) {
     if(!scope || callScopeObservers.has(scope))return;
     const observer=new scope.ownerDocument.defaultView.MutationObserver(records=>{
-      if(records.some(r=>!((r.target.nodeType===1?r.target:r.target.parentElement)?.closest?.('time,[role="timer"],.gbs-call-information-body'))))requestCallPopupRefresh();
+      if(records.some(r=>!((r.target.nodeType===1?r.target:r.target.parentElement)?.closest?.('time,[role="timer"],.gbs-call-information-body')))){callScopeTextCache.delete(scope);requestCallPopupRefresh();}
     });
     observer.observe(scope,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['aria-pressed','aria-disabled','disabled','class']});
     callScopeObservers.set(scope,observer);
@@ -6823,7 +6830,7 @@
     const selected = [...doc.querySelectorAll('.selected-interaction-container')].find(visible);
     const wrapup = [...reachableCallDocuments].flatMap(frameDoc => [...frameDoc.querySelectorAll('[data-testid="wrapup-main-container"], .wrapup-message-container')]).find(element => element.querySelector('[data-testid="wrapup-header-message-duration"]'));
     let popup = doc.getElementById('gbs-call-information');
-    const currentConnected = apiSignal?.state==='connected' || /Interaction State\s*:\s*Connected/i.test(selected?.innerText || '');
+    const currentConnected = apiSignal?.state==='connected' || /Interaction State\s*:\s*Connected/i.test(callScopeText(selected));
     if (wrapup && !incoming && !currentConnected) {
       finishActiveCall(); syncLastCallDataPopup(doc, wrapup); return;
     }
@@ -6863,7 +6870,7 @@
     }
     for (const scope of scopes) {
       // Rich API fields avoid re-reading all call iframe text when complete.
-      const text = apiSignal?.phone && apiSignal?.queue && apiSignal?.location ? '' : scope.innerText || '';
+      const text = apiSignal?.phone && apiSignal?.queue && apiSignal?.location ? '' : callScopeText(scope);
       const phone = text.match(/(?:tel:)?\+\d[\d ()-]{6,}\d/);
       if (phone) add('Phone number', phone[0].replace(/^tel:/, ''));
       for (const label of ['Interaction State', 'Queue Name', "Customer's Number", 'Customer Name', 'Country', 'Location']) {
