@@ -6606,7 +6606,7 @@ function startSNAI(tabIdentity) {
         const preview=aiResponsePreviews.get(message.progress.jobId);
         const previewStages={'job-processing-started':'Preparing composer…','job-prompt-inserted':'Message ready','job-send-enabled':'Sending message…','job-send-clicked':'Confirming message…'};
         if(preview&&previewStages[message.progress.stage])preview.heading.textContent=`ChatGPT · ${preview.ims} · ${previewStages[message.progress.stage]}`;
-        if(preview&&message.progress.stage==='job-message-accepted'){
+        if(preview&&message.progress.stage==='job-message-accepted'&&!preview.targetText){
           preview.heading.textContent=`ChatGPT · ${preview.ims} · Message accepted`;
           preview.body.textContent='Waiting for response text…';
         }
@@ -9310,7 +9310,10 @@ function startSNAI(tabIdentity) {
     entry.heading.textContent=`ChatGPT · ${entry.ims} · ${preview.complete?'Response playback · filling ticket…':preview.generating?'Generating response…':'Receiving response…'}${preview.truncated?' (latest portion)':''}`;
     const next=(formatAIResponseTV(preview.text)||(preview.generating?'ChatGPT is generating…\nResponse text is not available to the companion yet.':'Waiting for response text…')).slice(-30000);
     const reduced=typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const replay=preview.complete&&!entry.finalPlayback;
+    // A final result must not replay already streamed text from character zero.
+    const streamed=Boolean(entry.targetText&&entry.hasResponseText);
+    const replay=preview.complete&&!entry.finalPlayback&&!streamed;
+    if(preview.text)entry.hasResponseText=true;
     if(replay)entry.finalPlayback=true;
     if(next!==entry.targetText||replay){
       if(entry.typingTimer)clearTimeout(entry.typingTimer);
@@ -9319,7 +9322,7 @@ function startSNAI(tabIdentity) {
       let visible=from;const chunk=Math.max(2,Math.ceil((next.length-from)/100));
       const tick=()=>{
         if(aiResponsePreviews.get(preview.jobId)!==entry)return;
-        visible=reduced?next.length:Math.min(next.length,visible+chunk);
+        visible=reduced||(preview.complete&&streamed)?next.length:Math.min(next.length,visible+chunk);
         entry.displayedText=next.slice(0,visible);
         entry.body.textContent=entry.displayedText;
         const escape=value=>value.replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -11409,11 +11412,16 @@ function startSNAI(tabIdentity) {
   }
 
   function findOuterDetailsTab() {
-    return allPageElements().find((el) =>
+    const candidates=allPageElements().filter((el) =>
       el.getAttribute('role') === 'tab' &&
       comparableLabel(elementLabel(el)) === 'details' && isVisible(el) &&
       !isInspectorNode(el)
-    ) || null;
+    );
+    // The form also has a Details tab, often encountered first in the shadow
+    // tree. Workspace route tabs have their own record-tab identity; form
+    // tabs instead use an empty id and generic "tab-panel" controls.
+    return candidates.find(el=>/^\d+$/.test(el.id)||/chrome-tab-panel/.test(el.getAttribute('aria-controls')||''))
+      ||candidates.find(el=>el.id&&el.getAttribute('aria-controls')!=='tab-panel')||null;
   }
 
   async function openInteractionChat(ims) {
