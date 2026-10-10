@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.503
+// @version      2.36.504
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7679,7 +7679,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.503',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.504',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -9293,7 +9293,7 @@ function startSNAI(tabIdentity) {
     panel.style.borderWidth='8px';panel.style.overflow='visible';panel.style.background='linear-gradient(135deg,var(--sn-theme-65538f,#65538f),var(--sn-theme-1c1827,#1c1827) 35%,#111018)';
     panel.style.maxHeight='none';
     body.style.setProperty?.('font-size','12px','important');body.style.setProperty?.('padding','8px','important');
-    body.style.height='min(180px,calc(100vh - 220px))';body.style.minHeight='110px';body.style.maxHeight='180px';body.style.flexShrink='0';body.style.boxSizing='border-box';body.style.display='block';body.style.fontSize='12px';body.style.setProperty?.('white-space','pre-wrap','important');body.style.setProperty?.('line-height','1.35','important');
+    body.style.height='min(240px,calc(100vh - 190px))';body.style.minHeight='110px';body.style.maxHeight='240px';body.style.flexShrink='0';body.style.boxSizing='border-box';body.style.display='block';body.style.fontSize='12px';body.style.setProperty?.('white-space','pre-wrap','important');body.style.setProperty?.('line-height','1.35','important');
     body.style.marginRight='40px';body.style.borderRadius='28px / 20px';body.style.background='repeating-linear-gradient(0deg,#ffffff04 0px,#ffffff04 1px,transparent 1px,transparent 4px),radial-gradient(ellipse at 40% 20%,var(--sn-theme-191621,#191621),#08090e)';body.style.boxShadow='inset 0 0 18px #0009,0 0 0 3px #090a10';
     const logo=document.createElement('div');logo.style.cssText='order:-1;display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;color:var(--sn-theme-ac94ec,#ac94ec);font-weight:850;font-size:16px;letter-spacing:1px';logo.textContent='📺 SN AI TV';
     const live=document.createElement('span');live.textContent='● LIVE';live.style.cssText='font-size:10px;letter-spacing:2px;color:#81d8ab;background:#81d8ab15;border:1px solid #81d8ab55;border-radius:20px;padding:3px 7px';logo.append(live);
@@ -20949,7 +20949,7 @@ function startSNAI(tabIdentity) {
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
     installAutomationFreeze();
     document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
-    addLog('info', 'helper-version', { version: '2.36.503' });
+    addLog('info', 'helper-version', { version: '2.36.504' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
