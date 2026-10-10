@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.506
+// @version      2.36.507
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7679,7 +7679,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.506',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.507',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -7722,7 +7722,6 @@ function startSNAI(tabIdentity) {
     for(const region of regions){
       const overlay=document.createElement('div');overlay.dataset.snAutomationFrozen=region.area;
       overlay.setAttribute('aria-label','Frozen while SN AI is running. Use Stop or close the AI bubble to unlock.');
-      overlay.title='Frozen while SN AI is running — Stop or close the AI bubble to unlock';
       overlay.style.cssText='position:fixed;z-index:2147483646;box-sizing:border-box;pointer-events:auto;touch-action:none;cursor:not-allowed;border:2px solid #b5eaff99;border-radius:8px;background:linear-gradient(135deg,#d8f5ff18,transparent 22%,transparent 78%,#8fdcff18);box-shadow:inset 0 0 13px 2px #a4e6ff55,inset 0 0 3px #f4fcffbb;';
       document.body.append(overlay);automationFreeze.overlays.push(overlay);
     }
@@ -20958,7 +20957,7 @@ function startSNAI(tabIdentity) {
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
     installAutomationFreeze();
     document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
-    addLog('info', 'helper-version', { version: '2.36.506' });
+    addLog('info', 'helper-version', { version: '2.36.507' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
