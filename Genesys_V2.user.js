@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.561.0
+// @version      1.562.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -9717,6 +9717,8 @@ function fitDashboardMetricSpacing(doc) {
     }catch(_){}
     lightweightPerformance.device={cores:navigator.hardwareConcurrency||null,memoryGB:navigator.deviceMemory||null,browser:navigator.userAgent.slice(0,200)};
     let last=performance.now(),lastMinute=0,lastCallState='';
+    const resetLagClock=()=>{last=performance.now();};
+    document.addEventListener('visibilitychange',resetLagClock);
     const observers=[];
     for(const type of ['longtask','long-animation-frame'])try{
       if(!PerformanceObserver.supportedEntryTypes?.includes(type))continue;
@@ -9742,7 +9744,7 @@ function fitDashboardMetricSpacing(doc) {
       try{sessionStorage.setItem(PERFORMANCE_LOG_KEY,JSON.stringify(performanceReport()));}catch(_){}
     };
     const timer=window.setInterval(()=>performanceMeasure('diagnostics',sample),5000);
-    const cleanup=()=>{clearInterval(timer);observers.forEach(o=>o.disconnect());try{sessionStorage.setItem(PERFORMANCE_LOG_KEY,JSON.stringify(performanceReport()));}catch(_){}};
+    const cleanup=()=>{clearInterval(timer);document.removeEventListener('visibilitychange',resetLagClock);observers.forEach(o=>o.disconnect());try{sessionStorage.setItem(PERFORMANCE_LOG_KEY,JSON.stringify(performanceReport()));}catch(_){}};
     window.addEventListener('pagehide',cleanup,{once:true});
     window.__gbsStopLightweightPerformance=cleanup;
   }
