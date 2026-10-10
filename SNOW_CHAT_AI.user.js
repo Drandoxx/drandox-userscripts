@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.490
+// @version      2.36.491
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7538,13 +7538,23 @@ function startSNAI(tabIdentity) {
     }).catch(error=>{state.diagnosticDB=null;throw error;});
     return state.diagnosticDB;
   }
-  async function storedDailyDiagnostics(day){const db=await diagnosticDatabase();return new Promise((resolve,reject)=>{const request=db.transaction('events').objectStore('events').index('day').getAll(day);request.onsuccess=()=>resolve(request.result.map(row=>row.entry));request.onerror=()=>reject(request.error);});}
+  function deduplicateWorkerDiagnostics(entries){
+    const result=[],seen=new Map();
+    for(const entry of entries){
+      if(!entry[2]?.startsWith('extension-')){result.push(entry);continue;}
+      const key=[entry[0],entry[2],entry[4]?.jobId||'',entry[4]?.status||''].join(':');
+      if(seen.has(key)){const previous=result[seen.get(key)];previous[4]={...previous[4],...entry[4]};}
+      else{seen.set(key,result.length);result.push([...entry]);}
+    }
+    return result;
+  }
+  async function storedDailyDiagnostics(day){const db=await diagnosticDatabase();return new Promise((resolve,reject)=>{const request=db.transaction('events').objectStore('events').index('day').getAll(day);request.onsuccess=()=>resolve(deduplicateWorkerDiagnostics(request.result.map(row=>row.entry)));request.onerror=()=>reject(request.error);});}
   async function prunePreviousDiagnosticDays(day){const db=await diagnosticDatabase();return new Promise((resolve,reject)=>{const tx=db.transaction('events','readwrite');const request=tx.objectStore('events').index('day').openCursor(IDBKeyRange.upperBound(day,true));request.onsuccess=()=>{const cursor=request.result;if(cursor){cursor.delete();cursor.continue();}};tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});}
   function updateDiagnosticCount(){const log=state.diagnostics;if(!log)return;const button=document.querySelector('#local-sn-ai-settings-template [data-download-diagnostics]');if(button)button.textContent='Download diagnostic logs ['+log.chats.size+' chat data collected]';}
   async function flushDailyDiagnostics(){
     const log=diagnosticStore();if(log.flushing)return log.flushing;if(!log.events.length)return;
     const batch=log.events.slice();
-    log.flushing=(async()=>{const db=await diagnosticDatabase();await new Promise((resolve,reject)=>{const tx=db.transaction('events','readwrite'),store=tx.objectStore('events');for(const item of batch)store.add({day:item.day,entry:item.entry});tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});log.events.splice(0,batch.length);})().finally(()=>{log.flushing=null;});
+    log.flushing=(async()=>{const db=await diagnosticDatabase();await new Promise((resolve,reject)=>{const tx=db.transaction('events','readwrite'),store=tx.objectStore('events');for(const item of batch)if(item.day===diagnosticDay())store.add({day:item.day,entry:item.entry});tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});log.events.splice(0,batch.length);})().finally(()=>{log.flushing=null;});
     return log.flushing;
   }
   function diagnosticStore() {
@@ -7643,7 +7653,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.490',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.491',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -12879,6 +12889,18 @@ function startSNAI(tabIdentity) {
       catch(error){addLog('warn','matrix-commit-retry',{field:fieldLabel,attempt,message:error.message});if(attempt===2||!/MATRIX_(COMMIT|DEPENDENCY)_FAILED/.test(error.message))throw error;await sleep(120);}
     }
   }
+  async function waitNativeReferenceCommit(fieldLabel, id, display, timeoutMs = 8000) {
+    const started=performance.now();let actual='';
+    while(performance.now()-started<timeoutMs){
+      assertAutomationNotStopped();
+      const field=findControlByLabel(fieldLabel,currentFormElements());
+      const props=field?.isConnected?matrixReferenceHost(field)?.dAProps:null;
+      actual=String(props?.displayValue||'');
+      if(String(props?.value||'')===String(id)&&normalisedFieldValue(actual)===normalisedFieldValue(display))return {stable:true,actual};
+      await sleep(60);
+    }
+    return {stable:false,actual};
+  }
   async function commitMatrixOptionOnce(fieldLabel, expected) {
     const label=comparableLabel(fieldLabel);
     const [field,rows]=await Promise.all([waitForControlByLabel(fieldLabel,3000),loadMatrixOptions()]);
@@ -12901,12 +12923,11 @@ function startSNAI(tabIdentity) {
     // Observe commit and dependent rebuild concurrently; do not pay two
     // serial settling windows for the same ServiceNow render cycle.
     const [result,dependent]=await Promise.all([
-      waitStableReferenceValue(fieldLabel,row.code,'exact',5000,0,field),
+      waitNativeReferenceCommit(fieldLabel,row.id,row.code),
       next?waitForRoutingDependency(fieldLabel,next,1,row.id):Promise.resolve(true),
     ]);
     // Display text can arrive before the native reference ID. Verify both
     // on the current hydrated control, rather than failing on that first frame.
-    await waitUntil(()=>{const control=findControlByLabel(fieldLabel);const currentProps=control?matrixReferenceHost(control)?.dAProps:null;return currentProps?.value===row.id&&normalisedFieldValue(currentProps.displayValue)===normalisedFieldValue(row.code);},1800,60);
     const current=await waitForControlByLabel(fieldLabel,1000);
     const currentHost=current?matrixReferenceHost(current):null;
     const committedId=currentHost?.dAProps?.value || currentHost?.selectedItem;
@@ -12916,7 +12937,7 @@ function startSNAI(tabIdentity) {
   }
 
   async function commitKnownNativeReference(fieldLabel,expected,options={}) {
-    const attempts=comparableLabel(fieldLabel)==='template name'?4:1;
+    const attempts=4;
     for(let attempt=1;attempt<=attempts;attempt++){
       try{return await commitNativeReferenceAttempt(fieldLabel,expected,options);}
       catch(error){
@@ -12925,7 +12946,8 @@ function startSNAI(tabIdentity) {
         addLog('warn', 'native-reference-retry', { field: fieldLabel, attempt, message: String(error?.message || error) });
         // Event Type rebuilds Template Name and its scripted qualifier.
         // Resolve the replacement control and fresh encoded record each try.
-        await sleep(250*attempt);
+        assertAutomationNotStopped();
+        // Re-query the replacement host and current qualifier immediately.
       }
     }
   }
@@ -12988,29 +13010,10 @@ function startSNAI(tabIdentity) {
     // Display text can update before the form model, especially while a
     // template applies and replaces its typeahead. Verify ID and display
     // together on the current host instead of failing on that first frame.
-    const started = performance.now();
-    let current = field, lastScan = 0, stableSince = 0, actual = '', committedId = '';
-    const timeout = comparableLabel(fieldLabel) === 'template name' ? 8000 : 5000;
-    while (performance.now() - started < timeout) {
-      if (!current?.isConnected || performance.now() - lastScan >= 250) {
-        current = findControlByLabel(fieldLabel, currentFormElements());
-        lastScan = performance.now();
-      }
-      const currentHost = current?.isConnected ? matrixReferenceHost(current) : null;
-      const currentProps = currentHost?.dAProps;
-      committedId = String(currentProps?.value || '');
-      actual = String(currentProps?.displayValue || '');
-      const committed = committedId === String(resolved.value)
-        && normalisedFieldValue(actual) === normalisedFieldValue(resolved.displayValue);
-      if (committed) {
-        if (!stableSince) stableSince = performance.now();
-        if (performance.now() - stableSince >= 250) return actual;
-      } else stableSince = 0;
-      await sleep(100);
-    }
+    const result=await waitNativeReferenceCommit(fieldLabel,resolved.value,resolved.displayValue);
+    if(result.stable)return result.actual;
     addLog('warn', 'native-reference-commit-timeout', {
-      field: fieldLabel, expected: resolved.displayValue, actual,
-      recordIdMatched: committedId === String(resolved.value), controlConnected: !!current?.isConnected,
+      field: fieldLabel, expected: resolved.displayValue, actual:result.actual,
     });
     throw new Error(`NATIVE_REFERENCE_COMMIT_FAILED: ${fieldLabel}`);
   }
@@ -15196,7 +15199,7 @@ function startSNAI(tabIdentity) {
     return { interactionId, conversationId: '', closed: true };
   }
 
-  function nativeAPIChatMessages(records) {
+  function nativeAPIChatMessages(records, transcriptMessages = []) {
     const rows = [...records].sort((a, b) => String(a.sequence).localeCompare(String(b.sequence)));
     const payloadOf = row => {
       if (row.messageType === 'text') return null;
@@ -15229,9 +15232,16 @@ function startSNAI(tabIdentity) {
       else throw new Error('CHAT_API_UNSUPPORTED_MESSAGE');
       text = normalise(text);
       if (!text || isChatSummaryText(text)) continue;
-      const author = normalise(row.createdBy || row.senderName);
+      let author = normalise(row.createdBy || row.senderName);
+      let transcriptSource='';
+      if(!author){
+        // Only exact, unambiguous transcript matches can restore a speaker.
+        const matches=transcriptMessages.filter(message=>normalise(message.text)===text&&message.speaker);
+        const identities=new Map(matches.map(message=>[message.source+':'+normalise(message.speaker),message]));
+        if(identities.size===1){const match=[...identities.values()][0];author=normalise(match.speaker);transcriptSource=match.source;}
+      }
       if (!author) throw new Error('CHAT_API_AUTHOR_MISSING');
-      messages.push({ source: agents.has(author.toLowerCase()) || agents.has(normalise(row.senderName).toLowerCase()) ? 'agent-message' : 'user-message', speaker: author, text });
+      messages.push({ source: transcriptSource || (agents.has(author.toLowerCase()) || agents.has(normalise(row.senderName).toLowerCase()) ? 'agent-message' : 'user-message'), speaker: author, text });
     }
     return messages;
   }
@@ -15303,7 +15313,15 @@ function startSNAI(tabIdentity) {
         boundaries.add(boundaryId);
       }
       if (!exhausted) throw new Error('CHAT_API_HISTORY_INCOMPLETE');
-      const chat = nativeAPIChatMessages([...records.values()]);
+      let chat;
+      try{chat=nativeAPIChatMessages([...records.values()]);}
+      catch(error){
+        if(error.message!=='CHAT_API_AUTHOR_MISSING')throw error;
+        const json=await read(`/api/now/table/interaction/${context.interactionId}?sysparm_fields=number,transcript&sysparm_display_value=false`);
+        if(normaliseIMS(json.result?.number)!==ims)throw new Error('CHAT_API_RECORD_MISMATCH');
+        chat=nativeAPIChatMessages([...records.values()],parseTranscriptMessages(json.result.transcript));
+        addLog('info','chat-api-authors-recovered',{ims,source:'transcript'});
+      }
       if (!chat || chat.length < 2) throw new Error('CHAT_API_JOIN_OR_MESSAGES_MISSING');
       addLog('info', 'chat-api-messages-complete', { ims, pages: pages + 1, records: records.size, blocks: chat.length, durationMs: Math.round(performance.now() - started) });
       return chat;
@@ -20650,7 +20668,7 @@ function startSNAI(tabIdentity) {
     requestCodexFTF=withValidatedAICorrection(requestCodexFTF,'FTF');
     requestCodexHP=withValidatedAICorrection(requestCodexHP,'HP');
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
-    addLog('info', 'helper-version', { version: '2.36.490' });
+    addLog('info', 'helper-version', { version: '2.36.491' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
