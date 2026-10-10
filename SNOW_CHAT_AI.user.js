@@ -27,7 +27,36 @@
 // @connect      raw.githubusercontent.com
 // @connect      api.openai.com
 // ==/UserScript==
-
+  async function createNewEventFromWorkspace() {
+    const ims=normaliseIMS(activeSelectedIMS()||state.startContext?.ims||currentInteractionIMS());
+    const beforePath=location.pathname;
+    const native=await waitUntil(()=>{
+      for(const owner of allPageElements()){
+        if(owner.localName!=='sn-form-internal-workspace-form-layout')continue;
+        const props=owner.getProperties?.();
+        if(props?.table!=='interaction'||normaliseIMS(props.fields?.number?.value||props.fields?.number?.displayValue)!==ims)continue;
+        const actions=(props.actionNodes||[]).flatMap(node=>node.children||[]);
+        const action=actions.find(node=>comparableLabel(node.label)==='create a new event');
+        if(action&&typeof props.handleUiActionClick==='function')return {props,action};
+      }
+      return null;
+    },5000,45);
+    if(!native)throw new Error('NEW_EVENT_NATIVE_ACTION_UNAVAILABLE: the active IMS native Create Event action is not loaded.');
+    assertAutomationNotStopped();
+    // Invoke the loaded ServiceNow UI action controller, not a synthetic DOM
+    // click or reconstructed URL. ServiceNow opens and selects its own draft.
+    await native.props.handleUiActionClick({id:native.action.id});
+    const ready=await waitUntil(()=>{
+      if(location.pathname===beforePath)return null;
+      const event=checkCurrentEvent();
+      return newEventMatchesIMS(event,ims)?event:null;
+    },12000,45);
+    if(!ready)throw new Error('NEW_EVENT_NATIVE_FORM_NOT_READY: ServiceNow did not mount the requested IMS draft.');
+    const tab=allPageElements().find(el=>el.getAttribute('role')==='tab'&&el.getAttribute('aria-selected')==='true'&&comparableLabel(elementLabel(el)).includes('new event'));
+    state.createdEvent={ims,tabId:tab?.id||'',controls:tab?.getAttribute('aria-controls')||'',path:location.pathname};
+    addLog('info','new-event-native-created',{ims,source:native.action.id});
+    return await waitForControlByLabel('Location',12000);
+  }
 /*
 <SN_AI_HELPER_GUIDE version="8">
   This block is intended for an AI assistant that has been given this source
