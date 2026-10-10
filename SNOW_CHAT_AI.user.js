@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.510
+// @version      2.36.511
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7678,7 +7678,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.510',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.511',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -9309,7 +9309,8 @@ function startSNAI(tabIdentity) {
   }
   function updateAIResponsePreview(preview){
     const entry=aiResponsePreviews.get(preview?.jobId);if(!entry||!state.aiResponsePreview)return;
-    if(entry.responseComplete&&!preview.complete)return;
+    if((entry.responseComplete||entry.finalReceived)&&!preview.complete)return;
+    if(preview.complete)entry.finalReceived=true;
     entry.heading.textContent=`ChatGPT · ${entry.ims} · ${preview.complete?'Response playback · filling ticket…':preview.generating?'Generating response…':'Receiving response…'}${preview.truncated?' (latest portion)':''}`;
     const next=(formatAIResponseTV(preview.text)||(preview.generating?'ChatGPT is generating…\nResponse text is not available to the companion yet.':'Waiting for response text…')).slice(-30000);
     const reduced=typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -9318,10 +9319,13 @@ function startSNAI(tabIdentity) {
     const replay=preview.complete&&!entry.finalPlayback&&!streamed;
     if(preview.text)entry.hasResponseText=true;
     if(replay)entry.finalPlayback=true;
-    if(next!==entry.targetText||replay){
+    if(next===entry.targetText&&entry.displayedText===next)return;
+    if(next!==entry.targetText||replay||(preview.complete&&entry.displayedText!==next)){
       if(entry.typingTimer)clearTimeout(entry.typingTimer);
       entry.targetText=next;
-      const from=!replay&&next.startsWith(entry.displayedText)?entry.displayedText.length:0;
+      // Partial JSON formatting can change when a token/key is completed.
+      // Preserve playback position instead of typing identical values again.
+      const from=replay?0:Math.min(entry.displayedText.length,next.length);
       let visible=from;const chunk=Math.max(2,Math.ceil((next.length-from)/100));
       const tick=()=>{
         if(aiResponsePreviews.get(preview.jobId)!==entry)return;
@@ -20988,7 +20992,7 @@ function startSNAI(tabIdentity) {
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
     installAutomationFreeze();
     document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
-    addLog('info', 'helper-version', { version: '2.36.510' });
+    addLog('info', 'helper-version', { version: '2.36.511' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
