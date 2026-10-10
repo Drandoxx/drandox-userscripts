@@ -13373,12 +13373,14 @@ function startSNAI(tabIdentity) {
     let field=await waitForControlByLabel(fieldLabel,3000);
     if(!field||field.disabled||field.readOnly)throw new Error(`NATIVE_CHOICE_UNAVAILABLE: ${fieldLabel}`);
     const current=readableElementValue(field);
-    if(fieldMatchesExpected(current,optionValue,fieldLabel))return current;
     let host=field;
     while(host&&host.localName!=='now-select')host=deepParentElement(host);
     if(!host||host.readonly||typeof host.dispatch!=='function')throw new Error(`NATIVE_CHOICE_UNAVAILABLE: ${fieldLabel}`);
     const flatten=items=>(items||[]).flatMap(item=>item.children?flatten(item.children):[item]);
     const ownerOf=node=>{while(node&&node.localName!=='sn-record-choice-connected')node=deepParentElement(node);return node;};
+    const initialProps=ownerOf(host)?.getProperties?.();
+    const initialModel=initialProps?.formData?.fields?.[initialProps.name];
+    if(fieldMatchesExpected(current,optionValue,fieldLabel)&&(!initialProps?.name||(initialModel&&fieldMatchesExpected(initialModel.displayValue,optionValue,fieldLabel))))return current;
     const ready=async timeout=>{
       const started=performance.now();
       while(performance.now()-started<timeout){
