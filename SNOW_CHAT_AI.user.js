@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.487
+// @version      2.36.488
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7631,7 +7631,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.487',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.488',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -10751,9 +10751,14 @@ function startSNAI(tabIdentity) {
   }
 
   function findDeferredActiveEventFieldHost(label) {
-    if (comparableLabel(label) !== 'attached knowledge') return null;
-    return activeEventElements(allPageElements()).find(element =>
-      element.matches('sn-record-reference-connected[name="u_attached_knowledge"]') && isVisible(element)) || null;
+    const wanted=comparableLabel(label);
+    return activeEventElements(allPageElements()).find(element=>{
+      if(!element.matches('sn-record-input-connected,sn-record-reference-connected,sn-record-choice-connected')||!isVisible(element))return false;
+      if(wanted==='attached knowledge'&&element.getAttribute('name')==='u_attached_knowledge')return true;
+      const props=element.getProperties?.(),name=props?.name||element.getAttribute('name');
+      const fieldLabel=props?.label||props?.formData?.fields?.[name]?.label;
+      return fieldLabel&&comparableLabel(fieldLabel)===wanted;
+    })||null;
   }
 
   async function scrollActiveEventTargetIntoView(target) {
@@ -10766,15 +10771,23 @@ function startSNAI(tabIdentity) {
       if (ancestor.clientHeight > 0 && ancestor.scrollHeight > ancestor.clientHeight + 2
         && /(auto|scroll)/.test(getComputedStyle(ancestor).overflowY)) {
         const viewport = ancestor.getBoundingClientRect(), rect = target.getBoundingClientRect();
-        await smoothActiveFormScroll(ancestor, ancestor.scrollTop + rect.top + rect.height / 2 - viewport.top - ancestor.clientHeight / 2);
+        const delta=minimalFormScrollDelta(rect,viewport);
+        if(Math.abs(delta)>2)await smoothActiveFormScroll(ancestor, ancestor.scrollTop+delta);
         return;
       }
       ancestor = deepParentElement(ancestor);
     }
-    target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    target.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
     await sleep(500);
   }
 
+  function minimalFormScrollDelta(rect,viewport) {
+    const top=viewport.top+16,bottom=viewport.bottom-16,height=bottom-top;
+    if(rect.height>height)return rect.top>bottom||rect.bottom<top?rect.top-top:0;
+    if(rect.top<top)return rect.top-top;
+    if(rect.bottom>bottom)return rect.bottom-bottom;
+    return 0;
+  }
   async function waitForControlByLabel(label, timeoutMs = 6000) {
     const started=performance.now();let found=false;
     try{const control=await waitForControlByLabelInternal(label,timeoutMs);found=!!control;return control;}
@@ -10797,6 +10810,8 @@ function startSNAI(tabIdentity) {
           if(/auto|scroll|hidden|clip/.test(css.overflowY)&&box.height>0)inView=rect.top>=box.top+2&&rect.bottom<=box.bottom-2;
           if(/auto|scroll|hidden|clip/.test(css.overflowX)&&box.width>0)inView=inView&&rect.left>=box.left&&rect.right<=box.right;
         }
+        const eventScroller=activeEventFormScroller();
+        if(!inView&&eventScroller){const box=eventScroller.getBoundingClientRect();if(rect.height>box.height-32&&rect.top<box.bottom-16&&rect.bottom>box.top+16)inView=true;}
         if(inView&&field.isConnected&&!field.disabled)return field;
         // Stable page marker, without changing ServiceNow's own IDs or URL.
         // scrollIntoView traverses ALL nested scrollports and shadow hosts,
@@ -10815,8 +10830,8 @@ function startSNAI(tabIdentity) {
           const rect = field.getBoundingClientRect();
           if (rect.top < viewport.top + 16 || rect.bottom > viewport.bottom - 16) {
             const before = scroller.scrollTop;
-            await smoothActiveFormScroll(scroller,
-              before + rect.top + rect.height / 2 - viewport.top - viewport.height / 2);
+            const delta=minimalFormScrollDelta(rect,viewport);
+            if(Math.abs(delta)>2)await smoothActiveFormScroll(scroller,before+delta);
             addLog('info', 'auto-field-scrolled-into-view', { field: label, from: Math.round(before), to: Math.round(scroller.scrollTop) });
             await sleep(150);
             // Scrolling can replace the input: return only its current instance.
@@ -11559,8 +11574,41 @@ function startSNAI(tabIdentity) {
     };
   }
 
+  function nativeDescriptionSchema() {
+    if(!/\/sub\/(?:new_record|record)\/new_call(?:\/|$)/.test(location.pathname))return null;
+    for(const owner of activeEventElements(allPageElements())){
+      if(owner.localName!=='sn-record-input-connected'||!isVisible(owner))continue;
+      const props=owner.getProperties?.(),fields=props?.formData?.fields;
+      // All template slots must exist, even when their inputs are virtualized.
+      if(!fields?.description||![1,2,3,4,5,6].every(n=>fields['u_field_'+n]))continue;
+      const wanted=state.autoSession?.ims;
+      if(wanted&&normaliseIMS(fields.u_link_to_interaction?.displayValue)!==normaliseIMS(wanted))continue;
+      const visible=Object.values(fields).filter(f=>/^u_field_\d+$/.test(f.name||'')&&f.visible===true&&!f.readonly);
+      const base=discoverGenericDescriptionSchema();
+      const rows=uniqueDescriptionFields(visible.map(f=>({name:f.name,label:normalise(f.label),tag:'input',value:String(f.value??''),required:f.mandatory||undefined,maxLength:f.maxLength||f.max_length||100})));
+      if(!rows.length||rows.some(f=>!f.label||/^Field \d+$/i.test(f.label)))return null;
+      const template=String(fields.description.value??'');
+      return {...(base||{}),required:['Short Description','Description',...rows.map(f=>f.label)],optional:[],descriptionTemplate:template,fieldsUnderDescription:rows,
+        example:{'Short Description':'Concise issue title',Description:template||'Completed factual description','Fields Under Description':Object.fromEntries(rows.map(f=>[f.label,f.value||'N/A']))},
+        rule:base?.rule||'Preserve the Description template labels, row order and line breaks. Fill only factual values; never invent facts.',source:'native-form-model'};
+    }
+    return null;
+  }
+  async function waitForNativeDescriptionSchema(timeoutMs,stableMs) {
+    const started=performance.now();let signature='',stableSince=0;
+    while(performance.now()-started<Math.min(timeoutMs,1800)){
+      assertAutomationNotStopped();const schema=nativeDescriptionSchema();if(!schema)return null;
+      const next=JSON.stringify([schema.descriptionTemplate,schema.fieldsUnderDescription]);
+      if(next!==signature){signature=next;stableSince=performance.now();}
+      if(performance.now()-stableSince>=stableMs){addLog('info','description-schema-native-complete',{source:'native-form-model',durationMs:Math.round(performance.now()-started),fields:schema.fieldsUnderDescription.length,ok:true});return schema;}
+      await sleep(60);
+    }
+    return null;
+  }
   async function waitForGenericDescriptionSchema(timeoutMs = 5000, stableMs = 700) {
     const started = performance.now();
+    const native=await waitForNativeDescriptionSchema(timeoutMs,stableMs);
+    if(native)return native;
     let lastSignature = '';
     let stableSince = 0;
     let schema = null;
@@ -11570,8 +11618,9 @@ function startSNAI(tabIdentity) {
     const originalScrollTop = scroller?.scrollTop || 0;
     let lastScrollTop = -1;
     if (scroller) {
-      scroller.scrollTop = 0;
-      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      const description=findControlByLabel('Description');
+      if(description)await scrollActiveEventTargetIntoView(description);
+      else{scroller.scrollTop=0;scroller.dispatchEvent(new Event('scroll',{bubbles:true}));}
       await sleep(120);
     }
     while (performance.now() - started < timeoutMs) {
@@ -13341,7 +13390,7 @@ function startSNAI(tabIdentity) {
         // popups closed again, which appears as field flicker.
         let activeField = field;
         if (activeField.getAttribute('aria-expanded') !== 'true') {
-          activeField.scrollIntoView({ block: 'center', inline: 'nearest' });
+          await scrollActiveEventTargetIntoView(activeField);
           activeField.click();
         }
         state.automationDropdowns.add(comparableLabel(fieldLabel));
@@ -13581,8 +13630,10 @@ function startSNAI(tabIdentity) {
   async function autoTextDescriptionField(fieldMetadata, value, code) {
     const text = String(value ?? '');
     for (let attempt = 1; attempt <= 10; attempt += 1) {
-      const field = dynamicDescriptionControl(fieldMetadata);
+      let field = dynamicDescriptionControl(fieldMetadata);
+      if(!field){await waitForControlByLabel(fieldMetadata.label,3000);field=dynamicDescriptionControl(fieldMetadata);}
       if (!field) automationFailure(`${code}_FIELD_MISSING`, `${fieldMetadata.label} was not found.`, { attempt, name: fieldMetadata.name || '' });
+      await scrollActiveEventTargetIntoView(field);
       const modelCommitted = await commitTextToFormModel(field, text, () => dynamicDescriptionControl(fieldMetadata));
       let stableSince = 0;
       const committed = await waitUntil(() => {
@@ -13647,7 +13698,7 @@ function startSNAI(tabIdentity) {
             maxAttempts: 1,
           });
         } else {
-          field.focus();
+          field.focus({preventScroll:true});
           setNativeValue(field, reportingValue);
           field.blur();
           await waitUntil(() => matches() ? verifiedControlValue('Reporting User') : null, 900, 45);
@@ -20587,7 +20638,7 @@ function startSNAI(tabIdentity) {
     requestCodexFTF=withValidatedAICorrection(requestCodexFTF,'FTF');
     requestCodexHP=withValidatedAICorrection(requestCodexHP,'HP');
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
-    addLog('info', 'helper-version', { version: '2.36.487' });
+    addLog('info', 'helper-version', { version: '2.36.488' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
