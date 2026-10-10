@@ -9304,7 +9304,7 @@ function startSNAI(tabIdentity) {
     const entry=aiResponsePreviews.get(preview?.jobId);if(!entry||!state.aiResponsePreview)return;
     if(entry.responseComplete&&!preview.complete)return;
     entry.heading.textContent=`ChatGPT · ${entry.ims} · ${preview.complete?'Response playback · filling ticket…':preview.generating?'Generating response…':'Receiving response…'}${preview.truncated?' (latest portion)':''}`;
-    const next=String(preview.text||'').slice(-30000);
+    const next=formatAIResponseTV(preview.text).slice(-30000);
     const reduced=typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches;
     const replay=preview.complete&&!entry.finalPlayback;
     if(replay)entry.finalPlayback=true;
@@ -9317,7 +9317,9 @@ function startSNAI(tabIdentity) {
         if(aiResponsePreviews.get(preview.jobId)!==entry)return;
         visible=reduced?next.length:Math.min(next.length,visible+chunk);
         entry.displayedText=next.slice(0,visible);
-        entry.body.textContent=entry.displayedText;entry.body.scrollTop=entry.body.scrollHeight;
+        entry.body.textContent=entry.displayedText;
+        const escape=value=>value.replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+        entry.body.innerHTML=entry.displayedText.split('\n').map(line=>{const colon=line.indexOf(':');return colon>0&&colon<110?'<span style="color:var(--sn-theme-ac94ec,#b8a2ff);font-weight:700">'+escape(line.slice(0,colon+1))+'</span>'+escape(line.slice(colon+1)):escape(line);}).join('\n');entry.body.scrollTop=entry.body.scrollHeight;
         if(visible<next.length)entry.typingTimer=setTimeout(tick,35);
         else{entry.typingTimer=0;if(entry.responseComplete)entry.heading.textContent=`ChatGPT · ${entry.ims} · Filling and verifying ticket…`;}
       };
@@ -9326,6 +9328,21 @@ function startSNAI(tabIdentity) {
     if(!(typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches)&&entry.body.animate){
       entry.animation?.cancel();entry.animation=entry.body.animate([{boxShadow:'inset 0 2px 12px #0004,0 0 12px #ac94ec70'},{boxShadow:'inset 0 2px 12px #0004,0 0 0 #ac94ec00'}],{duration:420,easing:'ease-out'});
     }
+  }
+  function formatAIResponseTV(raw){
+    const text=String(raw||'').trim(),rows=[];
+    const label=key=>String(key).replace(/([a-z])([A-Z])/g,'$1 $2').replace(/[_-]+/g,' ').replace(/\b\w/g,char=>char.toUpperCase()).replace(/^Ims$/,'IMS');
+    const add=(key,value)=>{if(value===null||value===undefined)return;const name=label(key),content=String(value);rows.push(name+':'+(/description/i.test(name)&&!/^short /i.test(name)?'\n':' ')+content);};
+    const walk=value=>{for(const [key,item]of Object.entries(value||{})){if(item&&typeof item==='object'){if(Array.isArray(item))add(key,item.join(', '));else walk(item);}else add(key,item);}};
+    try{const parsed=JSON.parse(text.replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,''));if(parsed&&typeof parsed==='object')walk(parsed);}
+    catch{
+      // Render completed scalar strings while the JSON object is streaming;
+      // do not show braces, wrappers or machine syntax in the TV.
+      for(const match of text.matchAll(/"([^"\\]+)"\s*:\s*"((?:\\.|[^"\\])*)(?:"|$)/g)){
+        let value;try{value=JSON.parse('"'+match[2]+'"');}catch{value=match[2].replace(/\\n/g,'\n').replace(/\\"/g,'"');}add(match[1],value);
+      }
+    }
+    return rows.length?rows.join('\n\n'):(text.startsWith('{')?'Receiving ticket fields…':text);
   }
   function requestChatGPTWeb({ ims, instructions, schema, input, validate }) {
     if(input?.transcript)collectDiagnosticChat(schema?.required?.[0]||'TEXT',ims,input.transcript);
