@@ -5846,7 +5846,7 @@
   function recordCallNetworkMetadata(path,status,method,transport) {
     if(typeof lightweightPerformance==='undefined' || !lightweightPerformance)return;
     const safePath=String(path).split('?')[0].replace(/[a-f0-9-]{36}/gi,':id').slice(0,160);
-    const signature=safePath+':'+status+':'+method+':'+transport;
+    const signature=safePath+':'+status+':'+method+':'+transport+':'+callPopupsEnabled();
     lightweightPerformance.network ||= [];
     const previous=lightweightPerformance.network.find(e=>e.signature===signature);
     if(previous){previous.count++;previous.lastAt=Date.now();return;}
@@ -6768,6 +6768,7 @@
 
   function syncCallInformationPopup(doc) {
     if(!callPopupsEnabled()) {
+      for(const observer of callScopeObservers.values())observer.disconnect();callScopeObservers.clear();
       doc.querySelectorAll('#gbs-call-information,#gbs-last-call-data,[id^="gbs-earlier-call-"],#gbs-incoming-call-notice').forEach(card=>card.remove());
       return;
     }
@@ -6776,6 +6777,14 @@
       doc.getElementById('gbs-call-information')?.remove();
       return;
     }
+    const selectedRoot=doc.querySelector('.selected-interaction-container');
+    const alertRoot=doc.querySelector('.messenger-shown [data-action="answerInteraction"]')?.closest('.messenger-message');
+    watchCallScope(selectedRoot);watchCallScope(alertRoot);
+    for(const [scope,observer]of callScopeObservers)if(!scope.isConnected){observer.disconnect();callScopeObservers.delete(scope);}
+    // Native scope observers/API events trigger immediate refreshes. Slow fallback
+    // detects iframe replacement or an unavailable event stream without full scans each second.
+    if(!callPopupDirty && Date.now()-lastPopupFallbackAt<5000)return;
+    callPopupDirty=false;lastPopupFallbackAt=Date.now();
     renderEarlierCallCards(doc);
     // Old iframe executions can retain their own cards after updating without
     // a full reload. The top document owns every call card; sweep reachable
@@ -6792,17 +6801,18 @@
     // normal operation too. Restrict only the synthetic fallback to call-test
     // mode; otherwise a real selected interaction is mislabeled Connected and
     // exposes Mute/Hold/Hang up before the agent has answered it.
-    const incoming = Boolean(incomingAction) || (callTestEnabled(doc) && Boolean(testCallSession
+    const apiSignal=currentLiveCallSignal();
+    const incoming = Boolean(incomingAction) || apiSignal?.state==='alerting' || (callTestEnabled(doc) && Boolean(testCallSession
       && !testCallSession.answeredAt && !testCallSession.finishedAt && !testCallSession.timeoutAt));
     if(incoming)completePreviousWrapupOnIncoming();
     const selected = [...doc.querySelectorAll('.selected-interaction-container')].find(visible);
     const wrapup = [...reachableCallDocuments].flatMap(frameDoc => [...frameDoc.querySelectorAll('[data-testid="wrapup-main-container"], .wrapup-message-container')]).find(element => element.querySelector('[data-testid="wrapup-header-message-duration"]'));
     let popup = doc.getElementById('gbs-call-information');
-    const currentConnected = /Interaction State\s*:\s*Connected/i.test(selected?.innerText || '');
+    const currentConnected = apiSignal?.state==='connected' || /Interaction State\s*:\s*Connected/i.test(selected?.innerText || '');
     if (wrapup && !incoming && !currentConnected) {
       finishActiveCall(); syncLastCallDataPopup(doc, wrapup); return;
     }
-    if (!selected && !incoming) {
+    if (!selected && !incoming && !currentConnected) {
       if (activeCallSummary) finishActiveCall();
       // Panel disappearance is not an explicit Disconnected transition.
       syncLastCallDataPopup(doc, wrapup);
@@ -6822,7 +6832,7 @@
       root.querySelectorAll('iframe').forEach(frame => {
         try {
           const nested = accessibleFrameDocument(frame);
-          if (nested && !documents.includes(nested)) { documents.push(nested); visit(nested, depth + 1); }
+          if (nested && !documents.includes(nested)) { documents.push(nested);watchCallScope(nested.body);visit(nested, depth + 1); }
         } catch (_) { /* Cross-origin details are unavailable, not guessed. */ }
       });
     };
@@ -6832,8 +6842,13 @@
       value = clean(value);
       if (value && value.length < 300 && !details.has(label)) details.set(label, value);
     };
+    if(apiSignal) {
+      add('Phone number',apiSignal.phone);add('Caller / location',apiSignal.location);add('Queue Name',apiSignal.queue);
+      add('Interaction State',apiSignal.state==='connected'?'Connected':'Incoming');
+    }
     for (const scope of scopes) {
-      const text = scope.innerText || '';
+      // Rich API fields avoid re-reading all call iframe text when complete.
+      const text = apiSignal?.phone && apiSignal?.queue && apiSignal?.location ? '' : scope.innerText || '';
       const phone = text.match(/(?:tel:)?\+\d[\d ()-]{6,}\d/);
       if (phone) add('Phone number', phone[0].replace(/^tel:/, ''));
       for (const label of ['Interaction State', 'Queue Name', "Customer's Number", 'Customer Name', 'Country', 'Location']) {
@@ -6864,6 +6879,7 @@
       else seenValues.add(key);
     }
     if (!activeCallSummary) activeCallSummary = { ringingAt: Date.now(), connectedAt: null, details: [] };
+    if(apiSignal && !activeCallSummary.conversationId)activeCallSummary.conversationId=apiSignal.id;
     if (/^disconnected$/i.test(state)) {
       if (activeCallSummary.connectedAt) {
         if (details.size) activeCallSummary.details = [...details];
@@ -6938,7 +6954,6 @@
     });
     const signature = JSON.stringify([...details]) + state + Boolean(snowAction)
       + Boolean(activeCallSummary?.connectedAt)
-      + (incoming ? Math.floor((Date.now() - (testCallSession?.startedMs || Date.now())) / 1000) : '')
       + JSON.stringify(callControls.map(control => [control.label, Boolean(control.native), control.native?.disabled, control.native?.getAttribute('aria-disabled'), control.native?.getAttribute('aria-pressed')]));
     if (popup.dataset.details === signature) return;
     popup.dataset.details = signature;
@@ -7026,6 +7041,7 @@
       if (snow) { snow.style.marginLeft = 'auto'; controls.appendChild(snow); }
       const ringingStartedAt = testCallSession?.startedMs || activeCallSummary?.ringingAt || Date.now();
       const timer = doc.createElement('div'); timer.textContent = `${Math.max(0, 29 - Math.floor((Date.now() - ringingStartedAt) / 1000))}s to answer`;
+      timer.dataset.gbsRingingTimer=String(ringingStartedAt);
       timer.style.cssText = 'width:100%;color:#a0a8b0;font-size:12px;user-select:none'; controls.prepend(timer);
     }
     for (const control of incoming ? [] : callControls) {
@@ -9773,7 +9789,8 @@ function fitDashboardMetricSpacing(doc) {
     for(const stats of Object.values(report.work)){stats.totalMs=Math.round(stats.totalMs);stats.maxMs=Math.round(stats.maxMs*10)/10;}
     report.exportedAt=Date.now();report.maxExportBytes=32768;
     while(new TextEncoder().encode(JSON.stringify(report)).length>32768) {
-      if(report.events.length)report.events.shift();
+      if(report.network?.length)report.network.shift();
+      else if(report.events.length)report.events.shift();
       else if(report.samples.length)report.samples.shift();
       else break;
       report.exportTrimmed=true;
