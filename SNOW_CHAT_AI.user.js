@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.485
+// @version      2.36.486
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -554,17 +554,17 @@ const snAIChatDisplayNames=(()=>{
     try{record=imsPreviewRecords.get(id)||await fetchIMSRecord('sys_id='+id);}catch{greetSeenHosts.delete(host);return;}
     const acceptedAt=autoGreetOffers.get(record?.number?.value);
     if(!acceptedAt||Date.now()-acceptedAt>180000){greetSeenHosts.delete(host);return;}
-    const started=Date.now(), activity=lastOperatorActivity;
+    const started=Date.now();
     const greetDelayMs=0;
     const ownElements=()=>{const list=[];const visit=root=>{for(const node of root.querySelectorAll('*')){list.push(node);if(node.shadowRoot)visit(node.shadowRoot);}};if(host.shadowRoot)visit(host.shadowRoot);return list;};
     const input=()=>ownElements().find(node=>node.matches('textarea[name="CHAT_INPUT#CHAT_TEXTAREA"]'));
-    const safe=()=>autoGreetEnabled&&host.isConnected&&(host.sysId||host.getAttribute('sys-id'))===id&&host.isChatOwner===true&&lastOperatorActivity===activity&&!input()?.disabled&&!input()?.readOnly&&ownElements().some(node=>node.matches('[role="tab"][aria-selected="true"]')&&/Public Chat/i.test(node.textContent));
+    const safe=()=>autoGreetEnabled&&host.isConnected&&(host.sysId||host.getAttribute('sys-id'))===id&&host.isChatOwner===true&&!input()?.disabled&&!input()?.readOnly&&ownElements().some(node=>node.matches('[role="tab"][aria-selected="true"]')&&/Public Chat/i.test(node.textContent));
     const wait=async predicate=>{for(let i=0;i<20;i++){if(!safe())return null;const result=predicate();if(result)return result;await new Promise(resolve=>setTimeout(resolve,100));}return null;};
     setTimeout(async()=>{
       // Wait for native controls to mount; never insert a command into a partial/error view.
       let loaded=false;
       for(let i=0;i<480;i++){
-        if(!autoGreetEnabled||!host.isConnected||lastOperatorActivity!==activity||greetAttempted.has(id))return;
+        if(!autoGreetEnabled||!host.isConnected||greetAttempted.has(id))return;
         const field=input(),nodes=ownElements();
         if(field?.value.trim())return;
         const send=nodes.find(node=>node.matches('button[aria-label="Send Message"]'));
@@ -7575,7 +7575,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.484',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.486',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -13688,7 +13688,6 @@ function startSNAI(tabIdentity) {
       await autoLookup('Template Name', 'REQUEST - CPC - ON/OFF', { expected: 'REQUEST - CPC - ON/OFF', code: 'CPC_TEMPLATE_COMMIT_FAILED' });
       await autoLookup('Configuration Item', 'SEARCH AND BROWSE FFX', { expected: 'SEARCH AND BROWSE FFX', code: 'CPC_CI_COMMIT_FAILED' });
       await requirePopulatedField('Assignment Group', 'CPC_ASSIGNMENT_GROUP_EMPTY');
-      await autoSelect('Priority', '1 - Critical', 'CPC_PRIORITY_COMMIT_FAILED');
       // Classification is the same Workspace dropdown type as Event Type and
       // is committed before any Short Description or Description typing.
       await sleep(450);
@@ -13696,8 +13695,13 @@ function startSNAI(tabIdentity) {
         refreshEventTypeOnFirstMissing: true,
         requiredEventType: 'Request',
       });
+      await autoSelect('Priority', '1 - Critical', 'CPC_PRIORITY_COMMIT_FAILED');
+      // Reassert Location after template/routing updates, before the text fields.
+      const finalLocation = await autoLookup('Location', data.locationSearch, {
+        match: 'prefix', first: true, preferExpandedValue: true, code: 'CPC_LOCATION_FINAL_COMMIT_FAILED',
+      });
       const on = data.action === 'ENABLE';
-      const shortDescription = `CPC TCND turn ${on ? 'ON' : 'OFF'} for ${fullLocation}`;
+      const shortDescription = `CPC TCND turn ${on ? 'ON' : 'OFF'} for ${finalLocation}`;
       const description = `REASON FOR REQUEST TO DISABLE/ENABLE: ${on ? `ENABLE - ${data.reason || 'store is open now'}` : `DISABLE - ${data.reason}`}\nDOES TC ALSO NEED TCND TO TURN ON\\OFF?: yes\nINFORMATION PROVIDED: this ticket`;
       await autoText('Short Description', shortDescription, 'CPC_SHORT_DESCRIPTION_COMMIT_FAILED', 80);
       await autoText('Description', description, 'CPC_DESCRIPTION_COMMIT_FAILED');
@@ -13708,15 +13712,7 @@ function startSNAI(tabIdentity) {
         'What error message do you see?': 'NA',
       }, 'CPC');
       await autoLookup('Attached Knowledge', '*5058', { expected: 'KB0005058', match: 'prefix', first: true, code: 'CPC_KB_COMMIT_FAILED' });
-      // Template and dependent-routing updates can restore the New Event's
-      // default Location after a previously confirmed reference selection.
-      // Reassert and verify the requested location at the final stable point;
-      // the short description is then rebuilt from the retained value.
-      const finalLocation = await autoLookup('Location', data.locationSearch, {
-        match: 'prefix', first: true, preferExpandedValue: true, code: 'CPC_LOCATION_FINAL_COMMIT_FAILED',
-      });
       const finalShortDescription = `CPC TCND turn ${on ? 'ON' : 'OFF'} for ${finalLocation}`;
-      if (finalShortDescription !== shortDescription) await autoText('Short Description', finalShortDescription, 'CPC_SHORT_DESCRIPTION_COMMIT_FAILED', 80);
       const expected = { Location: finalLocation, 'Short Description': finalShortDescription, Description: description };
       const verification = verifyTicketProfile('CPC', expected, { Classification: classification });
       if (!verification.ok) automationFailure('CPC_FINAL_VERIFICATION_FAILED', 'CPC values did not pass final verification.', { mismatches: verification.mismatches });
@@ -20535,7 +20531,7 @@ function startSNAI(tabIdentity) {
     requestCodexFTF=withValidatedAICorrection(requestCodexFTF,'FTF');
     requestCodexHP=withValidatedAICorrection(requestCodexHP,'HP');
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
-    addLog('info', 'helper-version', { version: '2.36.485' });
+    addLog('info', 'helper-version', { version: '2.36.486' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
