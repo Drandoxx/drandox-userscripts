@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.478
+// @version      2.36.479
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -20370,7 +20370,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.478' });
+    addLog('info', 'helper-version', { version: '2.36.479' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -22160,6 +22160,12 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // GROUPBY is a presentation directive; fetch the same record filter and group
 // by the actual reference sys_id locally, never by a potentially shared name.
 const SN_AI_CHATS_TODAY_QUERY='opened_atONToday@javascript:gs.beginningOfToday()@javascript:gs.endOfToday()^assignment_group=9cbdc90d1bc66110a95a8732f54bcbec';
+function chatsTodayDayLabel(days) { return days===0?'Today':days===1?'Yesterday':days+' Days Ago'; }
+function chatsTodayDayQuery(query,days) {
+  if(!Number.isInteger(days)||days<0)throw new Error('Invalid chat day');
+  return days===0?query:query.replace('opened_atONToday@javascript:gs.beginningOfToday()@javascript:gs.endOfToday()',
+    'opened_atBETWEENjavascript:gs.daysAgoStart('+days+')@javascript:gs.daysAgoEnd('+days+')');
+}
 function chatsTodayValue(field,display=false) {
   if(field&&typeof field==='object')return String((display?field.display_value:field.value)??field.value??'');
   return String(field??'');
@@ -22310,6 +22316,24 @@ function installChatsTodayPanel() {
   </style><button type="button" class="launcher" aria-expanded="false" aria-controls="chats-today-panel">Chats Today</button><section class="panel" id="chats-today-panel" role="dialog" aria-label="Chats Today" hidden><header><h2>Chats Today</h2><div class="actions"><button type="button" class="refresh" aria-label="Refresh Chats Today">Refresh</button><button type="button" class="icon close" aria-label="Close Chats Today"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m18 6-12 12M6 6l12 12"/></svg></button></div></header><p class="status" role="status">Not loaded yet</p><div class="groups"></div></section>`;
   const launcher=root.querySelector('.launcher'),panel=root.querySelector('.panel'),status=root.querySelector('.status'),groups=root.querySelector('.groups'),refresh=root.querySelector('.refresh');
   const reset=document.createElement('button');reset.type='button';reset.className='reset';reset.textContent='Reset';reset.title='Restore automatic ordering for all agents';refresh.before(reset);
+  let dayOffset=0;
+  const dayTitle=root.querySelector('header h2'),dayNav=document.createElement('div');dayNav.className='day-navigation';
+  dayTitle.before(dayNav);dayNav.append(dayTitle);
+  const previousDay=document.createElement('button'),nextDay=document.createElement('button');
+  for(const [button,direction]of [[previousDay,'left'],[nextDay,'right']]){
+    button.type='button';button.className='icon day-'+direction;button.setAttribute('aria-label',direction==='left'?'Previous day':'Next day');button.title=direction==='left'?'Previous day':'Next day';
+    button.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-'+direction+'"><path d="'+(direction==='left'?'m15 18-6-6 6-6':'m9 18 6-6-6-6')+'"/></svg>';
+  }
+  dayTitle.before(previousDay);dayTitle.after(nextDay);nextDay.hidden=true;
+  const dayStyle=document.createElement('style');dayStyle.textContent='.day-navigation{display:flex;align-items:center;gap:3px;white-space:nowrap}.day-navigation .icon{width:22px}.day-navigation h2{white-space:nowrap}';root.append(dayStyle);
+  function changeDay(delta){
+    const next=Math.max(0,dayOffset+delta);if(next===dayOffset)return;
+    stop();request?.abort();request=null;dayOffset=next;lastSuccess=0;failures=0;currentRecords=[];total=0;
+    groups.replaceChildren();searchCount.textContent='';
+    dayTitle.textContent='Chats '+chatsTodayDayLabel(dayOffset);nextDay.hidden=dayOffset===0;
+    panel.setAttribute('aria-label',dayTitle.textContent);load();
+  }
+  previousDay.addEventListener('click',()=>changeDay(1));nextDay.addEventListener('click',()=>changeDay(-1));
   const searchBox=document.createElement('label');searchBox.className='chat-search';
   searchBox.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="lucide lucide-search" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input type="search" aria-label="Search Chats Today" placeholder="Search chats…" maxlength="256" autocomplete="off"><span class="search-count" aria-live="polite"></span>';
   root.querySelector('header h2').after(searchBox);
@@ -22469,21 +22493,22 @@ function installChatsTodayPanel() {
       alignDescriptions();
       detail.addEventListener('toggle',()=>{if(detail.open)alignDescriptions();});
     }
-    if(!matches){const empty=document.createElement('p');empty.className='empty';empty.textContent=searching?'No matching chats.':'No interactions found for today.';groups.append(empty);}
+    if(!matches){const empty=document.createElement('p');empty.className='empty';empty.textContent=searching?'No matching chats.':'No interactions found for '+chatsTodayDayLabel(dayOffset).toLowerCase()+'.';groups.append(empty);}
     groups.scrollTop=scrollTop;
     position();
   }
   async function load(manual=false) {
     if(request||!visible())return;
+    const selectedDay=dayOffset;
     if(Date.now()<retryAt){status.textContent='Rate limited · Retry in '+Math.ceil((retryAt-Date.now())/1000)+' seconds';schedule();return;}
     stop();const controller=new AbortController();request=controller;status.classList.remove('error');
-    if(!lastSuccess)status.textContent='Loading today’s interactions…';
+    if(!lastSuccess)status.textContent='Loading interactions for '+chatsTodayDayLabel(dayOffset).toLowerCase()+'…';
     const timeout=setTimeout(()=>controller.abort(),30000);
     try {
       const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;if(!page.g_ck)throw new Error('Session is not ready');
       const rows=[],limit=500;
       for(let offset=0;;offset+=limit) {
-        const query=SN_AI_CHATS_TODAY_QUERY+'^ORDERBYassigned_to^ORDERBYDESCopened_at^ORDERBYsys_id';
+        const query=chatsTodayDayQuery(SN_AI_CHATS_TODAY_QUERY,selectedDay)+'^ORDERBYassigned_to^ORDERBYDESCopened_at^ORDERBYsys_id';
         const response=await fetch('/api/now/table/interaction?sysparm_query='+encodeURIComponent(query)+'&sysparm_fields=sys_id,number,wait_time,duration,opened_for,assigned_to,opened_at,closed_at,short_description,state,type,active&sysparm_display_value=all&sysparm_exclude_reference_link=true&sysparm_limit='+limit+'&sysparm_offset='+offset,{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':page.g_ck},signal:controller.signal});
         if(response.status===429){const header=response.headers.get('Retry-After');const seconds=/^\d+$/.test(header||'')?Number(header):header?Math.max(0,(Date.parse(header)-Date.now())/1000):60;retryAt=Date.now()+(Number.isFinite(seconds)?seconds:60)*1000;throw new Error('ServiceNow rate limit reached');}
         if(!response.ok)throw new Error('Unable to load Chats Today ('+response.status+').');
@@ -22494,7 +22519,7 @@ function installChatsTodayPanel() {
       const events=[];
       const eventQuery='u_link_to_interaction.u_work_queue=f7879842618d2300964fe119fb67115a^opened_atONToday@javascript:gs.beginningOfToday()@javascript:gs.endOfToday()^u_link_to_interactionISNOTEMPTY^opened_by.u_primary_group=8767499910d5b00036179bfd88ecc8bb^ORDERBYopened_at^ORDERBYsys_id';
       for(let offset=0;;offset+=limit){
-        const response=await fetch('/api/now/table/new_call?sysparm_query='+encodeURIComponent(eventQuery)+'&sysparm_fields=sys_id,number,short_description,description,u_reporting_user,caller,caller.name,u_location,u_opco,company,u_contact_number,u_link_to_interaction,transferred_to&sysparm_display_value=all&sysparm_exclude_reference_link=true&sysparm_limit='+limit+'&sysparm_offset='+offset,{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':page.g_ck},signal:controller.signal});
+        const response=await fetch('/api/now/table/new_call?sysparm_query='+encodeURIComponent(chatsTodayDayQuery(eventQuery,selectedDay))+'&sysparm_fields=sys_id,number,short_description,description,u_reporting_user,caller,caller.name,u_location,u_opco,company,u_contact_number,u_link_to_interaction,transferred_to&sysparm_display_value=all&sysparm_exclude_reference_link=true&sysparm_limit='+limit+'&sysparm_offset='+offset,{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':page.g_ck},signal:controller.signal});
         if(!response.ok)throw new Error('Unable to load linked EVNTs ('+response.status+').');
         const batch=(await response.json()).result;if(!Array.isArray(batch))throw new Error('Invalid EVNT results');events.push(...batch);
         if(batch.length<limit)break;if(offset>=99500)throw new Error('Too many EVNT results');
