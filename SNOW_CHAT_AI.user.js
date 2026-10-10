@@ -12822,6 +12822,9 @@ function startSNAI(tabIdentity) {
       const props=nativeParentId?matrixReferenceHost(control)?.dAProps:null;
       const dependencyConfirmed=Boolean(nativeParentId && props?.dependentValue===nativeParentId);
       if (dependencyConfirmed) return control;
+      // A present qualifier pointing at a different parent is not "settled"
+      // merely because the enabled control has remained visible for a while.
+      if(nativeParentId&&props&&Object.prototype.hasOwnProperty.call(props,'dependentValue'))return null;
       // When native dependency metadata is unavailable, retain the original
       // 900ms guard plus continuous 450ms stability, rather than guessing.
       if (nativeParentId && !dependencyConfirmed && performance.now()-started<900) {
@@ -12903,7 +12906,8 @@ function startSNAI(tabIdentity) {
   }
   async function commitMatrixOptionOnce(fieldLabel, expected) {
     const label=comparableLabel(fieldLabel);
-    const [field,rows]=await Promise.all([waitForControlByLabel(fieldLabel,3000),loadMatrixOptions()]);
+    const rows=await loadMatrixOptions();
+    const field=await waitForControlByLabel(fieldLabel,3000);
     if (!field) throw new Error(`MATRIX_FIELD_MISSING: ${fieldLabel}`);
     const parentLabel=label==='sub category'?'Category':label==='symptom'?'Sub Category':null;
     const parentField=parentLabel?findControlByLabel(parentLabel,currentFormElements()):null;
@@ -13005,7 +13009,7 @@ function startSNAI(tabIdentity) {
     if(matches.length!==1 && !((isKnowledge||options.first)&&matches.length))throw new Error(`NATIVE_REFERENCE_OPTION_NOT_UNIQUE: ${fieldLabel}`);
     const resolved=matches[0];
     // Never commit a response into a replacement component with stale context.
-    if(findControlByLabel(fieldLabel,currentFormElements())!==field||host.dAProps.encodedRecord!==props.encodedRecord||host.dAProps.serializedChanges!==props.serializedChanges)throw new Error(`NATIVE_REFERENCE_CONTEXT_CHANGED: ${fieldLabel}`);
+    if(findControlByLabel(fieldLabel,currentFormElements())!==field||host.dAProps.encodedRecord!==variables.encodedRecord||(host.dAProps.serializedChanges||'{}')!==variables.serializedChanges)throw new Error(`NATIVE_REFERENCE_CONTEXT_CHANGED: ${fieldLabel}`);
     callback.call(host,{value:resolved.value,displayValue:resolved.displayValue});
     // Display text can update before the form model, especially while a
     // template applies and replaces its typeahead. Verify ID and display
