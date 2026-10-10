@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.479
+// @version      2.36.480
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -20370,7 +20370,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.479' });
+    addLog('info', 'helper-version', { version: '2.36.480' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -22161,6 +22161,12 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // by the actual reference sys_id locally, never by a potentially shared name.
 const SN_AI_CHATS_TODAY_QUERY='opened_atONToday@javascript:gs.beginningOfToday()@javascript:gs.endOfToday()^assignment_group=9cbdc90d1bc66110a95a8732f54bcbec';
 function chatsTodayDayLabel(days) { return days===0?'Today':days===1?'Yesterday':days+' Days Ago'; }
+function chatsTodayDayDate(days,now=new Date()) {
+  const date=new Date(now);date.setDate(date.getDate()-days);
+  const month=date.toLocaleDateString('en-US',{month:'short'});
+  const weekday=date.toLocaleDateString('en-US',{weekday:'long'});
+  return date.getFullYear()+' '+month+' '+String(date.getDate()).padStart(2,'0')+' ['+weekday+']';
+}
 function chatsTodayDayQuery(query,days) {
   if(!Number.isInteger(days)||days<0)throw new Error('Invalid chat day');
   return days===0?query:query.replace('opened_atONToday@javascript:gs.beginningOfToday()@javascript:gs.endOfToday()',
@@ -22325,18 +22331,23 @@ function installChatsTodayPanel() {
     button.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-'+direction+'"><path d="'+(direction==='left'?'m15 18-6-6 6-6':'m9 18 6-6-6-6')+'"/></svg>';
   }
   dayTitle.before(previousDay);dayTitle.after(nextDay);nextDay.hidden=true;
+  const dayCaption=document.createElement('div'),dayDate=document.createElement('div');
+  dayCaption.className='day-caption';dayDate.className='day-date';dayDate.hidden=true;
+  dayTitle.before(dayCaption);dayCaption.append(dayTitle,dayDate);
+  const dayDateStyle=document.createElement('style');dayDateStyle.textContent='.day-date{font-size:11px;font-weight:400;color:var(--sn-theme-a8b8d1);margin-top:2px}.day-caption{display:flex;flex-direction:column}';root.append(dayDateStyle);
   const dayStyle=document.createElement('style');dayStyle.textContent='.day-navigation{display:flex;align-items:center;gap:3px;white-space:nowrap}.day-navigation .icon{width:22px}.day-navigation h2{white-space:nowrap}';root.append(dayStyle);
   function changeDay(delta){
     const next=Math.max(0,dayOffset+delta);if(next===dayOffset)return;
     stop();request?.abort();request=null;dayOffset=next;lastSuccess=0;failures=0;currentRecords=[];total=0;
     groups.replaceChildren();searchCount.textContent='';
     dayTitle.textContent='Chats '+chatsTodayDayLabel(dayOffset);nextDay.hidden=dayOffset===0;
+    dayDate.hidden=dayOffset===0;dayDate.textContent=dayOffset?chatsTodayDayDate(dayOffset):'';
     panel.setAttribute('aria-label',dayTitle.textContent);load();
   }
   previousDay.addEventListener('click',()=>changeDay(1));nextDay.addEventListener('click',()=>changeDay(-1));
   const searchBox=document.createElement('label');searchBox.className='chat-search';
   searchBox.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="lucide lucide-search" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input type="search" aria-label="Search Chats Today" placeholder="Search chats…" maxlength="256" autocomplete="off"><span class="search-count" aria-live="polite"></span>';
-  root.querySelector('header h2').after(searchBox);
+  dayNav.after(searchBox);
   const searchInput=searchBox.querySelector('input'),searchCount=searchBox.querySelector('.search-count');
   const searchStyle=document.createElement('style');searchStyle.textContent='header{position:relative}.chat-search{position:absolute;left:50%;transform:translateX(-50%);width:min(340px,calc(100% - 340px));display:flex;align-items:center;gap:7px;padding:6px 9px;border:1px solid var(--sn-theme-655573);border-radius:8px;background:var(--sn-theme-191621);color:var(--sn-theme-a8b8d1)}.chat-search:focus-within{border-color:var(--sn-theme-ac94ec);outline:1px solid var(--sn-theme-ac94ec)}.chat-search svg{width:16px;height:16px;flex-shrink:0}.chat-search input{font:inherit;min-width:0;width:100%;border:0;outline:0;background:transparent;color:var(--sn-theme-e6edf9)}.chat-search input::placeholder{color:var(--sn-theme-a8b8d1)}.search-count{font-size:10px;white-space:nowrap}@media(max-width:650px){.chat-search{position:static;transform:none;order:3;width:100%}}';root.append(searchStyle);
   searchInput.addEventListener('input',()=>render(currentRecords));
