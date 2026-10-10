@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.495
+// @version      2.36.496
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7654,7 +7654,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.495',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.496',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -10862,10 +10862,16 @@ function startSNAI(tabIdentity) {
   async function smoothActiveFormScroll(scroller, top) {
     const target = Math.max(0, Math.min(scroller.scrollHeight - scroller.clientHeight, top));
     assertAutomationNotStopped();
-    // Instant bypasses page CSS smooth scrolling. Yield for hydration, then
-    // callers re-resolve the current control instead of waiting for animation.
-    scroller.scrollTo({ top: target, behavior: 'instant' });
-    await sleep(0);
+    scroller.scrollTo({ top: target, behavior: 'smooth' });
+    const started=performance.now();
+    let last=scroller.scrollTop,unchanged=0;
+    while(Math.abs(scroller.scrollTop-target)>2&&performance.now()-started<1600){
+      assertAutomationNotStopped();await sleep(30);
+      const current=scroller.scrollTop;
+      unchanged=Math.abs(current-last)<0.5?unchanged+1:0;last=current;
+      // A resized virtual form may clamp the destination while hydrating.
+      if(unchanged>=4&&performance.now()-started>=180)break;
+    }
     assertAutomationNotStopped();
   }
 
@@ -10896,8 +10902,8 @@ function startSNAI(tabIdentity) {
       }
       ancestor = deepParentElement(ancestor);
     }
-    target.scrollIntoView({ behavior: 'instant', block: 'nearest', inline: 'nearest' });
-    await sleep(0);
+    target.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+    await sleep(30);
   }
 
   function minimalFormScrollDelta(rect,viewport) {
@@ -13328,12 +13334,10 @@ function startSNAI(tabIdentity) {
   }
 
   // Event Type asynchronously replaces its dependent Classification control.
-  // A timer alone is insufficient: on a busy Workspace page the old control
-  // can remain visible after one second. Require one full second plus a
-  // continuous stable rendered-control window before allowing Classification
-  // to open its listbox.
+  // Recognize the authoritative dependency, not elapsed time or dropdown
+  // identity. The choice commit separately requires the requested option.
   async function waitForClassificationDependencyAfterEventType() {
-    await sleep(1000);
+    const started=performance.now();
     let lastControl = null;
     let stableSince = 0;
     const settled = await waitUntil(() => {
@@ -13342,6 +13346,14 @@ function startSNAI(tabIdentity) {
         lastControl = null;
         stableSince = 0;
         return null;
+      }
+      let owner=control;
+      while(owner&&owner.localName!=='sn-record-choice-connected')owner=deepParentElement(owner);
+      const props=owner?.getProperties?.(),fields=props?.formData?.fields;
+      if(fields?.call_type&&fields?.[props.name]){
+        const dependency=fields[props.name].dependentValue;
+        const choices=props.choices;
+        return String(dependency)===String(fields.call_type.value)&&Array.isArray(choices)&&choices.some(choice=>!choice._isTmp&&String(choice.value||'')!=='')?control:null;
       }
       if (control !== lastControl) {
         lastControl = control;
@@ -13352,7 +13364,8 @@ function startSNAI(tabIdentity) {
     }, 6500, 50);
     addLog(settled ? 'info' : 'warn', 'event-type-classification-settle', {
       settled: Boolean(settled),
-      minimumWaitMs: 1000,
+      durationMs: Math.round(performance.now()-started),
+      minimumWaitMs: 0,
       stableWindowMs: 450,
       controlId: settled?.id || '',
     });
@@ -20822,7 +20835,7 @@ function startSNAI(tabIdentity) {
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
     installAutomationFreeze();
     document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
-    addLog('info', 'helper-version', { version: '2.36.495' });
+    addLog('info', 'helper-version', { version: '2.36.496' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
