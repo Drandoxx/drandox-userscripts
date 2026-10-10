@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.480
+// @version      2.36.481
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -6616,6 +6616,13 @@ function startSNAI(tabIdentity) {
         output.textContent = JSON.stringify(message.diagnostics.slice(-100));
       }
       if (message.action === 'worker-job-diagnostics' && Array.isArray(message.diagnostics)) {
+        state.diagnosticWorkerSeen ||= new Set();
+        for(const item of message.diagnostics){
+          const key=[item.at,item.stage,item.jobId].join(':');if(state.diagnosticWorkerSeen.has(key))continue;
+          state.diagnosticWorkerSeen.add(key);
+          recordCompactDiagnostic(/error|fail|timeout/i.test(item.stage||'')?'error':'info','extension-'+(item.stage||'event'),item);
+        }
+        while(state.diagnosticWorkerSeen.size>200)state.diagnosticWorkerSeen.delete(state.diagnosticWorkerSeen.values().next().value);
         state.webJobDiagnostics = message.diagnostics.slice(-100);
         let output = document.getElementById(CHATGPT_WEB_JOB_DIAGNOSTICS_ID);
         if (!output) {
@@ -7034,9 +7041,10 @@ function startSNAI(tabIdentity) {
     const started = Date.now();
     while (Date.now() - started < timeoutMs) {
       const element = getElement();
-      if (element) return element;
+      if (element) {addLog('info','ai-element-ready',{label,durationMs:Date.now()-started,timeoutMs});return element;}
       await waitForChatGPTWebDOMActivity(1000);
     }
+    addLog('error','ai-element-timeout',{label,durationMs:Date.now()-started,timeoutMs});
     throw new Error(`${label} was not found. Confirm that you are signed in to ChatGPT and reload this tab.`);
   }
 
@@ -7514,7 +7522,36 @@ function startSNAI(tabIdentity) {
     }
   }
 
+  function diagnosticStore() {
+    if(!state.diagnostics){
+      let saved;try{saved=JSON.parse(sessionStorage.getItem('sn-ai-diagnostics-v1')||'null');}catch{}
+      state.diagnostics={start:Date.now(),events:Array.isArray(saved?.events)?saved.events.slice(-600):[],sleepCount:0,sleepMs:0,bytes:0,timer:0};
+      state.diagnostics.bytes=state.diagnostics.events.reduce((sum,item)=>sum+JSON.stringify(item).length,0);
+    }
+    return state.diagnostics;
+  }
+  function recordCompactDiagnostic(level,action,details={}) {
+    const log=diagnosticStore(),now=Date.now(),safe={};
+    for(const [key,value]of Object.entries(details||{})){
+      if(!/^(code|message|error|field|label|phase|status|profile|provider|jobId|commandId|ims|attempt|timeoutMs|durationMs|elapsedMs|waitMs|length|fields|ok|source|reason|stage|workerCount|receivedAt|submittedAt|startedAt|completedAt)$/i.test(key))continue;
+      if(typeof value==='number'||typeof value==='boolean')safe[key]=value;
+      else if(typeof value==='string')safe[key]=value.replace(/\b(Bearer\s+)[^\s]+/gi,'$1[redacted]').slice(0,180);
+    }
+    const entry=[now,level,String(action).slice(0,100),state.activeCommandId||'',safe];
+    const size=JSON.stringify(entry).length;log.events.push(entry);log.bytes+=size;
+    while(log.events.length>600||log.bytes>96000)log.bytes-=JSON.stringify(log.events.shift()).length;
+    if(!log.timer)log.timer=setTimeout(()=>{log.timer=0;try{sessionStorage.setItem('sn-ai-diagnostics-v1',JSON.stringify({events:log.events}));}catch{}},2000);
+  }
+  async function downloadDiagnostics(){
+    const log=diagnosticStore();
+    const payload={schema:1,version:'2.36.481',exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events:log.events};
+    let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
+    if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
+    const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
+    document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
+  }
   function addLog(level, action, details = {}) {
+    recordCompactDiagnostic(level,action,details);
     const entry = {
       at: new Date().toISOString(),
       level,
@@ -10603,6 +10640,11 @@ function startSNAI(tabIdentity) {
   }
 
   async function waitForControlByLabel(label, timeoutMs = 6000) {
+    const started=performance.now();let found=false;
+    try{const control=await waitForControlByLabelInternal(label,timeoutMs);found=!!control;return control;}
+    finally{addLog(found?'info':'warn','field-wait-complete',{field:label,durationMs:Math.round(performance.now()-started),timeoutMs,ok:found});}
+  }
+  async function waitForControlByLabelInternal(label, timeoutMs = 6000) {
     if (comparableLabel(label) === 'attached knowledge') timeoutMs = Math.max(timeoutMs,12000);
     const started = performance.now();
     let searched = false;
@@ -12231,6 +12273,7 @@ function startSNAI(tabIdentity) {
   }
 
   async function sleep(ms) {
+    const diagnostics=diagnosticStore();diagnostics.sleepCount++;diagnostics.sleepMs+=Math.max(0,Number(ms)||0);
     assertAutomationNotStopped();
     await waitForAutomationResume();
     await rawSleep(ms);
@@ -16216,6 +16259,7 @@ function startSNAI(tabIdentity) {
       };
     };
     const openWindowFromAction = async (actionButton, windowElement, { prepare, position, afterOpen, pinnedIMS = '' } = {}) => {
+      addLog('info','bubble-open-request',{ims:pinnedIMS,phase:windowElement.id||windowElement.className});
       if (transitioningWindows.has(windowElement) || windowSessions.has(windowElement)) return;
       transitioningWindows.add(windowElement);
       installWindowFieldTrimming(windowElement);
@@ -16626,6 +16670,8 @@ function startSNAI(tabIdentity) {
       });developerPanel.append(matrixSetting,matrixStatus);
     }
     tabList.after(generalPanel);
+    const downloadLogButton=document.createElement('button');downloadLogButton.type='button';downloadLogButton.textContent='Download diagnostic logs';downloadLogButton.title='Download compact AI, field-filling and timing diagnostics (no full prompts or chat transcripts)';
+    downloadLogButton.addEventListener('click',async()=>{downloadLogButton.disabled=true;try{await downloadDiagnostics();}catch(error){showAISettingsError(error);}finally{downloadLogButton.disabled=false;}});generalPanel.append(downloadLogButton);
     const settingsTabs = [...settingsDialog.querySelectorAll('[data-settings-tab]')];
     tabList.style.setProperty('--sn-segment-index',String(Math.max(0,settingsTabs.findIndex(tab=>tab.getAttribute('aria-selected')==='true'))));
     const settingsPanels = [...settingsDialog.querySelectorAll('[data-settings-panel]')];
@@ -20370,7 +20416,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.480' });
+    addLog('info', 'helper-version', { version: '2.36.481' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
