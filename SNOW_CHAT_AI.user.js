@@ -6618,6 +6618,7 @@ function startSNAI(tabIdentity) {
         }
         document.dispatchEvent(new CustomEvent('sn-ai-web-progress', { detail: message.progress }));
       }
+      if(message.action==='worker-preview')updateAIResponsePreview(message.preview);
       if (message.action === 'worker-diagnostics' && Array.isArray(message.diagnostics)) {
         // Streaming text travels separately and is never added to diagnostics.
         let output = document.getElementById(CHATGPT_WEB_DIAGNOSTICS_ID);
@@ -17763,6 +17764,11 @@ function startSNAI(tabIdentity) {
         syncAISettingsUI();
         showAISettingsError(error);
       }
+    });
+    settingsDialog.querySelector('[data-ai-response-preview]')?.addEventListener('change',async event=>{
+      state.aiResponsePreview=event.target.checked;
+      if(!state.aiResponsePreview)for(const id of aiResponsePreviews.keys())clearAIResponsePreview(id);
+      await gmSetValue('sn-ai-response-preview-v1',state.aiResponsePreview);
     });
     aiProviderSelect.addEventListener('change', async () => {
       try {
