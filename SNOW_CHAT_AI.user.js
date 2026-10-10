@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.493
+// @version      2.36.494
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7654,7 +7654,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.493',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.494',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -13368,8 +13368,9 @@ function startSNAI(tabIdentity) {
     return settled;
   }
 
-  async function commitNativeChoice(fieldLabel,optionValue,code) {
-    const field=await waitForControlByLabel(fieldLabel,3000);
+  async function commitNativeChoice(fieldLabel,optionValue,code,options={}) {
+    await waitForAutomationResume();
+    let field=await waitForControlByLabel(fieldLabel,3000);
     if(!field||field.disabled||field.readOnly)throw new Error(`NATIVE_CHOICE_UNAVAILABLE: ${fieldLabel}`);
     const current=readableElementValue(field);
     if(fieldMatchesExpected(current,optionValue,fieldLabel))return current;
@@ -13377,19 +13378,49 @@ function startSNAI(tabIdentity) {
     while(host&&host.localName!=='now-select')host=deepParentElement(host);
     if(!host||host.readonly||typeof host.dispatch!=='function')throw new Error(`NATIVE_CHOICE_UNAVAILABLE: ${fieldLabel}`);
     const flatten=items=>(items||[]).flatMap(item=>item.children?flatten(item.children):[item]);
-    const matches=flatten(host.items).filter(item=>!item.disabled&&normalisedFieldValue(item.label)===normalisedFieldValue(optionValue));
-    if(matches.length!==1)throw new Error(`NATIVE_CHOICE_OPTION_NOT_UNIQUE: ${fieldLabel}`);
+    const ownerOf=node=>{while(node&&node.localName!=='sn-record-choice-connected')node=deepParentElement(node);return node;};
+    const ready=async timeout=>{
+      const started=performance.now();
+      while(performance.now()-started<timeout){
+        await waitForAutomationResume();assertAutomationNotStopped();
+        field=findControlByLabel(fieldLabel,currentFormElements());host=field;
+        while(host&&host.localName!=='now-select')host=deepParentElement(host);
+        const props=ownerOf(host)?.getProperties?.();
+        const items=Array.isArray(props?.choices)?props.choices.filter(choice=>!choice._isTmp).map(choice=>({id:choice.value,label:choice.displayValue})):flatten(host?.items);
+        const matches=items.filter(item=>!item.disabled&&normalisedFieldValue(item.label)===normalisedFieldValue(optionValue));
+        if(matches.length>1)throw new Error(`NATIVE_CHOICE_OPTION_NOT_UNIQUE: ${fieldLabel}`);
+        if(matches.length===1&&field?.isConnected&&!field.disabled&&!host.readonly&&typeof host.dispatch==='function')return matches[0];
+        await sleep(60);
+      }
+      return null;
+    };
+    let selected=await ready(1800);
+    if(!selected&&comparableLabel(fieldLabel)==='classification'){
+      const required=options.requiredEventType||readableControlValue('Event Type');
+      addLog('warn','native-choice-dependency-stale',{field:fieldLabel,reason:'required option missing',length:flatten(host?.items).length});
+      if(await refreshClassificationChoices(required,code))selected=await ready(8000);
+    }
+    if(!selected)throw new Error(`NATIVE_CHOICE_OPTION_MISSING: ${fieldLabel} — ${optionValue}`);
     // Exact action consumed by sn-record-choice-connected's native handler.
     // Its onValueChange dispatch updates the form and invokes client scripts.
-    host.dispatch('NOW_SELECT#SELECTED_ITEM_SET',{item:matches[0]});
-    const result=await waitStableValue(fieldLabel,optionValue,'exact',5000,0,field);
+    const owner=ownerOf(host),props=owner?.getProperties?.();
+    // Use the actual form callback, not the dropdown's local selected-item
+    // state. Connected choice handlers take table, field, value, display.
+    if(props?.name&&typeof props.onValueChange==='function')props.onValueChange(props.tableName,props.name,selected.id,selected.label);
+    else host.dispatch('NOW_SELECT#SELECTED_ITEM_SET',{item:selected});
+    const committed=props?.name?await waitUntil(()=>{
+      const currentOwner=ownerOf(findControlByLabel(fieldLabel,currentFormElements()));
+      const currentProps=currentOwner?.getProperties?.(),model=currentProps?.formData?.fields?.[currentProps.name];
+      return model&&String(model.value)===String(selected.id)&&fieldMatchesExpected(model.displayValue,optionValue,fieldLabel)?model:null;
+    },8000,60):null;
+    const result=props?.name?{stable:Boolean(committed),actual:committed?.displayValue||''}:await waitStableValue(fieldLabel,optionValue,'exact',8000,0);
     if(!result.stable)automationFailure(code||'NATIVE_CHOICE_COMMIT_FAILED',`${fieldLabel} did not retain ${optionValue}.`);
     if(comparableLabel(fieldLabel)==='event type')await waitForClassificationDependencyAfterEventType();
     return result.actual;
   }
 
   async function autoSelect(fieldLabel, optionValue, code, options = {}) {
-    return commitNativeChoice(fieldLabel,optionValue,code);
+    return commitNativeChoice(fieldLabel,optionValue,code,options);
     // These two controls drive dependent ServiceNow form sections. Do not use
     // the short optimistic route: it can click a list while it is still being
     // repopulated and leave a stale Event Type or Classification behind.
@@ -13445,7 +13476,6 @@ function startSNAI(tabIdentity) {
       postSelectDelayMs: 1000,
       maxAttempts: 3,
     });
-    await sleep(1000);
     await autoSelect('Event Type', required, `${code || 'CLASSIFICATION'}_EVENT_TYPE_RESTORE_FAILED`, {
       postSelectDelayMs: 1600,
       maxAttempts: 3,
@@ -13457,7 +13487,7 @@ function startSNAI(tabIdentity) {
   // Conservative compatibility route: retained as the verified fallback for
   // controls that rebuild after a dependency or require a delayed option list.
   async function autoSelectSafe(fieldLabel, optionValue, code, options = {}) {
-    return commitNativeChoice(fieldLabel,optionValue,code);
+    return commitNativeChoice(fieldLabel,optionValue,code,options);
     const failureCode = code || `SELECT_${comparableLabel(fieldLabel).toUpperCase().replace(/ /g, '_')}_FAILED`;
     const fieldTiming = {
       'event type': { open: 0, ready: 500, after: 1600, popup: 1800 },
@@ -20799,7 +20829,7 @@ function startSNAI(tabIdentity) {
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
     installAutomationFreeze();
     document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
-    addLog('info', 'helper-version', { version: '2.36.493' });
+    addLog('info', 'helper-version', { version: '2.36.494' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
