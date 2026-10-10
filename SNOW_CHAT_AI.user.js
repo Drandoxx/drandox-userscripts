@@ -11566,7 +11566,7 @@ function startSNAI(tabIdentity) {
   async function createNewEventFromWorkspace() {
     const ims=normaliseIMS(activeSelectedIMS()||state.startContext?.ims||currentInteractionIMS());
     const beforePath=location.pathname;
-    const native=await waitUntil(()=>{
+    const findNative=()=>{
       for(const owner of allPageElements()){
         if(owner.localName!=='sn-form-internal-workspace-form-layout')continue;
         const props=owner.getProperties?.();
@@ -11576,7 +11576,22 @@ function startSNAI(tabIdentity) {
         if(action&&typeof props.handleUiActionClick==='function')return {props,action};
       }
       return null;
-    },5000,45);
+    };
+    let native=findNative();
+    if(!native){
+      // On a cold reload of New Event, Workspace has not hydrated the IMS
+      // controller yet. Load its native form before looking up the action.
+      const details=findOuterDetailsTab();
+      if(details){
+        clickableAncestor(details).click();
+        if(!await waitUntil(()=>findOuterDetailsTab()?.getAttribute('aria-selected')==='true',350,45)){
+          const target=findOuterDetailsTab()||details;target.focus?.();
+          for(const type of ['keydown','keyup'])target.dispatchEvent(new KeyboardEvent(type,{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,composed:true,cancelable:true}));
+        }
+      }
+      native=await waitUntil(findNative,8000,45);
+      addLog('info','new-event-native-controller-hydrated',{ims,ok:Boolean(native)});
+    }
     if(!native)throw new Error('NEW_EVENT_NATIVE_ACTION_UNAVAILABLE: the active IMS native Create Event action is not loaded.');
     assertAutomationNotStopped();
     // Invoke the loaded ServiceNow UI action controller, not a synthetic DOM
