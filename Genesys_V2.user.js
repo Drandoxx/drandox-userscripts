@@ -6082,11 +6082,11 @@
         }});
         win.WebSocket=wrappedSocket;
       }
-      const bridge={ready:()=>!!authorization,request:async(path,body)=>{
+      const bridge={ready:()=>!!authorization,request:async(path,body,method)=>{
         if(!authorization)throw Error('Waiting for native Genesys authentication');
         const controller=new win.AbortController(),timeout=window.setTimeout(()=>controller.abort(),15000);
         try {
-          const response=await nativeFetch.call(win,CALL_API_ORIGIN+path,{signal:controller.signal,method:body?'POST':'GET',headers:{Authorization:authorization,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
+          const response=await nativeFetch.call(win,CALL_API_ORIGIN+path,{signal:controller.signal,method:method || (body?'POST':'GET'),headers:{Authorization:authorization,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
           if(!response.ok)throw Error(`Call API HTTP ${response.status}`);
           return await response.json();
         } finally {window.clearTimeout(timeout);}
@@ -6107,6 +6107,65 @@
   function readyCallApiBridge() {
     for(const win of callNetworkBridges)try{if(win.__gbsCallApiBridge?.ready())return win.__gbsCallApiBridge;}catch(_){}
     return null;
+  }
+  // Own notification channel: never reconnect to or change Genesys' native channel.
+  let callPushSocket=null,callPushBusy=false,callPushStopped=false,callPushGeneration=0;
+  let callPushRetryAt=0,callPushFailures=0,callPushCreatedAt=0,callPushLastMessageAt=0;
+  function stopCallPush() {
+    callPushStopped=true;callPushGeneration++;
+    const socket=callPushSocket;callPushSocket=null;
+    if(socket)socket.close();
+  }
+  async function ensureCallPush() {
+    if(window!==window.top || callPushStopped || callPushBusy || Date.now()<callPushRetryAt)return;
+    if(callPushSocket && Date.now()-callPushCreatedAt<23*60*60*1000 && Date.now()-callPushLastMessageAt<120000)return;
+    if(callPushSocket){const old=callPushSocket;callPushSocket=null;old.close();}
+    const bridge=readyCallApiBridge();if(!bridge)return;
+    callPushBusy=true;const generation=++callPushGeneration;
+    let socket=null;
+    try {
+      if(!currentAgentApiId)rememberCallApi('/api/v2/users/me',200,await bridge.request('/api/v2/users/me'));
+      if(!currentAgentApiId)throw Error('Call notification identity unavailable');
+      const topic=`v2.users.${currentAgentApiId}.conversations.calls`;
+      const channel=await bridge.request('/api/v2/notifications/channels',{},'POST');
+      const uri=new URL(channel.connectUri);
+      if(!channel.id || uri.protocol!=='wss:' || !uri.hostname.endsWith('.mypurecloud.de'))throw Error('Invalid notification channel');
+      if(callPushStopped || generation!==callPushGeneration)return;
+      socket=new PAGE_WINDOW.WebSocket(uri.href);callPushSocket=socket;
+      callPushCreatedAt=callPushLastMessageAt=Date.now();
+      socket.addEventListener('message',event=>{
+        if(callPushSocket!==socket || typeof event.data!=='string' || event.data.length>2000000)return;
+        callPushLastMessageAt=Date.now();
+        try {
+          const message=JSON.parse(event.data);
+          if(message.topicName==='channel.metadata' && message.eventBody?.message==='WebSocket going away'){callPushSocket=null;socket.close();callPushRetryAt=Date.now()+1000;return;}
+          const body=message.eventBody;
+          if(message.topicName===topic && body?.participants && (body.id || body.conversationId)) {
+            recordCallNetworkMetadata('/api/v2/conversations/:id',200,'EVENT','call-push');
+            rememberCallApi('/api/v2/conversations/'+(body.conversationId || body.id),200,body);
+          }
+        }catch(_){}
+      });
+      socket.addEventListener('close',()=>{
+        if(callPushSocket!==socket)return;
+        callPushSocket=null;callPushRetryAt=Date.now()+Math.min(60000,1000*2**Math.min(++callPushFailures,6));
+        performanceEvent('call-push-disconnected',{});
+      });
+      await new Promise((resolve,reject)=>{
+        const timeout=window.setTimeout(()=>{socket.close();reject(Error('Call notification connection timeout'));},15000);
+        socket.addEventListener('open',()=>{window.clearTimeout(timeout);resolve();},{once:true});
+        socket.addEventListener('error',()=>{window.clearTimeout(timeout);reject(Error('Call notification connection failed'));},{once:true});
+      });
+      await bridge.request(`/api/v2/notifications/channels/${encodeURIComponent(channel.id)}/subscriptions`,[{id:topic}],'PUT');
+      if(callPushStopped || generation!==callPushGeneration || callPushSocket!==socket){socket.close();return;}
+      callPushFailures=0;callPushRetryAt=0;performanceEvent('call-push-connected',{});
+      // Recover an already-ringing call after initial connection or reconnection.
+      rememberCallApi('/api/v2/conversations/calls',200,await bridge.request('/api/v2/conversations/calls'));
+    }catch(error){
+      if(socket){if(callPushSocket===socket)callPushSocket=null;socket.close();}
+      callPushRetryAt=Date.now()+Math.min(300000,5000*2**Math.min(++callPushFailures,6));
+      performanceEvent('call-push-unavailable',{reason:String(error.message).replace(/wss?:\/\/\S+/g,'[socket]').slice(0,120)});
+    }finally{callPushBusy=false;}
   }
   async function refreshTodayCallCache(force=false) {
     if(force)pendingEndedCallRefresh=true;
@@ -9963,6 +10022,7 @@ function fitDashboardMetricSpacing(doc) {
   const callApiTimer = window.setInterval(() => {
     if (window !== window.top || callCardDragging) return;
     performanceMeasure('frame-discovery',()=>discoverCallNetworkBridges());
+    void ensureCallPush();
     void refreshTodayCallCache();
     void refreshLiveCallApi();
     ensureMyCallsTodayPanel();myCallsPanelRender?.();
@@ -9995,7 +10055,7 @@ function fitDashboardMetricSpacing(doc) {
     window.clearInterval(callApiTimer);
     window.clearInterval(callClockTimer);
     for (const win of callNetworkBridges) try { win.__gbsCallApiBridge?.stop(); } catch (_) {}
-    callNetworkBridges.clear();
+    callNetworkBridges.clear();stopCallPush();
     document.getElementById('gbs-my-calls-today')?.remove();myCallsPanelRender=null;
     window.clearInterval(incomingCallTimer);
     document.removeEventListener('click', recordIncomingCallAction, true);
