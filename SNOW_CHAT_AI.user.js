@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.492
+// @version      2.36.493
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7654,7 +7654,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.492',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.493',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -7675,7 +7675,7 @@ function startSNAI(tabIdentity) {
   function positionAutomationFreeze(){
     automationFreeze.frame=0;
     automationFreeze.regions.forEach((region,index)=>{
-      const overlay=automationFreeze.overlays[index],rect=region.root.getBoundingClientRect();
+      const overlay=automationFreeze.overlays[index],rect=region.area==='screen'?{left:0,top:0,right:innerWidth,bottom:innerHeight}:region.root.getBoundingClientRect();
       const left=Math.max(0,rect.left),top=Math.max(0,rect.top),right=Math.min(innerWidth,rect.right),bottom=Math.min(innerHeight,rect.bottom);
       overlay.hidden=!region.root.isConnected||right<=left||bottom<=top;
       Object.assign(overlay.style,{left:left+'px',top:top+'px',width:Math.max(0,right-left)+'px',height:Math.max(0,bottom-top)+'px'});
@@ -7687,15 +7687,8 @@ function startSNAI(tabIdentity) {
     if(automationFreeze.suspended)return;
     const ims=activity.ims;
     if(!ims||normaliseIMS(currentInteractionIMS())!==ims){releaseAutomationFreeze('different-ims',false);return;}
-    const regions=[],panel=activeWorkspaceRecordPanel();
-    if(panel&&isVisible(panel))regions.push({root:panel,area:'form'});
-    const interactionId=location.pathname.match(/\/chat\/([a-f0-9]{32})(?:\/|$)/i)?.[1];
-    if(interactionId){
-      for(const element of allPageElements()){
-        if(element.localName!=='sn-connect-conversation'||!isVisible(element))continue;
-        if(element.getProperties?.()?.interaction===interactionId)regions.push({root:element,area:'chat'});
-      }
-    }
+    if(state.incomingPause){releaseAutomationFreeze('incoming-chat',false);return;}
+    const regions=[{root:document.documentElement,area:'screen'}];
     if(automationFreeze.regions.length===regions.length&&regions.every((region,index)=>automationFreeze.regions[index].root===region.root)){positionAutomationFreeze();return;}
     releaseAutomationFreeze('regions-updated',false);
     automationFreeze.ims=ims;automationFreeze.owner=activity.dialog;automationFreeze.commandId=state.activeCommandId;
@@ -7740,6 +7733,34 @@ function startSNAI(tabIdentity) {
     const root=document.getElementById(ROOT_ID);if(root)observer.observe(root,{subtree:true,childList:true,attributes:true,attributeFilter:['class']});
     document.addEventListener('sn-ai-progress',event=>{if(/^(command-started|command-finished|command-failed)$/.test(event.detail?.action||''))schedule();});
     schedule();
+  }
+  function pauseForIncomingChat(){
+    const activity=automationFreezeActivity();
+    if(!activity.running||state.incomingPause)return;
+    state.incomingResume={ims:activity.ims,event:state.createdEvent?.ims===activity.ims?{...state.createdEvent}:null,path:location.pathname};
+    state.incomingPause=true;
+    state.pause.paused=true;state.pause.dismissed=false;state.pause.reason='Paused for a new incoming chat. Click Continue when ready.';
+    releaseAutomationFreeze('incoming-chat',false);updatePausePanel();
+    addLog('info','automation-incoming-chat-paused',{ims:activity.ims});
+  }
+  async function continueIncomingAutomation(){
+    const saved=state.incomingResume;if(!saved||!state.incomingPause)return;
+    const wait=async test=>{const start=performance.now();while(performance.now()-start<12000){assertAutomationNotStopped();if(test())return true;await rawSleep(60);}return false;};
+    const imsTab=findIMSInteractionTarget(saved.ims);
+    if(!imsTab)throw new Error('Original IMS tab is no longer available.');
+    clickableAncestor(imsTab).click();
+    if(!await wait(()=>normaliseIMS(activeSelectedIMS())===saved.ims))throw new Error('Original IMS could not be restored.');
+    if(saved.event){
+      const tab=allPageElements().find(el=>el.getAttribute('role')==='tab'&&((saved.event.tabId&&el.id===saved.event.tabId)||(saved.event.controls&&el.getAttribute('aria-controls')===saved.event.controls)));
+      if(!tab)throw new Error('The Event created by this run is no longer available. No other draft will be used.');
+      clickableAncestor(tab).click();
+      if(!await wait(()=>location.pathname===saved.event.path&&newEventMatchesIMS(checkCurrentEvent(),saved.ims)))throw new Error('The original Event could not be confirmed.');
+    }else{
+      const details=findOuterDetailsTab();if(details)clickableAncestor(details).click();
+    }
+    state.incomingPause=false;state.incomingResume=null;state.pause.paused=false;state.pause.reason='';
+    automationFreeze.suspended=false;updatePausePanel();refreshAutomationFreeze();
+    addLog('info','automation-incoming-chat-continued',{ims:saved.ims});
   }
   function addLog(level, action, details = {}) {
     recordCompactDiagnostic(level,action,details);
@@ -11432,6 +11453,7 @@ function startSNAI(tabIdentity) {
   }
 
   async function createNewEventFromWorkspace() {
+    const before=new Set(allPageElements().filter(el=>el.getAttribute('role')==='tab').map(el=>el.id+'|'+el.getAttribute('aria-controls')));
     let action = await waitForTextTarget('Create a new Event', 500, true);
     if (!action) {
       const overflow = findNewEventOverflowTrigger();
@@ -11440,8 +11462,13 @@ function startSNAI(tabIdentity) {
     }
     if (!action) throw new Error('Clickable text not found: Create a new Event');
     clickableAncestor(action).click();
+    const opened=await waitUntil(()=>allPageElements().find(el=>el.getAttribute('role')==='tab'&&comparableLabel(elementLabel(el)).startsWith('new event')&&!before.has(el.id+'|'+el.getAttribute('aria-controls'))),12000,60);
+    if(!opened)throw new Error('NEW_EVENT_TAB_NOT_IDENTIFIED: no newly created Event tab was found.');
+    clickableAncestor(opened).click();
     const form = await waitForControlByLabel('Location', 12000);
     if (!form) throw new Error('New Event form did not load within 12 seconds.');
+    state.createdEvent={ims:normaliseIMS(currentInteractionIMS()),tabId:opened.id,controls:opened.getAttribute('aria-controls'),path:location.pathname};
+    addLog('info','new-event-created-and-selected',{ims:state.createdEvent.ims,source:state.createdEvent.controls||state.createdEvent.tabId});
     return form;
   }
 
@@ -11826,8 +11853,7 @@ function startSNAI(tabIdentity) {
         throw new Error(`[${errorCode}] No transcript or live-chat data is available for ${requestedIMS}; New Event was not opened.${diagnosticSuffix}`);
       }
       state.startContext.phase = 'open-or-reuse-new-event';
-      const reopened = hadOpenNewEvent && await reopenMatchingNewEvent(requestedIMS);
-      await runWorkflow({ ims: requestedIMS, createNewEvent: !reopened, openDetails: false });
+      await runWorkflow({ ims: requestedIMS, createNewEvent: true, forceNewEvent:true, openDetails: true });
       // Workspace changes the URL immediately but can populate Link To
       // Interaction a little later. Wait for both before declaring failure.
       const currentEvent = await waitUntil(() => {
@@ -11995,7 +12021,7 @@ function startSNAI(tabIdentity) {
         automationFailure('DESCRIPTION_CURRENT_EVENT_REQUIRED', `The existing New Event for ${requestedIMS} is not available. Description mode requires both Details and New Event and will not create a replacement Event.`, { ims: requestedIMS });
       }
     } else {
-      if (!reusedOpenNewEvent) await runWorkflow({ ims: requestedIMS, createNewEvent: true, openDetails: true });
+      await runWorkflow({ ims: requestedIMS, createNewEvent: true, forceNewEvent:true, openDetails: true });
       currentEvent = await waitUntil(() => {
         const candidate = checkCurrentEvent();
         return newEventMatchesIMS(candidate, requestedIMS) ? candidate : null;
@@ -12493,6 +12519,7 @@ function startSNAI(tabIdentity) {
 
   function requestAutomationStop() {
     releaseAutomationFreeze('stop');
+    state.incomingPause=false;state.incomingResume=null;
     if (!state.commandRunning && !state.busy) {
       state.lastAction = 'No automation is currently running.';
       updateStopButtons();
@@ -12527,6 +12554,7 @@ function startSNAI(tabIdentity) {
   function workspaceIsSafeForAutomation() {
     const session = state.autoSession;
     if (!session) return true;
+    if(session.profile!=='TEXT'&&state.createdEvent?.ims===session.ims&&location.pathname!==state.createdEvent.path)return false;
     // Safety needs record identity, not a full 18-field ticket snapshot on
     // every 35–100ms settle tick. Retain the same exact IMS matching rules.
     const event = {
@@ -12537,6 +12565,7 @@ function startSNAI(tabIdentity) {
   }
 
   function pauseReason() {
+    if(state.incomingPause)return 'Paused for a new incoming chat. Click Continue when ready.';
     // The ChatGPT side panel can legitimately own keyboard focus while this
     // page remains active, so use visibility rather than document.hasFocus().
     if (document.visibilityState !== 'visible') return 'Paused — return to this ServiceNow browser tab to continue.';
@@ -12546,7 +12575,7 @@ function startSNAI(tabIdentity) {
 
   async function waitForAutomationResume() {
     assertAutomationNotStopped();
-    if (!state.busy) return;
+    if (!state.busy&&!state.incomingPause) return;
     let reason = pauseReason();
     while (reason) {
       assertAutomationNotStopped();
@@ -12988,6 +13017,7 @@ function startSNAI(tabIdentity) {
     return {stable:false,actual};
   }
   async function commitMatrixOptionOnce(fieldLabel, expected) {
+    await waitForAutomationResume();
     const label=comparableLabel(fieldLabel);
     const rows=await loadMatrixOptions();
     const field=await waitForControlByLabel(fieldLabel,3000);
@@ -13005,6 +13035,7 @@ function startSNAI(tabIdentity) {
     const callback=host?.onValueChange || props?.onValueChange;
     if (props?.fieldName!==matrixFieldNames[label] || typeof callback!=='function' || field.disabled || field.readOnly) throw new Error(`MATRIX_NATIVE_UNAVAILABLE: ${fieldLabel}`);
     if(props.value===row.id && normalisedFieldValue(props.displayValue)===normalisedFieldValue(row.code))return props.displayValue;
+    await waitForAutomationResume();
     callback.call(host,{value:row.id,displayValue:row.code});
     const next=routingDependentField(fieldLabel);
     // Observe commit and dependent rebuild concurrently; do not pay two
@@ -13062,6 +13093,7 @@ function startSNAI(tabIdentity) {
     automationFailure(code,`${fieldLabel} did not remain empty.`);
   }
   async function commitNativeReferenceAttempt(fieldLabel,expected,options={}) {
+    await waitForAutomationResume();
     const isKnowledge=comparableLabel(fieldLabel)==='attached knowledge';
     const prefixMatch=isKnowledge||options.match==='prefix';
     const matchesDisplay=value=>prefixMatch?normalisedFieldValue(value).startsWith(normalisedFieldValue(expected)):options.match==='contains'?normalisedFieldValue(value).includes(normalisedFieldValue(expected)):normalisedFieldValue(value)===normalisedFieldValue(expected);
@@ -13092,6 +13124,7 @@ function startSNAI(tabIdentity) {
     if(matches.length!==1 && !((isKnowledge||options.first)&&matches.length))throw new Error(`NATIVE_REFERENCE_OPTION_NOT_UNIQUE: ${fieldLabel}`);
     const resolved=matches[0];
     // Never commit a response into a replacement component with stale context.
+    await waitForAutomationResume();
     if(findControlByLabel(fieldLabel,currentFormElements())!==field||host.dAProps.encodedRecord!==variables.encodedRecord||(host.dAProps.serializedChanges||'{}')!==variables.serializedChanges)throw new Error(`NATIVE_REFERENCE_CONTEXT_CHANGED: ${fieldLabel}`);
     callback.call(host,{value:resolved.value,displayValue:resolved.displayValue});
     // Display text can update before the form model, especially while a
@@ -14686,14 +14719,14 @@ function startSNAI(tabIdentity) {
     // Reuse an already-open draft before navigating back to the interaction.
     // On narrow screens Workspace moves New Event into an overflow menu, which
     // revealOpenNewEventTab handles before we ever seek the create button.
-    const reusedOpenEvent = ims ? await reopenMatchingNewEvent(ims) : false;
+    const reusedOpenEvent = !command.forceNewEvent&&ims ? await reopenMatchingNewEvent(ims) : false;
     // Selecting and confirming the requested interaction is required only
     // when a matching New Event draft was not already activated above.
     if (ims && !reusedOpenEvent) await clickIMSFast(ims);
     const activeEvent = checkCurrentEvent();
     // Only a New Event draft may be reused. Existing EVNT records are never
     // navigation targets or sources for a new ticket workflow.
-    const currentEventMatches = activeEvent.isNewEventPage && (!ims || newEventMatchesIMS(activeEvent, ims));
+    const currentEventMatches = !command.forceNewEvent&&activeEvent.isNewEventPage && (!ims || newEventMatchesIMS(activeEvent, ims));
     state.commandResult = {
       kind: 'workflow-preflight',
       currentEvent: activeEvent,
@@ -18050,6 +18083,7 @@ function startSNAI(tabIdentity) {
       let finalStatus;
       try {
         state.commandResult = null;
+        await waitForAutomationResume();
         await runCommandLine(rawCommand);
         assertAutomationNotStopped();
         const durationMs = Math.round((performance.now() - started) * 10) / 10;
@@ -20690,7 +20724,8 @@ function startSNAI(tabIdentity) {
       updatePausePanel();
       addLog('info', 'automation-pause-panel-closed', { reason: state.pause.reason, ims: state.autoSession?.ims });
     });
-    host.querySelector('[data-action="continue-automation"]').addEventListener('click', () => {
+    host.querySelector('[data-action="continue-automation"]').addEventListener('click', async () => {
+      if(state.incomingPause){try{await continueIncomingAutomation();}catch(error){state.pause.reason=error.message;updatePausePanel();addLog('warn','automation-continue-failed',{message:error.message});}return;}
       state.pause.manualRequested = true;
       state.pause.dismissed = false;
       const reason = pauseReason();
@@ -20757,7 +20792,8 @@ function startSNAI(tabIdentity) {
     requestCodexHP=withValidatedAICorrection(requestCodexHP,'HP');
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
     installAutomationFreeze();
-    addLog('info', 'helper-version', { version: '2.36.492' });
+    document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
+    addLog('info', 'helper-version', { version: '2.36.493' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
