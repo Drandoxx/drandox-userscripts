@@ -14745,7 +14745,7 @@ function startSNAI(tabIdentity) {
       // the IMS tab, Details, or Create a new Event in that case.
       if (ims) steps.push(`confirmed ${ims} as active`);
       if (command.openDetails !== false && !currentEventMatches) {
-        const details = await waitForTextTarget('Details', 600, true);
+        const details = findOuterDetailsTab() || await waitForTextTarget('Details', 600, true);
         if (details) {
           clickableAncestor(details).click();
           steps.push('opened Details');
@@ -15394,11 +15394,13 @@ function startSNAI(tabIdentity) {
       if (normaliseIMS(activeSelectedIMS()) !== ims || location.pathname.match(/\/chat\/([a-f0-9]{32})(?:\/|$)/i)?.[1] !== context.interactionId) throw new Error('CHAT_API_TAB_CHANGED');
     };
     const read = async (url, options = {}) => {
+      if(state.incomingPause)await waitForAutomationResume();
       checkIdentity();
       const response = await fetch(url, { ...options, credentials: 'same-origin', signal: controller.signal,
         headers: { Accept: 'application/json', 'X-UserToken': chatAPISessionToken(), ...(options.headers || {}) } });
       if (!response.ok) throw new Error(`CHAT_API_HTTP_${response.status}`);
       const json = await response.json();
+      if(state.incomingPause)await waitForAutomationResume();
       checkIdentity();
       if (json.errors?.length) throw new Error('CHAT_API_QUERY_FAILED');
       return json;
