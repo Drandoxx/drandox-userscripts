@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.501
+// @version      2.36.502
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7679,7 +7679,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.501',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.502',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -9290,7 +9290,8 @@ function startSNAI(tabIdentity) {
     const note=document.createElement('small');note.style.cssText='display:block;opacity:.7;margin-top:6px';note.textContent='Read-only · Live text requires companion 0.4.30+';
     panel.style.borderWidth='8px';panel.style.overflow='visible';panel.style.background='linear-gradient(135deg,var(--sn-theme-65538f,#65538f),var(--sn-theme-1c1827,#1c1827) 35%,#111018)';
     panel.style.maxHeight='none';
-    body.style.height='min(180px,calc(100vh - 220px))';body.style.minHeight='110px';body.style.maxHeight='180px';body.style.flexShrink='0';body.style.boxSizing='border-box';body.style.display='block';body.style.fontSize='12px';body.style.setProperty?.('white-space','pre-wrap','important');body.style.setProperty?.('line-height','1.55','important');
+    body.style.setProperty?.('font-size','12px','important');body.style.setProperty?.('padding','8px','important');
+    body.style.height='min(180px,calc(100vh - 220px))';body.style.minHeight='110px';body.style.maxHeight='180px';body.style.flexShrink='0';body.style.boxSizing='border-box';body.style.display='block';body.style.fontSize='12px';body.style.setProperty?.('white-space','pre-wrap','important');body.style.setProperty?.('line-height','1.35','important');
     body.style.marginRight='40px';body.style.borderRadius='28px / 20px';body.style.background='repeating-linear-gradient(0deg,#ffffff04 0px,#ffffff04 1px,transparent 1px,transparent 4px),radial-gradient(ellipse at 40% 20%,var(--sn-theme-191621,#191621),#08090e)';body.style.boxShadow='inset 0 0 18px #0009,0 0 0 3px #090a10';
     const logo=document.createElement('div');logo.style.cssText='order:-1;display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;color:var(--sn-theme-ac94ec,#ac94ec);font-weight:850;font-size:16px;letter-spacing:1px';logo.textContent='📺 SN AI TV';
     const live=document.createElement('span');live.textContent='● LIVE';live.style.cssText='font-size:10px;letter-spacing:2px;color:#81d8ab;background:#81d8ab15;border:1px solid #81d8ab55;border-radius:20px;padding:3px 7px';logo.append(live);
@@ -9314,7 +9315,7 @@ function startSNAI(tabIdentity) {
       if(entry.typingTimer)clearTimeout(entry.typingTimer);
       entry.targetText=next;
       const from=!replay&&next.startsWith(entry.displayedText)?entry.displayedText.length:0;
-      let visible=from;const chunk=Math.max(1,Math.ceil((next.length-from)/24));
+      let visible=from;const chunk=Math.max(2,Math.ceil((next.length-from)/100));
       const tick=()=>{
         if(aiResponsePreviews.get(preview.jobId)!==entry)return;
         visible=reduced?next.length:Math.min(next.length,visible+chunk);
@@ -9322,7 +9323,7 @@ function startSNAI(tabIdentity) {
         entry.body.textContent=entry.displayedText;
         const escape=value=>value.replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
         entry.body.innerHTML=entry.displayedText.split('\n').map(line=>{const colon=line.indexOf(':');return colon>0&&colon<110?'<span style="color:var(--sn-theme-ac94ec,#b8a2ff);font-weight:700">'+escape(line.slice(0,colon+1))+'</span>'+escape(line.slice(colon+1)):escape(line);}).join('<br>');entry.body.scrollTop=entry.body.scrollHeight;
-        if(visible<next.length)entry.typingTimer=setTimeout(tick,35);
+        if(visible<next.length)entry.typingTimer=setTimeout(tick,25);
         else{entry.typingTimer=0;if(entry.responseComplete)entry.heading.textContent=`ChatGPT · ${entry.ims} · Filling and verifying ticket…`;}
       };
       tick();
@@ -9333,7 +9334,7 @@ function startSNAI(tabIdentity) {
   }
   function formatAIResponseTV(raw){
     const text=String(raw||'').trim(),rows=[];
-    const label=key=>String(key).replace(/([a-z])([A-Z])/g,'$1 $2').replace(/[_-]+/g,' ').replace(/\b\w/g,char=>char.toUpperCase()).replace(/^Ims$/,'IMS');
+    const label=key=>String(key).replace(/([a-z])([A-Z])/g,'$1 $2').replace(/[_-]+/g,' ').replace(/^extra\s*field\s*/i,'').replace(/\b\w/g,char=>char.toUpperCase()).replace(/^Ims$/,'IMS').replace(/\bIp\b/g,'IP');
     const add=(key,value)=>{if(value===null||value===undefined)return;const name=label(key),content=String(value);rows.push(name+':'+(/description/i.test(name)&&!/^short /i.test(name)?'\n':' ')+content);};
     const walk=value=>{for(const [key,item]of Object.entries(value||{})){if(item&&typeof item==='object'){if(Array.isArray(item))add(key,item.join(', '));else walk(item);}else add(key,item);}};
     try{const parsed=JSON.parse(text.replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,''));if(parsed&&typeof parsed==='object')walk(parsed);}
@@ -9344,7 +9345,7 @@ function startSNAI(tabIdentity) {
         let value;try{value=JSON.parse('"'+match[2]+'"');}catch{value=match[2].replace(/\\n/g,'\n').replace(/\\"/g,'"');}add(match[1],value);
       }
     }
-    return rows.length?rows.join('\n\n'):(text.startsWith('{')?'Receiving ticket fields…':text);
+    return rows.length?rows.join('\n'):(text.startsWith('{')?'Receiving ticket fields…':text);
   }
   function requestChatGPTWeb({ ims, instructions, schema, input, validate }) {
     if(input?.transcript)collectDiagnosticChat(schema?.required?.[0]||'TEXT',ims,input.transcript);
@@ -20347,7 +20348,7 @@ function startSNAI(tabIdentity) {
         .filter((field) => issueType === 'Toner order' || field.dataset.hpField !== 'ink-colors')
         .map((field) => [field.dataset.hpField, field.value.trim()])
         .filter(([, value]) => value));
-      const hpStages = ['Getting Chat data', 'Creating template for ticket', 'Asking AI', 'Validating AI response', 'Generating Ticket', 'Finishing'];
+      const hpStages = ['Getting Chat data', 'Creating template for ticket', 'Sending message to AI', 'Waiting for AI reply', 'Validating AI response', 'Generating Ticket', 'Finishing'];
       let hpStage = 0;
       const setStage = (stage) => {
         hpStage = Math.max(hpStage, Math.min(hpStages.length - 1, stage));
@@ -20359,14 +20360,14 @@ function startSNAI(tabIdentity) {
           renderTicketProgressStages(progressText, 100, { stages: hpStages, currentStage: hpStages.length - 1 });
           return;
         }
-        const inferredStage = progress >= 99 ? 5 : progress >= 62 ? 4 : progress >= 58 ? 3 : progress >= 25 ? 2 : progress >= 8 ? 1 : 0;
+        const inferredStage = progress >= 99 ? 6 : progress >= 62 ? 5 : progress >= 58 ? 4 : progress >= 25 ? 2 : progress >= 8 ? 1 : 0;
         setStage(inferredStage);
       };
       const aiWebProgress = (event) => {
         if (!running || stopped || state.ai.provider !== 'web') return;
-        if (event.detail?.stage === 'job-message-accepted') setStage(2);
-        else if (event.detail?.stage === 'job-response-received') setStage(3);
-        else if (event.detail?.stage === 'job-response-validated') setStage(4);
+        if (event.detail?.stage === 'job-message-accepted') {setStage(3);titleMain.textContent=`${pinnedIMS} - Waiting for AI reply…`;}
+        else if (event.detail?.stage === 'job-response-received') {setStage(4);titleMain.textContent=`${pinnedIMS} - Validating AI response…`;}
+        else if (event.detail?.stage === 'job-response-validated') setStage(5);
       };
       const restore = (message = '') => {
         dialog.classList.remove('is-running', 'is-success', 'is-error', 'is-hp-reminder');
@@ -20476,7 +20477,7 @@ function startSNAI(tabIdentity) {
                 });
               }
             }
-            titleMain.textContent = `${pinnedIMS} - Asking ${aiProviderDisplayName()}…`; setProgress(25);
+            titleMain.textContent = `${pinnedIMS} - Sending message to ${aiProviderDisplayName()}…`; setProgress(25);
           const requestArgs = { ims: pinnedIMS, transcript: appendCurrentCaseInstruction(await aiTranscriptWithUserInformation(cacheEntry, 'HP', pinnedIMS), shell.caseInstruction?.value), issueType, supplied, genericSchema };
           assertTicketWindowAlive(dialog);
             if (state.ai.provider === 'codex') aiRequest = requestCodexHP({ model: state.ai.model, effort: state.ai.reasoningEffort, ...requestArgs });
@@ -20487,7 +20488,7 @@ function startSNAI(tabIdentity) {
             }
             let command = await aiRequest.promise; aiRequest = null;
             assertTicketWindowAlive(dialog);
-            setStage(3);
+            setStage(4);
             command = await resolveHPValueConflicts(dialog, command, supplied, genericSchema);
             // CI is an operator-only optional lookup. It is intentionally not
             // an AI value: when supplied, use the exact search text and pick
@@ -20496,7 +20497,7 @@ function startSNAI(tabIdentity) {
             lastAIResponse = command;
             if (stopped) throw Object.assign(new Error('HP request stopped.'), { code: 'AI_STOPPED' });
             reusableAICommand = await writeCachedAICommand('HP', pinnedIMS, JSON.stringify(command));
-            collapsedCommandInput.value = reusableAICommand; setStage(4); setProgress(58);
+            collapsedCommandInput.value = reusableAICommand; setStage(5); setProgress(58);
           }
           titleMain.textContent = `${pinnedIMS} - Running HP…`;
           const finalStatus = await runCommandInput(collapsedCommandInput);
@@ -20946,7 +20947,7 @@ function startSNAI(tabIdentity) {
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
     installAutomationFreeze();
     document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
-    addLog('info', 'helper-version', { version: '2.36.501' });
+    addLog('info', 'helper-version', { version: '2.36.502' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
