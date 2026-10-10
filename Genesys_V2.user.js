@@ -6083,7 +6083,7 @@
           if(!response.ok)throw Error(`Call API HTTP ${response.status}`);
           return await response.json();
         } finally {window.clearTimeout(timeout);}
-      },stop:()=>{stopped=true;if(win.fetch===wrappedFetch)win.fetch=nativeFetch;if(proto.open===wrappedOpen)proto.open=originalOpen;if(proto.setRequestHeader===wrappedHeader)proto.setRequestHeader=originalHeader;if(proto.send===wrappedSend)proto.send=originalSend;if(win.WebSocket===wrappedSocket)win.WebSocket=NativeWebSocket;delete win.__gbsCallApiBridge;authorization=null;}};
+      },stop:()=>{stopped=true;win.document?.removeEventListener('click',recordNativeCallControl,true);if(win.fetch===wrappedFetch)win.fetch=nativeFetch;if(proto.open===wrappedOpen)proto.open=originalOpen;if(proto.setRequestHeader===wrappedHeader)proto.setRequestHeader=originalHeader;if(proto.send===wrappedSend)proto.send=originalSend;if(win.WebSocket===wrappedSocket)win.WebSocket=NativeWebSocket;delete win.__gbsCallApiBridge;authorization=null;}};
       win.__gbsCallApiBridge=bridge;callNetworkBridges.add(win);
     } catch (_) { /* Inaccessible frames remain handled by existing DOM logging. */ }
   }
@@ -6804,6 +6804,7 @@
     // a full reload. The top document owns every call card; sweep reachable
     // nested documents on each pass, not just when their script runs.
     const reachableCallDocuments=collectReachableDocuments();
+    for(const [scope,observer]of callScopeObservers)if(!reachableCallDocuments.has(scope.ownerDocument)){observer.disconnect();callScopeObservers.delete(scope);}
     for (const frameDoc of reachableCallDocuments) {
       if (frameDoc !== doc) frameDoc.querySelectorAll('#gbs-last-call-data, #gbs-call-information').forEach(card => card.remove());
     }
@@ -9977,6 +9978,7 @@ function fitDashboardMetricSpacing(doc) {
     sortReachableEmbeddedDocuments(document);
   }, 30000);
   window.__genesysBoardSorterStop = () => {
+    for(const observer of callScopeObservers.values())observer.disconnect();callScopeObservers.clear();
     window.__gbsStopLightweightPerformance?.();
     window.clearInterval(updateCheckTimer); updateCheckTimer = 0;
     window.clearInterval(timer);
