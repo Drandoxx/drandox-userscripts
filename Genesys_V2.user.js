@@ -5823,6 +5823,15 @@
   const callNetworkFields = new Map();
   const callNetworkBridges = new Set();
   const liveCallSignals=new Map();
+  let lastNativeCallAction=null;
+  function recordNativeCallControl(event) {
+    const button=event.target?.closest?.('button,a,[role="button"]');if(!button)return;
+    const label=(button.getAttribute('aria-label') || button.title || button.textContent || '').trim();
+    const action=label.match(/\b(unmute|mute|unhold|hold|resume|hang\s*up|disconnect|answer|view|open in snow)\b/i)?.[0]?.toLowerCase();
+    if(!action || !button.closest('.selected-interaction-container,.command-panel.agent,.messenger-message,#gbs-call-information'))return;
+    lastNativeCallAction={at:Date.now(),action};
+    if(typeof performanceEvent==='function')performanceEvent('call-control-action',{action,trusted:event.isTrusted,disabled:!!button.disabled,tag:button.tagName.toLowerCase()});
+  }
   let callPopupDirty=true,callPopupScheduled=false,lastPopupFallbackAt=0;
   const callScopeObservers=new Map();
   function requestCallPopupRefresh() {
@@ -5849,8 +5858,9 @@
     const signature=safePath+':'+status+':'+method+':'+transport+':'+callPopupsEnabled();
     lightweightPerformance.network ||= [];
     const previous=lightweightPerformance.network.find(e=>e.signature===signature);
-    if(previous){previous.count++;previous.lastAt=Date.now();return;}
-    lightweightPerformance.network.push({at:Date.now(),lastAt:Date.now(),signature,path:safePath,status,method,transport,count:1,popupsEnabled:callPopupsEnabled()});
+    const action=lastNativeCallAction && Date.now()-lastNativeCallAction.at<3000?lastNativeCallAction.action:null;
+    if(previous){previous.count++;previous.lastAt=Date.now();if(action)previous.recentAction=action;return;}
+    lightweightPerformance.network.push({at:Date.now(),lastAt:Date.now(),signature,path:safePath,status,method,transport,count:1,recentAction:action,popupsEnabled:callPopupsEnabled()});
     if(lightweightPerformance.network.length>60)lightweightPerformance.network.shift();
   }
   let currentAgentApiId = null, callCacheBusy = false, lastLiveApiAt = 0, liveApiBusy = false, pendingEndedCallRefresh = false, nextCallApiAttemptAt = 0;
@@ -6019,14 +6029,16 @@
       const originalOpen=proto.open, originalHeader=proto.setRequestHeader, originalSend=proto.send;
       const observed = url => {try{const u=new URL(url,win.location.href);return u.origin===CALL_API_ORIGIN?u:null;}catch(_){return null;}};
       const relevant = path => path==='/api/v2/users/me' || /^\/api\/v2\/analytics\/conversations\/(details\/query|[a-f0-9-]{36}\/details)$/.test(path) || /^\/api\/v2\/conversations(?:\/[a-f0-9-]{36}|\/calls)?$/.test(path);
+      const diagnosticPath=path=>relevant(path) || /^\/api\/v2\/conversations\/[^/]+\/(participants|communications|calls)(\/|$)/.test(path);
+      win.document?.addEventListener('click',recordNativeCallControl,true);
       const consume=(u,status,data)=>{if(!stopped && relevant(u.pathname))rememberCallApi(u.pathname,status,data);};
       const wrappedFetch=function(input,options) {
         const u=observed(typeof input==='string'?input:input?.url);
         if(u) {try{authorization=new win.Headers(options?.headers || input?.headers).get('authorization') || authorization;}catch(_){}}
         const request=nativeFetch.apply(this,arguments);
-        if(u && relevant(u.pathname)) request.then(response=>{
+        if(u && diagnosticPath(u.pathname)) request.then(response=>{
           recordCallNetworkMetadata(u.pathname,response.status,String(options?.method || input?.method || 'GET'),'fetch');
-          if(response.ok && !(Number(response.headers.get('content-length'))>2000000)) response.clone().json().then(data=>consume(u,response.status,data)).catch(()=>{});
+          if(relevant(u.pathname) && response.ok && !(Number(response.headers.get('content-length'))>2000000)) response.clone().json().then(data=>consume(u,response.status,data)).catch(()=>{});
         }).catch(()=>{});
         return request;
       };
@@ -6035,9 +6047,9 @@
       const wrappedHeader=function(name,value) {if(requests.get(this)?.u && String(name).toLowerCase()==='authorization')authorization=String(value);return originalHeader.apply(this,arguments);};
       const wrappedSend=function() {
         const u=requests.get(this)?.u;
-        if(u && relevant(u.pathname)) this.addEventListener('load',()=>{
+        if(u && diagnosticPath(u.pathname)) this.addEventListener('load',()=>{
           recordCallNetworkMetadata(u.pathname,this.status,requests.get(this)?.method || 'GET','xhr');
-          try{if(this.status>=200 && this.status<300 && (this.responseType==='json' || !this.responseType || this.responseType==='text')) {
+          try{if(relevant(u.pathname) && this.status>=200 && this.status<300 && (this.responseType==='json' || !this.responseType || this.responseType==='text')) {
             if(this.responseType!=='json' && this.responseText.length>2000000)return;
             consume(u,this.status,this.responseType==='json'?this.response:JSON.parse(this.responseText));
           }}catch(_){}
@@ -6579,6 +6591,8 @@
     if(card) {delete card.dataset.renderSignature;card.querySelector('[role="timer"]')?.parentElement?.remove();}
   }
   function updateCallClockDisplay() {
+    const ringing=document.querySelector('#gbs-call-information [data-gbs-ringing-timer]');
+    if(ringing){const text=`${Math.max(0,29-Math.floor((Date.now()-Number(ringing.dataset.gbsRingingTimer))/1000))}s to answer`;if(ringing.textContent!==text)ringing.textContent=text;}
     if(window!==window.top)return;
     const timer=document.querySelector('#gbs-last-call-data [role="timer"]');
     if(lastCallSummary && !lastCallSummary.wrapupComplete) {
