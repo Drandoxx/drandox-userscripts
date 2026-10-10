@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.484
+// @version      2.36.485
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -13894,6 +13894,7 @@ function startSNAI(tabIdentity) {
     try {
       const { genericSchema } = await prepareTemplateBackedForm({
         profile: 'FTF',
+        deferSchema:true,
         templateName: 'GROUP - First Time Fix Template',
         templateAlreadyApplied: Boolean(options.templateAlreadyApplied),
         routing: [
@@ -13901,16 +13902,18 @@ function startSNAI(tabIdentity) {
           { field: 'Sub Category', value: 'NTWK-OTHER' },
           { field: 'Symptom', value: 'NTWK-OTHER-OTHER' },
           { kind: 'select', field: 'Event Type', value: 'Incident' },
-          { kind: 'select', field: 'Classification', value: 'Software' },
         ],
       });
       await autoClearReference('Configuration Item','FTF_CI_CLEAR_FAILED');
       await requirePopulatedField('Assignment Group', 'FTF_ASSIGNMENT_GROUP_EMPTY');
+      await autoSelect('Classification', 'Software', 'FTF_CLASSIFICATION_COMMIT_FAILED');
       await autoSelect('Priority', '4 - Low', 'FTF_PRIORITY_COMMIT_FAILED');
       const description = `DEVICE DETAILS(IP/SN/PTID/Host name): ${data.deviceDetails}\nWHAT WAS THE ISSUE REPORTED: ${data.issue}\nSOLUTION PROVIDED: ${data.solution}`;
       await autoText('Short Description', data.shortDescription, 'FTF_SHORT_DESCRIPTION_COMMIT_FAILED', 80);
       await autoText('Description', description, 'FTF_DESCRIPTION_COMMIT_FAILED');
-      await fillMappedFieldsUnderDescription(genericSchema, {
+      const currentSchema=genericSchema||await waitForGenericDescriptionSchema(7000,350);
+      if(!currentSchema)automationFailure('FTF_DESCRIPTION_SCHEMA_MISSING','Description fields could not be discovered.');
+      await fillMappedFieldsUnderDescription(currentSchema, {
         "If we need to contact you, when's the best time?": 'NA',
         'What error message do you see?': 'NA',
       }, 'FTF');
@@ -13937,19 +13940,22 @@ function startSNAI(tabIdentity) {
     try {
       const { genericSchema } = await prepareTemplateBackedForm({
         profile: 'ILS_PRNT',
+        deferSchema:true,
         templateName: 'ILS - Printer redirection',
         routing: [
-          { kind: 'select', field: 'Event Type', value: 'Incident' },
           { field: 'Category', value: 'APPQ' },
           { field: 'Sub Category', value: 'APPQ-ILS' },
           { field: 'Symptom', value: 'APPQ-ILS-OTHER' },
+          { kind: 'select', field: 'Event Type', value: 'Incident' },
         ],
       });
       const shortDescription = `ILS - Printer redirection to ${data.printer}`;
       const description = `REASON FOR REDIRECTION: ${data.reason}\nWHAT PRINTER ARE YOU DIRECTING PRINTS TO: ${data.printer}\nTICKET NUMBER FOR FAULTY PRINTER: Not provided`;
       await autoText('Short Description', shortDescription, 'ILS_PRNT_SHORT_DESCRIPTION_COMMIT_FAILED', 80);
       await autoText('Description', description, 'ILS_PRNT_DESCRIPTION_COMMIT_FAILED');
-      await fillMappedFieldsUnderDescription(genericSchema, { 'What error message do you see?': 'NA' }, 'ILS_PRNT');
+      const currentSchema=genericSchema||await waitForGenericDescriptionSchema(7000,350);
+      if(!currentSchema)automationFailure('ILS_PRNT_DESCRIPTION_SCHEMA_MISSING','Description fields could not be discovered.');
+      await fillMappedFieldsUnderDescription(currentSchema, { 'What error message do you see?': 'NA' }, 'ILS_PRNT');
       await autoLookup('Attached Knowledge', '*10029', { expected: 'KB0010029', match: 'prefix', first: true, code: 'ILS_PRNT_KB_COMMIT_FAILED' });
       const verification = verifyTicketProfile('ILS_PRNT', { 'Short Description': shortDescription, Description: description });
       if (!verification.ok) automationFailure('ILS_PRNT_FINAL_VERIFICATION_FAILED', 'ILS PRNT values did not pass final verification.', { mismatches: verification.mismatches });
@@ -13971,15 +13977,10 @@ function startSNAI(tabIdentity) {
     try {
       state.autoSession.skipDescriptionFields = data.skipDescriptionFields;
       const existingContactNumber=String(readableControlValue('Contact Number')||'').trim();
-      const { templateName, genericSchema } = await prepareHPBaseForm(data.issueType);
+      const { templateName } = await prepareHPBaseForm(data.issueType,true);
       // Template application rebuilds subordinate controls. Map against THIS schema,
       // not the stale pre-template session, retaining AI keys for cached retries.
-      const hpExtras=fieldsUnderDescriptionSpecification(genericSchema);
-      const unmappedExtras=Object.keys(data.values).filter(key=>key.startsWith('extrafield-') && !hpExtras.some(field=>field.key===key));
-      if(unmappedExtras.length) automationFailure('HP_EXTRA_FIELDS_NOT_DISCOVERED','HP template controls were not fully discovered; retry without AI after the form is ready.',{keys:unmappedExtras});
-      for(const field of hpExtras)if(Object.prototype.hasOwnProperty.call(data.values,field.key))data.fieldsUnderDescription[field.label]=String(data.values[field.key]??'').trim();
       const priority = data.values['no-other-working-printer'] === true ? '3 - Moderate' : '4 - Low';
-      await autoSelect('Priority', priority, 'HP_PRIORITY_COMMIT_FAILED');
       if (data.configurationItem) {
         const ciLookup = hpConfigurationItemLookup(data.configurationItem);
         if (ciLookup) {
@@ -13992,6 +13993,8 @@ function startSNAI(tabIdentity) {
         }
       }
       if(!data.configurationItem)await autoClearReference('Configuration Item','HP_CI_CLEAR_FAILED');
+      await autoLookup('Assignment Group', 'HP', { expected: 'HP', code: 'HP_ASSIGNMENT_GROUP_COMMIT_FAILED' });
+      await autoSelect('Priority', priority, 'HP_PRIORITY_COMMIT_FAILED');
       const description = buildHPDescription(data.issueType, data.values);
       // The template's contact detail is separate from the main Event control.
       // Preserve an operator-entered number, otherwise reuse the HP contact.
@@ -14000,9 +14003,14 @@ function startSNAI(tabIdentity) {
       if(contactNumber)await autoText('Contact Number',contactNumber,'HP_CONTACT_NUMBER_COMMIT_FAILED',40);
       await autoText('Short Description', data.shortDescription, 'HP_SHORT_DESCRIPTION_COMMIT_FAILED', 80);
       await autoText('Description', description, 'HP_DESCRIPTION_COMMIT_FAILED');
+      const genericSchema=await waitForGenericDescriptionSchema(7000,350);
+      if(!genericSchema)automationFailure('HP_DESCRIPTION_SCHEMA_MISSING','Description fields could not be discovered.');
+      const hpExtras=fieldsUnderDescriptionSpecification(genericSchema);
+      const unmappedExtras=Object.keys(data.values).filter(key=>key.startsWith('extrafield-') && !hpExtras.some(field=>field.key===key));
+      if(unmappedExtras.length)automationFailure('HP_EXTRA_FIELDS_NOT_DISCOVERED','HP template controls were not fully discovered.',{keys:unmappedExtras});
+      for(const field of hpExtras)if(Object.prototype.hasOwnProperty.call(data.values,field.key))data.fieldsUnderDescription[field.label]=String(data.values[field.key]??'').trim();
       const fieldsToFill = await fillMappedFieldsUnderDescription(genericSchema, data.fieldsUnderDescription, 'HP');
       await autoLookup('Attached Knowledge', 'KB0009934', { expected: 'KB0009934', match: 'prefix', first: true, code: 'HP_KB_COMMIT_FAILED' });
-      await autoLookup('Assignment Group', 'HP', { expected: 'HP', code: 'HP_ASSIGNMENT_GROUP_COMMIT_FAILED' });
       const verification = verifyTicketProfile('HP', {
         'Template Name': templateName,
         Priority: priority,
@@ -14023,7 +14031,7 @@ function startSNAI(tabIdentity) {
     }
   }
 
-  async function prepareTemplateBackedForm({ profile, templateName, routing = [], copyReportingUser = true, templateAlreadyApplied = false }) {
+  async function prepareTemplateBackedForm({ profile, templateName, routing = [], copyReportingUser = true, templateAlreadyApplied = false, deferSchema=false }) {
     const codePrefix = normaliseTicketProfile(profile) || 'TEMPLATE';
     if (copyReportingUser) await copyReportingUserAuto();
     const descriptionBefore = String(readableControlValue('Description') || '');
@@ -14040,6 +14048,7 @@ function startSNAI(tabIdentity) {
       await autoLookup('Template Name', templateName, { expected: templateName, strictCommit: true,
         forceReselect: true, code: `${codePrefix}_TEMPLATE_COMMIT_FAILED` });
     }
+    if(deferSchema)return {templateName,genericSchema:null};
     await waitForControlByLabel('Description', 7000);
     const descriptionReady = await waitUntil(() => {
       const current = String(readableControlValue('Description') || '');
@@ -14087,13 +14096,14 @@ function startSNAI(tabIdentity) {
     });
   }
 
-  function prepareHPBaseForm(issueType) {
+  function prepareHPBaseForm(issueType,deferSchema=false) {
     const templateName = issueType === 'Toner order'
       ? 'HARDWARE - HP UK - Toner Issue / Order'
       : 'HARDWARE - HP UK - Paper Jam / Generic fault';
     return prepareTemplateBackedForm({
       profile: 'HP',
       templateName,
+      deferSchema,
       routing: [
         { field: 'Category', value: 'PRNT' },
         { field: 'Sub Category', value: 'PRNT-HP' },
@@ -20525,7 +20535,7 @@ function startSNAI(tabIdentity) {
     requestCodexFTF=withValidatedAICorrection(requestCodexFTF,'FTF');
     requestCodexHP=withValidatedAICorrection(requestCodexHP,'HP');
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
-    addLog('info', 'helper-version', { version: '2.36.484' });
+    addLog('info', 'helper-version', { version: '2.36.485' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
