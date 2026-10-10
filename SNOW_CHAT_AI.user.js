@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.504
+// @version      2.36.505
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7561,7 +7561,7 @@ function startSNAI(tabIdentity) {
   }
   async function storedDailyDiagnostics(day){const db=await diagnosticDatabase();return new Promise((resolve,reject)=>{const request=db.transaction('events').objectStore('events').index('day').getAll(day);request.onsuccess=()=>resolve(deduplicateWorkerDiagnostics(request.result.map(row=>row.entry)));request.onerror=()=>reject(request.error);});}
   async function prunePreviousDiagnosticDays(day){const db=await diagnosticDatabase();return new Promise((resolve,reject)=>{const tx=db.transaction('events','readwrite');const request=tx.objectStore('events').index('day').openCursor(IDBKeyRange.upperBound(day,true));request.onsuccess=()=>{const cursor=request.result;if(cursor){cursor.delete();cursor.continue();}};tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});}
-  function updateDiagnosticCount(){const log=state.diagnostics;if(!log)return;const button=document.querySelector('#local-sn-ai-settings-template [data-download-diagnostics]');if(button)button.textContent='Download diagnostic logs ['+log.chats.size+' chat data collected]';}
+  function updateDiagnosticCount(){const log=state.diagnostics;if(!log)return;const button=document.querySelector('#local-sn-ai-settings-template [data-download-diagnostics]');if(button)button.textContent='Download logs ['+log.chats.size+' chats]';}
   async function clearDailyDiagnostics(){
     const log=diagnosticStore();if(log.clearing)return;
     log.clearing=true;state.diagnosticClearedAt=Date.now();
@@ -7679,7 +7679,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.504',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.505',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -17179,10 +17179,13 @@ function startSNAI(tabIdentity) {
       });developerPanel.append(matrixSetting,matrixStatus);
     }
     tabList.after(generalPanel);
-    const downloadLogButton=document.createElement('button');downloadLogButton.type='button';downloadLogButton.dataset.downloadDiagnostics='true';downloadLogButton.textContent='Download diagnostic logs ['+diagnosticStore().chats.size+' chat data collected]';downloadLogButton.title='Download today’s chat content, modes, errors and timings. Contains customer data; store and share securely.';
+    const downloadLogButton=document.createElement('button');downloadLogButton.type='button';downloadLogButton.dataset.downloadDiagnostics='true';downloadLogButton.textContent='Download logs ['+diagnosticStore().chats.size+' chats]';downloadLogButton.title='Download today’s chat content, modes, errors and timings. Contains customer data; store and share securely.';
     downloadLogButton.addEventListener('click',async()=>{downloadLogButton.disabled=true;try{await downloadDiagnostics();}catch(error){showAISettingsError(error);}finally{downloadLogButton.disabled=false;}});generalPanel.append(downloadLogButton);
-    const clearLogButton=document.createElement('button');clearLogButton.type='button';clearLogButton.textContent='Clear diagnostic logs';clearLogButton.dataset.clearDiagnostics='true';
+    const clearLogButton=document.createElement('button');clearLogButton.type='button';clearLogButton.textContent='Clear logs';clearLogButton.dataset.clearDiagnostics='true';
     clearLogButton.addEventListener('click',async()=>{if(!confirm('Clear stored SN AI diagnostic logs and reset the collected-chat count? This cannot be undone. Download first if you need them. Tickets and settings will not change.'))return;clearLogButton.disabled=true;downloadLogButton.disabled=true;try{await clearDailyDiagnostics();}catch(error){showAISettingsError(error);}finally{clearLogButton.disabled=false;downloadLogButton.disabled=false;}});generalPanel.append(clearLogButton);
+    const diagnosticActions=document.createElement('div');diagnosticActions.dataset.diagnosticActions='true';diagnosticActions.style.cssText='display:flex;align-items:stretch;gap:10px;width:100%;';
+    for(const button of [downloadLogButton,clearLogButton]){button.style.setProperty('height','42px','important');button.style.setProperty('min-height','42px','important');button.style.setProperty('padding','8px 14px','important');button.style.setProperty('width','auto','important');button.style.setProperty('margin','0','important');button.style.setProperty('font-size','14px','important');button.style.setProperty('line-height','20px','important');button.style.setProperty('white-space','nowrap','important');button.style.setProperty('border-radius','8px','important');}
+    downloadLogButton.style.flex='1';clearLogButton.style.flex='0 0 auto';diagnosticActions.append(downloadLogButton,clearLogButton);generalPanel.append(diagnosticActions);
     const settingsTabs = [...settingsDialog.querySelectorAll('[data-settings-tab]')];
     tabList.style.setProperty('--sn-segment-index',String(Math.max(0,settingsTabs.findIndex(tab=>tab.getAttribute('aria-selected')==='true'))));
     const settingsPanels = [...settingsDialog.querySelectorAll('[data-settings-panel]')];
@@ -20949,7 +20952,7 @@ function startSNAI(tabIdentity) {
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
     installAutomationFreeze();
     document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
-    addLog('info', 'helper-version', { version: '2.36.504' });
+    addLog('info', 'helper-version', { version: '2.36.505' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
