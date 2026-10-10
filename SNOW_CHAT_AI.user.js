@@ -7754,7 +7754,7 @@ function startSNAI(tabIdentity) {
       const tab=allPageElements().find(el=>el.getAttribute('role')==='tab'&&((saved.event.tabId&&el.id===saved.event.tabId)||(saved.event.controls&&el.getAttribute('aria-controls')===saved.event.controls)));
       if(!tab)throw new Error('The Event created by this run is no longer available. No other draft will be used.');
       clickableAncestor(tab).click();
-      if(!await wait(()=>location.pathname===saved.event.path&&newEventMatchesIMS(checkCurrentEvent(),saved.ims)))throw new Error('The original Event could not be confirmed.');
+      if(!await wait(()=>(saved.event.path?location.pathname===saved.event.path:activeWorkspaceRecordPanel()?.id===saved.event.controls)&&newEventMatchesIMS(checkCurrentEvent(),saved.ims)))throw new Error('The original Event could not be confirmed.');
     }else{
       const details=findOuterDetailsTab();if(details)clickableAncestor(details).click();
     }
@@ -11464,10 +11464,13 @@ function startSNAI(tabIdentity) {
     clickableAncestor(action).click();
     const opened=await waitUntil(()=>allPageElements().find(el=>el.getAttribute('role')==='tab'&&comparableLabel(elementLabel(el)).startsWith('new event')&&!before.has(el.id+'|'+el.getAttribute('aria-controls'))),12000,60);
     if(!opened)throw new Error('NEW_EVENT_TAB_NOT_IDENTIFIED: no newly created Event tab was found.');
+    const createdIMS=normaliseIMS(state.startContext?.ims||activeSelectedIMS()||currentInteractionIMS());
+    state.createdEvent={ims:createdIMS,tabId:opened.id,controls:opened.getAttribute('aria-controls'),path:''};
     clickableAncestor(opened).click();
+    await waitUntil(()=>/\/sub\/new_record\/new_call\//.test(location.pathname),12000,60);
+    state.createdEvent.path=location.pathname;
     const form = await waitForControlByLabel('Location', 12000);
     if (!form) throw new Error('New Event form did not load within 12 seconds.');
-    state.createdEvent={ims:normaliseIMS(currentInteractionIMS()),tabId:opened.id,controls:opened.getAttribute('aria-controls'),path:location.pathname};
     addLog('info','new-event-created-and-selected',{ims:state.createdEvent.ims,source:state.createdEvent.controls||state.createdEvent.tabId});
     return form;
   }
@@ -13036,6 +13039,7 @@ function startSNAI(tabIdentity) {
     if (props?.fieldName!==matrixFieldNames[label] || typeof callback!=='function' || field.disabled || field.readOnly) throw new Error(`MATRIX_NATIVE_UNAVAILABLE: ${fieldLabel}`);
     if(props.value===row.id && normalisedFieldValue(props.displayValue)===normalisedFieldValue(row.code))return props.displayValue;
     await waitForAutomationResume();
+    if(findControlByLabel(fieldLabel,currentFormElements())!==field)throw new Error(`MATRIX_COMMIT_FAILED: ${fieldLabel}`);
     callback.call(host,{value:row.id,displayValue:row.code});
     const next=routingDependentField(fieldLabel);
     // Observe commit and dependent rebuild concurrently; do not pay two
