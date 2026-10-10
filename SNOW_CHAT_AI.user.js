@@ -8265,6 +8265,10 @@ function startSNAI(tabIdentity) {
   }
 
   async function aiTranscriptWithUserInformation(entry, profile, ims, schema) {
+    if(['CPC','ILS_PRNT','FTF'].includes(profile)){
+      state.createdEvent=null;
+      await prepareTicketSessionFromCache(profile,ims,{requireChat:true});
+    }
     const userInformation = await readAIUserInformation(profile, ims, schema);
     return `${userInformation}\n\nChat:\n${cachedTranscriptText(entry)}`;
   }
@@ -12013,7 +12017,7 @@ function startSNAI(tabIdentity) {
         throw new Error(`[${errorCode}] No transcript or live-chat data is available for ${requestedIMS}; New Event was not opened.${diagnosticSuffix}`);
       }
       state.startContext.phase = 'open-or-reuse-new-event';
-      await runWorkflow({ ims: requestedIMS, createNewEvent: true, forceNewEvent:true, openDetails: true });
+      await runWorkflow({ ims: requestedIMS, createNewEvent: true, forceNewEvent:true, openDetails: false });
       // Workspace changes the URL immediately but can populate Link To
       // Interaction a little later. Wait for both before declaring failure.
       const currentEvent = await waitUntil(() => {
@@ -12181,7 +12185,8 @@ function startSNAI(tabIdentity) {
         automationFailure('DESCRIPTION_CURRENT_EVENT_REQUIRED', `The existing New Event for ${requestedIMS} is not available. Description mode requires both Details and New Event and will not create a replacement Event.`, { ims: requestedIMS });
       }
     } else {
-      await runWorkflow({ ims: requestedIMS, createNewEvent: true, forceNewEvent:true, openDetails: true });
+      const scriptDraft=reusedOpenNewEvent&&state.createdEvent?.ims===requestedIMS&&state.createdEvent.path===location.pathname;
+      if(!scriptDraft)await runWorkflow({ ims: requestedIMS, createNewEvent: true, forceNewEvent:true, openDetails: false });
       currentEvent = await waitUntil(() => {
         const candidate = checkCurrentEvent();
         return newEventMatchesIMS(candidate, requestedIMS) ? candidate : null;
@@ -20518,6 +20523,8 @@ function startSNAI(tabIdentity) {
             }
             if (!cacheEntry) throw new Error(`No transcript details were found for ${pinnedIMS}.`);
             // Chat capture is finished before any template/routing controls are touched.
+            state.createdEvent=null;
+            state.autoSession=null;
             setStage(1);
             const prefilled = prefillHPFieldsFromChat(fields, cacheEntry);
             supplied = suppliedValues();
