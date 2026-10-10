@@ -5823,6 +5823,44 @@
   const callNetworkFields = new Map();
   const callNetworkBridges = new Set();
   const liveCallSignals=new Map();
+  const callPayloadPrelude=new Map();
+  function compactCallPayload(value,depth=0,budget={left:600}) {
+    if(depth>9 || --budget.left<0)return '[truncated]';
+    if(value===null || typeof value==='boolean' || typeof value==='number')return value;
+    if(typeof value==='string') {
+      if(/^(bearer\s|eyJ[A-Za-z0-9_-]+\.)/i.test(value))return '[redacted]';
+      if(/^https?:\/\//i.test(value)){try{const u=new URL(value);return u.origin+u.pathname;}catch(_){return '[url]';}}
+      return value.slice(0,320);
+    }
+    if(Array.isArray(value))return value.slice(0,40).map(x=>compactCallPayload(x,depth+1,budget));
+    if(value && typeof value==='object') {
+      const result={};
+      for(const [key,item]of Object.entries(value).slice(0,80)) {
+        if(/token|authorization|cookie|password|secret|credential|connecturi|attributes|headers/i.test(key))continue;
+        if(budget.left<=0){result._truncated=true;break;}
+        result[key]=compactCallPayload(item,depth+1,budget);
+      }
+      return result;
+    }
+    return null;
+  }
+  function captureCallPayload(path,status,body,transport='api') {
+    if(window!==window.top || !isSavedAdmin(document) || !currentAgentApiId)return;
+    const id=body?.conversationId || body?.id;
+    if(!/^[a-f0-9-]{36}$/i.test(id || '') || !body.participants?.some(p=>p.userId===currentAgentApiId))return;
+    const payload=compactCallPayload(body),key='payload:'+id;
+    // One small seed per current conversation catches the event before its popup mounts.
+    if(!measurementState){callPayloadPrelude.set(id,{at:Date.now(),path,status,transport,payload});while(callPayloadPrelude.size>10)callPayloadPrelude.delete(callPayloadPrelude.keys().next().value);return;}
+    const fields={},flatten=(v,p)=>{if(v && typeof v==='object')for(const [k,x]of Object.entries(v))flatten(x,p+'/'+k);else fields[p]=v;};
+    flatten(payload,'');
+    const previous=callNetworkFields.get(key) || {},changes={},removed=[];
+    for(const [k,v]of Object.entries(fields))if(previous[k]!==v)changes[k]=v;
+    for(const k of Object.keys(previous))if(!(k in fields))removed.push(k);
+    if(Object.keys(changes).length || removed.length)callNetworkChanges.push({at:new Date().toISOString(),kind:'call-payload-delta',path,status,transport,id,changes,removed});
+    callNetworkFields.set(key,fields);
+    while(callNetworkFields.size>50)callNetworkFields.delete(callNetworkFields.keys().next().value);
+    while(callNetworkChanges.length>120)callNetworkChanges.shift();
+  }
   let lastNativeCallAction=null;
   function recordNativeCallControl(event) {
     const button=event.target?.closest?.('button,a,[role="button"]');if(!button)return;
@@ -5830,6 +5868,7 @@
     const action=label.match(/\b(unmute|mute|unhold|hold|resume|hang\s*up|disconnect|answer|view|open in snow)\b/i)?.[0]?.toLowerCase();
     if(!action || !button.closest('.selected-interaction-container,.command-panel.agent,.messenger-message,#gbs-call-information'))return;
     lastNativeCallAction={at:Date.now(),action};
+    if(measurementState){callNetworkChanges.push({at:new Date().toISOString(),kind:'control-action',action,trusted:!!event.isTrusted,disabled:!!button.disabled});while(callNetworkChanges.length>120)callNetworkChanges.shift();}
     if(typeof performanceEvent==='function')performanceEvent('call-control-action',{action,trusted:event.isTrusted,disabled:!!button.disabled,tag:button.tagName.toLowerCase()});
   }
   let callPopupDirty=true,callPopupScheduled=false,lastPopupFallbackAt=0;
@@ -5942,6 +5981,7 @@
       cache.userId=data.id;cache.userName=data.name || currentAgentName(document);GM_setValue(CALL_CACHE_KEY,cache);return;
     }
     const raw = data?.conversations || data?.entities || (data?.conversationId || data?.participants ? [data] : []);
+    if(!path.includes('/analytics/'))for(const body of raw)captureCallPayload(path,status,body);
     const projected = raw.map(compactApiConversation).filter(Boolean);
     if(!path.includes('/analytics/') && currentAgentApiId)for(const c of projected) {
       const own=c.participants.find(p=>p.purpose==='agent' && p.userId===currentAgentApiId && p.calls?.length);
@@ -6495,8 +6535,10 @@
     const sourceText = sources.map(source => source.text).join('\n');
     if (!measurementState && !popup) return;
     if (!measurementState) {
-      measurementState = {schemaVersion:4,startedAt:new Date().toISOString(),sampleIntervalMs:1000,samples:[],elements:{},network:[],droppedSamples:0,limits:'Accessible DOM and call-only API projections; changes only, no credentials. Network bounded to 120 events / 500KB. Phone timestamps measure observation order, not ringing latency.'};
+      measurementState = {schemaVersion:5,startedAt:new Date().toISOString(),sampleIntervalMs:1000,samples:[],elements:{},network:[],droppedSamples:0,limits:'Admin-only bounded call payload deltas, controls and accessible DOM/wrap-up changes. Secret fields and arbitrary attributes excluded; strings/arrays/depth capped. Network 120 events / 500KB; dropped data explicitly counted. Not a complete traffic capture. Phone timestamps measure observation order, not ringing latency.'};
       callNetworkChanges.length = 0; callNetworkSignatures.clear(); callNetworkFields.clear();
+      for(const [id,seed]of callPayloadPrelude)if(Date.now()-seed.at<30000 && (!activeCallSummary?.conversationId || id===activeCallSummary.conversationId))captureCallPayload(seed.path,seed.status,seed.payload,seed.transport);
+      callPayloadPrelude.clear();
       measurementPreviousFields = {}; measurementPersistedAt = 0;
       measurementLastSignature = ''; measurementLastSave = 0;
     }
@@ -6519,14 +6561,15 @@
     if (postCall && !measurementState.postCallStartedAt) measurementState.postCallStartedAt = Date.now();
     if (!postCall) measurementState.postCallStartedAt = null;
     const delta = compactMeasurement(sample);
-    if (callNetworkChanges.length) {
+    const networkChanged=callNetworkChanges.length>0;
+    if (networkChanged) {
       measurementState.network ||= [];
       measurementState.network.push(...callNetworkChanges.splice(0));
       while (measurementState.network.length > 120 || JSON.stringify(measurementState.network).length > 500000) {
         measurementState.network.shift(); measurementState.droppedNetworkEvents = (measurementState.droppedNetworkEvents || 0) + 1;
       }
     }
-    if (Object.keys(delta.changes).length || delta.removed.length || (postCall && Date.now() - measurementState.postCallStartedAt >= 30000)) {
+    if (networkChanged || Object.keys(delta.changes).length || delta.removed.length || (postCall && Date.now() - measurementState.postCallStartedAt >= 30000)) {
       if (Object.keys(delta.changes).length || delta.removed.length) measurementState.samples.push(delta);
       // Bound diagnostic storage; explicitly report any truncated early samples.
       if (measurementState.samples.length > 3000) {measurementState.samples.shift();measurementState.droppedSamples++;}
