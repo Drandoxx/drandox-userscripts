@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.489
+// @version      2.36.490
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7539,6 +7539,7 @@ function startSNAI(tabIdentity) {
     return state.diagnosticDB;
   }
   async function storedDailyDiagnostics(day){const db=await diagnosticDatabase();return new Promise((resolve,reject)=>{const request=db.transaction('events').objectStore('events').index('day').getAll(day);request.onsuccess=()=>resolve(request.result.map(row=>row.entry));request.onerror=()=>reject(request.error);});}
+  async function prunePreviousDiagnosticDays(day){const db=await diagnosticDatabase();return new Promise((resolve,reject)=>{const tx=db.transaction('events','readwrite');const request=tx.objectStore('events').index('day').openCursor(IDBKeyRange.upperBound(day,true));request.onsuccess=()=>{const cursor=request.result;if(cursor){cursor.delete();cursor.continue();}};tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});}
   function updateDiagnosticCount(){const log=state.diagnostics;if(!log)return;const button=document.querySelector('#local-sn-ai-settings-template [data-download-diagnostics]');if(button)button.textContent='Download diagnostic logs ['+log.chats.size+' chat data collected]';}
   async function flushDailyDiagnostics(){
     const log=diagnosticStore();if(log.flushing)return log.flushing;if(!log.events.length)return;
@@ -7552,9 +7553,12 @@ function startSNAI(tabIdentity) {
       window.addEventListener('pagehide',()=>{flushDailyDiagnostics().catch(()=>{});});
       document.addEventListener('visibilitychange',()=>{if(document.hidden)flushDailyDiagnostics().catch(()=>{});});
       const log=state.diagnostics;
-      storedDailyDiagnostics(log.day).then(rows=>{for(const entry of rows)if(entry[2]==='chat-data-collected'&&entry[4]?.ims)log.chats.add(entry[4].ims);updateDiagnosticCount();}).catch(()=>{});
+      const loadedDay=log.day;
+      prunePreviousDiagnosticDays(loadedDay).catch(()=>{});
+      storedDailyDiagnostics(loadedDay).then(rows=>{if(log.day!==loadedDay)return;for(const entry of rows)if(entry[2]==='chat-data-collected'&&entry[4]?.ims)log.chats.add(entry[4].ims);updateDiagnosticCount();}).catch(()=>{});
+      setInterval(()=>{diagnosticStore();},30000);
     }
-    const log=state.diagnostics;if(log.day!==diagnosticDay()){log.day=diagnosticDay();log.chats.clear();log.contents.clear();updateDiagnosticCount();}
+    const log=state.diagnostics;if(log.day!==diagnosticDay()){log.day=diagnosticDay();log.chats.clear();log.contents.clear();log.sleepCount=0;log.sleepMs=0;state.diagnosticWorkerSeen?.clear();state.diagnosticCompanionResults?.clear();prunePreviousDiagnosticDays(log.day).catch(()=>{});updateDiagnosticCount();}
     return state.diagnostics;
   }
   function collectDiagnosticChat(mode,ims,transcript){
@@ -7565,6 +7569,7 @@ function startSNAI(tabIdentity) {
   }
   function recordCompactDiagnostic(level,action,details={}) {
     const log=diagnosticStore(),now=action.startsWith('extension-')&&Number.isFinite(details.at)?details.at:Date.now(),safe={};
+    if(action.startsWith('extension-')&&now<new Date().setHours(0,0,0,0))return;
     for(const [key,value]of Object.entries(details||{})){
       if(key==='chatContent'&&action==='chat-data-collected'){safe[key]=String(value);continue;}
       if(key==='responseContent'&&action==='ai-response-data'){safe[key]=String(value);continue;}
@@ -7638,7 +7643,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.489',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.490',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -20645,7 +20650,7 @@ function startSNAI(tabIdentity) {
     requestCodexFTF=withValidatedAICorrection(requestCodexFTF,'FTF');
     requestCodexHP=withValidatedAICorrection(requestCodexHP,'HP');
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
-    addLog('info', 'helper-version', { version: '2.36.489' });
+    addLog('info', 'helper-version', { version: '2.36.490' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
