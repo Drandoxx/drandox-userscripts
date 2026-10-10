@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.566.0
+// @version      1.567.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -5899,7 +5899,15 @@
     return candidates.length===1?candidates[0]:null;
   }
   function recordCallNetworkMetadata(path,status,method,transport) {
-    if(measurementState){callNetworkChanges.push({at:new Date().toISOString(),kind:'request-result',path:String(path).split('?')[0].slice(0,200),status,method,transport,action:lastNativeCallAction && Date.now()-lastNativeCallAction.at<3000?lastNativeCallAction.action:null});while(callNetworkChanges.length>120)callNetworkChanges.shift();}
+    if(measurementState){
+      const safePath=String(path).split('?')[0].slice(0,200),action=lastNativeCallAction && Date.now()-lastNativeCallAction.at<3000?lastNativeCallAction.action:null;
+      const key=JSON.stringify([safePath,status,method,transport,action]);
+      const prior=callNetworkSignatures.get(key);
+      if(prior){prior.count++;prior.lastAt=new Date().toISOString();}
+      else {const entry={at:new Date().toISOString(),kind:'request-result',path:safePath,status,method,transport,action,count:1};callNetworkSignatures.set(key,entry);callNetworkChanges.push(entry);}
+      while(callNetworkSignatures.size>120)callNetworkSignatures.delete(callNetworkSignatures.keys().next().value);
+      while(callNetworkChanges.length>120)callNetworkChanges.shift();
+    }
     if(typeof lightweightPerformance==='undefined' || !lightweightPerformance)return;
     const safePath=String(path).split('?')[0].replace(/[a-f0-9-]{36}/gi,':id').slice(0,160);
     const signature=safePath+':'+status+':'+method+':'+transport+':'+callPopupsEnabled();
