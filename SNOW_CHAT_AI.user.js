@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.486
+// @version      2.36.487
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7561,7 +7561,9 @@ function startSNAI(tabIdentity) {
     for(const [key,value]of Object.entries(details||{})){
       if(key==='chatContent'&&action==='chat-data-collected'){safe[key]=String(value);continue;}
       if(key==='responseContent'&&action==='ai-response-data'){safe[key]=String(value);continue;}
-      if(!/^(mode|code|message|error|field|label|phase|status|profile|provider|jobId|commandId|ims|attempt|timeoutMs|durationMs|elapsedMs|waitMs|length|fields|ok|source|reason|stage|workerCount|receivedAt|submittedAt|startedAt|completedAt)$/i.test(key))continue;
+      if(key==='network'&&action==='form-network'){safe[key]=value;continue;}
+      if(key==='responseShape'&&action.startsWith('extension-')){safe[key]=value;continue;}
+      if(!/^(mode|code|message|error|field|label|phase|status|profile|provider|jobId|commandId|ims|attempt|timeoutMs|durationMs|elapsedMs|waitMs|length|fields|ok|source|reason|stage|workerCount|receivedAt|submittedAt|startedAt|completedAt|textLength|assistantCount|observedAssistantMutations|generating|responseSource|conversationId|fetchStatus|fetchError|version)$/i.test(key))continue;
       if(typeof value==='number'||typeof value==='boolean')safe[key]=value;
       else if(typeof value==='string')safe[key]=value.replace(/\b(Bearer\s+)[^\s]+/gi,'$1[redacted]').slice(0,180);
     }
@@ -7571,11 +7573,65 @@ function startSNAI(tabIdentity) {
     log.events.push({day:log.day,entry});
     if(!log.timer)log.timer=setTimeout(()=>{log.timer=0;flushDailyDiagnostics().catch(()=>{});},1000);
   }
+  // Passive, bounded capture: never alters requests, responses or authentication.
+  function formNetworkSafe(value,depth=0,key='') {
+    if(/authorization|cookie|token|password|secret|credential|session|csrf|api.?key/i.test(key))return '[redacted]';
+    if(depth>9)return '[depth limit]';
+    if(typeof value==='string')return value.replace(/Bearer\s+\S+/gi,'Bearer [redacted]').slice(0,1000);
+    if(Array.isArray(value))return value.slice(0,60).map(item=>formNetworkSafe(item,depth+1,key));
+    if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).slice(0,100).map(([k,v])=>[k,formNetworkSafe(v,depth+1,k)]));
+    return value;
+  }
+  function installFormNetworkDiagnostics() {
+    const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
+    const seen=new Map(),captureId=Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);let sequence=0;
+    const relevant=url=>{
+      try{const u=new URL(url,location.href);return u.origin===location.origin&&/\/api\/(?:now\/(?:graphql|ui|table\/(?:new_call|sys_template|sys_dictionary|sys_choice|cmdb_ci|kb_knowledge))|.*(?:form|layout|reference|template|choice))|(?:xmlhttp|ref_list)\.do/i.test(u.pathname)?u:null;}catch{return null;}
+    };
+    const body=value=>{
+      if(typeof value!=='string')return value?{omitted:'non-text body'}:undefined;
+      if(value.length>196608)return {omitted:'body exceeds 192 KiB',length:value.length};
+      try{const safe=formNetworkSafe(JSON.parse(value)),text=JSON.stringify(safe);return text.length<=16000?safe:{omitted:'sanitized payload exceeds 16 KiB',length:text.length,keys:safe&&typeof safe==='object'?Object.keys(safe):[]};}catch{return {omitted:'non-JSON body',length:value.length};}
+    };
+    const emit=(info,payload)=>{
+      try{
+        const safe=body(payload),serialized=JSON.stringify(safe);let data;
+        if(serialized){
+          let hash=2166136261;for(let i=0;i<serialized.length;i++)hash=Math.imul(hash^serialized.charCodeAt(i),16777619);
+          const fingerprint=info.url+':'+(hash>>>0)+':'+serialized.length;
+          if(seen.has(fingerprint))data={sameAs:seen.get(fingerprint)};
+          else{data=serialized.length<=16000?safe:{omitted:'sanitized payload exceeds 16 KiB',length:serialized.length,keys:safe&&typeof safe==='object'?Object.keys(safe):[]};seen.set(fingerprint,info.id);if(seen.size>256)seen.delete(seen.keys().next().value);}
+        }
+        recordCompactDiagnostic(info.status>=400||info.error?'error':'info','form-network',{network:{...info,response:data}});
+      }catch{/* Diagnostics must never disrupt the form. */}
+    };
+    const info=(url,method,request)=>({id:captureId+'-'+(++sequence),url:url.pathname,query:formNetworkSafe(Object.fromEntries(url.searchParams)),method:method||'GET',request:body(request),at:Date.now(),commandId:state.activeCommandId||''});
+    const nativeFetch=page.fetch;
+    page.fetch=function(...args){
+      const url=relevant(typeof args[0]==='string'||args[0] instanceof URL?String(args[0]):args[0]?.url);
+      if(!url)return Reflect.apply(nativeFetch,this,args);
+      const item=info(url,args[1]?.method||args[0]?.method,args[1]?.body),started=performance.now();
+      const result=Reflect.apply(nativeFetch,this,args);
+      Promise.resolve(result).then(response=>{
+        const details={...item,status:response.status,durationMs:Math.round(performance.now()-started)};
+        if(!/json/i.test(response.headers.get('content-type')||'')){emit(details);return;}
+        if(Number(response.headers.get('content-length'))>196608){emit(details,JSON.stringify({omitted:'response exceeds 192 KiB'}));return;}
+        const clone=response.clone();
+        (async()=>{const reader=clone.body?.getReader();if(!reader){emit(details);return;}let length=0,text='',decoder=new TextDecoder();for(;;){const part=await reader.read();if(part.done)break;length+=part.value.byteLength;if(length>196608){reader.cancel().catch(()=>{});emit(details,JSON.stringify({omitted:'response exceeds 192 KiB'}));return;}text+=decoder.decode(part.value,{stream:true});}text+=decoder.decode();emit({...details,bodyDurationMs:Math.round(performance.now()-started)},text);})().catch(()=>emit({...details,error:'capture-unavailable'}));
+      },()=>emit({...item,status:0,durationMs:Math.round(performance.now()-started),error:'request-failed'})).catch(()=>{});
+      return result;
+    };
+    const proto=page.XMLHttpRequest?.prototype;if(!proto)return;
+    const open=proto.open,send=proto.send,requests=new WeakMap();
+    proto.open=function(method,url,...rest){requests.delete(this);const u=relevant(url);if(u)requests.set(this,info(u,method));return Reflect.apply(open,this,[method,url,...rest]);};
+    proto.send=function(payload){const item=requests.get(this);if(item){item.request=body(payload);const started=performance.now();this.addEventListener('loadend',()=>{try{const text=this.responseType==='json'?JSON.stringify(this.response):!this.responseType||this.responseType==='text'?this.responseText:undefined;emit({...item,status:this.status,durationMs:Math.round(performance.now()-started)},text);}catch{emit({...item,status:this.status,error:'capture-unavailable'});}},{once:true});}return Reflect.apply(send,this,[payload]);};
+  }
+  try{installFormNetworkDiagnostics();}catch{/* Logging is optional; native form operation is not. */}
   async function downloadDiagnostics(){
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.486',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.487',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -20531,7 +20587,7 @@ function startSNAI(tabIdentity) {
     requestCodexFTF=withValidatedAICorrection(requestCodexFTF,'FTF');
     requestCodexHP=withValidatedAICorrection(requestCodexHP,'HP');
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
-    addLog('info', 'helper-version', { version: '2.36.486' });
+    addLog('info', 'helper-version', { version: '2.36.487' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
