@@ -5822,6 +5822,37 @@
   const callNetworkChanges = [], callNetworkSignatures = new Map();
   const callNetworkFields = new Map();
   const callNetworkBridges = new Set();
+  const liveCallSignals=new Map();
+  let callPopupDirty=true,callPopupScheduled=false,lastPopupFallbackAt=0;
+  const callScopeObservers=new Map();
+  function requestCallPopupRefresh() {
+    callPopupDirty=true;
+    if(!callPopupsEnabled() || callPopupScheduled || typeof window.requestAnimationFrame!=='function')return;
+    callPopupScheduled=true;
+    window.requestAnimationFrame(()=>{callPopupScheduled=false;if(!callCardDragging)syncCallInformationPopup(document);});
+  }
+  function watchCallScope(scope) {
+    if(!scope || callScopeObservers.has(scope))return;
+    const observer=new scope.ownerDocument.defaultView.MutationObserver(records=>{
+      if(records.some(r=>!((r.target.nodeType===1?r.target:r.target.parentElement)?.closest?.('time,[role="timer"],.gbs-call-information-body'))))requestCallPopupRefresh();
+    });
+    observer.observe(scope,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['aria-pressed','aria-disabled','disabled','class']});
+    callScopeObservers.set(scope,observer);
+  }
+  function currentLiveCallSignal() {
+    const candidates=[...liveCallSignals.values()].filter(s=>Date.now()-s.at<15000 && ['alerting','contacting','connected'].includes(s.state));
+    return candidates.length===1?candidates[0]:null;
+  }
+  function recordCallNetworkMetadata(path,status,method,transport) {
+    if(typeof lightweightPerformance==='undefined' || !lightweightPerformance)return;
+    const safePath=String(path).split('?')[0].replace(/[a-f0-9-]{36}/gi,':id').slice(0,160);
+    const signature=safePath+':'+status+':'+method+':'+transport;
+    lightweightPerformance.network ||= [];
+    const previous=lightweightPerformance.network.find(e=>e.signature===signature);
+    if(previous){previous.count++;previous.lastAt=Date.now();return;}
+    lightweightPerformance.network.push({at:Date.now(),lastAt:Date.now(),signature,path:safePath,status,method,transport,count:1,popupsEnabled:callPopupsEnabled()});
+    if(lightweightPerformance.network.length>60)lightweightPerformance.network.shift();
+  }
   let currentAgentApiId = null, callCacheBusy = false, lastLiveApiAt = 0, liveApiBusy = false, pendingEndedCallRefresh = false, nextCallApiAttemptAt = 0;
   function callDayKey(date = new Date()) {
     return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
@@ -5847,7 +5878,7 @@
       conversationEnd:c.conversationEnd || c.endTime || null,
       participants:(c.participants || []).map(p=>({
         participantId:p.participantId || p.id,purpose:p.purpose,userId:p.userId,name:p.participantName || p.name,
-        state:p.state,connectedTime:p.connectedTime,startTime:p.startTime,endTime:p.endTime,
+        state:p.state,address:p.address,queueName:p.queueName || p.queue?.name,connectedTime:p.connectedTime,startTime:p.startTime,endTime:p.endTime,
         wrapupRequired:p.wrapupRequired,wrapupTimeoutMs:p.wrapupTimeoutMs,
         wrapup:p.wrapup ? {startTime:p.wrapup.startTime,endTime:p.wrapup.endTime} : null,
         sessions:(p.sessions || []).map(s=>({sessionId:s.sessionId,mediaType:s.mediaType,ani:s.ani,dnis:s.dnis,
@@ -5895,6 +5926,20 @@
     }
     const raw = data?.conversations || data?.entities || (data?.conversationId || data?.participants ? [data] : []);
     const projected = raw.map(compactApiConversation).filter(Boolean);
+    if(!path.includes('/analytics/') && currentAgentApiId)for(const c of projected) {
+      const own=c.participants.find(p=>p.purpose==='agent' && p.userId===currentAgentApiId && p.calls?.length);
+      if(!own)continue;
+      const state=own.calls.some(x=>x.state==='connected')?'connected':own.calls.some(x=>['alerting','contacting'].includes(x.state))?'alerting':own.state || own.calls[0]?.state;
+      const previous=liveCallSignals.get(c.conversationId);
+      const {phone,location}=myCallPhoneAndLocation(c);
+      const next={at:Date.now(),id:c.conversationId,state,phone,location,queue:own.queueName};
+      liveCallSignals.set(c.conversationId,next);
+      if(!previous || JSON.stringify({...previous,at:0})!==JSON.stringify({...next,at:0})) {
+        if(typeof performanceEvent==='function')performanceEvent('native-call-state',{conversationId:c.conversationId,state,phonePresent:!!phone,locationPresent:!!location});
+        requestCallPopupRefresh();
+      }
+      while(liveCallSignals.size>10)liveCallSignals.delete(liveCallSignals.keys().next().value);
+    }
     if (measurementState) {
       for(const c of projected.filter(c=>c.conversationId===activeCallSummary?.conversationId || c.conversationId===lastCallSummary?.conversationId || c.participants.some(p=>p.userId===currentAgentApiId))) {
         const fields={},flatten=(value,key)=>{
@@ -5980,16 +6025,18 @@
         if(u) {try{authorization=new win.Headers(options?.headers || input?.headers).get('authorization') || authorization;}catch(_){}}
         const request=nativeFetch.apply(this,arguments);
         if(u && relevant(u.pathname)) request.then(response=>{
+          recordCallNetworkMetadata(u.pathname,response.status,String(options?.method || input?.method || 'GET'),'fetch');
           if(response.ok && !(Number(response.headers.get('content-length'))>2000000)) response.clone().json().then(data=>consume(u,response.status,data)).catch(()=>{});
         }).catch(()=>{});
         return request;
       };
       const requests=new WeakMap();
-      const wrappedOpen=function(method,url) {requests.set(this,{u:observed(url)});return originalOpen.apply(this,arguments);};
+      const wrappedOpen=function(method,url) {requests.set(this,{u:observed(url),method:String(method)});return originalOpen.apply(this,arguments);};
       const wrappedHeader=function(name,value) {if(requests.get(this)?.u && String(name).toLowerCase()==='authorization')authorization=String(value);return originalHeader.apply(this,arguments);};
       const wrappedSend=function() {
         const u=requests.get(this)?.u;
         if(u && relevant(u.pathname)) this.addEventListener('load',()=>{
+          recordCallNetworkMetadata(u.pathname,this.status,requests.get(this)?.method || 'GET','xhr');
           try{if(this.status>=200 && this.status<300 && (this.responseType==='json' || !this.responseType || this.responseType==='text')) {
             if(this.responseType!=='json' && this.responseText.length>2000000)return;
             consume(u,this.status,this.responseType==='json'?this.response:JSON.parse(this.responseText));
@@ -6006,7 +6053,10 @@
             if(typeof event.data!=='string' || event.data.length>2000000)return;
             try {
               const message=JSON.parse(event.data),body=message.eventBody;
-              if(!stopped && body?.participants && (body.id || body.conversationId))rememberCallApi('/api/v2/conversations/'+(body.conversationId || body.id),200,body);
+              if(!stopped && body?.participants && (body.id || body.conversationId)){
+                recordCallNetworkMetadata('/api/v2/conversations/:id',200,'EVENT','websocket');
+                rememberCallApi('/api/v2/conversations/'+(body.conversationId || body.id),200,body);
+              }
             }catch(_){}
           });
           return socket;
