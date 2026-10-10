@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.509
+// @version      2.36.510
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -27,36 +27,6 @@
 // @connect      raw.githubusercontent.com
 // @connect      api.openai.com
 // ==/UserScript==
-  async function createNewEventFromWorkspace() {
-    const ims=normaliseIMS(activeSelectedIMS()||state.startContext?.ims||currentInteractionIMS());
-    const beforePath=location.pathname;
-    const native=await waitUntil(()=>{
-      for(const owner of allPageElements()){
-        if(owner.localName!=='sn-form-internal-workspace-form-layout')continue;
-        const props=owner.getProperties?.();
-        if(props?.table!=='interaction'||normaliseIMS(props.fields?.number?.value||props.fields?.number?.displayValue)!==ims)continue;
-        const actions=(props.actionNodes||[]).flatMap(node=>node.children||[]);
-        const action=actions.find(node=>comparableLabel(node.label)==='create a new event');
-        if(action&&typeof props.handleUiActionClick==='function')return {props,action};
-      }
-      return null;
-    },5000,45);
-    if(!native)throw new Error('NEW_EVENT_NATIVE_ACTION_UNAVAILABLE: the active IMS native Create Event action is not loaded.');
-    assertAutomationNotStopped();
-    // Invoke the loaded ServiceNow UI action controller, not a synthetic DOM
-    // click or reconstructed URL. ServiceNow opens and selects its own draft.
-    await native.props.handleUiActionClick({id:native.action.id});
-    const ready=await waitUntil(()=>{
-      if(location.pathname===beforePath)return null;
-      const event=checkCurrentEvent();
-      return newEventMatchesIMS(event,ims)?event:null;
-    },12000,45);
-    if(!ready)throw new Error('NEW_EVENT_NATIVE_FORM_NOT_READY: ServiceNow did not mount the requested IMS draft.');
-    const tab=allPageElements().find(el=>el.getAttribute('role')==='tab'&&el.getAttribute('aria-selected')==='true'&&comparableLabel(elementLabel(el)).includes('new event'));
-    state.createdEvent={ims,tabId:tab?.id||'',controls:tab?.getAttribute('aria-controls')||'',path:location.pathname};
-    addLog('info','new-event-native-created',{ims,source:native.action.id});
-    return await waitForControlByLabel('Location',12000);
-  }
 /*
 <SN_AI_HELPER_GUIDE version="8">
   This block is intended for an AI assistant that has been given this source
@@ -7708,7 +7678,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.509',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.510',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -11594,46 +11564,34 @@ function startSNAI(tabIdentity) {
   }
 
   async function createNewEventFromWorkspace() {
-    const before=new Set(allPageElements().filter(el=>el.getAttribute('role')==='tab').map(el=>el.id+'|'+el.getAttribute('aria-controls')));
-    const findCreated=()=>allPageElements().find(el=>el.getAttribute('role')==='tab'&&isVisible(el)&&!isInspectorNode(el)&&
-      (comparableLabel(elementLabel(el)).includes('new event')||String(el.getAttribute('aria-controls')||'').includes('chrome-tab-panel-new_record_'))&&
-      !before.has(el.id+'|'+el.getAttribute('aria-controls')));
-    const pressEnter=el=>{el.focus?.();for(const type of ['keydown','keyup'])el.dispatchEvent(new KeyboardEvent(type,{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,composed:true,cancelable:true}));};
-    let opened=null;
-    for(let attempt=1;attempt<=3&&!opened;attempt++){
-      assertAutomationNotStopped();opened=findCreated();if(opened)break;
-      const details=findOuterDetailsTab();
-      if(!details)continue;
-      if(details.getAttribute('aria-selected')!=='true'){
-        clickableAncestor(details).click();
-        if(!await waitUntil(()=>findOuterDetailsTab()?.getAttribute('aria-selected')==='true',350,45))pressEnter(findOuterDetailsTab()||details);
+    const ims=normaliseIMS(activeSelectedIMS()||state.startContext?.ims||currentInteractionIMS());
+    const beforePath=location.pathname;
+    const native=await waitUntil(()=>{
+      for(const owner of allPageElements()){
+        if(owner.localName!=='sn-form-internal-workspace-form-layout')continue;
+        const props=owner.getProperties?.();
+        if(props?.table!=='interaction'||normaliseIMS(props.fields?.number?.value||props.fields?.number?.displayValue)!==ims)continue;
+        const actions=(props.actionNodes||[]).flatMap(node=>node.children||[]);
+        const action=actions.find(node=>comparableLabel(node.label)==='create a new event');
+        if(action&&typeof props.handleUiActionClick==='function')return {props,action};
       }
-      let action=await waitUntil(()=>findOuterDetailsTab()?.getAttribute('aria-selected')==='true'?findNewEventCreationAction():null,3000,45);
-      opened=findCreated();if(opened)break;
-      if(!action){addLog('warn','new-event-create-retry',{attempt,stage:'details-not-ready'});continue;}
-      const nativeButton=action.shadowRoot?.querySelector('button:not([disabled])');
-      action=nativeButton||clickableAncestor(action);
-      action.click();
-      opened=await waitUntil(findCreated,12000,60);
-      if(!opened){
-        // Retry the native keyboard action only after confirming no draft
-        // appeared. Do not click Create twice while a new tab is present.
-        action=findNewEventCreationAction();
-        if(action){pressEnter(action.shadowRoot?.querySelector('button:not([disabled])')||clickableAncestor(action));opened=await waitUntil(findCreated,12000,60);}
-        if(!opened)addLog('warn','new-event-create-retry',{attempt,stage:'create-not-confirmed'});
-      }
-    }
-    if(!opened)throw new Error('NEW_EVENT_CREATION_FAILED: native Details/Create actions did not open a draft after 3 attempts.');
-    const createdIMS=normaliseIMS(state.startContext?.ims||activeSelectedIMS()||currentInteractionIMS());
-    state.createdEvent={ims:createdIMS,tabId:opened.id,controls:opened.getAttribute('aria-controls'),path:''};
-    clickableAncestor(opened).click();
-    if(!await waitUntil(()=>opened.getAttribute('aria-selected')==='true',350,45))pressEnter(opened);
-    await waitUntil(()=>/\/sub\/new_record\/new_call\//.test(location.pathname),12000,60);
-    state.createdEvent.path=location.pathname;
-    const form = await waitForControlByLabel('Location', 12000);
-    if (!form) throw new Error('New Event form did not load within 12 seconds.');
-    addLog('info','new-event-created-and-selected',{ims:state.createdEvent.ims,source:state.createdEvent.controls||state.createdEvent.tabId});
-    return form;
+      return null;
+    },5000,45);
+    if(!native)throw new Error('NEW_EVENT_NATIVE_ACTION_UNAVAILABLE: the active IMS native Create Event action is not loaded.');
+    assertAutomationNotStopped();
+    // Invoke the loaded ServiceNow UI action controller, not a synthetic DOM
+    // click or reconstructed URL. ServiceNow opens and selects its own draft.
+    await native.props.handleUiActionClick({id:native.action.id});
+    const ready=await waitUntil(()=>{
+      if(location.pathname===beforePath)return null;
+      const event=checkCurrentEvent();
+      return newEventMatchesIMS(event,ims)?event:null;
+    },12000,45);
+    if(!ready)throw new Error('NEW_EVENT_NATIVE_FORM_NOT_READY: ServiceNow did not mount the requested IMS draft.');
+    const tab=allPageElements().find(el=>el.getAttribute('role')==='tab'&&el.getAttribute('aria-selected')==='true'&&comparableLabel(elementLabel(el)).includes('new event'));
+    state.createdEvent={ims,tabId:tab?.id||'',controls:tab?.getAttribute('aria-controls')||'',path:location.pathname};
+    addLog('info','new-event-native-created',{ims,source:native.action.id});
+    return await waitForControlByLabel('Location',12000);
   }
 
   async function reopenMatchingNewEvent(ims, timeoutMs = 1400, options = {}) {
@@ -21015,7 +20973,7 @@ function startSNAI(tabIdentity) {
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
     installAutomationFreeze();
     document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
-    addLog('info', 'helper-version', { version: '2.36.509' });
+    addLog('info', 'helper-version', { version: '2.36.510' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
