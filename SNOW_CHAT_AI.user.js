@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.502
+// @version      2.36.503
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7679,7 +7679,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.502',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.503',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -9288,6 +9288,8 @@ function startSNAI(tabIdentity) {
     const heading=document.createElement('div');heading.style.cssText='font-weight:600;margin-bottom:8px';heading.textContent=`ChatGPT · ${ims} · Preparing message…`;
     const body=document.createElement('pre');body.style.cssText='white-space:pre-wrap;overflow:hidden;min-height:52px;max-height:160px;margin:0;padding:10px;border:1px solid var(--sn-theme-65538f,#65538f);border-radius:12px;background:var(--sn-theme-191621,#131019);box-shadow:inset 0 2px 12px #0004;font:inherit';body.textContent='Waiting for the companion…';
     const note=document.createElement('small');note.style.cssText='display:block;opacity:.7;margin-top:6px';note.textContent='Read-only · Live text requires companion 0.4.30+';
+    // Internal status elements remain detached so progress callbacks cannot
+    // bring the removed status/footer text back onto the minimalist TV.
     panel.style.borderWidth='8px';panel.style.overflow='visible';panel.style.background='linear-gradient(135deg,var(--sn-theme-65538f,#65538f),var(--sn-theme-1c1827,#1c1827) 35%,#111018)';
     panel.style.maxHeight='none';
     body.style.setProperty?.('font-size','12px','important');body.style.setProperty?.('padding','8px','important');
@@ -9296,8 +9298,8 @@ function startSNAI(tabIdentity) {
     const logo=document.createElement('div');logo.style.cssText='order:-1;display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;color:var(--sn-theme-ac94ec,#ac94ec);font-weight:850;font-size:16px;letter-spacing:1px';logo.textContent='📺 SN AI TV';
     const live=document.createElement('span');live.textContent='● LIVE';live.style.cssText='font-size:10px;letter-spacing:2px;color:#81d8ab;background:#81d8ab15;border:1px solid #81d8ab55;border-radius:20px;padding:3px 7px';logo.append(live);
     const reposition=()=>{const launcher=document.getElementById?.('sn-ai-chats-today')?.shadowRoot?.querySelector('.launcher');const rect=launcher?.getBoundingClientRect();panel.style.bottom=rect&&rect.height>0?`${Math.max(64,innerHeight-rect.top+12)}px`:'64px';};
-    panel.append(heading,body,note,logo);
-    const knobs=document.createElement('div');knobs.style.cssText='position:absolute;right:10px;top:102px;width:30px;display:grid;gap:12px';
+    panel.append(body,logo);
+    const knobs=document.createElement('div');knobs.style.cssText='position:absolute;right:10px;top:62px;width:30px;display:grid;gap:12px';
     for(let i=0;i<2;i++){const knob=document.createElement('div');knob.style.cssText='width:25px;height:25px;border-radius:50%;border:2px solid #a9a0bd;background:linear-gradient(130deg,#746986,#27222f);box-shadow:2px 3px 3px #0008;text-align:center;color:#eee;font:20px/20px monospace';knob.textContent='╱';knobs.append(knob);}
     const speaker=document.createElement('div');speaker.style.cssText='height:38px;border-radius:4px;background:repeating-linear-gradient(0deg,#090a10 0px,#090a10 2px,transparent 2px,transparent 5px)';knobs.append(speaker);panel.append(knobs);
     for(const left of ['35px','calc(100% - 75px)']){const foot=document.createElement('div');foot.style.cssText=`position:absolute;bottom:-13px;left:${left};width:38px;height:8px;border-radius:0 0 5px 5px;background:#25222d`;panel.append(foot);}
@@ -20947,7 +20949,7 @@ function startSNAI(tabIdentity) {
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
     installAutomationFreeze();
     document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
-    addLog('info', 'helper-version', { version: '2.36.502' });
+    addLog('info', 'helper-version', { version: '2.36.503' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
