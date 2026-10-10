@@ -6603,6 +6603,11 @@ function startSNAI(tabIdentity) {
         gmSetValue(CHATGPT_WEB_JOB_KEY, { id: result.id, status: result.status, completedAt: result.completedAt || Date.now() }).catch(() => {});
       }
       if (message.action === 'worker-progress' && message.progress) {
+        const preview=aiResponsePreviews.get(message.progress.jobId);
+        if(preview&&message.progress.stage==='job-message-accepted'){
+          preview.heading.textContent=`ChatGPT · ${preview.ims} · Message accepted`;
+          preview.body.textContent='Waiting for response text…';
+        }
         if (message.progress.stage === 'job-message-accepted' && message.progress.jobId) {
           gmSetValue(CHATGPT_WEB_ACK_KEY, {
             id: message.progress.jobId,
@@ -6614,6 +6619,7 @@ function startSNAI(tabIdentity) {
         document.dispatchEvent(new CustomEvent('sn-ai-web-progress', { detail: message.progress }));
       }
       if (message.action === 'worker-diagnostics' && Array.isArray(message.diagnostics)) {
+        // Streaming text travels separately and is never added to diagnostics.
         let output = document.getElementById(CHATGPT_WEB_DIAGNOSTICS_ID);
         if (!output) {
           output = document.createElement('script');
@@ -7332,6 +7338,7 @@ function startSNAI(tabIdentity) {
     await gmSetValue(AI_COMMAND_CACHE_KEY, next);
   };
   const loadAISettings = async () => {
+    state.aiResponsePreview=Boolean(await gmGetValue('sn-ai-response-preview-v1',true));
     state.cmdEnabled = Boolean(await gmGetValue(CMD_ENABLED_KEY, false));
     state.testEnabled = Boolean(await gmGetValue(TEST_ENABLED_KEY, false));
     state.fieldTestEnabled = Boolean(await gmGetValue(FIELD_TEST_ENABLED_KEY, false));
@@ -9250,6 +9257,23 @@ function startSNAI(tabIdentity) {
       })();
       return {promise,abort:()=>{stopped=true;current?.abort?.();}};
     };
+  }
+  const aiResponsePreviews=new Map();
+  function clearAIResponsePreview(id){const entry=aiResponsePreviews.get(id);entry?.panel?.remove();aiResponsePreviews.delete(id);}
+  function startAIResponsePreview(id,ims,provider){
+    for(const key of aiResponsePreviews.keys())clearAIResponsePreview(key);
+    if(!state.aiResponsePreview||provider!=='chatgpt')return;
+    const panel=document.createElement('aside');panel.inert=true;
+    panel.setAttribute('aria-label','Read-only ChatGPT response preview');
+    panel.style.cssText='position:fixed;right:18px;bottom:18px;width:min(380px,calc(100vw - 36px));max-height:240px;z-index:2147483647;pointer-events:none;user-select:none;background:var(--sn-theme-1c1827,#1c1827);color:var(--sn-theme-e6edf9,#e6edf9);border:1px solid var(--sn-theme-65538f,#65538f);border-radius:12px;padding:12px;box-shadow:0 8px 28px #0005;font:13px/1.45 system-ui';
+    const heading=document.createElement('div');heading.style.cssText='font-weight:600;margin-bottom:8px';heading.textContent=`ChatGPT · ${ims} · Preparing message…`;
+    const body=document.createElement('pre');body.style.cssText='white-space:pre-wrap;overflow:hidden;max-height:180px;margin:0;font:inherit';body.textContent='Waiting for the companion…';
+    panel.append(heading,body);document.documentElement.append(panel);aiResponsePreviews.set(id,{panel,heading,body,ims});
+  }
+  function updateAIResponsePreview(preview){
+    const entry=aiResponsePreviews.get(preview?.jobId);if(!entry||!state.aiResponsePreview)return;
+    entry.heading.textContent=`ChatGPT · ${entry.ims} · ${preview.generating?'Generating response…':'Receiving response…'}${preview.truncated?' (latest portion)':''}`;
+    entry.body.textContent=String(preview.text||'');entry.body.scrollTop=entry.body.scrollHeight;
   }
   function requestChatGPTWeb({ ims, instructions, schema, input, validate }) {
     if(input?.transcript)collectDiagnosticChat(schema?.required?.[0]||'TEXT',ims,input.transcript);
@@ -16233,6 +16257,7 @@ function startSNAI(tabIdentity) {
             <section class="local-sn-settings-panel" data-settings-panel="ai" hidden>
             <div class="local-sn-cpc-row"><span>Turn on AI power</span><span class="switch-button"><label class="switch-outer"><input aria-label="Turn on AI power" type="checkbox"/><span class="button"><span class="button-toggle" data-ai-toggle-text>OFF</span><span class="button-indicator"></span></span></label></span></div>
             <div data-ai-settings-details hidden>
+              <label class="local-sn-cpc-row"><span>Live ChatGPT response preview</span><input type="checkbox" data-ai-response-preview aria-label="Live ChatGPT response preview"></label>
               <div class="local-sn-cpc-row"><label>AI connection</label><select aria-label="AI connection"><option value="web">Default</option><option value="codex">ChatGPT subscription (Codex)</option><option value="api">OpenAI API (separate billing)</option></select></div>
               <div class="local-sn-cpc-row local-sn-ai-tier-row" data-ai-codex-profile-row><label>AI model</label><div class="local-sn-ai-tier-selector" role="radiogroup" aria-label="AI performance"><div class="local-sn-ai-tier-track" aria-hidden="true"><span class="local-sn-ai-tier-fill"></span></div><span class="local-sn-ai-tier-thumb" role="presentation" tabindex="-1"></span><button class="local-sn-ai-tier-stop" type="button" role="radio" data-ai-profile="very-fast" aria-checked="false"><span class="local-sn-ai-tier-circle"></span><span class="local-sn-ai-tier-label">Very Fast</span></button><button class="local-sn-ai-tier-stop" type="button" role="radio" data-ai-profile="normal" aria-checked="false"><span class="local-sn-ai-tier-circle"></span><span class="local-sn-ai-tier-label">Normal</span></button><button class="local-sn-ai-tier-stop" type="button" role="radio" data-ai-profile="smart" aria-checked="false"><span class="local-sn-ai-tier-circle"></span><span class="local-sn-ai-tier-label">Smart</span></button></div></div>
               <div class="local-sn-cpc-row" data-ai-api-model-row hidden><label>AI model</label><select aria-label="OpenAI API model"><option value="gpt-5-mini">GPT-5 mini</option><option value="gpt-5.4-mini">GPT-5.4 mini</option><option value="gpt-5.4">GPT-5.4</option></select></div>
@@ -17187,6 +17212,8 @@ function startSNAI(tabIdentity) {
       ? CODEX_AI_PROFILES[state.ai.codexProfile].label
       : (state.ai.provider === 'web' ? (state.ai.webService === 'gemini' ? 'Gemini Web' : 'ChatGPT Web') : 'OpenAI API');
     const syncAISettingsUI = () => {
+      const previewToggle=settingsDialog.querySelector('[data-ai-response-preview]');
+      if(previewToggle)previewToggle.checked=Boolean(state.aiResponsePreview);
       cmdEnabledSwitch.checked = state.cmdEnabled;
       testEnabledSwitch.checked = state.testEnabled;
       fieldTestEnabledSwitch.checked = state.fieldTestEnabled;
