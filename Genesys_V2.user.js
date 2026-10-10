@@ -5152,6 +5152,13 @@
   }
 
   function renderSettingsHome(doc, popover) {
+    // Diagnostics are available to every user, not only the admin call recorder.
+    queueMicrotask(()=>{
+      const body=popover.querySelector('.gbs-settings-body');if(!body)return;
+      const button=doc.createElement('button');button.type='button';button.textContent='Download performance diagnostics';
+      button.style.cssText='margin-top:14px;padding:10px;border:1px solid #22d3ee;border-radius:8px;background:#242a30;color:#a5f3fc;cursor:pointer';
+      button.addEventListener('click',()=>downloadPerformanceDiagnostics());body.append(button);
+    });
     popover.dataset.gbsSettingsPage = 'home';
     const sparkle = '<path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/>';
     const svg = paths => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
@@ -9667,6 +9674,71 @@ function fitDashboardMetricSpacing(doc) {
     window.setTimeout(scheduleIdle, 900);
   }
 
+  const PERFORMANCE_LOG_KEY='genesys-v2-light-performance-v1';
+  let lightweightPerformance=null;
+  function performanceMeasure(name,callback) {
+    if(!lightweightPerformance)return callback();
+    const start=performance.now();
+    try{return callback();}finally{
+      const ms=performance.now()-start,stats=lightweightPerformance.work[name] ||= {count:0,totalMs:0,maxMs:0};
+      stats.count++;stats.totalMs+=ms;stats.maxMs=Math.max(stats.maxMs,ms);
+    }
+  }
+  function performanceEvent(type,fields={}) {
+    if(!lightweightPerformance)return;
+    lightweightPerformance.events.push({at:Date.now(),type,...fields});
+    if(lightweightPerformance.events.length>40)lightweightPerformance.events.shift();
+  }
+  function performanceReport() {
+    if(!lightweightPerformance)return {unavailable:true};
+    const report=JSON.parse(JSON.stringify(lightweightPerformance));
+    for(const stats of Object.values(report.work)){stats.totalMs=Math.round(stats.totalMs);stats.maxMs=Math.round(stats.maxMs*10)/10;}
+    report.exportedAt=Date.now();return report;
+  }
+  function downloadPerformanceDiagnostics() {
+    const report=performanceReport();
+    const url=URL.createObjectURL(new Blob([JSON.stringify(report)],{type:'application/json'}));
+    const link=document.createElement('a');link.href=url;link.download='genesys-v2-performance.json';link.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+  function startLightweightPerformance() {
+    if(window!==window.top)return;
+    lightweightPerformance={schemaVersion:1,version:GM_info.script.version,startedAt:Date.now(),work:{},samples:[],events:[],longTasks:{count:0,totalMs:0,maxMs:0},limitations:'No watts or script-isolated heap measurement. Heap is browser-provided page estimate. Timed work covers instrumented synchronous paths, not all script or Genesys CPU. No call contents, tokens, HTML, network bodies or source code.'};
+    try {
+      const saved=JSON.parse(sessionStorage.getItem(PERFORMANCE_LOG_KEY)||'null');
+      if(saved?.schemaVersion===1 && Date.now()-saved.exportedAt<86400000){lightweightPerformance.samples=(saved.samples||[]).slice(-60);lightweightPerformance.events=(saved.events||[]).slice(-39);}
+    }catch(_){}
+    lightweightPerformance.device={cores:navigator.hardwareConcurrency||null,memoryGB:navigator.deviceMemory||null,browser:navigator.userAgent.slice(0,200)};
+    let last=performance.now(),lastMinute=0,lastCallState='';
+    const observers=[];
+    for(const type of ['longtask','long-animation-frame'])try{
+      if(!PerformanceObserver.supportedEntryTypes?.includes(type))continue;
+      const observer=new PerformanceObserver(list=>{
+        for(const entry of list.getEntries()) {
+          if(type==='longtask'){const stats=lightweightPerformance.longTasks;stats.count++;stats.totalMs+=Math.round(entry.duration);stats.maxMs=Math.max(stats.maxMs,Math.round(entry.duration));}
+          if(entry.duration<200)continue;
+          const scripts=type==='long-animation-frame'?(entry.scripts||[]).slice(0,3).map(s=>({file:(()=>{try{return new URL(s.sourceURL).pathname.split('/').pop().slice(0,80);}catch(_){return 'unavailable';}})(),function:String(s.sourceFunctionName||'').slice(0,80),durationMs:Math.round(s.duration)})):undefined;
+          performanceEvent(type,{durationMs:Math.round(entry.duration),scripts});
+        }
+      });observer.observe({type,buffered:false});observers.push(observer);
+    }catch(_){}
+    const sample=()=>{
+      const now=performance.now(),lag=Math.max(0,now-last-5000);last=now;
+      const state=document.getElementById('gbs-call-information')?.querySelector('.gbs-call-status')?.textContent || (document.querySelector('.messenger-shown [data-action="answerInteraction"]')?'incoming':document.getElementById('gbs-call-information')?'call-popup':'idle');
+      if(state!==lastCallState){performanceEvent('call-ui-transition',{state:String(state).slice(0,40)});lastCallState=state;}
+      if(lag>250 && !document.hidden)performanceEvent('event-loop-delay',{ms:Math.round(lag),state});
+      if(now-lastMinute<60000)return;lastMinute=now;
+      const cache=GM_getValue(CALL_CACHE_KEY,null),serialized=cache?JSON.stringify(cache):'';
+      const memory=performance.memory;
+      lightweightPerformance.samples.push({at:Date.now(),hidden:document.hidden,powerMode:lowPowerMode()?'low':'normal',state,heapUsedBytes:memory?.usedJSHeapSize??null,heapLimitBytes:memory?.jsHeapSizeLimit??null,callCacheUtf8Bytes:new TextEncoder().encode(serialized).length,cachedCalls:Object.keys(cache?.conversations||{}).length,managedDocuments:MANAGED_DOCUMENTS.size,trackedFrameWindows:callNetworkBridges.size,earlierCards:earlierCallCards.length});
+      if(lightweightPerformance.samples.length>60)lightweightPerformance.samples.shift();
+      try{sessionStorage.setItem(PERFORMANCE_LOG_KEY,JSON.stringify(performanceReport()));}catch(_){}
+    };
+    const timer=window.setInterval(()=>performanceMeasure('diagnostics',sample),5000);
+    const cleanup=()=>{clearInterval(timer);observers.forEach(o=>o.disconnect());try{sessionStorage.setItem(PERFORMANCE_LOG_KEY,JSON.stringify(performanceReport()));}catch(_){}};
+    window.addEventListener('pagehide',cleanup,{once:true});
+    window.__gbsStopLightweightPerformance=cleanup;
+  }
   function tick() {
     if (callCardDragging) return;
     MANAGED_DOCUMENTS.add(document);
@@ -9688,7 +9760,8 @@ function fitDashboardMetricSpacing(doc) {
     });
   }
 
-  // OFF runs only the independent settings launcher. No loader, logo rewrite,
+  startLightweightPerformance();
+  // OFF runs only the independent settings launcher plus bounded diagnostics. No loader, logo rewrite,
   // sorting, iframe work, styling, native recovery, or layout hooks are started.
   if (themeMode(document) === 'light') {
     const mountSettings = () => {
@@ -9748,7 +9821,7 @@ function fitDashboardMetricSpacing(doc) {
     applyPowerMode(document);
     const interval = document.hidden ? 10000 : lowPowerMode() ? 2000 : INTERVAL_MS;
     if (Date.now() - lastMaintenanceAt < interval) return;
-    lastMaintenanceAt = Date.now(); tick();
+    lastMaintenanceAt = Date.now(); performanceMeasure('maintenance',tick);
   }, INTERVAL_MS);
   const identityTimer = window.setInterval(() => rememberCurrentAgentName(document), 5000);
   const blockPopupOnlyWorkspace = event => {
@@ -9763,7 +9836,7 @@ function fitDashboardMetricSpacing(doc) {
   }
   const callApiTimer = window.setInterval(() => {
     if (window !== window.top || callCardDragging) return;
-    discoverCallNetworkBridges();
+    performanceMeasure('frame-discovery',()=>discoverCallNetworkBridges());
     void refreshTodayCallCache();
     void refreshLiveCallApi();
     ensureMyCallsTodayPanel();myCallsPanelRender?.();
@@ -9771,9 +9844,9 @@ function fitDashboardMetricSpacing(doc) {
   const callClockTimer=window.setInterval(updateCallClockDisplay,250);
   document.addEventListener('click', recordIncomingCallAction, true);
   const incomingCallTimer = window.setInterval(() => {
-    watchIncomingCall(document);
+    performanceMeasure('incoming-watch',()=>watchIncomingCall(document));
     try { if (!callCardDragging) measureCallPopup(document); } catch (error) { console.warn('[Genesys V2] Call measurement', error); }
-    try { syncCallInformationPopup(document); } catch (_) { /* Native call panel may still be mounting. */ }
+    try { performanceMeasure('call-popup',()=>syncCallInformationPopup(document)); } catch (_) { /* Native call panel may still be mounting. */ }
   }, 1000);
   watchIncomingCall(document);
   // A low-frequency safety sweep covers late-attached closed app widgets
@@ -9786,6 +9859,7 @@ function fitDashboardMetricSpacing(doc) {
     sortReachableEmbeddedDocuments(document);
   }, 30000);
   window.__genesysBoardSorterStop = () => {
+    window.__gbsStopLightweightPerformance?.();
     window.clearInterval(updateCheckTimer); updateCheckTimer = 0;
     window.clearInterval(timer);
     window.clearInterval(identityTimer);
