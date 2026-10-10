@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.494
+// @version      2.36.495
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7654,7 +7654,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.494',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.495',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -10862,17 +10862,11 @@ function startSNAI(tabIdentity) {
   async function smoothActiveFormScroll(scroller, top) {
     const target = Math.max(0, Math.min(scroller.scrollHeight - scroller.clientHeight, top));
     assertAutomationNotStopped();
-    scroller.scrollTo({ top: target, behavior: 'smooth' });
-    const started = performance.now();
-    let last = scroller.scrollTop, stable = 0;
-    while (performance.now() - started < 1600) {
-      assertAutomationNotStopped();
-      await sleep(40);
-      const current = scroller.scrollTop;
-      stable = Math.abs(current - last) < 0.5 ? stable + 1 : 0;
-      if (Math.abs(current - target) < 2 || (stable >= 4 && performance.now() - started > 200)) break;
-      last = current;
-    }
+    // Instant bypasses page CSS smooth scrolling. Yield for hydration, then
+    // callers re-resolve the current control instead of waiting for animation.
+    scroller.scrollTo({ top: target, behavior: 'instant' });
+    await sleep(0);
+    assertAutomationNotStopped();
   }
 
   function findDeferredActiveEventFieldHost(label) {
@@ -10902,8 +10896,8 @@ function startSNAI(tabIdentity) {
       }
       ancestor = deepParentElement(ancestor);
     }
-    target.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
-    await sleep(500);
+    target.scrollIntoView({ behavior: 'instant', block: 'nearest', inline: 'nearest' });
+    await sleep(0);
   }
 
   function minimalFormScrollDelta(rect,viewport) {
@@ -10945,7 +10939,6 @@ function startSNAI(tabIdentity) {
         field.style.scrollMarginTop = '80px';
         field.style.scrollMarginBottom = '48px';
         await scrollActiveEventTargetIntoView(field);
-        await sleep(150);
         const anchoredField = findControlByLabel(label);
         if (!anchoredField || !anchoredField.isConnected) { searched = false;continue; }
         field = anchoredField;
@@ -10958,7 +10951,6 @@ function startSNAI(tabIdentity) {
             const delta=minimalFormScrollDelta(rect,viewport);
             if(Math.abs(delta)>2)await smoothActiveFormScroll(scroller,before+delta);
             addLog('info', 'auto-field-scrolled-into-view', { field: label, from: Math.round(before), to: Math.round(scroller.scrollTop) });
-            await sleep(150);
             // Scrolling can replace the input: return only its current instance.
             const current = findControlByLabel(label);
             if (current) return current;
@@ -10966,7 +10958,6 @@ function startSNAI(tabIdentity) {
           }
         } else {
           await scrollActiveEventTargetIntoView(field);
-          await sleep(150);
           const current = findControlByLabel(label);
           if (current) return current;
           // Workspace may replace this control while scrolling/hydrating.
@@ -20831,7 +20822,7 @@ function startSNAI(tabIdentity) {
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
     installAutomationFreeze();
     document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
-    addLog('info', 'helper-version', { version: '2.36.494' });
+    addLog('info', 'helper-version', { version: '2.36.495' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
