@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.481
+// @version      2.36.482
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7522,29 +7522,60 @@ function startSNAI(tabIdentity) {
     }
   }
 
+  function diagnosticDay(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+  function diagnosticDatabase(){
+    if(!state.diagnosticDB)state.diagnosticDB=new Promise((resolve,reject)=>{
+      const request=indexedDB.open('sn-ai-daily-diagnostics',1);
+      request.onupgradeneeded=()=>{const store=request.result.createObjectStore('events',{autoIncrement:true});store.createIndex('day','day');};
+      request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
+    }).catch(error=>{state.diagnosticDB=null;throw error;});
+    return state.diagnosticDB;
+  }
+  async function storedDailyDiagnostics(day){const db=await diagnosticDatabase();return new Promise((resolve,reject)=>{const request=db.transaction('events').objectStore('events').index('day').getAll(day);request.onsuccess=()=>resolve(request.result.map(row=>row.entry));request.onerror=()=>reject(request.error);});}
+  function updateDiagnosticCount(){const log=state.diagnostics;if(!log)return;const button=document.querySelector('#local-sn-ai-settings-template [data-download-diagnostics]');if(button)button.textContent='Download diagnostic logs ['+log.chats.size+' chat data collected]';}
+  async function flushDailyDiagnostics(){
+    const log=diagnosticStore();if(log.flushing)return log.flushing;if(!log.events.length)return;
+    const batch=log.events.slice();
+    log.flushing=(async()=>{const db=await diagnosticDatabase();await new Promise((resolve,reject)=>{const tx=db.transaction('events','readwrite'),store=tx.objectStore('events');for(const item of batch)store.add({day:item.day,entry:item.entry});tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});log.events.splice(0,batch.length);})().finally(()=>{log.flushing=null;});
+    return log.flushing;
+  }
   function diagnosticStore() {
     if(!state.diagnostics){
-      let saved;try{saved=JSON.parse(sessionStorage.getItem('sn-ai-diagnostics-v1')||'null');}catch{}
-      state.diagnostics={start:Date.now(),events:Array.isArray(saved?.events)?saved.events.slice(-600):[],sleepCount:0,sleepMs:0,bytes:0,timer:0};
-      state.diagnostics.bytes=state.diagnostics.events.reduce((sum,item)=>sum+JSON.stringify(item).length,0);
+      state.diagnostics={day:diagnosticDay(),events:[],chats:new Set(),contents:new Map(),sleepCount:0,sleepMs:0,timer:0,flushing:null};
+      window.addEventListener('pagehide',()=>{flushDailyDiagnostics().catch(()=>{});});
+      document.addEventListener('visibilitychange',()=>{if(document.hidden)flushDailyDiagnostics().catch(()=>{});});
+      const log=state.diagnostics;
+      storedDailyDiagnostics(log.day).then(rows=>{for(const entry of rows)if(entry[2]==='chat-data-collected'&&entry[4]?.ims)log.chats.add(entry[4].ims);updateDiagnosticCount();}).catch(()=>{});
     }
+    const log=state.diagnostics;if(log.day!==diagnosticDay()){log.day=diagnosticDay();log.chats.clear();log.contents.clear();updateDiagnosticCount();}
     return state.diagnostics;
+  }
+  function collectDiagnosticChat(mode,ims,transcript){
+    const log=diagnosticStore(),text=typeof transcript==='string'?transcript:JSON.stringify(transcript||'');
+    log.chats.add(ims||'unknown');updateDiagnosticCount();
+    if(log.contents.get(ims)===text){recordCompactDiagnostic('info','chat-request',{mode,ims});return;}
+    log.contents.set(ims,text);recordCompactDiagnostic('info','chat-data-collected',{mode,ims,chatContent:text});
   }
   function recordCompactDiagnostic(level,action,details={}) {
     const log=diagnosticStore(),now=Date.now(),safe={};
     for(const [key,value]of Object.entries(details||{})){
-      if(!/^(code|message|error|field|label|phase|status|profile|provider|jobId|commandId|ims|attempt|timeoutMs|durationMs|elapsedMs|waitMs|length|fields|ok|source|reason|stage|workerCount|receivedAt|submittedAt|startedAt|completedAt)$/i.test(key))continue;
+      if(key==='chatContent'&&action==='chat-data-collected'){safe[key]=String(value);continue;}
+      if(key==='responseContent'&&action==='ai-response-data'){safe[key]=String(value);continue;}
+      if(!/^(mode|code|message|error|field|label|phase|status|profile|provider|jobId|commandId|ims|attempt|timeoutMs|durationMs|elapsedMs|waitMs|length|fields|ok|source|reason|stage|workerCount|receivedAt|submittedAt|startedAt|completedAt)$/i.test(key))continue;
       if(typeof value==='number'||typeof value==='boolean')safe[key]=value;
       else if(typeof value==='string')safe[key]=value.replace(/\b(Bearer\s+)[^\s]+/gi,'$1[redacted]').slice(0,180);
     }
     const entry=[now,level,String(action).slice(0,100),state.activeCommandId||'',safe];
-    const size=JSON.stringify(entry).length;log.events.push(entry);log.bytes+=size;
-    while(log.events.length>600||log.bytes>96000)log.bytes-=JSON.stringify(log.events.shift()).length;
-    if(!log.timer)log.timer=setTimeout(()=>{log.timer=0;try{sessionStorage.setItem('sn-ai-diagnostics-v1',JSON.stringify({events:log.events}));}catch{}},2000);
+    const previous=log.events.at(-1)?.entry;
+    if(previous&&now-previous[0]<1000&&JSON.stringify(previous.slice(1,5))===JSON.stringify(entry.slice(1))){previous[5]=(previous[5]||1)+1;return;}
+    log.events.push({day:log.day,entry});
+    if(!log.timer)log.timer=setTimeout(()=>{log.timer=0;flushDailyDiagnostics().catch(()=>{});},1000);
   }
   async function downloadDiagnostics(){
     const log=diagnosticStore();
-    const payload={schema:1,version:'2.36.481',exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events:log.events};
+    await flushDailyDiagnostics();await flushDailyDiagnostics();
+    const events=await storedDailyDiagnostics(log.day);
+    const payload={schema:2,version:'2.36.482',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -8122,6 +8153,7 @@ function startSNAI(tabIdentity) {
   }
 
   function validateFTFAIResult(raw, ims) {
+    recordCompactDiagnostic('info','ai-response-data',{ims,responseContent:JSON.stringify(raw)});
     const data = raw?.FTF;
     if (!data || typeof data !== 'object' || Array.isArray(data)) throwAIValidation('The AI response did not contain an FTF object.', raw);
     if (normaliseIMS(data.IMS) !== ims) throwAIValidation(`The AI response was for ${normaliseIMS(data.IMS) || 'an unknown IMS'}, not ${ims}.`, raw);
@@ -8374,6 +8406,7 @@ function startSNAI(tabIdentity) {
   }
 
   function validateDescriptionAIResult(raw, ims, genericSchema) {
+    recordCompactDiagnostic('info','ai-response-data',{ims,responseContent:JSON.stringify(raw)});
     const fail = (message, cause) => {
       const error = cause instanceof Error ? cause : new Error(message);
       if (!error.message && message) error.message = message;
@@ -8647,6 +8680,7 @@ function startSNAI(tabIdentity) {
   }
 
   function validateHPAIResult(raw, ims, expectedIssueType, supplied = {}, genericSchema = null) {
+    recordCompactDiagnostic('info','ai-response-data',{ims,responseContent:JSON.stringify(raw)});
     const data = raw?.HP;
     if (!data || typeof data !== 'object' || Array.isArray(data)) throwAIValidation('The AI response did not contain an HP object.', raw);
     const expectedReference = normalise(ims).toUpperCase();
@@ -8803,6 +8837,7 @@ function startSNAI(tabIdentity) {
   });
 
   function validateCPCAIResult(raw, ims) {
+    recordCompactDiagnostic('info','ai-response-data',{ims,responseContent:JSON.stringify(raw)});
     const data = raw?.CPC;
     if (!data || typeof data !== 'object' || Array.isArray(data)) throwAIValidation('The AI response did not contain a CPC object.', raw);
     if (normaliseIMS(data.IMS) !== ims) throwAIValidation(`The AI response was for ${normaliseIMS(data.IMS) || 'an unknown IMS'}, not ${ims}.`, raw);
@@ -8868,6 +8903,7 @@ function startSNAI(tabIdentity) {
   });
 
   function validateILSPrntAIResult(raw, ims) {
+    recordCompactDiagnostic('info','ai-response-data',{ims,responseContent:JSON.stringify(raw)});
     const data = raw?.ILS_PRNT || raw?.['ILS PRNT'];
     if (!data || typeof data !== 'object' || Array.isArray(data)) throwAIValidation('The AI response did not contain an ILS_PRNT object.', raw);
     if (normaliseIMS(data.IMS) !== ims) throwAIValidation(`The AI response was for ${normaliseIMS(data.IMS) || 'an unknown IMS'}, not ${ims}.`, raw);
@@ -9001,6 +9037,7 @@ function startSNAI(tabIdentity) {
 
   const activeWebRequestAborts = new Map();
   function requestChatGPTWeb({ ims, instructions, schema, input, validate }) {
+    if(input?.transcript)collectDiagnosticChat(schema?.required?.[0]||'TEXT',ims,input.transcript);
     let activeId = '';
     let stopped = false;
     let abortPromise = null;
@@ -9289,6 +9326,7 @@ function startSNAI(tabIdentity) {
   });
 
   function requestOpenAICPC({ apiKey, model, ims, transcript }) {
+    collectDiagnosticChat('CPC',ims,transcript);
     if (typeof GM_xmlhttpRequest !== 'function') throw new Error('Tampermonkey OpenAI access is unavailable. Reinstall or update the userscript grants.');
     let handle;
     const promise = new Promise((resolve, reject) => {
@@ -9323,6 +9361,7 @@ function startSNAI(tabIdentity) {
   }
 
   function requestOpenAIILSPrnt({ apiKey, model, ims, transcript }) {
+    collectDiagnosticChat('ILS_PRNT',ims,transcript);
     if (typeof GM_xmlhttpRequest !== 'function') throw new Error('Tampermonkey OpenAI access is unavailable. Reinstall or update the userscript grants.');
     let handle;
     const promise = new Promise((resolve, reject) => {
@@ -9357,6 +9396,7 @@ function startSNAI(tabIdentity) {
   }
 
   function requestOpenAIFTF({ apiKey, model, ims, transcript }) {
+    collectDiagnosticChat('FTF',ims,transcript);
     if (typeof GM_xmlhttpRequest !== 'function') throw new Error('Tampermonkey OpenAI access is unavailable. Reinstall or update the userscript grants.');
     let handle;
     const promise = new Promise((resolve, reject) => {
@@ -9406,6 +9446,7 @@ function startSNAI(tabIdentity) {
   }
 
   function requestOpenAIHP({ apiKey, model, ims, transcript, issueType, supplied, genericSchema }) {
+    collectDiagnosticChat('HP',ims,transcript);
     if (typeof GM_xmlhttpRequest !== 'function') throw new Error('Tampermonkey OpenAI access is unavailable. Reinstall or update the userscript grants.');
     let handle;
     const promise = new Promise((resolve, reject) => {
@@ -9436,6 +9477,7 @@ function startSNAI(tabIdentity) {
   }
 
   function requestOpenAIDescription({ apiKey, model, ims, transcript, genericSchema }) {
+    collectDiagnosticChat('TEXT',ims,transcript);
     if (typeof GM_xmlhttpRequest !== 'function') throw new Error('Tampermonkey OpenAI access is unavailable. Reinstall or update the userscript grants.');
     let handle;
     const promise = new Promise((resolve, reject) => {
@@ -9615,6 +9657,7 @@ function startSNAI(tabIdentity) {
   const codexAppServer = createCodexAppServerClient();
 
   function requestCodexCPC({ model, effort, ims, transcript }) {
+    collectDiagnosticChat('CPC',ims,transcript);
     let threadId = '';
     let turnId = '';
     let stopped = false;
@@ -9679,6 +9722,7 @@ function startSNAI(tabIdentity) {
   }
 
   function requestCodexILSPrnt({ model, effort, ims, transcript }) {
+    collectDiagnosticChat('ILS_PRNT',ims,transcript);
     let threadId = '';
     let turnId = '';
     let stopped = false;
@@ -9743,6 +9787,7 @@ function startSNAI(tabIdentity) {
   }
 
   function requestCodexFTF({ model, effort, ims, transcript }) {
+    collectDiagnosticChat('FTF',ims,transcript);
     let threadId = '';
     let turnId = '';
     let stopped = false;
@@ -9822,6 +9867,7 @@ function startSNAI(tabIdentity) {
   }
 
   function requestCodexHP({ model, effort, ims, transcript, issueType, supplied, genericSchema }) {
+    collectDiagnosticChat('HP',ims,transcript);
     let threadId = '';
     let turnId = '';
     let stopped = false;
@@ -9869,6 +9915,7 @@ function startSNAI(tabIdentity) {
   }
 
   function requestCodexDescription({ model, effort, ims, transcript, genericSchema }) {
+    collectDiagnosticChat('TEXT',ims,transcript);
     let threadId = '';
     let turnId = '';
     let stopped = false;
@@ -16670,7 +16717,7 @@ function startSNAI(tabIdentity) {
       });developerPanel.append(matrixSetting,matrixStatus);
     }
     tabList.after(generalPanel);
-    const downloadLogButton=document.createElement('button');downloadLogButton.type='button';downloadLogButton.textContent='Download diagnostic logs';downloadLogButton.title='Download compact AI, field-filling and timing diagnostics (no full prompts or chat transcripts)';
+    const downloadLogButton=document.createElement('button');downloadLogButton.type='button';downloadLogButton.dataset.downloadDiagnostics='true';downloadLogButton.textContent='Download diagnostic logs ['+diagnosticStore().chats.size+' chat data collected]';downloadLogButton.title='Download today’s chat content, modes, errors and timings. Contains customer data; store and share securely.';
     downloadLogButton.addEventListener('click',async()=>{downloadLogButton.disabled=true;try{await downloadDiagnostics();}catch(error){showAISettingsError(error);}finally{downloadLogButton.disabled=false;}});generalPanel.append(downloadLogButton);
     const settingsTabs = [...settingsDialog.querySelectorAll('[data-settings-tab]')];
     tabList.style.setProperty('--sn-segment-index',String(Math.max(0,settingsTabs.findIndex(tab=>tab.getAttribute('aria-selected')==='true'))));
@@ -20416,7 +20463,7 @@ function startSNAI(tabIdentity) {
     syncCommandStatusBox();
     updateStopButtons();
   addLog('info', 'helper-installed', { version: '2.36.30', hpPrinterMode: true, mode: 'extension-owned-automation', postJoinBubbleChatOnly: true, splitShadowBubbleText: true, transcriptDOMRows: true, flexibleJoinMarker: true, transcriptContainerFallback: true, draggableChatPreview: true, chatPreviewModeSwitch: true, transcriptSpeakerIds: true, transcriptTimeRemoval: true, summaryCardExclusion: true, speakerLabelledAITranscript: true, showChatPreviewCommand: true, startupCacheCompaction: true, memoryBoundedChatCache: true, focusedCachePublication: true, chatCacheScanIntervalMs: CHAT_CACHE_SCAN_INTERVAL_MS, chatMutationRefreshDelayMs: CHAT_MUTATION_REFRESH_DELAY_MS, targetedChatRootObserver: true, preNewEventChatFlush: true, detailsContentReadinessWait: true, boundedChatReadRetries: 3, ilsPrntMode: true, ilsPrntManualAndAI: true, ilsPrntNoSave: true, scrollableServerHelp: true, silentStartupLauncher: true, mandatoryAdminClassification: true, requestDependentClassification: true, eventTypeOpenDelayMs: 500, eventTypePostSelectDelayMs: 1000, committedReferenceVerification: true, delayedLocationResults: true, liveDropdownReplacementTracking: true, terminalDropdownCleanup: true, reusableAICommandCache: true, launcherAIIcons: true, selectableCPCAI: true, cpcAINotice: true, exactPaletteIcons: true, liveOptionColourPreview: true, measuredSixPixelRadialGap: true, settingsStartupNullGuard: true, rowScopedOptionColours: true, minimumRadialSpacing: true, endpointTierDotAlignment: true, endpointTierStops: true, whiteOutlinedTierThumb: true, adaptiveRadialSpacing: true, persistentOptionColours: true, enclosedTierTrack: true, thresholdTierDragging: 0.8, sharedTicketWindowFactory: true, svgTicketCloseControl: true, persistentIMSChatCache: true, persistentCommandStatus: true, persistentLauncherPosition: true, consoleCommandDoor: true, radialLauncherMenu: true, widerActionSpacing: true, equalRadialEdgeGap: true, nearestRingReturn: true, multiTicketWindows: true, pinnedWindowIMS: true, openedForWindowIdentity: true, cpcLifecycleHeader: true, checkpointProgress: true, editableStopAndError: true, successAutoReturn: true, disposableCPCInstances: true, reversibleActionWindowAnimation: true, openMenuDragging: true, quickCPC: true, aiDescriptionMode: true, persistentModeVisibility: true, tabbedSettings: true, draggableAIProfile: true, draggableCPC: true, draggableLauncher: true, stoppableAutomation: true, trimmedWindowFields: true, guardedDropdownOpen: true, scopedDropdownOptions: true, portalledLookupOptions: true, singleLookupCommit: true, switchHitAreaScoped: true, lookupAutoScroll: true, classificationBeforeDescription: true, chatGPTWebExperimentalProvider: true, chatGPTWebBackgroundDOMWake: true, chatGPTWebRemoteInFlightWake: true, chatGPTWebLayoutIndependentText: true, chatGPTWebUnconditionalStorageWake: true, chatGPTWebBackgroundPromptInsertion: true, chatGPTWebDirectRootNewChat: true, chatGPTWebIframeWorker: false, chatGPTWebSharedStorageBridge: true, targetedWebWorkerJobs: true, closeReleasesAllIMSData: true, noBubbleOrphanSweep: true, codexSubscriptionProvider: true, codexOfflineSetupHelp: true, threeTierAIProfiles: true, centeredTierGeometry: true, fixedRightSettingsAction: true, cmdButtonDefaultOff: true, strictCPCStoreId: true, descriptiveCPCStoreIdRecovery: true, detachedChatDOMRelease: true, boundedIdleMutationObservation: true, lazyInspectorSnapshot: true, routingLookupBarrier: true, controlScopedStabilityPolling: true, localAppServer: CODEX_APP_SERVER_URL });
-    addLog('info', 'helper-version', { version: '2.36.481' });
+    addLog('info', 'helper-version', { version: '2.36.482' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
