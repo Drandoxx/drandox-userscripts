@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.505
+// @version      2.36.506
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7679,7 +7679,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.505',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.506',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -11554,16 +11554,22 @@ function startSNAI(tabIdentity) {
   }
 
   async function createNewEventFromWorkspace() {
+    // Details selection is asynchronous. Never click a stale action from the
+    // previous panel while Workspace is still switching its routed form.
+    const details=findOuterDetailsTab();
+    if(!details)throw new Error('NEW_EVENT_DETAILS_NOT_FOUND: IMS Details tab is unavailable.');
+    if(details.getAttribute('aria-selected')!=='true')clickableAncestor(details).click();
+    let action=await waitUntil(()=>findOuterDetailsTab()?.getAttribute('aria-selected')==='true'?findNewEventCreationAction():null,5000,45);
+    if(!action)throw new Error('NEW_EVENT_ACTION_NOT_READY: IMS Details did not expose Create a new Event.');
     const before=new Set(allPageElements().filter(el=>el.getAttribute('role')==='tab').map(el=>el.id+'|'+el.getAttribute('aria-controls')));
-    let action = await waitForTextTarget('Create a new Event', 500, true);
-    if (!action) {
-      const overflow = findNewEventOverflowTrigger();
-      if (overflow) clickableAncestor(overflow).click();
-      action = await waitUntil(() => findNewEventCreationAction(), 1400, 45);
-    }
-    if (!action) throw new Error('Clickable text not found: Create a new Event');
+    // Prefer the real native button inside the connected shadow component.
+    // Clicking a focusable wrapper can focus it without dispatching its action.
+    const nativeButton=action.shadowRoot?.querySelector('button:not([disabled])');
+    if(nativeButton)action=nativeButton;
     clickableAncestor(action).click();
-    const opened=await waitUntil(()=>allPageElements().find(el=>el.getAttribute('role')==='tab'&&comparableLabel(elementLabel(el)).startsWith('new event')&&!before.has(el.id+'|'+el.getAttribute('aria-controls'))),12000,60);
+    const opened=await waitUntil(()=>allPageElements().find(el=>el.getAttribute('role')==='tab'&&isVisible(el)&&!isInspectorNode(el)&&
+      (comparableLabel(elementLabel(el)).includes('new event')||String(el.getAttribute('aria-controls')||'').includes('chrome-tab-panel-new_record_'))&&
+      !before.has(el.id+'|'+el.getAttribute('aria-controls'))),12000,60);
     if(!opened)throw new Error('NEW_EVENT_TAB_NOT_IDENTIFIED: no newly created Event tab was found.');
     const createdIMS=normaliseIMS(state.startContext?.ims||activeSelectedIMS()||currentInteractionIMS());
     state.createdEvent={ims:createdIMS,tabId:opened.id,controls:opened.getAttribute('aria-controls'),path:''};
@@ -20952,7 +20958,7 @@ function startSNAI(tabIdentity) {
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
     installAutomationFreeze();
     document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
-    addLog('info', 'helper-version', { version: '2.36.505' });
+    addLog('info', 'helper-version', { version: '2.36.506' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
