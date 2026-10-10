@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.499
+// @version      2.36.500
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7562,7 +7562,20 @@ function startSNAI(tabIdentity) {
   async function storedDailyDiagnostics(day){const db=await diagnosticDatabase();return new Promise((resolve,reject)=>{const request=db.transaction('events').objectStore('events').index('day').getAll(day);request.onsuccess=()=>resolve(deduplicateWorkerDiagnostics(request.result.map(row=>row.entry)));request.onerror=()=>reject(request.error);});}
   async function prunePreviousDiagnosticDays(day){const db=await diagnosticDatabase();return new Promise((resolve,reject)=>{const tx=db.transaction('events','readwrite');const request=tx.objectStore('events').index('day').openCursor(IDBKeyRange.upperBound(day,true));request.onsuccess=()=>{const cursor=request.result;if(cursor){cursor.delete();cursor.continue();}};tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});}
   function updateDiagnosticCount(){const log=state.diagnostics;if(!log)return;const button=document.querySelector('#local-sn-ai-settings-template [data-download-diagnostics]');if(button)button.textContent='Download diagnostic logs ['+log.chats.size+' chat data collected]';}
+  async function clearDailyDiagnostics(){
+    const log=diagnosticStore();if(log.clearing)return;
+    log.clearing=true;state.diagnosticClearedAt=Date.now();
+    try{
+      if(log.timer){clearTimeout(log.timer);log.timer=0;}
+      if(log.flushing)await log.flushing;
+      const db=await diagnosticDatabase();
+      await new Promise((resolve,reject)=>{const tx=db.transaction('events','readwrite');tx.objectStore('events').clear();tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});
+      log.events.length=0;log.chats.clear();log.contents.clear();log.sleepCount=0;log.sleepMs=0;
+      updateDiagnosticCount();
+    }finally{log.clearing=false;}
+  }
   async function flushDailyDiagnostics(){
+    if(state.diagnostics?.clearing)return state.diagnostics.flushing;
     const log=diagnosticStore();if(log.flushing)return log.flushing;if(!log.events.length)return;
     const batch=log.events.slice();
     log.flushing=(async()=>{const db=await diagnosticDatabase();await new Promise((resolve,reject)=>{const tx=db.transaction('events','readwrite'),store=tx.objectStore('events');for(const item of batch)if(item.day===diagnosticDay())store.add({day:item.day,entry:item.entry});tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});log.events.splice(0,batch.length);})().finally(()=>{log.flushing=null;});
@@ -7576,19 +7589,21 @@ function startSNAI(tabIdentity) {
       const log=state.diagnostics;
       const loadedDay=log.day;
       prunePreviousDiagnosticDays(loadedDay).catch(()=>{});
-      storedDailyDiagnostics(loadedDay).then(rows=>{if(log.day!==loadedDay)return;for(const entry of rows)if(entry[2]==='chat-data-collected'&&entry[4]?.ims)log.chats.add(entry[4].ims);updateDiagnosticCount();}).catch(()=>{});
+      const loadedAt=Date.now();storedDailyDiagnostics(loadedDay).then(rows=>{if(log.day!==loadedDay||log.clearing||state.diagnosticClearedAt>=loadedAt)return;for(const entry of rows)if(entry[2]==='chat-data-collected'&&entry[4]?.ims)log.chats.add(entry[4].ims);updateDiagnosticCount();}).catch(()=>{});
       setInterval(()=>{diagnosticStore();},30000);
     }
     const log=state.diagnostics;if(log.day!==diagnosticDay()){log.day=diagnosticDay();log.chats.clear();log.contents.clear();log.sleepCount=0;log.sleepMs=0;state.diagnosticWorkerSeen?.clear();state.diagnosticCompanionResults?.clear();prunePreviousDiagnosticDays(log.day).catch(()=>{});updateDiagnosticCount();}
     return state.diagnostics;
   }
   function collectDiagnosticChat(mode,ims,transcript){
+    if(state.diagnostics?.clearing)return;
     const log=diagnosticStore(),text=typeof transcript==='string'?transcript:JSON.stringify(transcript||'');
     log.chats.add(ims||'unknown');updateDiagnosticCount();
     if(log.contents.get(ims)===text){recordCompactDiagnostic('info','chat-request',{mode,ims});return;}
     log.contents.set(ims,text);recordCompactDiagnostic('info','chat-data-collected',{mode,ims,chatContent:text});
   }
   function recordCompactDiagnostic(level,action,details={}) {
+    if(state.diagnostics?.clearing||(action.startsWith('extension-')&&details.at&&details.at<=state.diagnosticClearedAt))return;
     const log=diagnosticStore(),now=action.startsWith('extension-')&&Number.isFinite(details.at)?details.at:Date.now(),safe={};
     if(action.startsWith('extension-')&&now<new Date().setHours(0,0,0,0))return;
     for(const [key,value]of Object.entries(details||{})){
@@ -7664,7 +7679,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.499',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.500',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -9273,10 +9288,17 @@ function startSNAI(tabIdentity) {
     const heading=document.createElement('div');heading.style.cssText='font-weight:600;margin-bottom:8px';heading.textContent=`ChatGPT · ${ims} · Preparing message…`;
     const body=document.createElement('pre');body.style.cssText='white-space:pre-wrap;overflow:hidden;min-height:52px;max-height:160px;margin:0;padding:10px;border:1px solid var(--sn-theme-65538f,#65538f);border-radius:12px;background:var(--sn-theme-191621,#131019);box-shadow:inset 0 2px 12px #0004;font:inherit';body.textContent='Waiting for the companion…';
     const note=document.createElement('small');note.style.cssText='display:block;opacity:.7;margin-top:6px';note.textContent='Read-only · Live text requires companion 0.4.30+';
+    panel.style.borderWidth='8px';panel.style.overflow='visible';panel.style.background='linear-gradient(135deg,var(--sn-theme-65538f,#65538f),var(--sn-theme-1c1827,#1c1827) 35%,#111018)';
+    body.style.marginRight='40px';body.style.borderRadius='28px / 20px';body.style.background='repeating-linear-gradient(0deg,#ffffff04 0px,#ffffff04 1px,transparent 1px,transparent 4px),radial-gradient(ellipse at 40% 20%,var(--sn-theme-191621,#191621),#08090e)';body.style.boxShadow='inset 0 0 18px #0009,0 0 0 3px #090a10';
     const logo=document.createElement('div');logo.style.cssText='order:-1;display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;color:var(--sn-theme-ac94ec,#ac94ec);font-weight:850;font-size:16px;letter-spacing:1px';logo.textContent='📺 SN AI TV';
     const live=document.createElement('span');live.textContent='● LIVE';live.style.cssText='font-size:10px;letter-spacing:2px;color:#81d8ab;background:#81d8ab15;border:1px solid #81d8ab55;border-radius:20px;padding:3px 7px';logo.append(live);
     const reposition=()=>{const launcher=document.getElementById?.('sn-ai-chats-today')?.shadowRoot?.querySelector('.launcher');const rect=launcher?.getBoundingClientRect();panel.style.bottom=rect&&rect.height>0?`${Math.max(64,innerHeight-rect.top+12)}px`:'64px';};
-    panel.append(heading,body,note,logo);document.documentElement.append(panel);reposition();window.addEventListener('resize',reposition);aiResponsePreviews.set(id,{panel,heading,body,ims,reposition,displayedText:'',targetText:'',responseComplete:false});
+    panel.append(heading,body,note,logo);
+    const knobs=document.createElement('div');knobs.style.cssText='position:absolute;right:10px;top:102px;width:30px;display:grid;gap:12px';
+    for(let i=0;i<2;i++){const knob=document.createElement('div');knob.style.cssText='width:25px;height:25px;border-radius:50%;border:2px solid #a9a0bd;background:linear-gradient(130deg,#746986,#27222f);box-shadow:2px 3px 3px #0008;text-align:center;color:#eee;font:20px/20px monospace';knob.textContent='╱';knobs.append(knob);}
+    const speaker=document.createElement('div');speaker.style.cssText='height:38px;border-radius:4px;background:repeating-linear-gradient(0deg,#090a10 0px,#090a10 2px,transparent 2px,transparent 5px)';knobs.append(speaker);panel.append(knobs);
+    for(const left of ['35px','calc(100% - 75px)']){const foot=document.createElement('div');foot.style.cssText=`position:absolute;bottom:-13px;left:${left};width:38px;height:8px;border-radius:0 0 5px 5px;background:#25222d`;panel.append(foot);}
+    document.documentElement.append(panel);reposition();window.addEventListener('resize',reposition);aiResponsePreviews.set(id,{panel,heading,body,ims,reposition,displayedText:'',targetText:'',responseComplete:false});
   }
   function updateAIResponsePreview(preview){
     const entry=aiResponsePreviews.get(preview?.jobId);if(!entry||!state.aiResponsePreview)return;
@@ -9284,17 +9306,19 @@ function startSNAI(tabIdentity) {
     entry.heading.textContent=`ChatGPT · ${entry.ims} · ${preview.complete?'Response playback · filling ticket…':preview.generating?'Generating response…':'Receiving response…'}${preview.truncated?' (latest portion)':''}`;
     const next=String(preview.text||'').slice(-30000);
     const reduced=typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if(next!==entry.targetText){
+    const replay=preview.complete&&!entry.finalPlayback;
+    if(replay)entry.finalPlayback=true;
+    if(next!==entry.targetText||replay){
       if(entry.typingTimer)clearTimeout(entry.typingTimer);
       entry.targetText=next;
-      const from=next.startsWith(entry.displayedText)?entry.displayedText.length:0;
-      const started=Date.now(),duration=Math.min(650,Math.max(120,(next.length-from)/8));
+      const from=!replay&&next.startsWith(entry.displayedText)?entry.displayedText.length:0;
+      let visible=from;const chunk=Math.max(1,Math.ceil((next.length-from)/24));
       const tick=()=>{
         if(aiResponsePreviews.get(preview.jobId)!==entry)return;
-        const progress=reduced?1:Math.min(1,(Date.now()-started)/duration);
-        entry.displayedText=next.slice(0,from+Math.ceil((next.length-from)*progress));
+        visible=reduced?next.length:Math.min(next.length,visible+chunk);
+        entry.displayedText=next.slice(0,visible);
         entry.body.textContent=entry.displayedText;entry.body.scrollTop=entry.body.scrollHeight;
-        if(progress<1)entry.typingTimer=setTimeout(tick,25);
+        if(visible<next.length)entry.typingTimer=setTimeout(tick,35);
         else{entry.typingTimer=0;if(entry.responseComplete)entry.heading.textContent=`ChatGPT · ${entry.ims} · Filling and verifying ticket…`;}
       };
       tick();
@@ -17135,6 +17159,8 @@ function startSNAI(tabIdentity) {
     tabList.after(generalPanel);
     const downloadLogButton=document.createElement('button');downloadLogButton.type='button';downloadLogButton.dataset.downloadDiagnostics='true';downloadLogButton.textContent='Download diagnostic logs ['+diagnosticStore().chats.size+' chat data collected]';downloadLogButton.title='Download today’s chat content, modes, errors and timings. Contains customer data; store and share securely.';
     downloadLogButton.addEventListener('click',async()=>{downloadLogButton.disabled=true;try{await downloadDiagnostics();}catch(error){showAISettingsError(error);}finally{downloadLogButton.disabled=false;}});generalPanel.append(downloadLogButton);
+    const clearLogButton=document.createElement('button');clearLogButton.type='button';clearLogButton.textContent='Clear diagnostic logs';clearLogButton.dataset.clearDiagnostics='true';
+    clearLogButton.addEventListener('click',async()=>{if(!confirm('Clear stored SN AI diagnostic logs and reset the collected-chat count? This cannot be undone. Download first if you need them. Tickets and settings will not change.'))return;clearLogButton.disabled=true;downloadLogButton.disabled=true;try{await clearDailyDiagnostics();}catch(error){showAISettingsError(error);}finally{clearLogButton.disabled=false;downloadLogButton.disabled=false;}});generalPanel.append(clearLogButton);
     const settingsTabs = [...settingsDialog.querySelectorAll('[data-settings-tab]')];
     tabList.style.setProperty('--sn-segment-index',String(Math.max(0,settingsTabs.findIndex(tab=>tab.getAttribute('aria-selected')==='true'))));
     const settingsPanels = [...settingsDialog.querySelectorAll('[data-settings-panel]')];
@@ -20901,7 +20927,7 @@ function startSNAI(tabIdentity) {
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
     installAutomationFreeze();
     document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
-    addLog('info', 'helper-version', { version: '2.36.499' });
+    addLog('info', 'helper-version', { version: '2.36.500' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
