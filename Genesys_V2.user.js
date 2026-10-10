@@ -9693,7 +9693,14 @@ function fitDashboardMetricSpacing(doc) {
     if(!lightweightPerformance)return {unavailable:true};
     const report=JSON.parse(JSON.stringify(lightweightPerformance));
     for(const stats of Object.values(report.work)){stats.totalMs=Math.round(stats.totalMs);stats.maxMs=Math.round(stats.maxMs*10)/10;}
-    report.exportedAt=Date.now();return report;
+    report.exportedAt=Date.now();report.maxExportBytes=32768;
+    while(new TextEncoder().encode(JSON.stringify(report)).length>32768) {
+      if(report.events.length)report.events.shift();
+      else if(report.samples.length)report.samples.shift();
+      else break;
+      report.exportTrimmed=true;
+    }
+    return report;
   }
   function downloadPerformanceDiagnostics() {
     const report=performanceReport();
