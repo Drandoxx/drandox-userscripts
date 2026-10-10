@@ -5899,6 +5899,7 @@
     return candidates.length===1?candidates[0]:null;
   }
   function recordCallNetworkMetadata(path,status,method,transport) {
+    if(measurementState){callNetworkChanges.push({at:new Date().toISOString(),kind:'request-result',path:String(path).split('?')[0].slice(0,200),status,method,transport,action:lastNativeCallAction && Date.now()-lastNativeCallAction.at<3000?lastNativeCallAction.action:null});while(callNetworkChanges.length>120)callNetworkChanges.shift();}
     if(typeof lightweightPerformance==='undefined' || !lightweightPerformance)return;
     const safePath=String(path).split('?')[0].replace(/[a-f0-9-]{36}/gi,':id').slice(0,160);
     const signature=safePath+':'+status+':'+method+':'+transport+':'+callPopupsEnabled();
@@ -5973,7 +5974,7 @@
     record.popupLeadMs=Math.max(0,-offset);
     record.phoneTimingStatus=offset<0?'popup-observed-first':'native-observed-first';
   }
-  function rememberCallApi(path,status,data) {
+  function rememberCallApi(path,status,data,transport='api') {
     if (path==='/api/v2/users/me' && data?.id) {
       currentAgentApiId=data.id;
       const cache=readTodayCallCache();
@@ -5981,7 +5982,7 @@
       cache.userId=data.id;cache.userName=data.name || currentAgentName(document);GM_setValue(CALL_CACHE_KEY,cache);return;
     }
     const raw = data?.conversations || data?.entities || (data?.conversationId || data?.participants ? [data] : []);
-    if(!path.includes('/analytics/'))for(const body of raw)captureCallPayload(path,status,body);
+    if(!path.includes('/analytics/'))for(const body of raw)captureCallPayload(path,status,body,transport);
     const projected = raw.map(compactApiConversation).filter(Boolean);
     if(!path.includes('/analytics/') && currentAgentApiId)for(const c of projected) {
       const own=c.participants.find(p=>p.purpose==='agent' && p.userId===currentAgentApiId && p.calls?.length);
@@ -6114,7 +6115,7 @@
               const message=JSON.parse(event.data),body=message.eventBody;
               if(!stopped && body?.participants && (body.id || body.conversationId)){
                 recordCallNetworkMetadata('/api/v2/conversations/:id',200,'EVENT','websocket');
-                rememberCallApi('/api/v2/conversations/'+(body.conversationId || body.id),200,body);
+                rememberCallApi('/api/v2/conversations/'+(body.conversationId || body.id),200,body,'native-websocket');
               }
             }catch(_){}
           });
@@ -6182,7 +6183,7 @@
           const body=message.eventBody;
           if(message.topicName===topic && body?.participants && (body.id || body.conversationId)) {
             recordCallNetworkMetadata('/api/v2/conversations/:id',200,'EVENT','call-push');
-            rememberCallApi('/api/v2/conversations/'+(body.conversationId || body.id),200,body);
+            rememberCallApi('/api/v2/conversations/'+(body.conversationId || body.id),200,body,'call-push');
           }
         }catch(_){}
       });
