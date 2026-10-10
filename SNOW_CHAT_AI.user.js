@@ -7721,6 +7721,10 @@ function startSNAI(tabIdentity) {
       const overlay=path.find(node=>node?.dataset?.snAutomationFrozen);
       const region=automationFreeze.regions.find(item=>path.includes(item.root)||target&&isWithinDeepRoot(target,item.root));
       const blocked=!inspector&&Boolean(overlay||region);
+      // Keep browser reload/close shortcuts available even if a form field
+      // had keyboard focus before the invisible wall appeared.
+      if(event.type==='keydown'&&(event.key==='F5'||(event.ctrlKey||event.metaKey)&&/^[rw]$/i.test(event.key||'')))return;
+      if(blocked&&event.type==='keydown'&&event.key==='Escape'){requestAutomationStop();event.preventDefault();event.stopImmediatePropagation();return;}
       if(event.type==='pointerdown'||event.type==='click'&&event.detail===0){
         recordCompactDiagnostic('info','human-click',{ims:activity.ims,eventType:event.type,area:inspector?'ai-controls':overlay?.dataset.snAutomationFrozen||region?.area||'outside',targetTag:target?.localName||'',targetId:target?.id||'',targetRole:target?.getAttribute('role')||'',blocked,x:Math.round(event.clientX||0),y:Math.round(event.clientY||0)});
       }
