@@ -23797,6 +23797,12 @@ function installNovaWelcome(host) {
       const prop=targetSelector&&avatarRoot.querySelector(targetSelector),body=avatarRoot.querySelector('.body');
       if(prop&&body&&!['settle','sad','eaten','satisfied'].includes(avatar.dataset.ambientPhase)){const p=prop.getBoundingClientRect(),b=body.getBoundingClientRect();avatar.style.setProperty('--nova-gaze-x',Math.max(-4,Math.min(4,(p.left+p.width/2-b.left-b.width/2)/12))+'px');avatar.style.setProperty('--nova-gaze-y',Math.max(-3,Math.min(3,(p.top+p.height/2-b.top-b.height*.4)/15))+'px');}
       else{avatar.style.setProperty('--nova-gaze-x','0px');avatar.style.setProperty('--nova-gaze-y','0px');}
+      // Caught props land at the carrying pad; flowers meet the mouth.
+      const phase=avatar.dataset.ambientPhase;
+      if(prop&&((kind==='flower'&&phase==='sniff')||(['fireflies','star','plane','heart'].includes(kind)&&['catch','land','hold','offer'].includes(phase)))){
+        const anchor=avatarRoot.querySelector(kind==='flower'?'.nova-mouth-drawing':'.arm.right .hand'),matrix=prop.ownerSVGElement?.getScreenCTM();
+        if(anchor&&matrix){const a=anchor.getBoundingClientRect(),point=new DOMPoint(a.left+a.width/2,a.top+a.height*.4).matrixTransform(matrix.inverse());prop.style.animation='none';prop.style.transform=`translate(${point.x}px,${point.y}px)`;prop.style.opacity='1';}
+      }else if(prop&&['release','settle','sneeze'].includes(phase)){prop.style.removeProperty('animation');prop.style.removeProperty('transform');prop.style.removeProperty('opacity');}
       // A yo-yo string always starts at the hand and ends at the disc centre.
       if(kind==='yoyo'){const disc=avatarRoot.querySelector('.yoyo-disc'),rope=avatarRoot.querySelector('.yoyo-string'),svg=rope?.ownerSVGElement,matrix=svg?.getScreenCTM();if(disc&&rope&&matrix){const r=disc.getBoundingClientRect(),point=new DOMPoint(r.left+r.width/2,r.top+r.height/2).matrixTransform(matrix.inverse());rope.setAttribute('d',`M20 3 L${point.x} ${point.y}`);}}
       ambientFollowFrame=requestAnimationFrame(follow);
@@ -23806,7 +23812,7 @@ function installNovaWelcome(host) {
   }
   host.novaIdlePreview=kind=>{clearIdle();return playAmbientIdle(kind);};
   function startSilentEntrance(){if(entranceStarted||message)return;message={silent:true};dismissed=false;schedule();}
-  function clearIdle(){stopAmbientIdle();clearTimeout(sleepTimer);clearTimeout(wakeTimer);delete avatar.dataset.idle;delete avatar.dataset.reaction;}
+  function clearIdle(){stopAmbientIdle();clearTimeout(sleepTimer);clearTimeout(wakeTimer);clearTimeout(waveEndTimer);delete avatar.dataset.idle;delete avatar.dataset.reaction;}
   function armIdle(){clearIdle();if(dismissed||avatar.hidden||avatar.dataset.motion||typingQueue.length||message?.actions?.length)return;queueAmbientIdle();sleepTimer=setTimeout(()=>{if(dismissed||avatar.hidden)return;stopAmbientIdle();if(host.novaRestTransition)host.novaRestTransition('sleep');else{avatar.dataset.idle='sleep';setExpression('friendly');avatar.setAttribute('aria-label','NOVA sleeping. Click to wake her.');schedule();}},900000);}
   avatar.setAttribute('tabindex','0');avatar.setAttribute('aria-label','NOVA. Click to wake her.');
   function waveNova(){clearIdle();clearTimeout(waveEndTimer);avatar.dataset.reaction='wave';setExpression('happy');waveEndTimer=setTimeout(()=>{delete avatar.dataset.reaction;setExpression('friendly');armIdle();},2400);}
