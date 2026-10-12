@@ -23447,7 +23447,7 @@ function installNovaWelcome(host) {
   const toggle=document.createElement('input');toggle.type='checkbox';toggle.disabled=true;
   preference.append(label,toggle);settings.append(preference);
   let key='',firstName='friend',message=null,dismissed=false,frame=0;
-  function isOpen(){return !host.classList.contains('collapsed')||launcher.getAttribute('aria-expanded')==='true'||[...host.querySelectorAll('.local-sn-settings-dialog,.local-sn-command-popover')].some(el=>!el.hidden&&el.getBoundingClientRect().width>0);}
+  function isOpen(){return !host.classList.contains('collapsed')||launcher.getAttribute('aria-expanded')==='true'||[...host.querySelectorAll('[role="dialog"],.local-sn-command-popover')].some(el=>!el.hidden&&el.getBoundingClientRect().width>0);}
   function position(){
     frame=0;if(isOpen()){if(!card.hidden)dismissed=true;card.hidden=true;return;}
     if(!message||dismissed){card.hidden=true;return;}
