@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.529
+// @version      2.36.530
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7900,7 +7900,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-const payload={schema:2,version:'2.36.529',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+const payload={schema:2,version:'2.36.530',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -21218,7 +21218,7 @@ const payload={schema:2,version:'2.36.529',day:log.day,chatCount:log.chats.size,
       installAutomationFreeze();
       document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
     }
-    addLog('info', 'helper-version', { version: '2.36.529' });
+    addLog('info', 'helper-version', { version: '2.36.530' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -23247,6 +23247,7 @@ function installChatsTodayPanel() {
   iconStyle.textContent+='table .description{white-space:nowrap}';
   iconStyle.textContent+='summary,thead{user-select:none}th:last-child,td:last-child{padding-right:20px}.number.ongoing{color:var(--agent-available,#91d6b2);background:color-mix(in srgb,currentColor 12%,transparent);border-radius:4px;box-shadow:0 0 0 3px color-mix(in srgb,currentColor 12%,transparent)}.sort-button{display:flex;align-items:center;gap:5px;border:0;border-radius:0;background:transparent;padding:0;color:inherit;text-align:left}.sort-button:hover{background:transparent}.sort-button .column-heading{gap:5px}';
   const expanded=new Set();
+  const explicitlyCollapsed=new Set();
   const sorts=new Map();let currentRecords=[],openEpoch=0,closing=false;
   iconStyle.textContent+='th:last-child,td:last-child{padding-right:12px}';
   let request=null,refreshTimer=0,lastSuccess=0,total=0,failures=0,retryAt=0,layoutFrame=0,inboxHost=null,contentWidth=0;
@@ -23277,7 +23278,12 @@ function installChatsTodayPanel() {
   function render(records) {
     currentRecords=records;
     const scrollTop=groups.scrollTop;groups.replaceChildren();
+    const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
+    const currentUserId=String(page.NOW?.user?.userID||page.g_user?.userID||'');
     const allGroups=groupChatsToday(records),searching=!!chatsTodaySearchText(searchInput.value);
+    // Session identity is available without a chat or additional API polling.
+    allGroups.sort((a,b)=>Number(b.id===currentUserId)-Number(a.id===currentUserId));
+    if(currentUserId&&!explicitlyCollapsed.has(currentUserId))expanded.add(currentUserId);
     const grouped=allGroups.map(group=>({...group,records:group.records.filter(record=>chatsTodayRecordMatches(record,searchInput.value))})).filter(group=>group.records.length);
     total=allGroups.reduce((sum,group)=>sum+group.records.length,0);
     const matches=grouped.reduce((sum,group)=>sum+group.records.length,0);
@@ -23298,7 +23304,7 @@ function installChatsTodayPanel() {
     for(const group of grouped) {
       const detail=document.createElement('details'),summary=document.createElement('summary');detail.open=searching||expanded.has(group.id);detail.dataset.agentId=group.id;
       const title=document.createElement('span'),count=document.createElement('span');title.textContent=group.name;count.className='count';count.textContent='('+group.records.length+')';summary.append(title,count);detail.append(summary);
-      detail.addEventListener('toggle',()=>{if(searching)return;if(detail.open)expanded.add(group.id);else expanded.delete(group.id);});
+      detail.addEventListener('toggle',()=>{if(searching||!detail.isConnected)return;if(detail.open){expanded.add(group.id);explicitlyCollapsed.delete(group.id);}else{expanded.delete(group.id);explicitlyCollapsed.add(group.id);}});
       const wrap=document.createElement('div');wrap.className='table-wrap';const table=document.createElement('table');
       const columns=document.createElement('colgroup');
       // Let only the final column absorb the small container/gutter remainder.
