@@ -358,7 +358,7 @@
       });
       return;
     }
-    } else stuckSince=0;
+    else stuckSince=0;
     if(state && !state.isMenuPinned)return;
     if(Date.now()<deadline)setTimeout(restoreLoadedFavorites,200);
   }
@@ -400,7 +400,7 @@ const snAIChatDisplayNames=(()=>{
 // native popup behavior; the separate KB-number button only copies text.
 // Opt-in, event-driven audio diagnostics. Never plays or replaces a sound.
 (() => {
-  if (!location.pathname.startsWith('/now/workspace/')) return;
+  if (!location.pathname.startsWith('/now/workspace/agent/')) return;
   const page = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
   let developer = false, enabled = false, box, changed = false;
   const undo = [], entries = [];
@@ -525,7 +525,7 @@ const snAIChatDisplayNames=(()=>{
 // Install presentation rules before Workspace builds its action bars. Observe
 // added subtrees only; never repeatedly scan the whole application.
 (() => {
-  if (location.hostname !== 'kingfisher.service-now.com' || !location.pathname.startsWith('/now/workspace/')) return;
+  if (location.hostname !== 'kingfisher.service-now.com' || !location.pathname.startsWith('/now/workspace/agent/')) return;
   const roots = new WeakSet();
   const spaceRoots = new Set();
   const spaceStyles = new Map();
@@ -6421,7 +6421,7 @@ function startSNAI(tabIdentity) {
   }
   const newCallPage = /^\/new_call\.do$/i.test(location.pathname);
   const workspacePage = location.hostname === 'kingfisher.service-now.com'
-    && location.pathname.startsWith('/now/workspace/');
+    && location.pathname.startsWith('/now/workspace/agent/');
   if (!workspacePage && !newCallPage && !/^\/incident\.do$/i.test(location.pathname)) return;
   const pageMode = workspacePage ? 'workspace-chat' : newCallPage ? 'classic-new-call' : 'classic-stack';
   const positionScope = `${pageMode}:${tabIdentity}`;
@@ -7675,6 +7675,7 @@ function startSNAI(tabIdentity) {
     }finally{log.clearing=false;}
   }
   async function flushDailyDiagnostics(){
+    if (!workspacePage) return;
     if(state.diagnostics?.clearing)return state.diagnostics.flushing;
     const log=diagnosticStore();if(log.flushing)return log.flushing;if(!log.events.length)return;
     const batch=log.events.slice();
@@ -7682,6 +7683,9 @@ function startSNAI(tabIdentity) {
     return log.flushing;
   }
   function diagnosticStore() {
+    // Classic form settings may read a count, but must never open the chat DB,
+    // start daily timers, or retain customer/network payloads.
+    if (!workspacePage) return state.diagnostics ||= {day:diagnosticDay(),events:[],chats:new Set(),contents:new Map(),sleepCount:0,sleepMs:0,timer:0,flushing:null};
     if(!state.diagnostics){
       state.diagnostics={day:diagnosticDay(),events:[],chats:new Set(),contents:new Map(),sleepCount:0,sleepMs:0,timer:0,flushing:null};
       window.addEventListener('pagehide',()=>{flushDailyDiagnostics().catch(()=>{});});
@@ -7696,6 +7700,7 @@ function startSNAI(tabIdentity) {
     return state.diagnostics;
   }
   function collectDiagnosticChat(mode,ims,transcript){
+    if (!workspacePage) return;
     if(state.diagnostics?.clearing)return;
     const log=diagnosticStore(),text=typeof transcript==='string'?transcript:JSON.stringify(transcript||'');
     log.chats.add(ims||'unknown');updateDiagnosticCount();
@@ -7703,6 +7708,7 @@ function startSNAI(tabIdentity) {
     log.contents.set(ims,text);recordCompactDiagnostic('info','chat-data-collected',{mode,ims,chatContent:text});
   }
   function recordCompactDiagnostic(level,action,details={}) {
+    if (!workspacePage) return;
     if(state.diagnostics?.clearing||(action.startsWith('extension-')&&details.at&&details.at<=state.diagnosticClearedAt))return;
     const log=diagnosticStore(),now=action.startsWith('extension-')&&Number.isFinite(details.at)?details.at:Date.now(),safe={};
     if(action.startsWith('extension-')&&now<new Date().setHours(0,0,0,0))return;
@@ -7731,6 +7737,7 @@ function startSNAI(tabIdentity) {
     return value;
   }
   function installFormNetworkDiagnostics() {
+    if (!workspacePage) return;
     const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
     const seen=new Map(),captureId=Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);let sequence=0;
     const relevant=url=>{
@@ -7888,6 +7895,7 @@ function startSNAI(tabIdentity) {
     addLog('info','automation-incoming-chat-continued',{ims:saved.ims});
   }
   function addLog(level, action, details = {}) {
+    if (!workspacePage && level !== 'error' && level !== 'warn') return;
     recordCompactDiagnostic(level,action,details);
     const entry = {
       at: new Date().toISOString(),
@@ -7897,7 +7905,8 @@ function startSNAI(tabIdentity) {
       details: compactLogDetails(details),
     };
     state.logs.push(entry);
-    if (state.logs.length > MAX_LOG_ITEMS) state.logs.splice(0, state.logs.length - MAX_LOG_ITEMS);
+    const logLimit=workspacePage?MAX_LOG_ITEMS:20;
+    if (state.logs.length > logLimit) state.logs.splice(0, state.logs.length - logLimit);
     const output = document.getElementById('local-sn-inspector-ai-logs');
     if (output) {
       const serialisedLogs = state.logs.map((item) => JSON.stringify(item)).join('\n');
@@ -21091,8 +21100,10 @@ function startSNAI(tabIdentity) {
     requestCodexFTF=withValidatedAICorrection(requestCodexFTF,'FTF');
     requestCodexHP=withValidatedAICorrection(requestCodexHP,'HP');
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
-    installAutomationFreeze();
-    document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
+    if (workspacePage) {
+      installAutomationFreeze();
+      document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
+    }
     addLog('info', 'helper-version', { version: '2.36.518' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
