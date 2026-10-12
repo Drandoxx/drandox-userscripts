@@ -334,6 +334,7 @@
 (() => {
   if(window.top!==window||!location.pathname.startsWith('/now/nav/ui/classic/params/target/'))return;
   const deadline=Date.now()+8000;
+  let stuckSince=0;
   function restoreLoadedFavorites() {
     const macro=[...(document.body?.children||[])].find(e=>e.localName.startsWith('macroponent-'));
     const layout=macro?.shadowRoot?.querySelector('sn-polaris-layout');
@@ -343,6 +344,13 @@
     const id=props?.userPreferences?.find(p=>p.name==='glide.ui.menu.main.pinned.id')?.value;
     const favorite=props?.menuItems?.find(menu=>menu.id===id&&menu.template==='favoriteList');
     if(state?.isMenuPinned&&state.primaryMenuLoading&&favorite?.subItems?.length&&layout?.dispatch) {
+      // A populated cache during ordinary native loading is not yet a fault.
+      // Repair only a persistent placeholder, never a healthy/unpinned menu.
+      if (!stuckSince) stuckSince=Date.now();
+      if (Date.now()-stuckSince<1000) {
+        if(Date.now()<deadline)setTimeout(restoreLoadedFavorites,200);
+        return;
+      }
       // Use the native success path, not CSS, a duplicate menu, or a preference
       // write. A real later refresh still updates these same native entries.
       layout.dispatch('MENU_MODIFIER#MENU_REFRESH_REQUEST_SUCCEEDED',{
@@ -350,7 +358,9 @@
       });
       return;
     }
-    if(Date.now()<deadline)setTimeout(restoreLoadedFavorites,50);
+    } else stuckSince=0;
+    if(state && !state.isMenuPinned)return;
+    if(Date.now()<deadline)setTimeout(restoreLoadedFavorites,200);
   }
   restoreLoadedFavorites();
 })();
