@@ -5035,7 +5035,8 @@
     const popupOnlyText=doc.createElement('span');popupOnlyText.textContent='Custom popup only — admin test';
     const hint=doc.createElement('small');hint.textContent='Hide native incoming alerts and Agent Workspace; disable its menu button. Background call controls still load.';hint.style.cssText='display:block;color:#8fb2bd;margin-top:6px';popupOnlyText.append(hint);
     const popupOnlyToggle=doc.createElement('input');popupOnlyToggle.type='checkbox';popupOnlyToggle.setAttribute('role','switch');popupOnlyToggle.setAttribute('aria-label','Custom popup only — admin test');popupOnlyToggle.checked=popupOnlyCallEnabled(doc);popupOnlyToggle.style.cssText='accent-color:#22d3ee;width:24px;height:24px;flex:none';
-    popupOnlyCard.append(popupOnlyText,switchControl(popupOnlyToggle,'Custom popup only — admin test'));body.prepend(popupOnlyCard);
+    // Superseded by the regular Settings popup switch; no separate admin toggle.
+    popupOnlyCard.append(popupOnlyText,switchControl(popupOnlyToggle,'Custom popup only — admin test'));
     const lastCall = doc.createElement('section');
     const title = doc.createElement('h3'); title.textContent = 'Last Call data';
     const info = doc.createElement('pre');
@@ -5094,7 +5095,6 @@
     popover.querySelector('.gbs-settings-footer .gbs-settings-save').addEventListener('click', () => {
       if (!isSavedAdmin(doc)) return;
       try { doc.defaultView.localStorage.setItem(ADMIN_CALL_BUTTON_KEY, String(checkbox.checked)); } catch (_) {}
-      GM_setValue(POPUP_ONLY_CALL_MODE_KEY,popupOnlyToggle.checked);
       syncCallTestLayout(doc);
       ensureCallDeveloperToggle(doc);
       closeSettings(doc);
