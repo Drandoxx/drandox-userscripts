@@ -23940,7 +23940,8 @@ function installNovaWelcome(host) {
     .yoyo-disc{animation:nova-yoyo 1.6s ease-in-out 5}.yoyo-string{animation:none!important;transform:none!important}
     @keyframes nova-yoyo{0%,100%{translate:0 -23px}50%{translate:0 8px}}
     @keyframes nova-yoyo-string{0%,100%{scale:1 .4}50%{scale:1 1.2}}
-    :host([data-ambient="book"]) .arm.right{transform:translate(-13px,-7px) rotate(-5deg);animation:none!important}
+    :host([data-ambient="book"]) .arm.right{transform:translate(-40px,10px) rotate(-5deg);animation:none!important}
+    :host([data-ambient="book"]) .arm.left{transform:translate(24px,10px) rotate(20deg);animation:none!important}
     :host([data-ambient="brush"]) .arm.right{animation:nova-paint-hand 2s ease-in-out 4!important}
     :host([data-ambient="magnifier"]) .arm.right{animation:nova-examine-hand 8s ease-in-out both!important}
     :host([data-ambient="kite"]) .arm.right,:host([data-ambient="yoyo"]) .arm.right{animation:pad-swing 2s ease-in-out 4!important}
@@ -24025,7 +24026,10 @@ function installNovaWelcome(host) {
     :host([data-ambient]) .nova-eye-drawing{translate:var(--nova-gaze-x,0px) var(--nova-gaze-y,0px);animation:nova-soft-blink 4.8s linear infinite!important;transition:translate .1s linear}
     :host([data-ambient="look"]) .nova-eye-drawing{animation:nova-soft-blink 4.8s linear infinite,nova-idle-look 8s ease-in-out 1!important}
     /* Story poses extend the same attached-pad rig rather than floating hands. */
-    :host([data-ambient="book"][data-ambient-phase="closed"]) .arm.right{transform:translate(-8px,3px) rotate(-10deg);transition:transform .6s}
+    :host([data-ambient="book"][data-ambient-phase="closed"]) .arm.right{transform:translate(-25px,12px) rotate(-10deg);transition:transform .6s}
+    :host([data-ambient="brush"]) .ambient-detail{background:#fff3e5;border:2px solid #c0a88e;border-radius:3px;box-sizing:border-box;transform-origin:bottom;}
+    :host([data-ambient="brush"][data-ambient-phase="paint"]) .ambient-detail svg{animation:nova-picture-reveal 1.6s ease-out both}
+    @keyframes nova-picture-reveal{from{clip-path:inset(0 0 100% 0)}to{clip-path:inset(0)}}
     :host([data-ambient="brush"][data-ambient-phase="admire"]) .arm.right{animation:none!important;transform:rotate(-15deg);transition:transform .5s}
     :host([data-ambient="brush"][data-ambient-phase="admire"]) .body{rotate:-3deg;transition:rotate .5s}
     :host([data-ambient="magnifier"][data-ambient-phase="found"]) .arm.right{animation:none!important;transform:translate(-7px,-5px) rotate(-4deg)}
