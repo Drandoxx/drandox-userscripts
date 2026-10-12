@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.557
+// @version      2.36.558
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -49,7 +49,8 @@
 {"version":"2.36.554","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA sleeps on her back with floating Zzz, gets up before speaking, and types her message again after waking."}]},
 {"version":"2.36.555","fixes":true,"changes":[{"key":"nova-movement","meaningful":true,"text":"NOVA walks in directly for daily greetings and turns sideways while walking or sleeping."}]},
 {"version":"2.36.556","fixes":true,"changes":[{"key":"nova-movement","meaningful":true,"text":"NOVA walks in sideways after reload, then turns and waves silently when no greeting is due."}]},
-{"version":"2.36.557","fixes":true,"changes":[{"key":"nova-movement","meaningful":true,"text":"NOVA walks with smaller oval hands, gentle arm swings and alternating planted steps. Standing clicks trigger a smile and wave without jumping."}]}
+{"version":"2.36.557","fixes":true,"changes":[{"key":"nova-movement","meaningful":true,"text":"NOVA walks with smaller oval hands, gentle arm swings and alternating planted steps. Standing clicks trigger a smile and wave without jumping."}]},
+{"version":"2.36.558","fixes":true,"changes":[{"key":"nova-movement","meaningful":true,"text":"NOVA side-view arms attach at her shoulder, with short connected legs and a mirrored hip-driven stride."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -7972,7 +7973,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-const payload={schema:2,version:'2.36.557',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+const payload={schema:2,version:'2.36.558',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -21292,7 +21293,7 @@ const payload={schema:2,version:'2.36.557',day:log.day,chatCount:log.chats.size,
       installAutomationFreeze();
       document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
     }
-    addLog('info', 'helper-version', { version: '2.36.557' });
+    addLog('info', 'helper-version', { version: '2.36.558' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
