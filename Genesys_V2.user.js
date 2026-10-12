@@ -4871,6 +4871,9 @@
   function callPopupsEnabled() {
     try{return GM_getValue('genesys-v2-call-popups-enabled',false)===true;}catch(_){return false;}
   }
+  function callRecordingAllowed(doc) {
+    return ['laszlo akim','lilla s'].includes(currentAgentName(doc));
+  }
   function popupOnlyCallEnabled(doc) {
     // The regular popup setting owns native UI suppression for every user.
     return callPopupsEnabled();
@@ -4941,7 +4944,7 @@
     incomingCallPresent = Boolean(alert);
     if (callTestEnabled(doc)) {
       syncCallTestLayout(doc);
-      if (alert && (!testCallSession || testCallSession.finishedAt)) {
+      if (alert && (!testCallSession || testCallSession.finishedAt || testCallSession.ringingEndedAt || testNativeAnswer?.closest('.messenger-message')!==alert)) {
         testNativeAnswer = alert.querySelector('[data-action="answerInteraction"] a');
         testCallSession = { id: String(Date.now()), incomingAt: new Date().toISOString(), startedMs: Date.now(), hovered: false, actions: [], country: null, phoneNumber: null };
         persistTestCall();
@@ -5845,9 +5848,9 @@
     return null;
   }
   function captureCallPayload(path,status,body,transport='api') {
-    if(window!==window.top || !isSavedAdmin(document) || !currentAgentApiId)return;
+    if(window!==window.top || !callRecordingAllowed(document) || !currentAgentApiId)return;
     const id=body?.conversationId || body?.id;
-    if(!/^[a-f0-9-]{36}$/i.test(id || '') || !body.participants?.some(p=>p.userId===currentAgentApiId))return;
+    if(!/^[a-f0-9-]{36}$/i.test(id || '') || !(transport==='call-push' || body.participants?.some(p=>(p.userId || p.user?.id)===currentAgentApiId)))return;
     const payload=compactCallPayload(body),key='payload:'+id;
     // One small seed per current conversation catches the event before its popup mounts.
     if(!measurementState){callPayloadPrelude.set(id,{at:Date.now(),path,status,transport,payload});while(callPayloadPrelude.size>10)callPayloadPrelude.delete(callPayloadPrelude.keys().next().value);return;}
@@ -5942,10 +5945,11 @@
       conversationId:id,conversationStart:c.conversationStart || c.startTime || null,
       conversationEnd:c.conversationEnd || c.endTime || null,
       participants:(c.participants || []).map(p=>({
-        participantId:p.participantId || p.id,purpose:p.purpose,userId:p.userId,name:p.participantName || p.name,
+        participantId:p.participantId || p.id,purpose:p.purpose,userId:p.userId || p.user?.id,name:p.participantName || p.name,
         state:p.state,address:p.address,queueName:p.queueName || p.queue?.name,connectedTime:p.connectedTime,startTime:p.startTime,endTime:p.endTime,
         wrapupRequired:p.wrapupRequired,wrapupTimeoutMs:p.wrapupTimeoutMs,
-        wrapup:p.wrapup ? {startTime:p.wrapup.startTime,endTime:p.wrapup.endTime} : null,
+        muted:p.muted,held:p.held,queueId:p.queueId || p.queue?.id,
+        wrapup:p.wrapup ? {startTime:p.wrapup.startTime,endTime:p.wrapup.endTime,code:p.wrapup.code} : null,
         sessions:(p.sessions || []).map(s=>({sessionId:s.sessionId,mediaType:s.mediaType,ani:s.ani,dnis:s.dnis,
           metrics:(s.metrics || []).map(m=>({name:m.name,value:m.value,emitDate:m.emitDate})),
           segments:(s.segments || []).map(t=>({segmentType:t.segmentType,segmentStart:t.segmentStart,segmentEnd:t.segmentEnd,
@@ -5993,7 +5997,7 @@
     if(!path.includes('/analytics/'))for(const body of raw)captureCallPayload(path,status,body,transport);
     const projected = raw.map(compactApiConversation).filter(Boolean);
     if(!path.includes('/analytics/') && currentAgentApiId)for(const c of projected) {
-      const own=c.participants.find(p=>p.purpose==='agent' && p.userId===currentAgentApiId && p.calls?.length);
+      const own=c.participants.find(p=>p.purpose==='agent' && p.userId===currentAgentApiId);
       if(!own)continue;
       const state=own.calls.some(x=>x.state==='connected')?'connected':own.calls.some(x=>['alerting','contacting'].includes(x.state))?'alerting':own.state || own.calls[0]?.state;
       const previous=liveCallSignals.get(c.conversationId);
@@ -6481,7 +6485,7 @@
     return {surfaces:[],controls,identifiers:[],timers,snapshots:[],inspected:seen.size,capped:seen.size>80};
   }
   function measureCallPopup(doc) {
-    if (window !== window.top || !isSavedAdmin(doc) || themeMode(doc) === 'light') return;
+    if (window !== window.top || !callRecordingAllowed(doc) || themeMode(doc) === 'light') return;
     if (!measurementState && !doc.getElementById('gbs-call-information')) return;
     const incoming = doc.querySelector('.messenger-shown [data-action="answerInteraction"]');
     const view = incoming?.closest('.messenger-message')?.querySelector('[data-action="openAcdInteraction"] a');
