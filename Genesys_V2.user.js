@@ -5055,13 +5055,10 @@
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     });
     const measurementDownload = doc.createElement('button'); measurementDownload.type = 'button';
-    measurementDownload.textContent = 'Download call timing & popup measurements';
+    measurementDownload.textContent = 'Download all diagnostics';
     measurementDownload.style.cssText = 'display:block;margin-top:14px;padding:10px;border:1px dashed #67e8f9;border-radius:6px;background:#1d2228;color:#a5f3fc;cursor:pointer';
     measurementDownload.addEventListener('click', () => {
-      const data = {...GM_getValue('genesys-v2-call-measurements', {samples:[]}),todayCallCache:readTodayCallCache()};
-      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], {type:'application/json'}));
-      const link = doc.createElement('a'); link.href = url; link.download = 'genesys-v2-call-measurements.json'; link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      downloadPerformanceDiagnostics();
     });
     const measurementInfo = doc.createElement('div');
     const refreshMeasurementInfo = () => {
@@ -5159,7 +5156,7 @@
     // Diagnostics are available to every user, not only the admin call recorder.
     queueMicrotask(()=>{
       const body=popover.querySelector('.gbs-settings-body');if(!body)return;
-      const button=doc.createElement('button');button.type='button';button.textContent='Download performance diagnostics';
+      const button=doc.createElement('button');button.type='button';button.textContent='Download all diagnostics';
       button.style.cssText='margin-top:14px;padding:10px;border:1px solid #22d3ee;border-radius:8px;background:#242a30;color:#a5f3fc;cursor:pointer';
       button.addEventListener('click',()=>downloadPerformanceDiagnostics());body.append(button);
     });
@@ -9931,9 +9928,14 @@ function fitDashboardMetricSpacing(doc) {
     return report;
   }
   function downloadPerformanceDiagnostics() {
-    const report=performanceReport();
+    const saved=GM_getValue('genesys-v2-call-measurements',{calls:[],active:null});
+    const report={schemaVersion:1,version:GM_info.script.version,exportedAt:new Date().toISOString(),
+      performance:performanceReport(),
+      callMeasurements:{...saved,active:measurementState || saved.active || null,pendingNetworkChanges:callNetworkChanges.slice()},
+      todayCallCache:readTodayCallCache(),incomingCallHistory:GM_getValue(CALL_HISTORY_KEY,[]),
+      note:'Combined export may contain customer phone numbers and locations. Detailed measurements remain admin-only and require call popups enabled; empty sections mean no data was recorded.'};
     const url=URL.createObjectURL(new Blob([JSON.stringify(report)],{type:'application/json'}));
-    const link=document.createElement('a');link.href=url;link.download='genesys-v2-performance.json';link.click();
+    const link=document.createElement('a');link.href=url;link.download='genesys-v2-diagnostics.json';link.click();
     setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
   function startLightweightPerformance() {
