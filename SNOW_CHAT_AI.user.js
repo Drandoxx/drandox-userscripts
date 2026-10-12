@@ -23528,10 +23528,19 @@ function installNovaWelcome(host) {
   const label=document.createElement('span');label.textContent='Nova friendly messages';
   const toggle=document.createElement('input');toggle.type='checkbox';toggle.disabled=true;
   preference.append(label,toggle);settings.append(preference);
-  let key='',firstName='friend',message=null,dismissed=false,frame=0,entranceStarted=false,entranceTimer=0,readyTimer=0;
+  let key='',firstName='friend',message=null,dismissed=false,frame=0,entranceStarted=false,entranceTimer=0,readyTimer=0,typingTimer=0,typingStarted=false,typingQueue=[],typingDone=null;
+  function stopTyping(){clearTimeout(typingTimer);typingTimer=0;typingQueue=[];typingDone=null;card.removeAttribute('aria-busy');}
+  function typeNext(){
+    typingTimer=0;if(dismissed||isOpen()){stopTyping();return;}
+    const item=typingQueue[0];
+    if(!item){card.setAttribute('aria-busy','false');const done=typingDone;typingDone=null;if(done)done();schedule();return;}
+    const character=item.characters.shift();item.node.textContent+=character;
+    if(!item.characters.length)typingQueue.shift();
+    schedule();typingTimer=setTimeout(typeNext,/[.!?]/.test(character)?240:/[,;:]/.test(character)?130:55);
+  }
   function isOpen(){return !host.classList.contains('collapsed')||launcher.getAttribute('aria-expanded')==='true'||[...host.querySelectorAll('[role="dialog"],.local-sn-command-popover')].some(el=>!el.hidden&&el.getBoundingClientRect().width>0);}
   function position(){
-    frame=0;if(isOpen()){if(!avatar.hidden)dismissed=true;card.hidden=true;avatar.hidden=true;clearTimeout(entranceTimer);clearTimeout(readyTimer);return;}
+    frame=0;if(isOpen()){if(!avatar.hidden)dismissed=true;card.hidden=true;avatar.hidden=true;clearTimeout(entranceTimer);clearTimeout(readyTimer);stopTyping();return;}
     if(!message||dismissed){card.hidden=true;avatar.hidden=true;return;}
     const chatsButton=document.getElementById('sn-ai-chats-today')?.shadowRoot?.querySelector('.launcher');
     const chatsRect=chatsButton?.getBoundingClientRect();
@@ -23539,7 +23548,7 @@ function installNovaWelcome(host) {
     avatar.style.right=(16-offsetX)+'px';avatar.style.bottom=(bottom-offsetY)+'px';avatar.hidden=false;
     if(!entranceStarted){entranceStarted=true;avatar.dataset.phase='peek';entranceTimer=setTimeout(()=>{if(dismissed||isOpen())return;avatar.dataset.phase='jump';avatar.setAttribute('aria-label','NOVA jumping out');schedule();readyTimer=setTimeout(()=>{avatar.dataset.phase='ready';avatar.setAttribute('aria-label','NOVA waving');schedule();},650);},2500);}
     if(avatar.dataset.phase!=='ready'){card.hidden=true;return;}
-    card.hidden=false;const r={left:innerWidth-156+offsetX,right:innerWidth-16+offsetX,top:innerHeight-bottom-160+offsetY,bottom:innerHeight-bottom+offsetY},c=card.getBoundingClientRect();
+    card.hidden=false;if(!typingStarted){typingStarted=true;typeNext();}const r={left:innerWidth-156+offsetX,right:innerWidth-16+offsetX,top:innerHeight-bottom-160+offsetY,bottom:innerHeight-bottom+offsetY},c=card.getBoundingClientRect();
     const preferredLeft=r.left-c.width-10;
     card.style.left=Math.max(12,Math.min(innerWidth-c.width-12,preferredLeft))+'px';
     card.style.top=Math.max(12,Math.min(innerHeight-c.height-12,r.bottom-c.height))+'px';
@@ -23554,18 +23563,18 @@ function installNovaWelcome(host) {
   function schedule(){if(!frame)frame=requestAnimationFrame(position);}
   // Message blocks support readable text, branching actions and future GIFs.
   function show(data){
-    message=data;card.replaceChildren();const title=document.createElement('strong');title.textContent='✦ NOVA';card.append(title);
-    for(const text of data.paragraphs||[]){const p=document.createElement('p');p.textContent=String(text).replace(/[\u2013\u2014\u2015]/g,',');card.append(p);}
+    stopTyping();typingStarted=false;message=data;card.replaceChildren();card.setAttribute('aria-live','off');card.setAttribute('aria-busy','true');const title=document.createElement('strong');title.textContent='✦ NOVA';card.append(title);
+    for(const text of data.paragraphs||[]){const p=document.createElement('p');const value=String(text).replace(/[\u2013\u2014\u2015]/g,',');p.textContent='';p.setAttribute('aria-label',value);card.append(p);if(value)typingQueue.push({node:p,characters:Array.from(value)});}
     if(data.image){try{const url=new URL(data.image.url,location.href);if(url.protocol==='https:'||url.origin===location.origin){const img=document.createElement('img');img.src=url.href;img.alt=data.image.alt||'';card.append(img);}}catch{}}
-    if(data.actions?.length){const actions=document.createElement('div');actions.className='nova-actions';for(const action of data.actions){const button=document.createElement('button');button.type='button';button.textContent=action.label;button.addEventListener('click',action.run);actions.append(button);}card.append(actions);}
+    if(data.actions?.length){const actions=document.createElement('div');actions.className='nova-actions';actions.hidden=true;for(const action of data.actions){const button=document.createElement('button');button.type='button';button.textContent=action.label;button.addEventListener('click',action.run);actions.append(button);}card.append(actions);typingDone=()=>{actions.hidden=false;};}
     schedule();
   }
   function save(enabled){try{localStorage.setItem(key,enabled?'yes':'no');}catch{}toggle.checked=enabled;}
   function reply(enabled){save(enabled);setExpression(enabled?'happy':'friendly');show({paragraphs:[enabled?'Sounds good. I’ll pop by with a little encouragement or something fun now and then. For now, this is just our first hello. 💜':'No worries at all. If you change your mind, open SN AI settings → AI settings and turn on “Nova friendly messages”. I’ll be happy to say hello again.']});}
-  toggle.addEventListener('change',()=>{save(toggle.checked);dismissed=true;card.hidden=true;avatar.hidden=true;});
+  toggle.addEventListener('change',()=>{save(toggle.checked);dismissed=true;stopTyping();card.hidden=true;avatar.hidden=true;});
   const observer=new MutationObserver(schedule);observer.observe(host,{subtree:true,attributes:true,attributeFilter:['class','hidden','aria-expanded','style']});
   window.addEventListener('resize',schedule);window.addEventListener('pointerup',schedule);
-  window.addEventListener('pagehide',()=>{observer.disconnect();cancelAnimationFrame(frame);clearTimeout(entranceTimer);clearTimeout(readyTimer);clearTimeout(motionTimer);card.remove();avatar.remove();style.remove();window.removeEventListener('resize',schedule);window.removeEventListener('pointerup',schedule);},{once:true});
+  window.addEventListener('pagehide',()=>{observer.disconnect();cancelAnimationFrame(frame);clearTimeout(entranceTimer);clearTimeout(readyTimer);clearTimeout(motionTimer);stopTyping();card.remove();avatar.remove();style.remove();window.removeEventListener('resize',schedule);window.removeEventListener('pointerup',schedule);},{once:true});
   (async()=>{
     const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
     const id=String(page.NOW?.user?.userID||page.g_user?.userID||'');if(!/^[a-f0-9]{32}$/i.test(id))return;
