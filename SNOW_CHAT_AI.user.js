@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.520
+// @version      2.36.521
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -569,6 +569,7 @@ const snAIChatDisplayNames=(()=>{
     if(!acceptedAt||Date.now()-acceptedAt>180000){pendingGreetingIds.delete(id);greetSeenHosts.delete(host);return;}
     greetTrace('offer-matched',{ims:record.number.value});
     const started=Date.now();
+    const outcome=(stage,reason,ok=false)=>greetTrace(stage,{ims:record.number.value,reason,ok,elapsedMs:Date.now()-started});
     const greetDelayMs=0;
     const ownElements=()=>{const list=[];const visit=root=>{for(const node of root.querySelectorAll('*')){list.push(node);if(node.shadowRoot)visit(node.shadowRoot);}};if(host.shadowRoot)visit(host.shadowRoot);return list;};
     const input=()=>ownElements().find(node=>node.matches('textarea[name="CHAT_INPUT#CHAT_TEXTAREA"]'));
@@ -578,15 +579,15 @@ const snAIChatDisplayNames=(()=>{
       // Wait for native controls to mount; never insert a command into a partial/error view.
       let loaded=false;
       for(let i=0;i<480;i++){
-        if(!autoGreetEnabled||!host.isConnected||greetAttempted.has(id))return;
+        if(!autoGreetEnabled||!host.isConnected||greetAttempted.has(id)){outcome('skipped',!autoGreetEnabled?'auto-greet-disabled':!host.isConnected?'composer-disconnected':'already-attempted');return;}
         const field=input(),nodes=ownElements();
-        if(field?.value.trim())return;
+        if(field?.value.trim()){outcome('skipped','composer-has-text');return;}
         const send=nodes.find(node=>node.matches('button[aria-label="Send Message"]'));
         const loading=nodes.some(node=>node.matches('[aria-busy="true"],now-loader,now-loading-indicator,[role="alert"]')&&node.getBoundingClientRect().width>0&&(node.getAttribute('aria-busy')==='true'||/error|failed|loading/i.test(node.textContent||node.localName)));
         if(safe()&&field&&send&&typeof host.dispatch==='function'&&!loading){loaded=true;break;}
         await new Promise(resolve=>setTimeout(resolve,250));
       }
-      if(!loaded||!safe()||Date.now()-started<greetDelayMs||!input()||input().value.trim())return;
+      if(!loaded||!safe()||Date.now()-started<greetDelayMs||!input()||input().value.trim()){outcome('not-sent',!loaded?'native-controls-readiness-timeout':!safe()?'chat-no-longer-safe':'composer-unavailable-or-edited');return;}
       // Select the greeting from the latest human message in this new offer.
       let chat=host;
       while(chat&&chat.localName!=='sn-agent-chat')chat=chat.parentElement||chat.getRootNode()?.host;
@@ -602,16 +603,30 @@ const snAIChatDisplayNames=(()=>{
         const option=await wait(()=>ownElements().find(node=>node.id==='quickaction-param-'+query));
         if(!option){greetTrace('quick-action-not-found',{code:query});return;}
         const expected=option.querySelector('.sn-action-menu-display-value')?.textContent.trim();
-        if(!expected||!safe()||input().value.trim()!==command)return;
+        if(!expected||!safe()||input().value.trim()!==command){outcome('not-sent',!expected?'quick-action-empty':!safe()?'chat-no-longer-safe':'command-not-retained');return;}
         option.click();
         const ready=await wait(()=>input()?.value.trim()===expected);
         const send=ownElements().find(node=>node.matches('button[aria-label="Send Message"]'));
-        if(!ready||!safe()||input().value.trim()!==expected||!send||send.disabled)return;
+        if(!ready||!safe()||input().value.trim()!==expected||!send||send.disabled){outcome('not-sent',!ready?'quick-action-did-not-fill':!safe()?'chat-no-longer-safe':!send?'send-control-missing':send.disabled?'send-control-disabled':'composer-edited');return;}
         // Same native send control as the operator. No retries after submission.
         rememberGreetingAttempt(id);
         greetTrace('sending',{ims:record.number.value});
+        const beforeMessages=new Set(chat?.shadowRoot?.querySelectorAll('now-chat-message')||[]);
         send.click();
-      } catch(error) { console.warn('SN AI auto-greet stopped',error); }
+        // Read-only confirmation. A click/empty composer is not proof of delivery;
+        // require a new outgoing bubble containing the expanded greeting.
+        const normalize=value=>String(value||'').replace(/\s+/g,' ').trim();
+        let confirmed=false;
+        for(let check=0;check<100;check++){
+          const messages=chat?.shadowRoot?.querySelectorAll('now-chat-message')||[];
+          confirmed=[...messages].some(message=>!beforeMessages.has(message)
+            && normalize(message.shadowRoot?.querySelector('.now-chat-message.right:not(.system)')?.textContent)===normalize(expected));
+          if(confirmed)break;
+          if(!chat?.isConnected)break;
+          await new Promise(resolve=>setTimeout(resolve,100));
+        }
+        outcome(confirmed?'sent-confirmed':'send-unconfirmed',confirmed?'outgoing-greeting-visible':!chat?.isConnected?'chat-disconnected-before-confirmation':'no-matching-outgoing-bubble-within-10s',confirmed);
+      } catch(error) { outcome('not-sent','native-greeting-error: '+String(error.message||error));console.warn('SN AI auto-greet stopped',error); }
     },greetDelayMs);
   }
   try { acceptedIMS = new Set(JSON.parse(sessionStorage.getItem('sn-ai-unseen-accepted-ims-v1') || '[]')); } catch {}
@@ -7799,7 +7814,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.520',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.521',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -21117,7 +21132,7 @@ function startSNAI(tabIdentity) {
       installAutomationFreeze();
       document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
     }
-    addLog('info', 'helper-version', { version: '2.36.520' });
+    addLog('info', 'helper-version', { version: '2.36.521' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
