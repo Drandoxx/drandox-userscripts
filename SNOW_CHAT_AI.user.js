@@ -535,7 +535,9 @@ const snAIChatDisplayNames=(()=>{
   let autoGreetEnabled=false, autoGreetChanged=false, lastOperatorActivity=Date.now(), incomingAcceptedAt=0;
   const greetSeenHosts=new WeakSet(), greetAttempted=new Set();
   try { JSON.parse(sessionStorage.getItem('sn-ai-greet-attempts-v1')||'[]').forEach(id=>greetAttempted.add(id)); } catch {}
-  Promise.resolve(GM_getValue('sn-ai-auto-greet-v1',false)).then(value=>{if(!autoGreetChanged)autoGreetEnabled=value===true;});
+  const greetTrace=(stage,details={})=>document.dispatchEvent(new CustomEvent('sn-ai-greet-diagnostic',{detail:{stage,...details}}));
+  const scanGreetingHosts=()=>{for(const scope of spaceRoots){queueNewChatGreeting(scope.host);for(const input of scope.querySelectorAll?.('sn-chat-input')||[])queueNewChatGreeting(input);}};
+  Promise.resolve(GM_getValue('sn-ai-auto-greet-v1',false)).then(value=>{if(!autoGreetChanged)autoGreetEnabled=value===true;greetTrace('setting-loaded',{ok:autoGreetEnabled});if(autoGreetEnabled)scanGreetingHosts();});
   document.addEventListener('sn-ai-auto-greet',event=>{autoGreetChanged=true;autoGreetEnabled=event.detail===true;});
   // An accepted incoming offer is required: opening an old IMS never greets it.
   const autoGreetOffers=new Map();
@@ -547,7 +549,8 @@ const snAIChatDisplayNames=(()=>{
   document.addEventListener('sn-ai-autoaccepted-ims',event=>{
     const ims=event.detail?.ims;if(!/^IMS\d+$/.test(ims||''))return;
     autoGreetOffers.set(ims,event.detail.acceptedAt||Date.now());
-    for(const scope of spaceRoots)for(const input of scope.querySelectorAll?.('sn-chat-input')||[])queueNewChatGreeting(input);
+    greetTrace('offer-accepted',{ims});
+    scanGreetingHosts();
   });
   for(const type of ['pointerdown','keydown','input'])window.addEventListener(type,event=>{
     // Browsing the non-modal report is not manual work in the chat composer.
@@ -558,11 +561,13 @@ const snAIChatDisplayNames=(()=>{
     const id=host.sysId||host.getAttribute('sys-id');
     if(!autoGreetEnabled||!id||greetAttempted.has(id)||!autoGreetOffers.size)return;
     pendingGreetingIds.add(id);
+    greetTrace('composer-discovered');
     greetSeenHosts.add(host);
     let record;
-    try{record=imsPreviewRecords.get(id)||await fetchIMSRecord('sys_id='+id);}catch{greetSeenHosts.delete(host);return;}
+    try{record=imsPreviewRecords.get(id)||await fetchIMSRecord('sys_id='+id);}catch(error){greetTrace('ims-lookup-failed',{error:String(error.message||error)});pendingGreetingIds.delete(id);greetSeenHosts.delete(host);return;}
     const acceptedAt=autoGreetOffers.get(record?.number?.value);
-    if(!acceptedAt||Date.now()-acceptedAt>180000){greetSeenHosts.delete(host);return;}
+    if(!acceptedAt||Date.now()-acceptedAt>180000){pendingGreetingIds.delete(id);greetSeenHosts.delete(host);return;}
+    greetTrace('offer-matched',{ims:record.number.value});
     const started=Date.now();
     const greetDelayMs=0;
     const ownElements=()=>{const list=[];const visit=root=>{for(const node of root.querySelectorAll('*')){list.push(node);if(node.shadowRoot)visit(node.shadowRoot);}};if(host.shadowRoot)visit(host.shadowRoot);return list;};
@@ -592,7 +597,7 @@ const snAIChatDisplayNames=(()=>{
         const query=userLast?'q':'w', command='/r '+query;
         host.dispatch('CHAT_INPUT#MESSAGE_ENTERED',{message:command,command:'r',query,currentParamIndex:0,caretPos:4});
         const option=await wait(()=>ownElements().find(node=>node.id==='quickaction-param-'+query));
-        if(!option)return;
+        if(!option){greetTrace('quick-action-not-found',{code:query});return;}
         const expected=option.querySelector('.sn-action-menu-display-value')?.textContent.trim();
         if(!expected||!safe()||input().value.trim()!==command)return;
         option.click();
@@ -601,6 +606,7 @@ const snAIChatDisplayNames=(()=>{
         if(!ready||!safe()||input().value.trim()!==expected||!send||send.disabled)return;
         // Same native send control as the operator. No retries after submission.
         rememberGreetingAttempt(id);
+        greetTrace('sending',{ims:record.number.value});
         send.click();
       } catch(error) { console.warn('SN AI auto-greet stopped',error); }
     },greetDelayMs);
@@ -5562,6 +5568,9 @@ const snAIChatDisplayNames=(()=>{
       filterIncidentActions(root.host);
       if(forceIMSChatEnabled)syncForcedIMSChat(root);
       syncIMSPreview(root);
+      // sn-chat-input properties hydrate after discovery; check its own host
+      // when native controls mount, not only newly inserted descendants.
+      queueNewChatGreeting(root.host);
       if(style.getRootNode()!==root)(root.nodeType===9?(root.head || root.documentElement):root)?.prepend(style);
       if(records.some(record=>[...record.addedNodes].some(node=>node.nodeType===1
         && node.matches?.('style,link[rel="stylesheet"]') && !node.hasAttribute('data-sn-ai-space-theme')
@@ -7728,6 +7737,7 @@ function startSNAI(tabIdentity) {
     if(!log.timer)log.timer=setTimeout(()=>{log.timer=0;flushDailyDiagnostics().catch(()=>{});},1000);
   }
   // Passive, bounded capture: never alters requests, responses or authentication.
+  if (workspacePage) document.addEventListener('sn-ai-greet-diagnostic',event=>recordCompactDiagnostic('info','auto-greet',event.detail||{}));
   function formNetworkSafe(value,depth=0,key='') {
     if(/authorization|cookie|token|password|secret|credential|session|csrf|api.?key/i.test(key))return '[redacted]';
     if(depth>9)return '[depth limit]';
