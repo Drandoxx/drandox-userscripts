@@ -4957,6 +4957,9 @@ const snAIChatDisplayNames=(()=>{
             while(form&&form.localName!=='sn-form-internal-workspace-form-layout')form=form.parentElement||form.getRootNode?.().host;
             const props=form?.getProperties?.();
             const currentWidth=Math.floor(host.getBoundingClientRect().width);
+            // Hidden/background record panels resume through ResizeObserver;
+            // do not keep a per-frame loop alive for an inactive tab.
+            if(currentWidth<=0){entry.readyScheduled=false;return;}
             const signature=currentWidth+':'+JSON.stringify(host.getProperties?.().actionNodes||[]);
             const nativeReady=!props?.isLoadingRecord&&!props?.isReloading&&currentWidth>0
               &&Math.abs(Number(host.width||0)-currentWidth)<1;
