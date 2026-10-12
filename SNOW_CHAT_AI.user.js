@@ -4750,7 +4750,33 @@ const snAIChatDisplayNames=(()=>{
     }
   }
   const actionWidthObservers = new WeakMap();
+  function syncRecordHeaderRows(root) {
+    if (root.host?.localName !== 'sn-form-internal-header-layout') return;
+    const row = root.querySelector('.sn-header-layout-row');
+    const actions = row?.querySelector('.sn-header-layout-content.-last');
+    const common = row?.querySelector('now-record-common-header');
+    const props = root.host.getProperties?.().formHeader;
+    const number = [props?.recordDisplayValue, props?.primaryValue, props?.primaryItem?.displayValue]
+      .find(value => /^(?:EVNT|INC|IMS|REQ|RITM)\d+$/i.test(String(value || '').trim()));
+    if (!row || !actions || !common?.shadowRoot || !number) return;
+    row.setAttribute('data-sn-ai-record-rows', '');
+    let label = actions.querySelector('.sn-ai-header-record-number');
+    if (!label) {
+      label = document.createElement('div');
+      label.className = 'sn-ai-header-record-number';
+      label.setAttribute('role', 'heading');
+      label.setAttribute('aria-level', '1');
+      actions.prepend(label);
+    }
+    if (label.textContent !== String(number).trim()) label.textContent = String(number).trim();
+    for (const heading of common.shadowRoot.querySelectorAll('now-heading')) {
+      const value = heading.shadowRoot?.textContent || heading.textContent || common.getProperties?.().primaryValue;
+      heading.toggleAttribute('data-sn-ai-number-moved', String(value || '').trim() === String(number).trim()
+        || common.getProperties?.().primaryValue === number);
+    }
+  }
   function syncNativeActionWidth(root) {
+    syncRecordHeaderRows(root);
     const host = root.host;
     if (host?.localName !== 'sn-form-internal-uiactionbar') return;
     let entry = actionWidthObservers.get(host);
