@@ -6462,57 +6462,23 @@
   let measurementLastSignature = '', measurementLastSave = 0;
   const callVisualCache = new WeakMap();
   function collectCallVisualDiagnostics(doc, callFrame = false) {
-    const cached = callVisualCache.get(doc);
-    if (cached && Date.now() - cached.at < 3000) return cached.value;
-    const surfaces = [], controls = [], identifiers = [], timers = [], snapshots = []; let inspected = 0;
-    const seenIds = new Set();
-    const findIds = (text, path) => {
-      const pattern = /(conversation|call|participant|session|communication)[-_ ]?(?:id)?["'\s:=/?%-]*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/gi;
-      for (const match of String(text).matchAll(pattern)) {
-        const key = `${match[1].toLowerCase()}:${match[2].toLowerCase()}`;
-        if (!seenIds.has(key)) { seenIds.add(key); identifiers.push({kind:match[1].toLowerCase(),id:match[2],path,confidence:'DOM candidate; not API verified'}); }
+    // Targeted metadata only: no whole-tree HTML clones, style or geometry reads.
+    const controls=[],timers=[];
+    const areas=[...doc.querySelectorAll('.selected-interaction-container,[data-testid="wrapup-main-container"],.messenger-message')];
+    if(!areas.length && callFrame && doc.body)areas.push(doc.body);
+    const seen=new Set();
+    for(const area of areas)for(const el of area.querySelectorAll('button,a,[role="button"],time,[role="timer"],[data-testid*="duration"]')) {
+      if(seen.has(el))continue;seen.add(el);if(seen.size>80)break;
+      const path=el.getAttribute('data-testid') || el.getAttribute('data-action') || el.id || el.tagName.toLowerCase();
+      if(el.matches('time,[role="timer"],[data-testid*="duration"]'))timers.push({path,text:el.textContent?.trim().slice(0,80),ariaLabel:el.getAttribute('aria-label')?.slice(0,160)});
+      else {
+        const label=(el.getAttribute('aria-label') || el.title || el.textContent || '').trim().slice(0,100);
+        if(!/answer|mute|hold|resume|disconnect|hang.up|view|snow/i.test(label+' '+path))continue;
+        let href=null;try{const u=new URL(el.href);href=u.origin+u.pathname;}catch(_){}
+        controls.push({path,label,href,disabled:!!el.disabled,ariaDisabled:el.getAttribute('aria-disabled'),pressed:el.getAttribute('aria-pressed')});
       }
-    };
-    findIds(doc.location.href,'document URL');
-    const scan = (root, path) => {
-      for (const element of root.querySelectorAll('*')) {
-        if (++inspected > 2500 || surfaces.length >= 60) return;
-        const rect = element.getBoundingClientRect();
-        const style = doc.defaultView.getComputedStyle(element);
-        const selector = element.tagName.toLowerCase() + (element.id ? `#${element.id}` : '') + [...element.classList].map(name => `.${name}`).join('');
-        const elementPath = `${path} > ${selector}`;
-        for (const attribute of element.attributes) {
-          if (!/token|authorization|cookie|secret|password/i.test(attribute.name)) findIds(`${attribute.name}=${attribute.value}`,elementPath);
-        }
-        const shown = !!rect.width && !!rect.height;
-        if (element.matches('time, [role="timer"], [data-testid*="duration"], [class*="countdown"]')) timers.push({path:elementPath,text:element.textContent?.trim(),visible:shown,ariaLabel:element.getAttribute('aria-label'),html:element.outerHTML.slice(0,1500)});
-        if (!shown) { if (element.shadowRoot) scan(element.shadowRoot,`${elementPath} ::shadow`); continue; }
-        const color = style.backgroundColor.match(/[\d.]+/g)?.map(Number);
-        if (color && color.length >= 3 && (color[3] ?? 1) > .5 && Math.min(...color.slice(0,3)) > 175 && rect.width * rect.height > 200) {
-          const html = element.cloneNode(true);
-          html.querySelectorAll('script,input,textarea').forEach(node => node.remove());
-          surfaces.push({path:`${path} > ${selector}`,rect:rect.toJSON(),html:html.outerHTML.slice(0,5000),
-            styles:Object.fromEntries(['background-color','color','border','box-shadow','display','position','overflow','padding','font-size','line-height'].map(key => [key,style.getPropertyValue(key)]))});
-        }
-        if (element.matches('button, a, [role="button"]')) {
-          controls.push({path:`${path} > ${selector}`,html:element.outerHTML.slice(0,2000),disabled:element.disabled,ariaDisabled:element.getAttribute('aria-disabled'),pressed:element.getAttribute('aria-pressed')});
-        }
-        if (element.shadowRoot) scan(element.shadowRoot,`${path} > ${selector} ::shadow`);
-      }
-    };
-    const areas = [...doc.querySelectorAll('.command-panel.active.agent, .selected-interaction-container, [data-testid="wrapup-main-container"]')];
-    if (!areas.length && (callFrame || /acw-gadgets|contact|profile/i.test(doc.location.href))) areas.push(doc.body);
-    for (const area of areas) if (area) {
-      const clone = area.cloneNode(true);
-      clone.querySelectorAll('script,input,textarea').forEach(node => node.remove());
-      for (const node of [clone,...clone.querySelectorAll('*')]) for (const attribute of [...node.attributes]) {
-        if (/token|authorization|cookie|secret|password/i.test(attribute.name)) node.removeAttribute(attribute.name);
-      }
-      snapshots.push({html:clone.outerHTML.slice(0,40000),truncated:clone.outerHTML.length > 40000});
-      scan(area,area.tagName.toLowerCase());
     }
-    const value = {surfaces,controls,identifiers,timers,snapshots,inspected,capped:inspected > 2500 || surfaces.length >= 60};
-    callVisualCache.set(doc,{at:Date.now(),value}); return value;
+    return {surfaces:[],controls,identifiers:[],timers,snapshots:[],inspected:seen.size,capped:seen.size>80};
   }
   function measureCallPopup(doc) {
     if (window !== window.top || !isSavedAdmin(doc) || themeMode(doc) === 'light') return;
