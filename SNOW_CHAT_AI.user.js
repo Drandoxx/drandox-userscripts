@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.538
+// @version      2.36.539
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7940,7 +7940,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-const payload={schema:2,version:'2.36.538',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+const payload={schema:2,version:'2.36.539',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -21259,7 +21259,7 @@ const payload={schema:2,version:'2.36.538',day:log.day,chatCount:log.chats.size,
       installAutomationFreeze();
       document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
     }
-    addLog('info', 'helper-version', { version: '2.36.538' });
+    addLog('info', 'helper-version', { version: '2.36.539' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -23542,7 +23542,7 @@ function installNovaWelcome(host) {
     const item=typingQueue[0];
     if(!item){card.setAttribute('aria-busy','false');const done=typingDone;typingDone=null;if(done)done();schedule();return;}
     const character=item.characters.shift();item.node.textContent+=character;
-    if(!item.characters.length)typingQueue.shift();
+    if(!item.characters.length){typingQueue.shift();if(item.after)item.after();}
     schedule();typingTimer=setTimeout(typeNext,/[.!?]/.test(character)?240:/[,;:]/.test(character)?130:55);
   }
   function position(){
@@ -23569,8 +23569,16 @@ function installNovaWelcome(host) {
   function schedule(){if(!frame)frame=requestAnimationFrame(position);}
   // Message blocks support readable text, branching actions and future GIFs.
   function show(data){
-    stopTyping();typingStarted=false;message=data;card.replaceChildren();card.setAttribute('aria-live','off');card.setAttribute('aria-busy','true');const title=document.createElement('strong');title.textContent='✦ NOVA';card.append(title);
-    for(const text of data.paragraphs||[]){const p=document.createElement('p');const value=String(text).replace(/[\u2013\u2014\u2015]/g,',');p.textContent='';p.setAttribute('aria-label',value);card.append(p);if(value)typingQueue.push({node:p,characters:Array.from(value)});}
+    stopTyping();typingStarted=false;message=data;card.replaceChildren();card.setAttribute('aria-live','off');card.setAttribute('aria-busy','true');
+    for(const text of data.paragraphs||[]){
+      const p=document.createElement('p');const value=String(text).replace(/[\u2013\u2014\u2015]/g,',');p.setAttribute('aria-label',value);card.append(p);
+      for(const chunk of value.split(/(\bNova\b)/gi).filter(Boolean)){
+        const isName=/^Nova$/i.test(chunk),node=document.createElement(isName?'strong':'span');node.textContent='';p.append(node);
+        let after;
+        if(isName){const icon=document.createElement('span');icon.setAttribute('aria-hidden','true');icon.style.color='var(--sn-theme-ac94ec,#ac94ec)';icon.textContent='';p.append(icon);after=()=>{icon.textContent=' ✦';};}
+        typingQueue.push({node,characters:Array.from(chunk),after});
+      }
+    }
     if(data.image){try{const url=new URL(data.image.url,location.href);if(url.protocol==='https:'||url.origin===location.origin){const img=document.createElement('img');img.src=url.href;img.alt=data.image.alt||'';card.append(img);}}catch{}}
     if(data.actions?.length){const actions=document.createElement('div');actions.className='nova-actions';actions.hidden=true;for(const action of data.actions){const button=document.createElement('button');button.type='button';button.textContent=action.label;button.addEventListener('click',action.run);actions.append(button);}card.append(actions);typingDone=()=>{actions.hidden=false;};}
     schedule();
