@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.548
+// @version      2.36.549
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7964,7 +7964,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-const payload={schema:2,version:'2.36.548',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+const payload={schema:2,version:'2.36.549',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -7977,6 +7977,7 @@ const payload={schema:2,version:'2.36.548',day:log.day,chatCount:log.chats.size,
     return {running:Boolean(dialog||state.commandRunning),dialog,ims:normaliseIMS(dialog?.dataset.pinnedIms||state.autoSession?.ims||currentInteractionIMS())};
   }
   function releaseAutomationFreeze(reason='finished',suspend=true){
+    if(automationFreeze.overlays.length){const root=document.getElementById(ROOT_ID);if(root)root.novaTicketUnfrozenAt=Date.now();}
     if(['stop','bubble-close','pagehide'].includes(reason))for(const id of aiResponsePreviews.keys())clearAIResponsePreview(id);
     for(const overlay of automationFreeze.overlays)overlay.remove();
     if(automationFreeze.regions.length)recordCompactDiagnostic('info','automation-unfrozen',{ims:automationFreeze.ims,reason});
@@ -21283,7 +21284,7 @@ const payload={schema:2,version:'2.36.548',day:log.day,chatCount:log.chats.size,
       installAutomationFreeze();
       document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
     }
-    addLog('info', 'helper-version', { version: '2.36.548' });
+    addLog('info', 'helper-version', { version: '2.36.549' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -23664,6 +23665,7 @@ function installNovaWelcome(host) {
   avatar.addEventListener('click',wake);avatar.addEventListener('keydown',wake);
   host.novaUpdateMessage=data=>{
     if(!nameReady){pendingUpdate=data;return;}
+    if(host.novaTicketUnfrozenAt>unfrozenSince)unfrozenSince=host.novaTicketUnfrozenAt;
     if(!data.reload&&(ticketBusy()||deferredUpdate||unfrozenSince&&Date.now()-unfrozenSince<10000)){deferredUpdate=data;waitForUpdate();return;}
     if(data.version&&announcedUpdates.has(data.version))return;
     if(data.version)announcedUpdates.add(data.version);
@@ -23739,7 +23741,7 @@ function installNovaWelcome(host) {
   toggle.addEventListener('change',()=>{save(toggle.checked);dismissed=true;stopTyping();card.hidden=true;tail.hidden=true;avatar.hidden=true;});
   const observer=new MutationObserver(schedule);observer.observe(host,{subtree:true,attributes:true,attributeFilter:['class','hidden','aria-expanded','style']});
   window.addEventListener('resize',schedule);window.addEventListener('pointerup',schedule);
-window.addEventListener('pagehide',()=>{observer.disconnect();cancelAnimationFrame(frame);clearTimeout(entranceTimer);clearTimeout(readyTimer);clearTimeout(pageReadyTimer);clearTimeout(motionTimer);clearIdle();stopTyping();card.remove();tail.remove();avatar.remove();style.remove();window.removeEventListener('resize',schedule);window.removeEventListener('pointerup',schedule);},{once:true});
+window.addEventListener('pagehide',()=>{observer.disconnect();cancelAnimationFrame(frame);clearTimeout(entranceTimer);clearTimeout(readyTimer);clearTimeout(pageReadyTimer);clearTimeout(motionTimer);clearTimeout(dailyTimer);clearTimeout(updateWaitTimer);clearIdle();stopTyping();card.remove();tail.remove();avatar.remove();style.remove();window.removeEventListener('resize',schedule);window.removeEventListener('pointerup',schedule);},{once:true});
   (async()=>{
     const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
     const id=String(page.NOW?.user?.userID||page.g_user?.userID||'');if(!/^[a-f0-9]{32}$/i.test(id))return;
