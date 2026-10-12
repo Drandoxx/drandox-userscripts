@@ -23930,7 +23930,7 @@ function installNovaWelcome(host) {
     .ambient-tool[data-idle-tool="book"],.ambient-tool[data-idle-tool="snack"]{left:-9px;bottom:-4px;width:40px;height:43px}
     .ambient-tool[data-idle-tool="kite"]{height:72px;bottom:4px;rotate:10deg}
     .ambient-tool[data-idle-tool="yoyo"]{bottom:-42px;left:-4px;rotate:0deg}
-    .yoyo-disc{animation:nova-yoyo 1.6s ease-in-out 5}.yoyo-string{transform-origin:20px 3px;animation:nova-yoyo-string 1.6s ease-in-out 5}
+    .yoyo-disc{animation:nova-yoyo 1.6s ease-in-out 5}.yoyo-string{animation:none!important;transform:none!important}
     @keyframes nova-yoyo{0%,100%{translate:0 -23px}50%{translate:0 8px}}
     @keyframes nova-yoyo-string{0%,100%{scale:1 .4}50%{scale:1 1.2}}
     :host([data-ambient="book"]) .arm.right{transform:translate(-13px,-7px) rotate(-5deg);animation:none!important}
@@ -23962,14 +23962,29 @@ function installNovaWelcome(host) {
     @keyframes nova-idle-dance{0%,100%{rotate:0deg}25%{rotate:-5deg;translate:-2px -2px}75%{rotate:5deg;translate:2px -2px}}
     @keyframes nova-idle-stretch{0%,100%{transform:rotate(-15deg)}30%,65%{transform:translateY(-10px) rotate(-65deg)}}
     .ambient-detail{position:absolute;left:112px;top:66px;width:36px;height:45px;opacity:0;transition:opacity .35s;pointer-events:none}.ambient-detail svg{width:100%;height:100%}
-    .snack-bite{opacity:0}.book-page{opacity:0;transform-origin:20px 20px}
-    :host([data-ambient-phase="bite"]) .snack-bite{opacity:1}
+    .nova-bite-mouth{display:none}.snack-bite{opacity:0}.book-page{opacity:0;transform-origin:20px 20px}
+    :host([data-ambient="snack"][data-ambient-phase="bite"]) .snack-bite,:host([data-ambient="snack"][data-ambient-phase="chew"]) .snack-bite,:host([data-ambient="snack"][data-ambient-phase="open"]) .snack-bite{opacity:var(--nova-bitten,0)}
+    :host([data-ambient="snack"][data-ambient-phase="bite"]),:host([data-ambient="snack"][data-ambient-phase="chew"]){--nova-bitten:1}
+    :host([data-ambient="snack"][data-ambient-phase="open"]) .nova-bite-mouth,:host([data-ambient="snack"][data-ambient-phase="bite"]) .nova-bite-mouth,:host([data-ambient="snack"][data-ambient-phase="eaten"]) .nova-bite-mouth{display:block}
+    :host([data-ambient="snack"][data-ambient-phase="open"]) .nova-mouth-drawing,:host([data-ambient="snack"][data-ambient-phase="bite"]) .nova-mouth-drawing,:host([data-ambient="snack"][data-ambient-phase="eaten"]) .nova-mouth-drawing{display:none}
+    :host([data-ambient="snack"][data-ambient-phase="chew"]) .nova-mouth-drawing{transform-origin:53px 62px;animation:nova-chew .4s ease-in-out 2}
+    @keyframes nova-chew{50%{scale:1.15 .65}}
     :host([data-ambient-phase="eaten"]) [data-idle-tool="snack"],:host([data-ambient-phase="settle"]) .ambient-tool,:host([data-ambient-phase="settle"]) .ambient-scene{opacity:0!important;transition:opacity .4s}
     :host([data-ambient="snack"]) .arm.right{animation:nova-two-bites 8s ease-in-out both!important}
-    @keyframes nova-two-bites{0%,15%,42%,72%,100%{transform:rotate(-15deg)}27%,33%,55%,60%{transform:translate(-24px,-17px) rotate(20deg)}}
+    @keyframes nova-two-bites{0%,15%,42%,72%,100%{transform:rotate(-15deg)}27%,33%,55%,60%{transform:translate(-48px,12px) rotate(0deg)}}
+    :host([data-ambient="snack"]) .arm.right{z-index:6}
     :host([data-ambient="kite"][data-ambient-phase="watch"]) .nova-eye-drawing{animation:none;translate:4px -3px}
     :host([data-ambient="kite"][data-ambient-phase="gust"]) .ambient-detail{opacity:1;animation:nova-gust 1.3s ease-out both}
-    :host([data-ambient="kite"][data-ambient-phase="gust"]) [data-idle-tool="kite"]{animation:nova-kite-escape 1.2s ease-in both}
+    :host([data-ambient="kite"]) .kite-sail{transform-origin:20px 32px;animation:nova-kite-breeze 1.4s ease-in-out infinite}
+    @keyframes nova-kite-breeze{50%{rotate:9deg}}
+    :host([data-ambient="kite"][data-ambient-phase="pull"]) .kite-sail{animation:nova-kite-tug 1s ease-in both}
+    :host([data-ambient="kite"][data-ambient-phase="pull"]) .kite-rope{d:path('M20 60 L32 12')}
+    :host([data-ambient="kite"][data-ambient-phase="pull"]) .body{rotate:-5deg;translate:-3px 0;transition:rotate .5s,translate .5s}
+    :host([data-ambient="kite"][data-ambient-phase="pull"]) .arm.right{animation:none!important;transform:translate(-5px,4px) rotate(-25deg)}
+    @keyframes nova-kite-tug{to{translate:12px -20px;rotate:15deg}}
+    :host([data-ambient="kite"][data-ambient-phase="gust"]) .kite-sail{animation:nova-kite-escape 1.2s ease-in both}
+    :host([data-ambient="kite"][data-ambient-phase="gust"]) .kite-rope{animation:nova-rope-slip .5s ease-in both}
+    @keyframes nova-rope-slip{to{opacity:0;translate:15px -30px}}
     :host([data-ambient="kite"][data-ambient-phase="sad"]) [data-idle-tool="kite"],:host([data-ambient="kite"][data-ambient-phase="settle"]) [data-idle-tool="kite"]{visibility:hidden}
     @keyframes nova-kite-escape{from{transform:translate(0,0) rotate(0);opacity:1}to{transform:translate(130px,-150px) rotate(45deg);opacity:0}}
     @keyframes nova-gust{from{translate:-80px 0;opacity:0}30%{opacity:1}to{translate:90px -20px;opacity:0}}
@@ -23979,7 +23994,7 @@ function installNovaWelcome(host) {
     :host([data-ambient="brush"][data-ambient-phase="paint"]) .ambient-detail,:host([data-ambient="brush"][data-ambient-phase="admire"]) .ambient-detail,:host([data-ambient="magnifier"][data-ambient-phase="follow"]) .ambient-detail,:host([data-ambient="magnifier"][data-ambient-phase="found"]) .ambient-detail{opacity:1}
     :host([data-ambient="magnifier"]) .ambient-detail{animation:nova-bug-walk 8s ease-in-out both}
     @keyframes nova-bug-walk{0%,20%{translate:0 0}60%,100%{translate:-32px 0}}
-    :host([data-ambient-phase="tangle"]) .yoyo-string{animation:none;transform:rotate(35deg) scaleY(.5)}
+    :host([data-ambient-phase="tangle"]) .yoyo-string{stroke-dasharray:3 1}
     :host([data-ambient-phase="tangle"]) .yoyo-disc{animation:none;translate:8px -15px}
     :host([data-ambient-phase="fixed"]) .yoyo-disc{animation:nova-yoyo 1.6s ease-in-out 1}
     :host([data-ambient="bubbles"][data-ambient-phase="pop"]) .idle-rise{animation:nova-pop .45s ease-out both}
@@ -24000,6 +24015,8 @@ function installNovaWelcome(host) {
     :host([data-ambient-phase="flourish"]) .body{animation:nova-sneeze .8s ease-in-out 1!important}
     :host([data-ambient-phase="shake"]) .body{animation:nova-sneeze .6s ease-in-out 1!important}
     :host([data-ambient-phase="settle"]) .arm{animation:none!important;transform:rotate(-15deg);transition:transform .5s}
+    :host([data-ambient]) .nova-eye-drawing{translate:var(--nova-gaze-x,0px) var(--nova-gaze-y,0px);animation:nova-soft-blink 4.8s linear infinite!important;transition:translate .1s linear}
+    :host([data-ambient="look"]) .nova-eye-drawing{animation:nova-soft-blink 4.8s linear infinite,nova-idle-look 8s ease-in-out 1!important}
     @media(prefers-reduced-motion:reduce){.nova-eye-drawing,.ambient-scene,.ambient-scene *,.ambient-tool{animation:none!important}.ambient-scene,.ambient-tool,.ambient-detail{display:none}}
     /* Motion belongs to the rig; expression drawings never own keyframes. */
     .body{transform:none!important}.eyes{inset:0!important;transform:none!important;translate:none!important;transition:none}
@@ -24066,7 +24083,7 @@ function installNovaWelcome(host) {
         mouth=expression==='sleeping'?'<path d="M'+edge+' 60 l'+(-direction*4)+' 1" stroke-width="2"/>':expression==='surprised'||expression==='happy'?'<ellipse cx="'+edge+'" cy="62" rx="2.5" ry="'+(expression==='happy'?3.5:5)+'" fill="#51315c" stroke="none"/>':'<path d="M'+edge+' 60 q'+(-direction*3)+' 3 '+(-direction*6)+' 2" stroke-width="2.3"/>';
       }else mouth=expression==='sleeping'?'<ellipse cx="'+(mx-3)+'" cy="56" rx="2.5" ry="4" fill="#51315c" stroke="none"/>':expression==='surprised'?'<ellipse cx="'+mx+'" cy="62" rx="4" ry="5" fill="#51315c"/>':expression==='happy'?'<path d="M'+(mx-6)+' 59 Q'+mx+' 57 '+(mx+6)+' 59 Q'+(mx+5)+' 68 '+mx+' 68 Q'+(mx-5)+' 68 '+(mx-6)+' 59 Z" fill="#51315c" stroke="none"/>':'<path d="M'+(mx-6)+' 60 C'+(mx-5)+' 68 '+(mx+5)+' 68 '+(mx+6)+' 60" stroke-width="2.8"/>';
       if(expression==='sad')mouth='<path d="M'+(mx-5)+' 65 q5 -5 10 0" stroke-width="2.3"/>';
-      return '<svg viewBox="0 0 106 101" aria-hidden="true"><g fill="none" stroke="#51315c" stroke-width="2.5" stroke-linecap="round">'+'<g class="nova-eye-drawing">'+eyes+'</g>'+mouth+'</g><ellipse cx="'+(view==='right'?65:view==='left'?37:28)+'" cy="58" rx="8" ry="3.5" fill="#ec94c6" opacity=".65"/></svg>';
+      return '<svg viewBox="0 0 106 101" aria-hidden="true"><g fill="none" stroke="#51315c" stroke-width="2.5" stroke-linecap="round"><g class="nova-eye-drawing">'+eyes+'</g><g class="nova-mouth-drawing">'+mouth+'</g><ellipse class="nova-bite-mouth" cx="'+mx+'" cy="62" rx="5" ry="4" fill="#51315c" stroke="none"/></g><ellipse cx="'+(view==='right'?65:view==='left'?37:28)+'" cy="58" rx="8" ry="3.5" fill="#ec94c6" opacity=".65"/></svg>';
     }
     // Front and both side drawings exist for every expression and hand variant.
     for(const view of ['front','left','right'])for(const face of ['friendly','happy','sleepy','sleeping','surprised','sad'])drawings.set(view+':'+face,faceDrawing(view,face));
