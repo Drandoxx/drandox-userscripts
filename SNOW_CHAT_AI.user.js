@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.565
+// @version      2.36.566
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -58,6 +58,7 @@
 {"version":"2.36.563","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA blinks and glances around, enjoys twelve shuffled quiet activities, and sleeps after 15 idle minutes without sitting first."}]},
 {"version":"2.36.564","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA enjoys eighteen shuffled idle routines, including books, painting, a magnifying glass, a kite, a yo-yo and a snack held in her hand."},{"key":"nova-wave","meaningful":false,"text":"Reload, daily greeting and click reactions share one continuous wave function."},{"key":"tab-theme","meaningful":false,"text":"Accepted unseen chat tabs use the selected theme for their surface, text, border and corners."}]}
 ,{"version":"2.36.565","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA's eighteen idle activities now have little stories, including two snack bites, an escaping kite, page turns and playful reactions."}]}
+,{"version":"2.36.566","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA follows moving props with her eyes, reacts with matching faces, eats with coordinated bites, resists the kite's tug and keeps the yo-yo string attached."},{"key":"nova-updates","meaningful":false,"text":"Update and reload messages type 1.6 times faster."},{"key":"nova-wave","meaningful":false,"text":"NOVA returns to her normal expression after waving, with expression changes observed inside her character."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
