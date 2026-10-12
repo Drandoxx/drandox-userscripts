@@ -27,6 +27,18 @@
 // @connect      raw.githubusercontent.com
 // @connect      api.openai.com
 // ==/UserScript==
+/* SN_AI_RELEASE_NOTES_BEGIN
+{"schema":1,"releases":[
+{"version":"2.36.537","fixes":false,"changes":[{"key":"nova-movement","meaningful":true,"text":"NOVA can peek out, walk, climb and fly with her red N cape."},{"key":"nova-speech","meaningful":true,"text":"NOVA types her messages at a natural pace and works independently of SN AI."}]},
+{"version":"2.36.538","fixes":true,"changes":[{"key":"nova-appearance","meaningful":false,"text":"Smaller NOVA with a sideways entrance."}]},
+{"version":"2.36.539","fixes":true,"changes":[{"key":"nova-appearance","meaningful":false,"text":"Simplified NOVA message heading."}]},
+{"version":"2.36.540","fixes":true,"changes":[{"key":"nova-appearance","meaningful":false,"text":"NOVA peeks around the screen edge."}]},
+{"version":"2.36.541","fixes":true,"changes":[{"key":"nova-appearance","meaningful":false,"text":"Softer hands and a speech-bubble tail."}]},
+{"version":"2.36.542","fixes":true,"changes":[{"key":"nova-appearance","meaningful":true,"text":"NOVA has a smaller, softer look and a speech bubble above her head."},{"key":"auto-greet","meaningful":true,"text":"Auto-greet fills your saved shortcut directly without opening the shortcut menu."}]},
+{"version":"2.36.543","fixes":true,"changes":[]},
+{"version":"2.36.544","fixes":true,"changes":[{"key":"nova-updates","meaningful":true,"text":"NOVA announces available updates with a short summary tailored to your installed version."}]}
+]}
+SN_AI_RELEASE_NOTES_END */
 /*
 <SN_AI_HELPER_GUIDE version="8">
   This block is intended for an AI assistant that has been given this source
@@ -22444,6 +22456,8 @@ const payload={schema:2,version:'2.36.543',day:log.day,chatCount:log.chats.size,
   let officialUpdateClickedVersion = '';
 
   function showOfficialUpdateReloadNotice() {
+    const nova=document.getElementById(ROOT_ID);
+    if(typeof nova?.novaUpdateMessage==='function'){nova.novaUpdateMessage({reload:true});return;}
     document.getElementById('local-sn-ai-update-reload-notification')?.remove();
     const notice = document.createElement('div');
     notice.id = 'local-sn-ai-update-reload-notification';
@@ -22491,6 +22505,14 @@ const payload={schema:2,version:'2.36.543',day:log.day,chatCount:log.chats.size,
     const existing = document.getElementById('local-sn-ai-update-notification');
     if (dismissedUpdateVersion === version || ignoredVersion === version) {
       existing?.remove();
+      return;
+    }
+    const nova=document.getElementById(ROOT_ID);
+    if(typeof nova?.novaUpdateMessage==='function'){
+      existing?.remove();
+      const notes=await readNovaReleaseNotes(release);
+      if(officialUpdateClickedVersion===version||dismissedUpdateVersion===version)return;
+      nova.novaUpdateMessage({version,currentVersion,notes,update:()=>{const link=document.querySelector('#local-sn-ai-settings-template [data-official-update]');if(link)link.click();},later:()=>{dismissedUpdateVersion=version;}});
       return;
     }
     if (existing?.dataset.version === version) return;
@@ -23477,6 +23499,24 @@ function installChatsTodayPanel() {
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installChatsTodayPanel,{once:true});else installChatsTodayPanel();
 
+function summarizeNovaReleaseNotes(notes,currentVersion,targetVersion){
+  const compare=(a,b)=>{const x=String(a).split('.').map(Number),y=String(b).split('.').map(Number);for(let i=0;i<Math.max(x.length,y.length);i++){const d=(x[i]||0)-(y[i]||0);if(d)return d;}return 0;};
+  const groups=new Map();let fixes=false;
+  const releases=(Array.isArray(notes?.releases)?notes.releases:[]).filter(r=>/^\d+(\.\d+)*$/.test(r.version)&&compare(r.version,currentVersion)>0&&compare(r.version,targetVersion)<=0).sort((a,b)=>compare(a.version,b.version));
+  for(const release of releases){fixes ||= release.fixes===true;for(const change of release.changes||[]){if(typeof change.key!=='string'||typeof change.text!=='string'||change.text.length>400)continue;if(change.meaningful===true)groups.set(change.key,change.text);}}
+  const result=[...new Set(groups.values())];if(fixes||!result.length)result.push('Bug fixes and performance improvements');return result;
+}
+const novaReleaseNotesRequests=new Map();
+function readNovaReleaseNotes(release){
+  const key=release.version+'|'+release.downloadUrl;if(novaReleaseNotesRequests.has(key))return novaReleaseNotesRequests.get(key);
+  // Fetch only the already-validated official installation URL, once per version.
+  // Read JSON metadata only. Never execute downloaded userscript content.
+  const request=new Promise(resolve=>{
+    if(typeof GM_xmlhttpRequest!=='function'){resolve(null);return;}
+    GM_xmlhttpRequest({method:'GET',url:release.downloadUrl,timeout:15000,onload(response){try{if(response.status<200||response.status>=300)throw Error('release-notes-http');const text=response.responseText;if(text.length>5000000)throw Error('release-notes-size');if(text.match(/@version\s+([^\r\n]+)/)?.[1].trim()!==release.version)throw Error('release-notes-version');const match=text.match(/\/\* SN_AI_RELEASE_NOTES_BEGIN\s*([\s\S]*?)\s*SN_AI_RELEASE_NOTES_END \*\//);const notes=JSON.parse(match?.[1]||'null');resolve(notes?.schema===1?notes:null);}catch{resolve(null);}},onerror:()=>resolve(null),ontimeout:()=>resolve(null),onabort:()=>resolve(null)});
+  });
+  if(novaReleaseNotesRequests.size>=3)novaReleaseNotesRequests.delete(novaReleaseNotesRequests.keys().next().value);novaReleaseNotesRequests.set(key,request);return request;
+}
 function installNovaWelcome(host) {
   if(!location.pathname.startsWith('/now/workspace/agent/')||host.dataset.novaInstalled)return;
   host.dataset.novaInstalled='true';
