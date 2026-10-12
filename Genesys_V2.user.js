@@ -5931,7 +5931,8 @@
     callScopeObservers.set(scope,observer);
   }
   function currentLiveCallSignal() {
-    const candidates=[...liveCallSignals.values()].filter(s=>Date.now()-s.at<15000 && ['alerting','contacting','connected'].includes(s.state));
+    const healthy=callPushSocket?.readyState===1 && Date.now()-callPushLastMessageAt<120000;
+    const candidates=[...liveCallSignals.values()].filter(s=>(healthy || Date.now()-s.at<15000) && ['alerting','contacting','connected'].includes(s.state));
     return candidates.length===1?candidates[0]:null;
   }
   function recordCallNetworkMetadata(path,status,method,transport) {
@@ -5982,7 +5983,7 @@
         state:p.state,address:p.address,queueName:p.queueName || p.queue?.name,connectedTime:p.connectedTime,startTime:p.startTime,endTime:p.endTime,
         wrapupRequired:p.wrapupRequired,wrapupTimeoutMs:p.wrapupTimeoutMs,
         muted:p.muted,held:p.held,queueId:p.queueId || p.queue?.id,
-        wrapup:p.wrapup ? {startTime:p.wrapup.startTime,endTime:p.wrapup.endTime,code:p.wrapup.code} : null,
+        wrapup:p.wrapup ? {startTime:p.wrapup.startTime,endTime:p.wrapup.endTime,code:p.wrapup.code,durationSeconds:p.wrapup.durationSeconds} : null,
         sessions:(p.sessions || []).map(s=>({sessionId:s.sessionId,mediaType:s.mediaType,ani:s.ani,dnis:s.dnis,
           metrics:(s.metrics || []).map(m=>({name:m.name,value:m.value,emitDate:m.emitDate})),
           segments:(s.segments || []).map(t=>({segmentType:t.segmentType,segmentStart:t.segmentStart,segmentEnd:t.segmentEnd,
@@ -6035,7 +6036,9 @@
       const state=own.calls.some(x=>x.state==='connected')?'connected':own.calls.some(x=>['alerting','contacting'].includes(x.state))?'alerting':own.state || own.calls[0]?.state;
       const previous=liveCallSignals.get(c.conversationId);
       const {phone,location}=myCallPhoneAndLocation(c);
-      const next={at:Date.now(),id:c.conversationId,state,phone,location,queue:own.queueName};
+      const next={at:Date.now(),id:c.conversationId,state,phone,location,
+        queue:own.queueName || c.participants.find(p=>p.purpose==='acd' && (!own.queueId || p.queueId===own.queueId))?.name,
+        participantId:own.participantId,muted:own.muted,held:own.held,connectedAt:Date.parse(own.connectedTime),endedAt:Date.parse(own.endTime),wrapupRequired:own.wrapupRequired,wrapupTimeoutMs:own.wrapupTimeoutMs,wrapup:own.wrapup};
       liveCallSignals.set(c.conversationId,next);
       if(!previous || JSON.stringify({...previous,at:0})!==JSON.stringify({...next,at:0})) {
         if(typeof performanceEvent==='function')performanceEvent('native-call-state',{conversationId:c.conversationId,state,phonePresent:!!phone,locationPresent:!!location});
@@ -6080,6 +6083,15 @@
           if(Number.isFinite(connectedAt) && activeCallSummary.connectedAt!==connectedAt) {activeCallSummary.connectedAt=connectedAt;saveActiveCallWindow();}
           const ended=['disconnected','terminated'].includes(own?.state) || (own?.calls?.length && own.calls.every(x=>['disconnected','terminated'].includes(x.state)));
           if(ended && activeCallSummary.connectedAt)finishActiveCall();
+          if(ended && lastCallSummary?.conversationId===c.conversationId) {
+            const end=Date.parse(own.endTime),timeout=own.wrapupTimeoutMs;
+            if(Number.isFinite(end) && Number.isFinite(timeout) && own.wrapupRequired && !lastCallSummary.wrapupComplete) {
+              lastCallSummary.wrapupSeconds=Math.max(0,Math.ceil((end+timeout-Date.now())/1000));
+              lastCallSummary.wrapupObservedAt=Date.now();lastCallSummary.wrapupSource='api';
+            }
+            if(own.wrapup?.endTime){lastCallSummary.wrapupComplete=true;lastCallSummary.wrapupSeconds=0;lastCallSummary.wrapupSource='api';}
+            saveLastCallWindow();
+          }
         }
       }
     }
@@ -6091,6 +6103,13 @@
     applyCachedCallTimings(cache);
   }
   function applyCachedCallTimings(cache = readTodayCallCache()) {
+    // Analytics can arrive after a measurement ended: enrich saved recordings too.
+    const saved=GM_getValue('genesys-v2-call-measurements',{calls:[]});let recordingsChanged=false;
+    for(const record of saved.calls || []) {
+      const timing=agentApiTiming(cache.conversations[record.conversationId]?.analytics,cache.userId);
+      if(timing?.confirmed && !record.genesysTiming?.confirmed){record.genesysTiming={...timing,talkSeconds:timing.talkMs/1000,afterCallWorkSeconds:timing.acwMs/1000,handleSeconds:timing.handleMs/1000};recordingsChanged=true;}
+    }
+    if(recordingsChanged)persistCallMeasurements(saved.calls,measurementState || saved.active || null);
     let changed=false;
     for(const call of [lastCallSummary,...earlierCallCards].filter(Boolean)) {
       if(!call.conversationId && currentAgentApiId) {
@@ -6810,7 +6829,7 @@
     if (popup?.__gbsDragging) return;
     const liveDuration = wrapup?.querySelector('[data-testid="wrapup-header-message-duration"]')?.textContent?.trim();
     if(wrapup) nativeCallTimerElement=wrapup.querySelector('[data-testid="wrapup-header-message-duration"]');
-    if (!lastCallSummary.wrapupComplete && liveDuration && /^\d{1,2}:\d{2}$/.test(liveDuration)) {
+    if (!lastCallSummary.wrapupComplete && lastCallSummary.wrapupSource!=='api' && liveDuration && /^\d{1,2}:\d{2}$/.test(liveDuration)) {
       const [minutes, seconds] = liveDuration.split(':').map(Number);
       if (lastCallSummary.nativeCountdown !== liveDuration) {
         lastCallSummary.nativeCountdown = liveDuration;
