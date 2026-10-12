@@ -23680,6 +23680,7 @@ function installNovaWelcome(host) {
     typingTimer=0;if(dismissed){stopTyping();return;}
     const item=typingQueue[0];
     if(!item){card.setAttribute('aria-busy','false');const done=typingDone;typingDone=null;if(done)done();armIdle();schedule();return;}
+    if(item.reveal){item.reveal();item.reveal=null;}
     const character=item.characters.shift();item.node.textContent+=character;
     if(!item.characters.length){typingQueue.shift();if(item.after)item.after();}
     schedule();typingTimer=setTimeout(typeNext,/[.!?]/.test(character)?240:/[,;:]/.test(character)?130:55);
@@ -23724,17 +23725,29 @@ function installNovaWelcome(host) {
     clearIdle();stopTyping();typingStarted=false;message=data;card.replaceChildren();card.setAttribute('aria-live','off');card.setAttribute('aria-busy','true');
     let list=null;
     for(const row of [...(data.paragraphs||[]).map(text=>({text,bullet:false})),...(data.bullets||[]).map(text=>({text,bullet:true}))]){
-      const p=document.createElement(row.bullet?'li':'p');const value=String(row.text).replace(/[\u2013\u2014\u2015]/g,',');p.setAttribute('aria-label',value);
-      if(row.bullet){if(!list){list=document.createElement('ul');list.style.cssText='padding-left:20px;margin:10px 0';card.append(list);}list.append(p);}else card.append(p);
+      const p=document.createElement(row.bullet?'li':'p');const value=String(row.text).replace(/[\u2013\u2014\u2015]/g,',');if(!value.trim())continue;p.hidden=true;p.setAttribute('aria-label',value);
+      if(row.bullet){if(!list){list=document.createElement('ul');list.hidden=true;list.style.cssText='padding-left:20px;margin:10px 0';card.append(list);}list.append(p);}else card.append(p);
+      const rowList=row.bullet?list:null;
       for(const chunk of value.split(/(\bNova\b)/gi).filter(Boolean)){
         const isName=/^Nova$/i.test(chunk),node=document.createElement(isName?'strong':'span');node.textContent='';p.append(node);
         let after;
         if(isName){const icon=document.createElement('span');icon.setAttribute('aria-hidden','true');icon.style.color='var(--sn-theme-ac94ec,#ac94ec)';icon.textContent='';p.append(icon);after=()=>{icon.textContent=' ✦';};}
-        typingQueue.push({node,characters:Array.from(chunk),after});
+        typingQueue.push({node,characters:Array.from(chunk),after,reveal:()=>{p.hidden=false;if(rowList)rowList.hidden=false;}});
       }
     }
-    if(data.image){try{const url=new URL(data.image.url,location.href);if(url.protocol==='https:'||url.origin===location.origin){const img=document.createElement('img');img.src=url.href;img.alt=data.image.alt||'';card.append(img);}}catch{}}
+    const revealMedia=[];
+    for(const [kind,media]of [['img',data.image],['video',data.video]]){
+      if(!media)continue;
+      try{const url=new URL(media.url,location.href);if(url.protocol!=='https:'&&url.origin!==location.origin)continue;
+        const element=document.createElement(kind);element.hidden=true;let ready=false,spoken=false;
+        const reveal=()=>{if(ready&&spoken&&message===data&&!dismissed){element.hidden=false;schedule();}};
+        element.addEventListener(kind==='img'?'load':'loadeddata',()=>{ready=true;reveal();});
+        if(kind==='img')element.alt=media.alt||'';else{element.controls=true;element.playsInline=true;element.preload='auto';}
+        element.src=url.href;card.append(element);revealMedia.push(()=>{spoken=true;reveal();});
+      }catch{}
+    }
     if(data.actions?.length){const actions=document.createElement('div');actions.className='nova-actions';actions.hidden=true;for(const action of data.actions){const button=document.createElement('button');button.type='button';button.textContent=action.label;button.addEventListener('click',action.run);actions.append(button);}card.append(actions);typingDone=()=>{actions.hidden=false;};}
+    const revealActions=typingDone;typingDone=()=>{for(const reveal of revealMedia)reveal();if(revealActions)revealActions();};
     schedule();
   }
   function save(enabled){try{localStorage.setItem(key,enabled?'yes':'no');}catch{}toggle.checked=enabled;}
