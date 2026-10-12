@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.516
+// @version      2.36.517
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -2351,6 +2351,8 @@ const snAIChatDisplayNames=(()=>{
     .sn-loading-state,:host(now-loader.sn-loading-state) {
       background:var(--sn-theme-14121c)!important;color:var(--sn-theme-e6edf9)!important;
     }
+    /* Reserve the native row while its first width/action reconciliation runs. */
+    :host(sn-form-internal-uiactionbar:not([data-sn-ai-actions-ready])) { visibility:hidden!important;min-height:32px!important; }
     now-heading[data-sn-ai-number-moved] { display:none!important; }
     .sn-header-layout-row[data-sn-ai-record-rows] { display:flex!important;flex-direction:column!important;gap:12px!important; }
     .sn-header-layout-row[data-sn-ai-record-rows].sn-header-layout-row > .sn-header-layout-content:not(.-last) {
@@ -4772,7 +4774,7 @@ const snAIChatDisplayNames=(()=>{
     const props = root.host.getProperties?.().formHeader;
     const number = [props?.recordDisplayValue, props?.primaryValue, props?.primaryItem?.displayValue]
       .find(value => /^(?:EVNT|INC|IMS|REQ|RITM)\d+$/i.test(String(value || '').trim()));
-    if (!row || !actions || !common?.shadowRoot || !number) return;
+    if (!row || !actions || !common || !number) return;
     if (!row.hasAttribute('data-sn-ai-record-rows')) row.setAttribute('data-sn-ai-record-rows', '');
     let label = actions.querySelector('.sn-ai-header-record-number');
     if (!label) {
@@ -4783,7 +4785,7 @@ const snAIChatDisplayNames=(()=>{
       actions.prepend(label);
     }
     if (label.textContent !== String(number).trim()) label.textContent = String(number).trim();
-    for (const heading of common.shadowRoot.querySelectorAll('now-heading')) {
+    for (const heading of common.shadowRoot?.querySelectorAll('now-heading') || []) {
       const value = heading.shadowRoot?.querySelector('h1,h2,h3,[role="heading"]')?.textContent
         || heading.textContent || common.getProperties?.().primaryValue;
       heading.toggleAttribute('data-sn-ai-number-moved', String(value || '').trim() === String(number).trim()
@@ -4818,6 +4820,20 @@ const snAIChatDisplayNames=(()=>{
         }
         const width = Math.floor(host.getBoundingClientRect().width);
         if (width > 0 && Math.abs(Number(host.width || 0) - width) >= 1) host.width = width;
+        if (width > 0 && Array.isArray(nodes) && !host.hasAttribute('data-sn-ai-actions-ready') && !entry.readyScheduled) {
+          entry.readyScheduled = true;
+          // Two paint boundaries allow native reactive rendering and flex sizing
+          // to reconcile, without displaying the intermediate server action list.
+          requestAnimationFrame(() => {
+            entry.update();
+            requestAnimationFrame(() => {
+              entry.readyScheduled = false;
+              if (!host.isConnected || host.getBoundingClientRect().width <= 0) return;
+              host.setAttribute('data-sn-ai-actions-ready', '');
+              entry.update();
+            });
+          });
+        }
       };
       const observer = new ResizeObserver(update);
       entry = { observer, update };
@@ -7739,7 +7755,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.516',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.517',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -21053,7 +21069,7 @@ function startSNAI(tabIdentity) {
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
     installAutomationFreeze();
     document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
-    addLog('info', 'helper-version', { version: '2.36.516' });
+    addLog('info', 'helper-version', { version: '2.36.517' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
