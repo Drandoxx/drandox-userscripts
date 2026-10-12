@@ -5827,6 +5827,23 @@
   const callNetworkBridges = new Set();
   const liveCallSignals=new Map();
   const callPayloadPrelude=new Map();
+  function persistCallMeasurements(calls,active) {
+    // Completed diagnostics expire and share a 2MB budget, independent of daily API cache.
+    const recent=(calls || []).filter(c=>Date.now()-Date.parse(c.endedAt || c.startedAt)<86400000).slice(-20);
+    let dropped=0;
+    while(recent.length && JSON.stringify(recent).length>1500000){recent.shift();dropped++;}
+    if(active){
+      while(active.samples?.length>1 && JSON.stringify(active).length>500000){active.samples.shift();active.droppedSamples=(active.droppedSamples || 0)+1;}
+      while(active.network?.length>1 && JSON.stringify(active).length>500000){active.network.shift();active.droppedNetworkEvents=(active.droppedNetworkEvents || 0)+1;}
+    }
+    GM_setValue('genesys-v2-call-measurements',{calls:recent,active,droppedCompletedCalls:dropped});
+  }
+  function beginCallMeasurement(id=null) {
+    if(measurementState)return;
+    measurementState={schemaVersion:6,conversationId:id,startedAt:new Date().toISOString(),sampleIntervalMs:1000,samples:[],elements:{},network:[],droppedSamples:0,limits:'Targeted controls/timers and sanitized API deltas only; no HTML/style scans. Secrets/attributes excluded, payload depth and arrays capped. Completed recordings expire in 24h; bounded storage may drop older data.'};
+    callNetworkChanges.length=0;callNetworkSignatures.clear();callNetworkFields.clear();
+    measurementPreviousFields={};measurementPersistedAt=0;
+  }
   function compactCallPayload(value,depth=0,budget={left:600}) {
     if(depth>9 || --budget.left<0)return '[truncated]';
     if(value===null || typeof value==='boolean' || typeof value==='number')return value;
@@ -5851,9 +5868,19 @@
     if(window!==window.top || !callRecordingAllowed(document) || !currentAgentApiId)return;
     const id=body?.conversationId || body?.id;
     if(!/^[a-f0-9-]{36}$/i.test(id || '') || !(transport==='call-push' || body.participants?.some(p=>(p.userId || p.user?.id)===currentAgentApiId)))return;
+    const own=body.participants?.find(p=>(p.userId || p.user?.id)===currentAgentApiId);
+    const state=own?.state || own?.calls?.[0]?.state;
+    if(transport==='call-push' && callPopupsEnabled() && ['alerting','contacting','connected'].includes(state)) {
+      if(measurementState?.conversationId && measurementState.conversationId!==id) {
+        const old=measurementState;old.endedAt=new Date().toISOString();old.endReason='next-call';
+        persistCallMeasurements([...(GM_getValue('genesys-v2-call-measurements',{calls:[]}).calls || []),old],null);measurementState=null;
+      }
+      beginCallMeasurement(id);
+    }
     const payload=compactCallPayload(body),key='payload:'+id;
     // One small seed per current conversation catches the event before its popup mounts.
     if(!measurementState){callPayloadPrelude.set(id,{at:Date.now(),path,status,transport,payload});while(callPayloadPrelude.size>10)callPayloadPrelude.delete(callPayloadPrelude.keys().next().value);return;}
+    if(measurementState.conversationId===id && state)measurementState.lastApiState=state;
     const fields={},flatten=(v,p)=>{if(v && typeof v==='object')for(const [k,x]of Object.entries(v))flatten(x,p+'/'+k);else fields[p]=v;};
     flatten(payload,'');
     const previous=callNetworkFields.get(key) || {},changes={},removed=[];
@@ -6514,7 +6541,7 @@
     const sourceText = sources.map(source => source.text).join('\n');
     if (!measurementState && !popup) return;
     if (!measurementState) {
-      measurementState = {schemaVersion:5,startedAt:new Date().toISOString(),sampleIntervalMs:1000,samples:[],elements:{},network:[],droppedSamples:0,limits:'Admin-only bounded call payload deltas, controls and accessible DOM/wrap-up changes. Secret fields and arbitrary attributes excluded; strings/arrays/depth capped. Network 120 events / 500KB; dropped data explicitly counted. Not a complete traffic capture. Phone timestamps measure observation order, not ringing latency.'};
+      beginCallMeasurement(activeCallSummary?.conversationId || null);
       callNetworkChanges.length = 0; callNetworkSignatures.clear(); callNetworkFields.clear();
       for(const [id,seed]of callPayloadPrelude)if(Date.now()-seed.at<30000 && (!activeCallSummary?.conversationId || id===activeCallSummary.conversationId))captureCallPayload(seed.path,seed.status,seed.payload,seed.transport);
       callPayloadPrelude.clear();
@@ -6536,7 +6563,7 @@
       const timing=agentApiTiming(entry?.analytics,currentAgentApiId || cache.userId);
       if(timing?.confirmed)measurementState.genesysTiming={talkSeconds:timing.talkMs/1000,afterCallWorkSeconds:timing.acwMs/1000,handleSeconds:timing.handleMs/1000,startedAt:timing.startedAt,endedAt:timing.endedAt,confirmed:true};
     }
-    const postCall = !incoming && !popup && (!sample.countdown || /^0+:0+$/.test(sample.countdown));
+    const postCall = !incoming && !popup && !['alerting','contacting','connected'].includes(measurementState.lastApiState) && (!sample.countdown || /^0+:0+$/.test(sample.countdown));
     if (postCall && !measurementState.postCallStartedAt) measurementState.postCallStartedAt = Date.now();
     if (!postCall) measurementState.postCallStartedAt = null;
     const delta = compactMeasurement(sample);
@@ -6558,12 +6585,12 @@
         const saved = GM_getValue('genesys-v2-call-measurements', {calls:[]});
         const calls = Array.isArray(saved.calls) ? saved.calls : [];
         measurementState.endedAt = at; calls.push(measurementState);
-        GM_setValue('genesys-v2-call-measurements', {calls:calls.slice(-50),active:null});
+        persistCallMeasurements(calls,null);
         measurementState = null;
       } else if (Date.now() - measurementPersistedAt >= 10000) {
         const saved = GM_getValue('genesys-v2-call-measurements', {calls:[]});
         const calls = Array.isArray(saved.calls) ? saved.calls : [];
-        GM_setValue('genesys-v2-call-measurements', {calls,active:measurementState}); measurementPersistedAt = Date.now();
+        persistCallMeasurements(calls,measurementState); measurementPersistedAt = Date.now();
       }
       measurementLastSave = Date.now();
     }
