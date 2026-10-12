@@ -5966,7 +5966,7 @@
       while(callNetworkChanges.length>120)callNetworkChanges.shift();
     }catch(_){}
   }
-  let currentAgentApiId = null, callCacheBusy = false, lastLiveApiAt = 0, liveApiBusy = false, pendingEndedCallRefresh = false, nextCallApiAttemptAt = 0;
+  let currentAgentApiId = null, callCacheBusy = false, lastLiveApiAt = 0, liveApiBusy = false, pendingEndedCallRefresh = false, nextCallApiAttemptAt = 0,lastEndedApiCallId=null;
   function callDayKey(date = new Date()) {
     return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
   }
@@ -6046,6 +6046,7 @@
       if(!own)continue;
       const state=own.calls.some(x=>x.state==='connected')?'connected':own.calls.some(x=>['alerting','contacting'].includes(x.state))?'alerting':own.state || own.calls[0]?.state;
       const previous=liveCallSignals.get(c.conversationId);
+      if(previous && ['alerting','contacting','connected'].includes(previous.state) && ['disconnected','terminated'].includes(state)) {lastEndedApiCallId=c.conversationId;pendingEndedCallRefresh=true;}
       const {phone,location}=myCallPhoneAndLocation(c);
       const next={at:Date.now(),id:c.conversationId,state,phone,location,
         queue:own.queueName || c.participants.find(p=>p.purpose==='acd' && (!own.queueId || p.queueId===own.queueId))?.name,
@@ -6111,9 +6112,10 @@
     const entries=Object.entries(cache.conversations).sort((a,b)=>b[1].updatedAt-a[1].updatedAt);
     if(entries.length>2000) {cache.conversations=Object.fromEntries(entries.slice(0,2000));cache.truncated=true;}
     if(cacheChanged) GM_setValue(CALL_CACHE_KEY,cache);
-    applyCachedCallTimings(cache);
+    applyCachedCallTimings(cache,path.includes('/analytics/'));
   }
-  function applyCachedCallTimings(cache = readTodayCallCache()) {
+  function applyCachedCallTimings(cache = readTodayCallCache(),enrichRecordings=false) {
+    if(enrichRecordings) {
     // Analytics can arrive after a measurement ended: enrich saved recordings too.
     const saved=GM_getValue('genesys-v2-call-measurements',{calls:[]});let recordingsChanged=false;
     for(const record of saved.calls || []) {
@@ -6121,6 +6123,7 @@
       if(timing?.confirmed && !record.genesysTiming?.confirmed){record.genesysTiming={...timing,talkSeconds:timing.talkMs/1000,afterCallWorkSeconds:timing.acwMs/1000,handleSeconds:timing.handleMs/1000};recordingsChanged=true;}
     }
     if(recordingsChanged)persistCallMeasurements(saved.calls,measurementState || saved.active || null);
+    }
     let changed=false;
     for(const call of [lastCallSummary,...earlierCallCards].filter(Boolean)) {
       if(!call.conversationId && currentAgentApiId) {
@@ -6309,8 +6312,8 @@
         if((data.conversations || []).length<100 || page*100>=data.totalHits)break;
       }
       // Explicit per-ID lookup catches the just-ended call before list indexing.
-      if(force && lastCallSummary?.conversationId) {
-        const path=`/api/v2/analytics/conversations/${lastCallSummary.conversationId}/details`;
+      if(force && (lastEndedApiCallId || lastCallSummary?.conversationId)) {
+        const path=`/api/v2/analytics/conversations/${lastEndedApiCallId || lastCallSummary.conversationId}/details`;
         rememberCallApi(path,200,await bridge.request(path));
       }
       const fresh=readTodayCallCache();fresh.refreshedAt=Date.now();fresh.savedAt=Date.now();GM_setValue(CALL_CACHE_KEY,fresh);
