@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.572.0
+// @version      1.573.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -6753,7 +6753,7 @@
     const timer=document.querySelector('#gbs-last-call-data [role="timer"]');
     if(lastCallSummary && !lastCallSummary.wrapupComplete) {
       const text=nativeCallTimerElement?.isConnected ? nativeCallTimerElement.textContent.trim() : '';
-      if(/^\d+:\d{2}$/.test(text) && text!==lastCallSummary.nativeCountdown) {
+      if(lastCallSummary.wrapupSource!=='api' && /^\d+:\d{2}$/.test(text) && text!==lastCallSummary.nativeCountdown) {
         const [m,s]=text.split(':').map(Number);
         lastCallSummary.nativeCountdown=text;lastCallSummary.wrapupSeconds=m*60+s;lastCallSummary.wrapupObservedAt=Date.now();
       }
@@ -7051,6 +7051,7 @@
     }
     if (!activeCallSummary) activeCallSummary = { ringingAt: Date.now(), connectedAt: null, details: [] };
     if(apiSignal && !activeCallSummary.conversationId)activeCallSummary.conversationId=apiSignal.id;
+    if(apiSignal && Number.isFinite(apiSignal.connectedAt)){activeCallSummary.connectedAt=apiSignal.connectedAt;activeCallSummary.apiUserId=currentAgentApiId;}
     if (/^disconnected$/i.test(state)) {
       if (activeCallSummary.connectedAt) {
         if (details.size) activeCallSummary.details = [...details];
