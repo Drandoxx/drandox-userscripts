@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.558
+// @version      2.36.559
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -50,7 +50,8 @@
 {"version":"2.36.555","fixes":true,"changes":[{"key":"nova-movement","meaningful":true,"text":"NOVA walks in directly for daily greetings and turns sideways while walking or sleeping."}]},
 {"version":"2.36.556","fixes":true,"changes":[{"key":"nova-movement","meaningful":true,"text":"NOVA walks in sideways after reload, then turns and waves silently when no greeting is due."}]},
 {"version":"2.36.557","fixes":true,"changes":[{"key":"nova-movement","meaningful":true,"text":"NOVA walks with smaller oval hands, gentle arm swings and alternating planted steps. Standing clicks trigger a smile and wave without jumping."}]},
-{"version":"2.36.558","fixes":true,"changes":[{"key":"nova-movement","meaningful":true,"text":"NOVA side-view arms attach at her shoulder, with short connected legs and a mirrored hip-driven stride."}]}
+{"version":"2.36.558","fixes":true,"changes":[{"key":"nova-movement","meaningful":false,"text":"NOVA side-view arms attach at her shoulder, with short connected legs and a mirrored hip-driven stride."}]},
+{"version":"2.36.559","fixes":true,"changes":[{"key":"nova-movement","meaningful":true,"text":"NOVA has softer attached hands, distinct side-view expressions and coordinated walking, coffee, climbing and flying animations."},{"key":"nova-idle","meaningful":true,"text":"NOVA settles into sleep with hidden feet and smoothly returns to her standing pose before typing."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
