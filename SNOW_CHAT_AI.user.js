@@ -2351,6 +2351,19 @@ const snAIChatDisplayNames=(()=>{
     .sn-loading-state,:host(now-loader.sn-loading-state) {
       background:var(--sn-theme-14121c)!important;color:var(--sn-theme-e6edf9)!important;
     }
+    now-heading[data-sn-ai-number-moved] { display:none!important; }
+    .sn-header-layout-row[data-sn-ai-record-rows] { display:flex!important;flex-direction:column!important;gap:12px!important; }
+    .sn-header-layout-row[data-sn-ai-record-rows].sn-header-layout-row > .sn-header-layout-content:not(.-last) {
+      order:2!important;width:100%!important;flex:0 0 auto!important;
+    }
+    .sn-header-layout-row[data-sn-ai-record-rows].sn-header-layout-row > .sn-header-layout-content.-last {
+      order:1!important;display:flex!important;align-items:center!important;gap:20px!important;
+      width:100%!important;flex:0 0 auto!important;pointer-events:auto!important;
+    }
+    .sn-ai-header-record-number { flex:0 0 auto;white-space:nowrap;font-size:24px;font-weight:700;color:var(--sn-theme-e6edf9); }
+    .sn-header-layout-row[data-sn-ai-record-rows] .sn-header-layout-content.-last > now-record-common-uiactionbar {
+      flex:1 1 0!important;width:0!important;min-width:0!important;overflow-x:auto!important;
+    }
     .sn-header-layout-row { width:100%!important;min-width:0!important;max-width:100%!important;flex-wrap:wrap!important;align-items:flex-start!important;gap:12px!important;box-sizing:border-box!important; }
     .sn-header-layout-row.sn-header-layout-row>.sn-header-layout-content:not(.-last) {
       min-width:0!important;width:auto!important;flex:1 1 360px!important;max-width:100%!important;position:relative!important;z-index:2!important;
