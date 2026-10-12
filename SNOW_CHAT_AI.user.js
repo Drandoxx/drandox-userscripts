@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.513
+// @version      2.36.514
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -2353,10 +2353,10 @@ const snAIChatDisplayNames=(()=>{
     }
     .sn-header-layout-row { width:100%!important;min-width:0!important;max-width:100%!important;flex-wrap:wrap!important;align-items:flex-start!important;gap:12px!important;box-sizing:border-box!important; }
     .sn-header-layout-row.sn-header-layout-row>.sn-header-layout-content:not(.-last) {
-      min-width:0!important;width:auto!important;flex:1 1 320px!important;max-width:100%!important;position:relative!important;z-index:2!important;
+      min-width:0!important;width:auto!important;flex:1 1 360px!important;max-width:100%!important;position:relative!important;z-index:2!important;
     }
     .sn-header-layout-row.sn-header-layout-row>.sn-header-layout-content.-last {
-      min-width:0!important;width:fit-content!important;max-width:100%!important;flex:0 1 auto!important;align-self:flex-start!important;height:auto!important;position:relative!important;z-index:1!important;pointer-events:none!important;
+      min-width:0!important;width:auto!important;max-width:100%!important;flex:1 1 520px!important;align-self:flex-start!important;height:auto!important;position:relative!important;z-index:1!important;pointer-events:none!important;
     }
     .sn-header-layout-content.-last now-record-common-uiactionbar { pointer-events:auto!important;max-width:100%!important; }
     .sn-ai-event-incident-actions { position:relative!important;z-index:3!important;max-width:100%!important;flex-wrap:wrap!important;box-sizing:border-box!important; }
@@ -7681,7 +7681,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.513',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.514',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -20995,7 +20995,7 @@ function startSNAI(tabIdentity) {
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
     installAutomationFreeze();
     document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
-    addLog('info', 'helper-version', { version: '2.36.513' });
+    addLog('info', 'helper-version', { version: '2.36.514' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
