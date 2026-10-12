@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.551
+// @version      2.36.552
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -43,7 +43,8 @@
 {"version":"2.36.548","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA rests on Chats Today, sits or sleeps when idle, and springs up when clicked."},{"key":"nova-preference","meaningful":true,"text":"NOVA remembers your introduction answer. Important update messages still appear if friendly messages are off."}]},
 {"version":"2.36.549","fixes":true,"changes":[{"key":"nova-daily","meaningful":true,"text":"NOVA greets you once daily using Budapest time, with a coffee routine or a lunchtime snack."},{"key":"nova-updates","meaningful":true,"text":"NOVA waits until ticket logging ends and the screen has stayed unfrozen for 10 seconds before announcing an update."}]},
 {"version":"2.36.550","fixes":true,"changes":[{"key":"nova-appearance","meaningful":true,"text":"NOVA speech bubbles grow as she speaks, revealing bullets and media only when ready."}]},
-{"version":"2.36.551","fixes":true,"changes":[{"key":"nova-daily","meaningful":true,"text":"NOVA daily greetings include a reply button and replay after reload until you acknowledge them."}]}
+{"version":"2.36.551","fixes":true,"changes":[{"key":"nova-daily","meaningful":true,"text":"NOVA daily greetings include a reply button and replay after reload until you acknowledge them."}]},
+{"version":"2.36.552","fixes":true,"changes":[]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -7966,7 +7967,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-const payload={schema:2,version:'2.36.551',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+const payload={schema:2,version:'2.36.552',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -21286,7 +21287,7 @@ const payload={schema:2,version:'2.36.551',day:log.day,chatCount:log.chats.size,
       installAutomationFreeze();
       document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
     }
-    addLog('info', 'helper-version', { version: '2.36.551' });
+    addLog('info', 'helper-version', { version: '2.36.552' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -23543,7 +23544,7 @@ function installNovaWelcome(host) {
   tail.innerHTML='<svg viewBox="0 0 40 24" width="40" height="24" xmlns="http://www.w3.org/2000/svg"><path d="M1 0 H28 Q28 7 37 17 Q40 21 35 20 Q11 16 1 0Z" fill="var(--sn-theme-251f31,#241c33)"/><rect x="1" y="-1" width="27" height="2" fill="var(--sn-theme-251f31,#241c33)"/><path d="M1 0 Q11 16 35 20 Q40 21 37 17 Q28 7 28 0" fill="none" stroke="var(--sn-theme-655573,#74618b)" stroke-width="1" stroke-linecap="round"/></svg>';
   card.setAttribute('aria-label','Nova');card.setAttribute('aria-live','polite');
   const style=document.createElement('style');style.textContent=`
-.sn-ai-nova-message{position:fixed;z-index:102;box-sizing:border-box;width:max-content;min-width:80px;max-width:min(330px,calc(100vw - 24px));padding:16px;border:1px solid var(--sn-theme-655573,#74618b);border-radius:18px 18px 5px 18px;background:var(--sn-theme-251f31,#241c33);color:var(--sn-theme-e6edf9,#eee6ff);box-shadow:0 8px 28px #0005;font:13px/1.5 system-ui;pointer-events:auto;max-height:calc(100vh - 24px);overflow:auto;animation:sn-nova-in .2s ease-out}
+.sn-ai-nova-message{position:fixed;z-index:102;box-sizing:border-box;width:min(330px,calc(100vw - 24px));padding:16px;border:1px solid var(--sn-theme-655573,#74618b);border-radius:18px 18px 5px 18px;background:var(--sn-theme-251f31,#241c33);color:var(--sn-theme-e6edf9,#eee6ff);box-shadow:0 8px 28px #0005;font:13px/1.5 system-ui;pointer-events:auto;max-height:calc(100vh - 24px);overflow:auto;animation:sn-nova-in .2s ease-out}
     .sn-ai-nova-message[hidden],.sn-ai-nova-message [hidden]{display:none!important}.sn-ai-nova-message p{margin:8px 0}.sn-ai-nova-message strong{color:var(--sn-theme-ac94ec,#ac94ec)}.sn-ai-nova-message .nova-actions{display:flex;gap:8px;margin-top:12px}.sn-ai-nova-message button{font:inherit;padding:7px 18px;border:1px solid var(--sn-theme-655573,#74618b);border-radius:8px;background:var(--sn-theme-302951,#302951);color:inherit;cursor:pointer}.sn-ai-nova-message img,.sn-ai-nova-message video{display:block;max-width:100%;border-radius:8px}.sn-ai-nova-preference{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0;font:inherit}@keyframes sn-nova-in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}@media(prefers-reduced-motion:reduce){.sn-ai-nova-message{animation:none}}`;
   document.documentElement.append(style,tail,card);
   style.textContent+=` .sn-ai-nova-tail{position:fixed;width:28px;height:24px;z-index:102;pointer-events:none;background:var(--sn-theme-655573,#74618b);clip-path:polygon(0 0,100% 100%,0 80%)}.sn-ai-nova-tail::after{content:'';position:absolute;inset:1px 2px 1px 0;background:var(--sn-theme-251f31,#241c33);clip-path:polygon(0 0,100% 100%,0 80%)}.sn-ai-nova-tail[hidden]{display:none!important}.sn-ai-nova-tail[data-side="bottom"]{clip-path:polygon(0 0,100% 0,50% 100%)}.sn-ai-nova-tail[data-side="bottom"]::after{inset:0 1px 2px;clip-path:polygon(0 0,100% 0,50% 100%)}`;
