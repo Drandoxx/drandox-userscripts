@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.550
+// @version      2.36.551
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -42,7 +42,8 @@
 {"version":"2.36.547","fixes":true,"changes":[]},
 {"version":"2.36.548","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA rests on Chats Today, sits or sleeps when idle, and springs up when clicked."},{"key":"nova-preference","meaningful":true,"text":"NOVA remembers your introduction answer. Important update messages still appear if friendly messages are off."}]},
 {"version":"2.36.549","fixes":true,"changes":[{"key":"nova-daily","meaningful":true,"text":"NOVA greets you once daily using Budapest time, with a coffee routine or a lunchtime snack."},{"key":"nova-updates","meaningful":true,"text":"NOVA waits until ticket logging ends and the screen has stayed unfrozen for 10 seconds before announcing an update."}]},
-{"version":"2.36.550","fixes":true,"changes":[{"key":"nova-appearance","meaningful":true,"text":"NOVA speech bubbles grow as she speaks, revealing bullets and media only when ready."}]}
+{"version":"2.36.550","fixes":true,"changes":[{"key":"nova-appearance","meaningful":true,"text":"NOVA speech bubbles grow as she speaks, revealing bullets and media only when ready."}]},
+{"version":"2.36.551","fixes":true,"changes":[{"key":"nova-daily","meaningful":true,"text":"NOVA daily greetings include a reply button and replay after reload until you acknowledge them."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -7965,7 +7966,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-const payload={schema:2,version:'2.36.550',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+const payload={schema:2,version:'2.36.551',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -21285,7 +21286,7 @@ const payload={schema:2,version:'2.36.550',day:log.day,chatCount:log.chats.size,
       installAutomationFreeze();
       document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
     }
-    addLog('info', 'helper-version', { version: '2.36.550' });
+    addLog('info', 'helper-version', { version: '2.36.551' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -23636,7 +23637,7 @@ function installNovaWelcome(host) {
   preference.append(label,toggle);settings.append(preference);
   let key='',firstName='friend',message=null,dismissed=false,frame=0,entranceStarted=false,entranceTimer=0,readyTimer=0,typingTimer=0,typingStarted=false,typingQueue=[],typingDone=null;
   let nameReady=false,pendingUpdate=null,pageReady=false,pageReadyTimer=0;const announcedUpdates=new Set();
-  let deferredUpdate=null,updateWaitTimer=0,unfrozenSince=0,dailyTimer=0,dailyStartPending=false,dailySpeech='';
+  let deferredUpdate=null,updateWaitTimer=0,unfrozenSince=0,dailyTimer=0,dailyStartPending=false,dailySpeech='',dailyReply='',dailyGreetingDay='';
   const ticketBusy=()=>Boolean(host.novaTicketBusy?.()||host.querySelector('[data-pinned-ims].is-running')||document.querySelector?.('[data-sn-automation-frozen]'));
   function waitForUpdate(){
     clearTimeout(updateWaitTimer);if(!deferredUpdate)return;
@@ -23647,14 +23648,17 @@ function installNovaWelcome(host) {
   }
   function runDaily(){
     dailyStartPending=false;clearIdle();const steps=[['enter',2500],['yawn',1500],['sip',2000],['cheer',900]];let index=0;
-    const next=()=>{if(dismissed||ticketBusy()){delete avatar.dataset.daily;delete avatar.dataset.dailyKind;message=null;schedule();try{localStorage.removeItem(key+':daily');}catch{}if(!dismissed)dailyTimer=setTimeout(greetDaily,1000);return;}if(index===steps.length){delete avatar.dataset.daily;delete avatar.dataset.dailyKind;setExpression('happy');show({paragraphs:[dailySpeech]});return;}const [phase,delay]=steps[index++];avatar.dataset.daily=phase;if(phase==='cheer')setExpression('happy');dailyTimer=setTimeout(next,delay);};next();
+    const next=()=>{if(dismissed||ticketBusy()){delete avatar.dataset.daily;delete avatar.dataset.dailyKind;message=null;schedule();if(!dismissed)dailyTimer=setTimeout(greetDaily,1000);return;}if(index===steps.length){delete avatar.dataset.daily;delete avatar.dataset.dailyKind;setExpression('happy');const greetedDay=dailyGreetingDay;show({paragraphs:[dailySpeech],actions:[{label:dailyReply,run:()=>{try{localStorage.setItem(key+':daily-seen',greetedDay);}catch{}setExpression('happy');show({paragraphs:['A little smile to start us off. Hope your day goes smoothly. 💜']});}}]});return;}const [phase,delay]=steps[index++];avatar.dataset.daily=phase;if(phase==='cheer')setExpression('happy');dailyTimer=setTimeout(next,delay);};next();
   }
   async function greetDaily(){
-    const current=novaBudapestDay(),dayKey=key+':daily';
+    const current=novaBudapestDay(),dayKey=key+':daily-seen';
     if(ticketBusy()){dailyTimer=setTimeout(greetDaily,1000);return;}
-    const claim=()=>{try{if(localStorage.getItem(dayKey)===current.day)return false;localStorage.setItem(dayKey,current.day);return true;}catch{return false;}};
+    // Old :daily markers recorded playback, not acknowledgement. Ignore them.
+    // Store only one day, and only after the user clicks a greeting reply.
+    const claim=()=>{try{return localStorage.getItem(dayKey)!==current.day;}catch{return true;}};
     const claimed=typeof navigator!=='undefined'&&navigator.locks?await navigator.locks.request('sn-ai-nova-daily:'+key,claim):claim();if(!claimed||!host.isConnected)return;
     const morning=current.hour>=7&&current.hour<10,lunch=current.hour>=10&&current.hour<14;
+    dailyGreetingDay=current.day;dailyReply=current.hour<12?'Good morning!':current.hour<17?'Good afternoon!':'Good evening!';
     dailySpeech=morning?`Good morning, ${firstName}. That coffee did the trick. Let’s take the day one chat at a time. ☀️`:lunch?`Hi ${firstName}, a little lunch-break energy for you. I hope you get a proper bite to eat today. We’ve got this. 💜`:current.hour<17?`Good afternoon, ${firstName}. I hope the day is treating you kindly. I’m here for a little company.`:`Good evening, ${firstName}. Let’s keep the rest of the day gentle.`;
     message={};dismissed=false;typingStarted=true;dailyStartPending=true;avatar.dataset.dailyKind=morning?'morning':lunch?'lunch':'quiet';schedule();
   }
