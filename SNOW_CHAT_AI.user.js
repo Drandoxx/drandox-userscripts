@@ -23751,7 +23751,30 @@ function installNovaWelcome(host) {
     if(!idleDeck.length){idleDeck=[...novaIdleKinds];for(let i=idleDeck.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[idleDeck[i],idleDeck[j]]=[idleDeck[j],idleDeck[i]];}if(idleDeck.at(-1)===lastIdle)[idleDeck[0],idleDeck[idleDeck.length-1]]=[idleDeck.at(-1),idleDeck[0]];}
     return lastIdle=idleDeck.pop();
   }
-  function stopAmbientIdle(){clearTimeout(ambientTimer);clearTimeout(ambientEndTimer);clearNovaStory();delete avatar.dataset.ambient;avatarRoot.querySelector('.ambient-scene')?.remove();avatarRoot.querySelector('.ambient-tool')?.remove();}
+  let ambientReturnAnimations=[],ambientReturnTimer=0,ambientReturnFrame=0;
+  function cancelAmbientReturn(){clearTimeout(ambientReturnTimer);cancelAnimationFrame(ambientReturnFrame);ambientReturnAnimations.forEach(animation=>animation.cancel());ambientReturnAnimations=[];avatarRoot.querySelectorAll('.nova-return-overlay').forEach(node=>node.remove());}
+  function finishAmbientStory(){
+    cancelAmbientReturn();
+    const selectors=['.body','.arm.left','.arm.right','.foot.left','.foot.right','.headwear','.nova-eye-drawing'];
+    const properties=['transform','translate','rotate','scale','opacity'];
+    const poses=selectors.map(selector=>{const node=avatarRoot.querySelector(selector);if(!node)return null;const style=getComputedStyle(node);return {selector,before:Object.fromEntries(properties.map(property=>[property,style[property]]))};}).filter(Boolean);
+    const eyes=avatarRoot.querySelector('.eyes'),oldFace=eyes?.querySelector('svg')?.cloneNode(true);
+    // Keep a visual copy of outgoing props while the real story is cleaned up.
+    for(const prop of avatarRoot.querySelectorAll('.ambient-tool,.ambient-scene,.ambient-detail')){
+      const style=getComputedStyle(prop),copy=prop.cloneNode(true);copy.className='nova-return-overlay';
+      for(const property of ['position','left','top','bottom','right','width','height','transform','translate','rotate','scale','opacity','zIndex'])copy.style[property]=style[property];
+      copy.style.pointerEvents='none';prop.parentNode.append(copy);
+      ambientReturnAnimations.push(copy.animate([{opacity:style.opacity},{opacity:0}],{duration:450,fill:'forwards'}));
+    }
+    clearNovaStory();delete avatar.dataset.ambient;avatarRoot.querySelector('.ambient-scene')?.remove();avatarRoot.querySelector('.ambient-tool')?.remove();
+    // Expression rendering happens in a shadow-root observer. Blend after it runs.
+    ambientReturnFrame=requestAnimationFrame(()=>{
+      for(const {selector,before} of poses){const node=avatarRoot.querySelector(selector);if(!node)continue;const style=getComputedStyle(node),after=Object.fromEntries(properties.map(property=>[property,style[property]]));ambientReturnAnimations.push(node.animate([before,after],{duration:650,easing:'cubic-bezier(.22,.8,.3,1)'}));}
+      if(oldFace&&eyes){oldFace.classList.add('nova-return-overlay');oldFace.style.cssText='position:absolute;inset:0;pointer-events:none';eyes.append(oldFace);const newFace=eyes.querySelector('svg:not(.nova-return-overlay)');ambientReturnAnimations.push(oldFace.animate([{opacity:1},{opacity:0}],{duration:450,fill:'forwards'}));if(newFace)ambientReturnAnimations.push(newFace.animate([{opacity:0},{opacity:1}],{duration:450}));}
+      ambientReturnTimer=setTimeout(cancelAmbientReturn,700);
+    });
+  }
+  function stopAmbientIdle(){cancelAmbientReturn();clearTimeout(ambientTimer);clearTimeout(ambientEndTimer);clearNovaStory();delete avatar.dataset.ambient;avatarRoot.querySelector('.ambient-scene')?.remove();avatarRoot.querySelector('.ambient-tool')?.remove();}
   function queueAmbientIdle(){ambientTimer=setTimeout(()=>{
     if(dismissed||avatar.hidden||avatar.dataset.idle)return;
     if(document.hidden||message||avatar.dataset.motion||avatar.dataset.daily||avatar.dataset.reaction||ticketBusy()){queueAmbientIdle();return;}
@@ -23816,7 +23839,7 @@ function installNovaWelcome(host) {
       if(kind==='yoyo'){const disc=avatarRoot.querySelector('.yoyo-disc'),rope=avatarRoot.querySelector('.yoyo-string'),svg=rope?.ownerSVGElement,matrix=svg?.getScreenCTM();if(disc&&rope&&matrix){const r=disc.getBoundingClientRect(),point=new DOMPoint(r.left+r.width/2,r.top+r.height/2).matrixTransform(matrix.inverse());rope.setAttribute('d',`M20 3 L${point.x} ${point.y}`);}}
       ambientFollowFrame=requestAnimationFrame(follow);
     };ambientFollowFrame=requestAnimationFrame(follow);
-    ambientEndTimer=setTimeout(()=>{clearNovaStory();delete avatar.dataset.ambient;avatarRoot.querySelector('.ambient-scene')?.remove();avatarRoot.querySelector('.ambient-tool')?.remove();},8000);
+    ambientEndTimer=setTimeout(finishAmbientStory,8000);
     return true;
   }
   host.novaIdlePreview=kind=>{clearIdle();return playAmbientIdle(kind);};
