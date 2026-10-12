@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.519
+// @version      2.36.520
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -591,6 +591,9 @@ const snAIChatDisplayNames=(()=>{
       let chat=host;
       while(chat&&chat.localName!=='sn-agent-chat')chat=chat.parentElement||chat.getRootNode()?.host;
       const agentMessages=chat?.shadowRoot?.querySelectorAll('now-chat-message')||[];
+      if ([...agentMessages].some(message=>message.shadowRoot?.querySelector('.now-chat-message.right:not(.system)'))) {
+        greetTrace('skipped-agent-already-replied',{ims:record.number.value});return;
+      }
       try {
         const lastMessage=[...agentMessages].filter(message=>message.shadowRoot?.querySelector('.now-chat-message:not(.system)')).at(-1);
         const userLast=Boolean(lastMessage?.shadowRoot?.querySelector('.now-chat-message:not(.right):not(.system)'));
@@ -7796,7 +7799,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.519',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.520',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -21114,7 +21117,7 @@ function startSNAI(tabIdentity) {
       installAutomationFreeze();
       document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
     }
-    addLog('info', 'helper-version', { version: '2.36.519' });
+    addLog('info', 'helper-version', { version: '2.36.520' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
