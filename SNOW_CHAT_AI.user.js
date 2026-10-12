@@ -21164,6 +21164,7 @@ const payload={schema:2,version:'2.36.530',day:log.day,chatCount:log.chats.size,
     });
 
     document.documentElement.append(host);
+    installNovaWelcome(host);
     host.addEventListener('input', (event) => {
       if (event.target instanceof Element && event.target.closest('.local-sn-cpc-dialog[data-ticket-window]')) persistOpenTicketWindows();
     });
@@ -23428,6 +23429,60 @@ function installChatsTodayPanel() {
   window.addEventListener('pagehide',()=>{stop();clearInterval(ticker);cancelAnimationFrame(layoutFrame);request?.abort();});
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installChatsTodayPanel,{once:true});else installChatsTodayPanel();
+
+function installNovaWelcome(host) {
+  if(!location.pathname.startsWith('/now/workspace/agent/')||host.dataset.novaInstalled)return;
+  host.dataset.novaInstalled='true';
+  const launcher=host.querySelector('[data-action="toggle-panel"]');
+  const settings=host.querySelector('[data-settings-panel="ai"]');
+  if(!launcher||!settings)return;
+  const card=document.createElement('aside');card.className='sn-ai-nova-message';card.hidden=true;
+  card.setAttribute('aria-label','Nova');card.setAttribute('aria-live','polite');
+  const style=document.createElement('style');style.textContent=`
+    .sn-ai-nova-message{position:fixed;z-index:2147483647;width:min(330px,calc(100vw - 24px));padding:16px;border:1px solid var(--sn-theme-655573,#74618b);border-radius:18px 18px 5px 18px;background:var(--sn-theme-251f31,#241c33);color:var(--sn-theme-e6edf9,#eee6ff);box-shadow:0 8px 28px #0005;font:13px/1.5 system-ui;pointer-events:auto;max-height:calc(100vh - 24px);overflow:auto;animation:sn-nova-in .2s ease-out}
+    .sn-ai-nova-message[hidden]{display:none!important}.sn-ai-nova-message p{margin:8px 0}.sn-ai-nova-message strong{color:var(--sn-theme-ac94ec,#ac94ec)}.sn-ai-nova-message .nova-actions{display:flex;gap:8px;margin-top:12px}.sn-ai-nova-message button{font:inherit;padding:7px 18px;border:1px solid var(--sn-theme-655573,#74618b);border-radius:8px;background:var(--sn-theme-302951,#302951);color:inherit;cursor:pointer}.sn-ai-nova-message img{display:block;max-width:100%;border-radius:8px}.sn-ai-nova-preference{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0;font:inherit}@keyframes sn-nova-in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}@media(prefers-reduced-motion:reduce){.sn-ai-nova-message{animation:none}}`;
+  document.documentElement.append(style,card);
+  const preference=document.createElement('label');preference.className='sn-ai-nova-preference';
+  const label=document.createElement('span');label.textContent='Nova friendly messages';
+  const toggle=document.createElement('input');toggle.type='checkbox';toggle.disabled=true;
+  preference.append(label,toggle);settings.append(preference);
+  let key='',firstName='friend',message=null,dismissed=false,frame=0;
+  function isOpen(){return !host.classList.contains('collapsed')||launcher.getAttribute('aria-expanded')==='true'||[...host.querySelectorAll('.local-sn-settings-dialog,.local-sn-command-popover')].some(el=>!el.hidden&&el.getBoundingClientRect().width>0);}
+  function position(){
+    frame=0;if(isOpen()){if(!card.hidden)dismissed=true;card.hidden=true;return;}
+    if(!message||dismissed){card.hidden=true;return;}
+    card.hidden=false;const r=launcher.getBoundingClientRect(),c=card.getBoundingClientRect();
+    card.style.left=Math.max(12,Math.min(innerWidth-c.width-12,r.right-c.width))+'px';
+    card.style.top=Math.max(12,Math.min(innerHeight-c.height-12,r.bottom+10))+'px';
+    if(r.bottom+10+c.height>innerHeight-12)card.style.top=Math.max(12,r.top-c.height-10)+'px';
+  }
+  function schedule(){if(!frame)frame=requestAnimationFrame(position);}
+  // Message blocks support readable text, branching actions and future GIFs.
+  function show(data){
+    message=data;card.replaceChildren();const title=document.createElement('strong');title.textContent='✦ Nova';card.append(title);
+    for(const text of data.paragraphs||[]){const p=document.createElement('p');p.textContent=text;card.append(p);}
+    if(data.image){try{const url=new URL(data.image.url,location.href);if(url.protocol==='https:'||url.origin===location.origin){const img=document.createElement('img');img.src=url.href;img.alt=data.image.alt||'';card.append(img);}}catch{}}
+    if(data.actions?.length){const actions=document.createElement('div');actions.className='nova-actions';for(const action of data.actions){const button=document.createElement('button');button.type='button';button.textContent=action.label;button.addEventListener('click',action.run);actions.append(button);}card.append(actions);}
+    schedule();
+  }
+  function save(enabled){try{localStorage.setItem(key,enabled?'yes':'no');}catch{}toggle.checked=enabled;}
+  function reply(enabled){save(enabled);show({paragraphs:[enabled?`Lovely, ${firstName}! I’ll be here with a little encouragement and the occasional smile. No extra messages yet—this is just our first hello. 💜`:'No worries at all. If you change your mind, open SN AI settings → AI settings and turn on “Nova friendly messages”. I’ll be happy to say hello again.']});}
+  toggle.addEventListener('change',()=>{save(toggle.checked);dismissed=true;card.hidden=true;});
+  const observer=new MutationObserver(schedule);observer.observe(host,{subtree:true,attributes:true,attributeFilter:['class','hidden','aria-expanded','style']});
+  window.addEventListener('resize',schedule);window.addEventListener('pointerup',schedule);
+  window.addEventListener('pagehide',()=>{observer.disconnect();cancelAnimationFrame(frame);card.remove();style.remove();window.removeEventListener('resize',schedule);window.removeEventListener('pointerup',schedule);},{once:true});
+  (async()=>{
+    const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
+    const id=String(page.NOW?.user?.userID||page.g_user?.userID||'');if(!/^[a-f0-9]{32}$/i.test(id))return;
+    key='sn-ai-nova-messages-v1:'+id;
+    let choice=null;try{choice=localStorage.getItem(key);}catch{}
+    toggle.checked=choice==='yes';toggle.disabled=false;if(choice!==null)return;
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
+    try{const response=await fetch('/api/now/table/sys_user/'+id+'?sysparm_fields=first_name',{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':page.g_ck},signal:controller.signal});if(response.ok){const data=await response.json();firstName=String(data.result?.first_name||'friend').trim().split(/\s+/)[0]||'friend';}}catch{}finally{clearTimeout(timer);}
+    if(!host.isConnected)return;
+    show({paragraphs:[`Hi ${firstName}!`,`I’m Nova, your little chat-side friend. When the day gets tricky—or you have a quiet moment—I can bring a little encouragement, a smile, or something fun.`,`Would you like friendly messages from me?`],actions:[{label:'Yes',run:()=>reply(true)},{label:'No',run:()=>reply(false)}]});
+  })();
+}
 
 function startSNAIForCurrentTab() {
   const launch = tab => {
