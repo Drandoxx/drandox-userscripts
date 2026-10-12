@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.563
+// @version      2.36.564
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -55,7 +55,8 @@
 {"version":"2.36.560","fixes":true,"changes":[{"key":"hp-ci","meaningful":true,"text":"HP mode preserves your CI search on retries and selects the first matching Configuration Item using contains search."}]},
 {"version":"2.36.561","fixes":true,"changes":[{"key":"nova-wave","meaningful":false,"text":"Both hands are visible in front view, with a broader, slower wave."}]},
 {"version":"2.36.562","fixes":true,"changes":[{"key":"nova-wave","meaningful":false,"text":"NOVA keeps her hand raised between two waves and lowers it only at the end."}]},
-{"version":"2.36.563","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA blinks and glances around, enjoys twelve shuffled quiet activities, and sleeps after 15 idle minutes without sitting first."}]}
+{"version":"2.36.563","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA blinks and glances around, enjoys twelve shuffled quiet activities, and sleeps after 15 idle minutes without sitting first."}]},
+{"version":"2.36.564","fixes":true,"changes":[{"key":"nova-idle-look","meaningful":false,"text":"NOVA looks left and right with her eyes instead of floating dots."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -23748,7 +23749,7 @@ function installNovaWelcome(host) {
       star:'<g class="idle-orbit"><path d="M0-12l3 8 9 1-7 6 2 9-7-5-7 5 2-9-7-6 9-1z" fill="#ffe7a3"/></g>',
       heart:'<g class="idle-rise"><path d="M0 4C-18-7-12-19 0-10C12-19 18-7 0 4Z" fill="#efacd3"/></g>',
       rain:'<g class="idle-cloud"><path d="M-22 0Q-29-16-13-16Q-6-30 7-18Q26-19 24 0Z" fill="#c3b8dd"/><path class="idle-drops" d="M-15 9l-3 6m17-6-3 6m17-6-3 6" stroke="#a9d7f7" stroke-width="3" stroke-linecap="round"/></g>',
-      look:'<g class="idle-orbit"><circle r="2" fill="#fff5"/><circle cx="30" cy="10" r="2" fill="#fff5"/></g>'
+      look:''
     };
     if(art[kind]){const scene=document.createElement('div');scene.className='ambient-scene';scene.setAttribute('aria-hidden','true');scene.innerHTML='<svg viewBox="-60 -55 160 160">'+art[kind]+'</svg>';figure.append(scene);}
     if(kind==='butterfly'){const net=document.createElement('span');net.className='ambient-tool';net.setAttribute('aria-hidden','true');net.innerHTML='<svg viewBox="0 0 40 70"><path d="M20 31v37" stroke="#c89869" stroke-width="4"/><ellipse cx="20" cy="17" rx="17" ry="15" fill="#f5efff22" stroke="#e2d8ed" stroke-width="2"/><path d="M7 9l25 18M5 16l24 16M11 4l24 16M31 8L8 28M35 17L18 32" stroke="#e2d8ed77"/></svg>';parts['right-hand']?.append(net);}
@@ -23882,7 +23883,9 @@ function installNovaWelcome(host) {
     :host([data-ambient="dance"]) .arm,:host([data-ambient="juggle"]) .arm{animation:pad-swing 1s ease-in-out 8!important}
     :host([data-ambient="stretch"]) .arm{animation:nova-idle-stretch 8s ease-in-out both!important;z-index:3}
     :host([data-ambient="flower"]) .arm.right,:host([data-ambient="heart"]) .arm.right{animation:nova-idle-stretch 8s ease-in-out both!important}
-    :host([data-ambient="look"]) .nova-eye-drawing,:host([data-ambient="butterfly"]) .nova-eye-drawing{animation:nova-soft-blink 4.8s linear infinite,nova-soft-glance 8s ease-in-out 1}
+    :host([data-ambient="butterfly"]) .nova-eye-drawing{animation:nova-soft-blink 4.8s linear infinite,nova-soft-glance 8s ease-in-out 1}
+    :host([data-ambient="look"]) .nova-eye-drawing{animation:nova-soft-blink 4.8s linear infinite,nova-idle-look 8s ease-in-out 1}
+    @keyframes nova-idle-look{0%,100%{translate:0 0}16%,35%{translate:-5px 0}55%,78%{translate:5px -1px}90%{translate:0 0}}
     @keyframes nova-idle-fade{0%,100%{opacity:0}8%,90%{opacity:1}}
     @keyframes nova-idle-flier{0%{transform:translate(72px,25px) rotate(-15deg)}25%{transform:translate(-15px,-10px) rotate(15deg)}50%{transform:translate(30px,-22px) rotate(-15deg)}70%{transform:translate(60px,30px) rotate(15deg)}100%{transform:translate(110px,-40px)}}
     @keyframes nova-net-hand{0%,100%{transform:rotate(-15deg)}35%,65%{transform:translateY(-4px) rotate(-10deg)}}
