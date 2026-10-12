@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.524
+// @version      2.36.525
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -594,13 +594,19 @@ const snAIChatDisplayNames=(()=>{
     setTimeout(async()=>{
       // Wait for native controls to mount; never insert a command into a partial/error view.
       let loaded=false;
+      let readinessLogged=false;
       for(let i=0;i<480;i++){
         if(!autoGreetEnabled||!host.isConnected||greetAttempted.has(id)){outcome('skipped',!autoGreetEnabled?'auto-greet-disabled':!host.isConnected?'composer-disconnected':'already-attempted');return;}
         const field=input(),nodes=ownElements();
-        if(field?.value.trim()){outcome('skipped','composer-has-text');return;}
         const send=nodes.find(node=>node.matches('button[aria-label="Send Message"]'));
         const loading=nodes.some(node=>node.matches('[aria-busy="true"],now-loader,now-loading-indicator,[role="alert"]')&&node.getBoundingClientRect().width>0&&(node.getAttribute('aria-busy')==='true'||/error|failed|loading/i.test(node.textContent||node.localName)));
-        if(safe()&&field&&send&&typeof host.dispatch==='function'&&!loading){loaded=true;break;}
+        if(safe()&&field&&send&&typeof host.dispatch==='function'&&!loading){
+          // Native readonly loading renders an em dash as its value. A draft
+          // check is meaningful only after the public composer is editable.
+          if(field.value.trim()){outcome('skipped','composer-has-text');return;}
+          loaded=true;break;
+        }
+        if(!readinessLogged){readinessLogged=true;greetTrace('waiting-for-editable-composer',{ims:record.number.value,reason:field?.readOnly?'composer-readonly':field?.disabled?'composer-disabled':'native-controls-not-ready',composerSnapshot:composerSnapshot()});}
         await new Promise(resolve=>setTimeout(resolve,250));
       }
       if(!loaded||!safe()||Date.now()-started<greetDelayMs||!input()||input().value.trim()){outcome('not-sent',!loaded?'native-controls-readiness-timeout':!safe()?'chat-no-longer-safe':'composer-unavailable-or-edited');return;}
@@ -7859,7 +7865,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.524',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.525',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -21177,7 +21183,7 @@ function startSNAI(tabIdentity) {
       installAutomationFreeze();
       document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
     }
-    addLog('info', 'helper-version', { version: '2.36.524' });
+    addLog('info', 'helper-version', { version: '2.36.525' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
