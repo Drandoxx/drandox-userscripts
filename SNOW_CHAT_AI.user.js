@@ -23823,7 +23823,7 @@ function installNovaWelcome(host) {
     dismissed=false;clearIdle();clearTimeout(dailyTimer);delete avatar.dataset.daily;delete avatar.dataset.dailyKind;dailyStartPending=false;
     if(data.version&&avatar.hidden){clearTimeout(entranceTimer);clearTimeout(readyTimer);entranceStarted=false;delete avatar.dataset.phase;}
     setExpression('happy');
-    if(data.reload){show({paragraphs:['The update page is open. Once the update is installed, reload this page to use the new version.'],actions:[{label:'Reload page',run:()=>location.reload()},{label:'Later',run:finishMessage}]});return;}
+    if(data.reload){show({updateSpeech:true,paragraphs:['The update page is open. Once the update is installed, reload this page to use the new version.'],actions:[{label:'Reload page',run:()=>location.reload()},{label:'Later',run:finishMessage}]});return;}
     show({novaUpdate:data,paragraphs:[`Hi ${firstName},`,`I have a new update for you, version ${data.version}.`,`Here’s what’s new:`],bullets:summarizeNovaReleaseNotes(data.notes,data.currentVersion,data.version),actions:[{label:'Update now',run:()=>{data.update?.();if(message?.novaUpdate===data)finishMessage();}},{label:'Later',run:()=>{data.later?.();finishMessage();}}]});
   };
   function stopTyping(){clearTimeout(typingTimer);typingTimer=0;typingQueue=[];typingDone=null;card.removeAttribute('aria-busy');}
