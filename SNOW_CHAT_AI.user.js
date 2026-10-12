@@ -24119,7 +24119,7 @@ function installNovaWelcome(host) {
         lastHands=handKey;
       }
     }
-    const rigObserver=new MutationObserver(syncRig);rigObserver.observe(nova,{subtree:true,attributes:true,attributeFilter:['data-motion','data-daily','data-idle','data-expression','data-phase']});
+    const rigObserver=new MutationObserver(syncRig);rigObserver.observe(nova,{subtree:true,attributes:true,attributeFilter:['data-motion','data-daily','data-idle','data-expression','data-phase']});rigObserver.observe(root,{subtree:true,attributes:true,attributeFilter:['data-expression']});
     syncRig();
     // FLIP-style pose blending: snapshot the visible pose, then interpolate to
     // the real destination geometry. Interrupted blends start where they are.
