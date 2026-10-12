@@ -24053,10 +24053,11 @@ function installNovaWelcome(host) {
         const direction=view==='left'?-1:1,edge=mx+direction*7;
         mouth=expression==='sleeping'?'<path d="M'+edge+' 60 l'+(-direction*4)+' 1" stroke-width="2"/>':expression==='surprised'||expression==='happy'?'<ellipse cx="'+edge+'" cy="62" rx="2.5" ry="'+(expression==='happy'?3.5:5)+'" fill="#51315c" stroke="none"/>':'<path d="M'+edge+' 60 q'+(-direction*3)+' 3 '+(-direction*6)+' 2" stroke-width="2.3"/>';
       }else mouth=expression==='sleeping'?'<ellipse cx="'+(mx-3)+'" cy="56" rx="2.5" ry="4" fill="#51315c" stroke="none"/>':expression==='surprised'?'<ellipse cx="'+mx+'" cy="62" rx="4" ry="5" fill="#51315c"/>':expression==='happy'?'<path d="M'+(mx-6)+' 59 Q'+mx+' 57 '+(mx+6)+' 59 Q'+(mx+5)+' 68 '+mx+' 68 Q'+(mx-5)+' 68 '+(mx-6)+' 59 Z" fill="#51315c" stroke="none"/>':'<path d="M'+(mx-6)+' 60 C'+(mx-5)+' 68 '+(mx+5)+' 68 '+(mx+6)+' 60" stroke-width="2.8"/>';
+      if(expression==='sad')mouth='<path d="M'+(mx-5)+' 65 q5 -5 10 0" stroke-width="2.3"/>';
       return '<svg viewBox="0 0 106 101" aria-hidden="true"><g fill="none" stroke="#51315c" stroke-width="2.5" stroke-linecap="round">'+'<g class="nova-eye-drawing">'+eyes+'</g>'+mouth+'</g><ellipse cx="'+(view==='right'?65:view==='left'?37:28)+'" cy="58" rx="8" ry="3.5" fill="#ec94c6" opacity=".65"/></svg>';
     }
     // Front and both side drawings exist for every expression and hand variant.
-    for(const view of ['front','left','right'])for(const face of ['friendly','happy','sleepy','sleeping','surprised'])drawings.set(view+':'+face,faceDrawing(view,face));
+    for(const view of ['front','left','right'])for(const face of ['friendly','happy','sleepy','sleeping','surprised','sad'])drawings.set(view+':'+face,faceDrawing(view,face));
     let lastFace='',lastHands='';
     function syncRig(){
       const inferred=['walk-right','fly-right'].includes(nova.dataset.motion)?'right':['walk-left','fly-left'].includes(nova.dataset.motion)||nova.dataset.daily==='enter'?'left':'front';
