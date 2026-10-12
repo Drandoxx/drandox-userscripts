@@ -23711,9 +23711,9 @@ function installNovaWelcome(host) {
   let sitTimer=0,sleepTimer=0,wakeTimer=0;
   function startSilentEntrance(){if(entranceStarted||message)return;message={silent:true};dismissed=false;schedule();}
   function clearIdle(){clearTimeout(sitTimer);clearTimeout(sleepTimer);clearTimeout(wakeTimer);delete avatar.dataset.idle;}
-  function armIdle(){clearIdle();if(dismissed||avatar.hidden||avatar.dataset.motion||typingQueue.length||message?.actions?.length)return;sitTimer=setTimeout(()=>{if(dismissed||avatar.hidden)return;avatar.dataset.idle='sit';avatar.setAttribute('aria-label','NOVA resting');schedule();},60000);sleepTimer=setTimeout(()=>{if(dismissed||avatar.hidden)return;avatar.dataset.idle='sleep';setExpression('friendly');avatar.setAttribute('aria-label','NOVA sleeping. Click to wake her.');schedule();},180000);}
+  function armIdle(){clearIdle();if(dismissed||avatar.hidden||avatar.dataset.motion||typingQueue.length||message?.actions?.length)return;sitTimer=setTimeout(()=>{if(dismissed||avatar.hidden)return;avatar.dataset.idle='sit';avatar.setAttribute('aria-label','NOVA resting');schedule();},60000);sleepTimer=setTimeout(()=>{if(dismissed||avatar.hidden)return;if(host.novaRestTransition)host.novaRestTransition('sleep');else{avatar.dataset.idle='sleep';setExpression('friendly');avatar.setAttribute('aria-label','NOVA sleeping. Click to wake her.');schedule();}},180000);}
   avatar.setAttribute('tabindex','0');avatar.setAttribute('aria-label','NOVA. Click to wake her.');
-  const wake=event=>{if(event.type==='keydown'&&!['Enter',' '].includes(event.key))return;event.preventDefault?.();event.stopPropagation?.();if(avatar.dataset.phase!=='ready'||avatar.dataset.idle==='wake')return;if(!avatar.dataset.idle){clearIdle();avatar.dataset.reaction='wave';setExpression('happy');wakeTimer=setTimeout(()=>{delete avatar.dataset.reaction;setExpression('friendly');armIdle();},1000);return;}clearTimeout(messageTimer);stopTyping();clearIdle();avatar.dataset.idle='wake';setExpression('friendly');avatar.setAttribute('aria-label','NOVA waking up');schedule();wakeTimer=setTimeout(()=>{delete avatar.dataset.idle;avatar.setAttribute('aria-label','NOVA awake');const next=!message?messageQueue.shift():null;if(next)next.run();else if(message?.paragraphs){const latest=message;message=null;show(latest);}else armIdle();schedule();},750);};
+  const wake=event=>{if(event.type==='keydown'&&!['Enter',' '].includes(event.key))return;event.preventDefault?.();event.stopPropagation?.();if(avatar.dataset.phase!=='ready'||avatar.dataset.idle==='wake')return;if(avatar.dataset.idle==='sleep'&&host.novaRestTransition){host.novaRestTransition('wake');return;}if(!avatar.dataset.idle){clearIdle();avatar.dataset.reaction='wave';setExpression('happy');wakeTimer=setTimeout(()=>{delete avatar.dataset.reaction;setExpression('friendly');armIdle();},1000);return;}clearTimeout(messageTimer);stopTyping();clearIdle();avatar.dataset.idle='wake';setExpression('friendly');avatar.setAttribute('aria-label','NOVA waking up');schedule();wakeTimer=setTimeout(()=>{delete avatar.dataset.idle;avatar.setAttribute('aria-label','NOVA awake');const next=!message?messageQueue.shift():null;if(next)next.run();else if(message?.paragraphs){const latest=message;message=null;show(latest);}else armIdle();schedule();},750);};
   avatar.addEventListener('click',wake);avatar.addEventListener('keydown',wake);
   host.novaUpdateMessage=data=>{
     if(!nameReady){pendingUpdate=data;return;}
@@ -23816,6 +23816,130 @@ function installNovaWelcome(host) {
   function save(enabled){try{localStorage.setItem(key,enabled?'yes':'no');}catch{}toggle.checked=enabled;}
   function reply(enabled){save(enabled);setExpression(enabled?'happy':'friendly');show({paragraphs:[enabled?'Sounds good. I’ll pop by with a little encouragement or something fun now and then. For now, this is just our first hello. 💜':'No worries at all. If you change your mind, open SN AI settings → AI settings and turn on “Nova friendly messages”. I’ll be happy to say hello again.']});}
   toggle.addEventListener('change',()=>{save(toggle.checked);dismissed=true;stopTyping();card.hidden=true;tail.hidden=true;avatar.hidden=true;});
+  // Shared cutout rig promoted from the approved animation workshop.
+  (()=>{
+    const nova=avatar,root=avatarRoot;
+    if(!root.querySelector('.nova'))return;
+    const rigStyle=document.createElement('style');rigStyle.textContent=`
+    /* Motion belongs to the rig; expression drawings never own keyframes. */
+    .body{transform:none!important}.eyes{inset:0!important;transform:none!important;translate:none!important;transition:none}
+    .eyes svg{width:106px;height:101px;display:block}.mouth{display:none!important}.cheek{display:none!important}
+    .hand{background:none!important;box-shadow:none!important;overflow:visible}.hand svg{width:100%;height:100%;display:block}
+    /* Round cutout silhouette; limbs are soft pads, not dangling sticks. */
+    .body{left:17px;top:19px;width:106px;height:101px;border-radius:50%;background:radial-gradient(circle at 35% 24%,#e5d6ff,#baa0ec 62%,#9671d5);box-shadow:inset 0 3px 4px #fff5,inset 0 -3px 8px #7953b233,0 5px 9px #0002}
+    .arm{top:75px;width:23px;height:25px;background:none;transform-origin:50% 45%}.arm.left{left:7px;transform:rotate(15deg)}.arm.right{right:6px;transform:rotate(-15deg)}
+    .hand{left:0;bottom:0;width:23px;height:25px}.hand-drawing{display:block;width:100%;height:100%}
+    .foot{width:29px;height:17px;bottom:10px;background:#b499df}.foot.left{left:28px}.foot.right{right:27px}
+    .headwear{top:-3px;right:2px;scale:.86;transform-origin:50% 100%}
+    :host([data-rig-view="left"]) .body,:host([data-rig-view="right"]) .body{width:106px;left:17px;border-radius:50%}
+    :host([data-rig-view="left"]) .arm.left{left:64px;right:auto;top:75px;z-index:3}:host([data-rig-view="left"]) .arm.right{left:92px;right:auto;top:72px;z-index:1;opacity:.7}
+    :host([data-rig-view="right"]) .arm.right{left:53px;right:auto;top:75px;z-index:3}:host([data-rig-view="right"]) .arm.left{left:25px;top:72px;z-index:1;opacity:.7}
+    :host([data-motion^="walk-"]) .arm,:host([data-daily="enter"]) .arm{height:25px;width:23px;animation:pad-swing .8s ease-in-out infinite!important}
+    :host([data-motion^="walk-"]) .arm.right,:host([data-daily="enter"]) .arm.right{animation-delay:-.4s!important}
+    :host([data-motion^="walk-"]) .foot,:host([data-daily="enter"]) .foot{left:55px;right:auto;top:113px;bottom:auto;width:27px;height:17px;border-radius:50%;background:#b499df;transform-origin:50% 50%;animation:pad-stride .8s linear infinite!important}
+    :host([data-motion^="walk-"]) .foot.right,:host([data-daily="enter"]) .foot.right{left:61px;animation-delay:-.4s!important;z-index:0}
+    :host([data-motion^="walk-"]) .foot::after,:host([data-daily="enter"]) .foot::after{display:none}
+    @keyframes pad-stride{0%,100%{transform:translateX(calc(var(--nova-walk-sign) * 9px)) rotate(calc(var(--nova-walk-sign) * -8deg))}45%{transform:translateX(calc(var(--nova-walk-sign) * -9px)) rotate(calc(var(--nova-walk-sign) * 8deg))}65%{transform:translate(calc(var(--nova-walk-sign) * -4px),-7px) rotate(calc(var(--nova-walk-sign) * -12deg))}85%{transform:translate(calc(var(--nova-walk-sign) * 6px),-4px) rotate(calc(var(--nova-walk-sign) * -8deg))}}
+    @keyframes pad-swing{0%,100%{transform:translateY(1px) rotate(12deg)}50%{transform:translateY(-1px) rotate(-12deg)}}
+    :host([data-motion^="climb-"]) .arm{transform-origin:50% 100%;animation:pad-climb .8s ease-in-out infinite!important}:host([data-motion^="climb-"]) .arm.right{animation-delay:-.4s!important}
+    @keyframes pad-climb{0%,100%{transform:translateY(-13px) rotate(-18deg)}50%{transform:translateY(3px) rotate(18deg)}}
+    :host([data-motion^="fly-"]) .arm{animation:none!important;transform:translateY(-17px) rotate(-30deg)}:host([data-motion^="fly-"]) .foot{transform:translateY(-4px) rotate(-12deg)}
+    :host([data-motion^="fly-"]) .cape{left:105px;top:44px;width:48px;height:68px;padding-top:23px;font-size:22px}
+    :host([data-motion="fly-left"]) .arm.left{left:4px;top:73px;z-index:3}:host([data-motion="fly-right"]) .arm.right{left:113px;top:73px;z-index:3}:host([data-motion="fly-right"]) .cape{left:-4px;scale:-1 1}
+    /* Sleep is a separate reclining silhouette, not a squashed standing face. */
+    :host([data-idle="sleep"]) .nova{transform:none!important;translate:0 6px}
+    :host([data-idle="sleep"]) .body{left:12px;top:42px;width:116px;height:82px;border-radius:52% 52% 43% 43%;transform-origin:50% 100%;animation:nova-rest-breathe 3.5s ease-in-out infinite!important}
+    :host([data-idle="sleep"]) .eyes{inset:auto!important;width:100px;height:88px;left:-2px;top:-4px;rotate:-8deg;transform-origin:50% 50%}
+    :host([data-idle="sleep"]) .eyes svg{width:100px;height:88px}
+    :host([data-idle="sleep"]) .arm{top:99px;width:25px;height:22px;background:none;animation:none!important;transform:none!important}
+    :host([data-idle="sleep"]) .arm.left{left:7px;z-index:1}:host([data-idle="sleep"]) .arm.right{left:98px;right:auto;z-index:3;transform:rotate(-12deg)!important}
+    :host([data-idle="sleep"]) .hand{width:28px;height:23px;left:0;bottom:0}
+    :host([data-idle="sleep"]) .foot{opacity:0;pointer-events:none}
+    @keyframes nova-rest-breathe{0%,100%{scale:1 1}50%{scale:1.012 1.025}}
+    :host([data-idle="sleep"]) .headwear{right:5px;top:0;rotate:15deg}
+    :host([data-idle="sleep"]) .sleep-marks{right:83px;bottom:123px}
+    :host([data-rest-blending]) .sleep-marks{display:none!important}
+    :host([data-daily="enter"]) .nova{animation:morning-walk 2.5s ease-out both!important}
+    :host([data-daily]) .arm.right{animation:none!important;transform:rotate(-25deg);right:12px;top:73px;z-index:1}
+    :host([data-daily="enter"]) .arm.right{animation:pad-swing .8s ease-in-out infinite!important;animation-delay:-.4s!important;left:92px;right:auto;top:72px}
+    :host([data-daily]) .arm.left{animation:none!important;transform:rotate(45deg);z-index:3}
+    :host([data-daily="enter"]) .arm.left{left:63px;top:78px;transform:rotate(55deg)}
+    :host([data-daily="sip"]) .arm.left{left:38px;top:65px;transform:rotate(125deg);transition:transform .5s,left .5s,top .5s}
+    .daily-cup{left:-3px;top:1px;transform:rotate(-55deg)}
+    :host([data-daily="sip"]) .daily-cup{transform:rotate(-125deg)}
+    :host([data-daily="cheer"]) .daily-cup{animation:cup-toss .8s ease-in both}
+    @media(prefers-reduced-motion:reduce){:host([data-motion]) *,:host([data-daily]) *{animation:none!important}}
+  `;root.append(rigStyle);
+    // Props live under the carrying hand, so they inherit its shoulder pivot.
+    const cup=root.querySelector('.daily-cup');root.querySelector('.arm.left .hand').append(cup);
+    const viewControl={value:'auto'},faceControl={value:'auto'};
+    const drawings=new Map();
+    function faceDrawing(view,expression){
+      const xs=view==='front'?[35,71]:view==='left'?[23]:[83];
+      const eyes=xs.map(x=>expression==='sleeping'?'<path d="M'+(x-6)+' 39 q6 5 12 0"/>':expression==='happy'?'<path d="M'+(x-6)+' 41 q6 -9 12 0"/>':expression==='sleepy'?'<path d="M'+(x-6)+' 39 h12"/><ellipse cx="'+x+'" cy="43" rx="4" ry="3" fill="#392748"/>':'<ellipse cx="'+x+'" cy="40" rx="5" ry="'+(expression==='surprised'?10:8)+'" fill="#392748"/><circle cx="'+(x-1)+'" cy="37" r="2" fill="#f9efff" stroke="none"/>').join('');
+      const mx=view==='front'?53:view==='left'?20:86;
+      let mouth;
+      if(view!=='front'){
+        // A short profile mark follows the cheek contour, not a frontal U.
+        const direction=view==='left'?-1:1,edge=mx+direction*7;
+        mouth=expression==='sleeping'?'<path d="M'+edge+' 60 l'+(-direction*4)+' 1" stroke-width="2"/>':expression==='surprised'||expression==='happy'?'<ellipse cx="'+edge+'" cy="62" rx="2.5" ry="'+(expression==='happy'?3.5:5)+'" fill="#51315c" stroke="none"/>':'<path d="M'+edge+' 60 q'+(-direction*3)+' 3 '+(-direction*6)+' 2" stroke-width="2.3"/>';
+      }else mouth=expression==='sleeping'?'<ellipse cx="'+(mx-3)+'" cy="56" rx="2.5" ry="4" fill="#51315c" stroke="none"/>':expression==='surprised'?'<ellipse cx="'+mx+'" cy="62" rx="4" ry="5" fill="#51315c"/>':expression==='happy'?'<path d="M'+(mx-6)+' 59 Q'+mx+' 57 '+(mx+6)+' 59 Q'+(mx+5)+' 68 '+mx+' 68 Q'+(mx-5)+' 68 '+(mx-6)+' 59 Z" fill="#51315c" stroke="none"/>':'<path d="M'+(mx-6)+' 60 C'+(mx-5)+' 68 '+(mx+5)+' 68 '+(mx+6)+' 60" stroke-width="2.8"/>';
+      return '<svg viewBox="0 0 106 101" aria-hidden="true"><g fill="none" stroke="#51315c" stroke-width="2.5" stroke-linecap="round">'+eyes+mouth+'</g><ellipse cx="'+(view==='right'?65:view==='left'?37:28)+'" cy="58" rx="8" ry="3.5" fill="#ec94c6" opacity=".65"/></svg>';
+    }
+    // Front and both side drawings exist for every expression and hand variant.
+    for(const view of ['front','left','right'])for(const face of ['friendly','happy','sleepy','sleeping','surprised'])drawings.set(view+':'+face,faceDrawing(view,face));
+    let lastFace='',lastHands='';
+    function syncRig(){
+      const inferred=['walk-right','fly-right'].includes(nova.dataset.motion)?'right':['walk-left','fly-left'].includes(nova.dataset.motion)||nova.dataset.daily==='enter'?'left':'front';
+      const view=viewControl.value==='auto'?inferred:viewControl.value;
+      const inferredFace=nova.dataset.idle==='sleep'?'sleeping':['enter','yawn'].includes(nova.dataset.daily)?'sleepy':root.querySelector('.nova').dataset.expression||'friendly';
+      const face=faceControl.value==='auto'?inferredFace:faceControl.value;
+      if(nova.dataset.rigView!==view)nova.dataset.rigView=view;
+      const faceKey=view+':'+face;if(faceKey!==lastFace){root.querySelector('.eyes').innerHTML=drawings.get(faceKey)||drawings.get(view+':friendly');lastFace=faceKey;}
+      const handKey=view+':'+Boolean(nova.dataset.daily);if(handKey!==lastHands){
+        for(const side of ['left','right']){const hand=root.querySelector('.arm.'+side+' .hand');let art=hand.querySelector('.hand-drawing');if(!art){art=document.createElement('span');art.className='hand-drawing';hand.prepend(art);}art.innerHTML='<svg viewBox="0 0 20 24" aria-hidden="true"><ellipse cx="10" cy="12" rx="'+(view==='front'?9:6.5)+'" ry="10" fill="#d6beff"/></svg>';}
+        lastHands=handKey;
+      }
+    }
+    const rigObserver=new MutationObserver(syncRig);rigObserver.observe(nova,{subtree:true,attributes:true,attributeFilter:['data-motion','data-daily','data-idle','data-expression','data-phase']});
+    syncRig();
+    // FLIP-style pose blending: snapshot the visible pose, then interpolate to
+    // the real destination geometry. Interrupted blends start where they are.
+    const poseParts=['.nova','.body','.eyes','.arm.left','.arm.right','.hand','.foot.left','.foot.right','.headwear'];
+    const properties=['left','top','width','height','transform','translate','rotate','scale','opacity','borderRadius'];
+    let restAnimations=[],restToken=0,restOverlays=[];
+    host.novaRestTransition=async kind=>{
+      const token=++restToken,sleep=kind==='sleep';
+      const elements=poseParts.map(selector=>root.querySelector(selector));
+      const read=element=>{const style=getComputedStyle(element);return Object.fromEntries(properties.map(key=>[key,style[key]]));};
+      const before=elements.map(read);
+      const previousFace=root.querySelector('.eyes svg').cloneNode(true);
+      restAnimations.forEach(animation=>animation.cancel());restAnimations=[];restOverlays.forEach(element=>element.remove());restOverlays=[];
+      nova.dataset.restBlending='true';
+      clearTimeout(wakeTimer);clearIdle();
+      if(!sleep){clearTimeout(messageTimer);stopTyping();}
+      delete avatar.dataset.reaction;avatar.dataset.phase='ready';
+      if(sleep)avatar.dataset.idle='sleep';else delete avatar.dataset.idle;
+      avatar.setAttribute('aria-label',sleep?'NOVA sleeping. Click to wake her.':'NOVA waking up');
+      setExpression('friendly');syncRig();card.hidden=true;tail.hidden=true;
+      // Suppress autonomous breathing until the pose reaches its endpoint.
+      root.querySelector('.body').style.setProperty('animation','none','important');
+      const after=elements.map(read);
+      restAnimations=elements.map((element,index)=>element.animate([before[index],after[index]],{duration:matchMedia('(prefers-reduced-motion: reduce)').matches?1:sleep?1400:900,easing:'cubic-bezier(.4,0,.2,1)',fill:'none'}));
+      const newFace=root.querySelector('.eyes svg');previousFace.style.cssText='position:absolute;left:0;top:0;pointer-events:none';root.querySelector('.eyes').append(previousFace);restOverlays.push(previousFace);
+      const faceTiming={duration:sleep?1400:900,easing:'ease-in-out'};restAnimations.push(previousFace.animate([{opacity:1},{opacity:0}],faceTiming),newFace.animate([{opacity:0},{opacity:1}],faceTiming));
+      await Promise.all(restAnimations.map(animation=>animation.finished.catch(()=>{})));
+      if(token!==restToken)return;
+      root.querySelector('.body').style.removeProperty('animation');restAnimations=[];restOverlays.forEach(element=>element.remove());restOverlays=[];delete nova.dataset.restBlending;
+      if(kind==='wake'){
+        avatar.setAttribute('aria-label','NOVA awake');
+        const next=!message?messageQueue.shift():null;
+        if(next)next.run();else if(message?.paragraphs){const latest=message;message=null;show(latest);}else armIdle();
+      }
+      schedule();
+    };
+    window.addEventListener('pagehide',()=>{rigObserver.disconnect();++restToken;restAnimations.forEach(animation=>animation.cancel());restOverlays.forEach(element=>element.remove());},{once:true});
+  })();
   const observer=new MutationObserver(schedule);observer.observe(host,{subtree:true,attributes:true,attributeFilter:['class','hidden','aria-expanded','style']});
   window.addEventListener('resize',schedule);window.addEventListener('pointerup',schedule);
 window.addEventListener('pagehide',()=>{clearTimeout(messageTimer);clearTimeout(transitionTimer);messageQueue.length=0;observer.disconnect();cancelAnimationFrame(frame);clearTimeout(entranceTimer);clearTimeout(readyTimer);clearTimeout(pageReadyTimer);clearTimeout(motionTimer);clearTimeout(dailyTimer);clearTimeout(updateWaitTimer);clearIdle();stopTyping();card.remove();tail.remove();avatar.remove();style.remove();window.removeEventListener('resize',schedule);window.removeEventListener('pointerup',schedule);},{once:true});
