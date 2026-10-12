@@ -6077,24 +6077,25 @@
     }
     if (!projected.length) return;
     const cache=readTodayCallCache();
-    const liveCandidates=projected.filter(c=>c.participants.some(p=>p.purpose==='agent' && p.userId===currentAgentApiId && (p.state==='connected' || p.calls?.some(x=>['connected','alerting','contacting'].includes(x.state)))));
+    const liveCandidates=projected.filter(c=>c.participants.some(p=>p.purpose==='agent' && p.userId===currentAgentApiId && (['connected','alerting','contacting'].includes(p.state) || p.calls?.some(x=>['connected','alerting','contacting'].includes(x.state)))));
     let cacheChanged=false;
     for(const c of projected) {
       const old=cache.conversations[c.conversationId] || {};
       const analytics=path.includes('/analytics/');
       const started=c.conversationStart || old.analytics?.conversationStart || old.live?.conversationStart;
-      if(started ? callDayKey(new Date(started))!==cache.day : analytics || !liveCandidates.some(x=>x.conversationId===c.conversationId))continue;
+      if(started ? callDayKey(new Date(started))!==cache.day : analytics || (!old.live && !liveCandidates.some(x=>x.conversationId===c.conversationId)))continue;
       const kind=analytics?'analytics':'live';
       if(JSON.stringify(old[kind])!==JSON.stringify(c)) {cache.conversations[c.conversationId]={...old,[kind]:c,updatedAt:Date.now()};cacheChanged=true;}
-      if (!analytics && currentAgentApiId && activeCallSummary) {
+      if (!analytics && currentAgentApiId) {
         const own=c.participants.find(p=>p.purpose==='agent' && p.userId===currentAgentApiId);
         const connected=own?.state==='connected' || own?.calls?.some(x=>['connected','alerting','contacting'].includes(x.state));
-        if (connected && liveCandidates.length===1 && !activeCallSummary.conversationId) {activeCallSummary.conversationId=c.conversationId;activeCallSummary.apiUserId=currentAgentApiId;saveActiveCallWindow();}
-        if(activeCallSummary.conversationId===c.conversationId) {
+        const ended=['disconnected','terminated'].includes(own?.state) || (own?.calls?.length && own.calls.every(x=>['disconnected','terminated'].includes(x.state)));
+        if (connected && activeCallSummary && liveCandidates.length===1 && !activeCallSummary.conversationId) {activeCallSummary.conversationId=c.conversationId;activeCallSummary.apiUserId=currentAgentApiId;saveActiveCallWindow();}
+        if(activeCallSummary?.conversationId===c.conversationId) {
           const connectedAt=Date.parse(own?.connectedTime || own?.calls?.find(x=>x.connectedTime)?.connectedTime);
           if(Number.isFinite(connectedAt) && activeCallSummary.connectedAt!==connectedAt) {activeCallSummary.connectedAt=connectedAt;saveActiveCallWindow();}
-          const ended=['disconnected','terminated'].includes(own?.state) || (own?.calls?.length && own.calls.every(x=>['disconnected','terminated'].includes(x.state)));
           if(ended && activeCallSummary.connectedAt)finishActiveCall();
+        }
           if(ended && lastCallSummary?.conversationId===c.conversationId) {
             const end=Date.parse(own.endTime),timeout=own.wrapupTimeoutMs;
             if(Number.isFinite(end) && Number.isFinite(timeout) && own.wrapupRequired && !lastCallSummary.wrapupComplete) {
@@ -6104,7 +6105,6 @@
             if(own.wrapup?.endTime){lastCallSummary.wrapupComplete=true;lastCallSummary.wrapupSeconds=0;lastCallSummary.wrapupSource='api';}
             saveLastCallWindow();
           }
-        }
       }
     }
     cache.savedAt=Date.now();
