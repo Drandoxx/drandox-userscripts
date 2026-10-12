@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.528
+// @version      2.36.529
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -2440,6 +2440,8 @@ const snAIChatDisplayNames=(()=>{
     :host(sn-form-internal-uiactionbar:not([data-sn-ai-actions-ready])) { visibility:hidden!important;min-height:32px!important; }
     now-heading[data-sn-ai-number-moved] { display:none!important; }
     now-button[component-name$="aeff33bb1b696d10a14cec60f54bcb96"],
+    now-button[component-name$="e44b67f63b330300a2bac9bb34efc46a"],
+    now-button[component-name$="7678d7d2531232000600e26b88dc3401"],
     now-button[component-name$="0bdd499d77773300112f8b51a9106179"],
     now-button[component-name$="084959b087081300e3010cf888cb0b0e"],
     now-button[component-name$="807e83d1878010100e3dd61e36cb0b89"],
@@ -5095,6 +5097,8 @@ const snAIChatDisplayNames=(()=>{
     for(const field of root.querySelectorAll?.('sn-record-reference-connected[name="business_service"],sn-record-reference-connected[name="u_impacted_service"]')||[])if(field.style.getPropertyValue('display')!=='none')field.style.setProperty('display','none','important');
   }
   const hiddenIncidentActionIds = new Set([
+    'e44b67f63b330300a2bac9bb34efc46a', // Assign to me
+    '7678d7d2531232000600e26b88dc3401', // Copy Incident
     'aeff33bb1b696d10a14cec60f54bcb96', // Open the form in Platform
     '0bdd499d77773300112f8b51a9106179', // Compose Email
     '084959b087081300e3010cf888cb0b0e', // Create Request
@@ -7896,7 +7900,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.528',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+const payload={schema:2,version:'2.36.529',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -21214,7 +21218,7 @@ function startSNAI(tabIdentity) {
       installAutomationFreeze();
       document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
     }
-    addLog('info', 'helper-version', { version: '2.36.528' });
+    addLog('info', 'helper-version', { version: '2.36.529' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
