@@ -365,6 +365,33 @@
   restoreLoadedFavorites();
 })();
 
+// Shared, bounded EVNT -> INC metadata; no transcripts or DOM references.
+const snAIEventIncLinks=(()=>{
+  const cache=new Map(),pending=new Map();
+  const remember=(evnt,eventId,number,id)=>{
+    if(!/^EVNT\d+$/.test(evnt||''))return;
+    const valid=/^INC\d+$/.test(number||'')&&/^[a-f0-9]{32}$/i.test(id||'');
+    cache.delete(evnt);cache.set(evnt,{eventId,number:valid?number:'',id:valid?id:'',expires:Date.now()+(valid?300000:30000)});
+    while(cache.size>300)cache.delete(cache.keys().next().value);
+  };
+  const get=evnt=>{const row=cache.get(evnt);if(row&&row.expires>Date.now())return row;cache.delete(evnt);return null;};
+  const resolve=(evnt,token)=>{
+    if(get(evnt))return Promise.resolve(get(evnt));
+    if(pending.has(evnt))return pending.get(evnt);
+    const request=(async()=>{
+      try{
+        const response=await fetch('/api/now/table/new_call?sysparm_query='+encodeURIComponent('number='+evnt)+'&sysparm_fields=sys_id,number,transferred_to&sysparm_display_value=all&sysparm_exclude_reference_link=true&sysparm_limit=1',{credentials:'same-origin',headers:{Accept:'application/json',...(token?{'X-UserToken':token}:{})}});
+        if(!response.ok)throw Error('EVNT lookup '+response.status);
+        const row=(await response.json()).result?.[0];
+        const value=(f,display=false)=>String(f&&typeof f==='object'?(display?f.display_value:f.value)||'':f||'');
+        if(row&&value(row.number,true)===evnt)remember(evnt,value(row.sys_id),value(row.transferred_to,true),value(row.transferred_to));
+        else remember(evnt,'','','');
+      }catch(error){remember(evnt,'','','');console.warn('[SN AI EVNT transfer]',error.message);}
+      return get(evnt);
+    })().finally(()=>pending.delete(evnt));pending.set(evnt,request);return request;
+  };
+  return {get,remember,resolve};
+})();
 // Shared by Workspace tabs and AI bubbles. Storage is parsed only on first
 // use or a cross-tab storage update; normal rendering is a Map lookup.
 const snAIChatDisplayNames=(()=>{
@@ -4958,6 +4985,15 @@ const snAIChatDisplayNames=(()=>{
     };
     const ancestorForm=node=>{for(let e=node;e;e=e.parentElement||e.getRootNode?.().host)if(e.localName==='form')return e;return null;};
     const fields=new Set(root.querySelectorAll?.('sn-record-reference-connected[name="transferred_to"]')||[]);
+    const headerHost=root.host;
+    if(headerHost?.localName==='now-record-common-header'&&headerHost.getProperties?.().table==='new_call'){
+      const props=headerHost.getProperties();
+      const evnt=[props.recordDisplayValue,props.primaryValue].find(value=>/^EVNT\d+$/.test(value||''));
+      if(evnt){const link=snAIEventIncLinks.get(evnt);
+        if(!link)snAIEventIncLinks.resolve(evnt,kbSessionToken()).then(()=>{if(headerHost.isConnected)eventFieldShortcut(root);});
+        else if(link.id)fields.add({parentElement:headerHost,style:{getPropertyValue:()=> 'none'},getAttribute:()=>link.id,displayValue:link.number,getRootNode:()=>root});
+      }
+    }
     for(let host=root.host;host;host=host.parentElement||host.getRootNode?.().host){if(host.matches?.('sn-record-reference-connected[name="transferred_to"]')){fields.add(host);break;}if(host.localName==='form')break;}
     for(const field of fields) {
       const form=ancestorForm(field);if(!form)continue;
@@ -4968,8 +5004,10 @@ const snAIChatDisplayNames=(()=>{
         if(parent.matches?.('.sn-form-column-layout-sections'))parent.style.setProperty('margin-top','0','important');
       }
       if(field.style.getPropertyValue('display')!=='none')field.style.setProperty('display','none','important');
-      const id=field.getAttribute('value');
-      const number=String(field.displayValue||field.shadowRoot?.querySelector('now-record-typeahead')?.getAttribute('value')||'').trim();
+      const evnt=header.getRootNode()?.host?.getProperties?.().recordDisplayValue;
+      const link=snAIEventIncLinks.get(evnt);
+      const id=link?.id||field.getAttribute('value');
+      const number=String(link?.number||field.displayValue||field.shadowRoot?.querySelector('now-record-typeahead')?.getAttribute('value')||'').trim();
       let button=header.querySelector('.sn-ai-event-incident-shortcut') || field.getRootNode()?.querySelector('.sn-ai-event-incident-shortcut');
       if (button && button.parentElement !== header) header.append(button.closest('.sn-ai-event-incident-actions') || button);
       if(!/^INC\d+$/.test(number)||!id){header.querySelector('.sn-ai-event-incident-actions')?.remove();button?.remove();continue;}
@@ -23359,6 +23397,7 @@ function installChatsTodayPanel() {
         if(batch.length<limit)break;if(offset>=99500)throw new Error('Too many EVNT results');
       }
       const linked=new Map();
+      for(const event of events)snAIEventIncLinks.remember(chatsTodayValue(event.number,true),chatsTodayValue(event.sys_id),chatsTodayValue(event.transferred_to,true),chatsTodayValue(event.transferred_to));
       for(const event of events){const id=chatsTodayValue(event.u_link_to_interaction);if(!linked.has(id))linked.set(id,[]);linked.get(id).push(event);}
       for(const row of rows){const matches=linked.get(chatsTodayValue(row.sys_id))||[];row.event_pairs=matches.map(event=>({eventId:chatsTodayValue(event.sys_id),eventNumber:chatsTodayValue(event.number,true),shortDescription:chatsTodayValue(event.short_description,true),searchDetails:['description','u_reporting_user','caller','caller.name','u_location','u_opco','company','u_contact_number'].map(field=>chatsTodayValue(event[field],true)).filter(Boolean),ticketId:chatsTodayValue(event.transferred_to),ticketNumber:chatsTodayValue(event.transferred_to,true)}));row.event_numbers=row.event_pairs.map(pair=>pair.eventNumber||'—').join('\n');row.ticket_numbers=row.event_pairs.map(pair=>pair.ticketNumber||'—').join('\n');}
       if(controller.signal.aborted||panel.hidden)return;
