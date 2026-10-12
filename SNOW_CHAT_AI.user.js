@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.541
+// @version      2.36.542
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7947,7 +7947,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-const payload={schema:2,version:'2.36.541',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+const payload={schema:2,version:'2.36.542',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -21266,7 +21266,7 @@ const payload={schema:2,version:'2.36.541',day:log.day,chatCount:log.chats.size,
       installAutomationFreeze();
       document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
     }
-    addLog('info', 'helper-version', { version: '2.36.541' });
+    addLog('info', 'helper-version', { version: '2.36.542' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -23582,10 +23582,6 @@ function installNovaWelcome(host) {
     const left=parseFloat(card.style.left),top=parseFloat(card.style.top);
     tail.hidden=false;
     tail.dataset.side='bottom';tail.style.left=Math.max(left+14,Math.min(left+c.width-49,r.left+7))+'px';tail.style.top=(top+c.height-1)+'px';
-    const rightCorner=(r.left+r.right)/2>=left+c.width/2;
-    const topCorner=(r.top+r.bottom)/2<top+c.height/2;
-    const corners=['18px','18px','18px','18px'];
-    corners[topCorner?(rightCorner?1:0):(rightCorner?2:3)]='4px';
     card.style.borderRadius='20px';
   }
   function schedule(){if(!frame)frame=requestAnimationFrame(position);}
