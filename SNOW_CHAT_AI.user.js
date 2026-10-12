@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.535
+// @version      2.36.536
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7940,7 +7940,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-const payload={schema:2,version:'2.36.535',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+const payload={schema:2,version:'2.36.536',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -21259,7 +21259,7 @@ const payload={schema:2,version:'2.36.535',day:log.day,chatCount:log.chats.size,
       installAutomationFreeze();
       document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
     }
-    addLog('info', 'helper-version', { version: '2.36.535' });
+    addLog('info', 'helper-version', { version: '2.36.536' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -23492,14 +23492,16 @@ function installNovaWelcome(host) {
     frame=0;if(isOpen()){if(!card.hidden)dismissed=true;card.hidden=true;return;}
     if(!message||dismissed){card.hidden=true;return;}
     card.hidden=false;const r=launcher.getBoundingClientRect(),c=card.getBoundingClientRect();
-    card.style.left=Math.max(12,Math.min(innerWidth-c.width-12,r.right-c.width))+'px';
+    const launcherOnRight=(r.left+r.right)/2>=innerWidth/2;
+    const preferredLeft=launcherOnRight?r.right-c.width-10:r.left+10;
+    card.style.left=Math.max(12,Math.min(innerWidth-c.width-12,preferredLeft))+'px';
     card.style.top=Math.max(12,Math.min(innerHeight-c.height-12,r.bottom+10))+'px';
     if(r.bottom+10+c.height>innerHeight-12)card.style.top=Math.max(12,r.top-c.height-10)+'px';
     const left=parseFloat(card.style.left),top=parseFloat(card.style.top);
     const rightCorner=(r.left+r.right)/2>=left+c.width/2;
     const topCorner=(r.top+r.bottom)/2<top+c.height/2;
     const corners=['18px','18px','18px','18px'];
-    corners[topCorner?(rightCorner?1:0):(rightCorner?2:3)]='0px';
+    corners[topCorner?(rightCorner?1:0):(rightCorner?2:3)]='4px';
     card.style.borderRadius=corners.join(' ');
   }
   function schedule(){if(!frame)frame=requestAnimationFrame(position);}
