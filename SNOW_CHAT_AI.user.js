@@ -39,7 +39,8 @@
 {"version":"2.36.544","fixes":true,"changes":[{"key":"nova-updates","meaningful":true,"text":"NOVA announces available updates with a short summary tailored to your installed version."}]},
 {"version":"2.36.545","fixes":true,"changes":[]},
 {"version":"2.36.546","fixes":true,"changes":[]},
-{"version":"2.36.547","fixes":true,"changes":[]}
+{"version":"2.36.547","fixes":true,"changes":[]},
+{"version":"2.36.548","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA rests on Chats Today, sits or sleeps when idle, and springs up when clicked."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -23579,6 +23580,17 @@ function installNovaWelcome(host) {
     @keyframes jump{0%{transform:translateX(90px)}55%{transform:translateX(-10px) rotate(-7deg)}78%{transform:translateX(4px) rotate(3deg)}100%{transform:none}}
     :host([data-motion^="fly-"]) .body{transform:scale(.78);transform-origin:left center}
     .hand,.peek-grip{border-radius:50%;width:22px;height:25px}.hand::before,.hand::after,.peek-grip::before,.peek-grip::after{display:none}
+    :host([data-phase="ready"]) .nova{animation:none;pointer-events:auto;cursor:pointer;transform-origin:50% 130px;transition:transform .45s ease}
+    :host([data-phase="ready"]) .body{animation:breathe 4s ease-in-out infinite}
+    :host([data-idle="sit"]) .nova{transform:translateY(8px) scaleY(.91)}
+    :host([data-idle="sit"]) .arm{animation:none!important;transform:rotate(5deg)}
+    :host([data-idle="sleep"]) .nova{transform:translateY(3px) rotate(75deg) scale(.83);animation:none!important}
+    :host([data-idle="sleep"]) .eye{height:3px;top:43px;animation:none;border-radius:3px}
+    :host([data-idle="sleep"]) .eye::before,:host([data-idle="sleep"]) .eye::after{display:none}
+    :host([data-idle="sleep"]) .mouth{width:8px;height:8px;left:49px;top:64px;border:0;border-radius:50%;background:#51315c}
+    :host([data-idle="sleep"]) .arm{animation:none!important;transform:rotate(10deg)}
+    :host([data-idle="wake"]) .nova{animation:wake-up .45s ease-out both!important}
+    @keyframes wake-up{0%{transform:translateY(6px) rotate(50deg) scale(.85)}45%{transform:translateY(-12px) rotate(-8deg) scale(1.02)}75%{transform:translateY(2px) rotate(3deg)}100%{transform:none}}
     @media(prefers-reduced-motion:reduce){:host([data-phase="peek"]) .nova{transform:translateX(90px)}.peek-grip{animation:none!important}:host([data-phase="ready"]) .nova,:host([data-phase="jump"]) .nova{transform:none}}
   </style>`);
   document.documentElement.append(avatar);
@@ -23589,12 +23601,13 @@ function installNovaWelcome(host) {
   const move=(kind,direction,distance=80,duration=1200)=>{
     if(!['walk','climb','fly'].includes(kind)||!['left','right','up','down'].includes(direction)||dismissed||avatar.hidden||avatar.dataset.phase!=='ready')return false;
     if(kind==='walk'&&!['left','right'].includes(direction)||kind==='climb'&&!['up','down'].includes(direction))return false;
+    clearIdle();
     distance=Math.min(400,Math.max(0,Number(distance)||0));duration=Math.min(10000,Math.max(250,Number(duration)||1200));
     offsetX=Math.max(-innerWidth+170,Math.min(0,offsetX+(direction==='left'?-distance:direction==='right'?distance:0)));
     offsetY=Math.max(-innerHeight+230,Math.min(0,offsetY+(direction==='up'?-distance:direction==='down'?distance:0)));
     avatar.dataset.motion=kind+'-'+direction;avatar.style.transition=`right ${duration}ms linear,bottom ${duration}ms linear`;
     card.style.transition=`left ${duration}ms linear,top ${duration}ms linear`;tail.style.transition=card.style.transition;clearTimeout(motionTimer);schedule();
-    motionTimer=setTimeout(()=>{delete avatar.dataset.motion;avatar.style.transition='';card.style.transition='';tail.style.transition='';},duration);return true;
+    motionTimer=setTimeout(()=>{delete avatar.dataset.motion;avatar.style.transition='';card.style.transition='';tail.style.transition='';armIdle();},duration);return true;
   };
   avatar.novaAppearance=Object.freeze({setExpression,move,setPart(name,content){if(parts[name]&&content instanceof Node)parts[name].replaceChildren(content);}});
   const preference=document.createElement('label');preference.className='sn-ai-nova-preference';
@@ -23603,6 +23616,12 @@ function installNovaWelcome(host) {
   preference.append(label,toggle);settings.append(preference);
   let key='',firstName='friend',message=null,dismissed=false,frame=0,entranceStarted=false,entranceTimer=0,readyTimer=0,typingTimer=0,typingStarted=false,typingQueue=[],typingDone=null;
   let nameReady=false,pendingUpdate=null,pageReady=false,pageReadyTimer=0;const announcedUpdates=new Set();
+  let sitTimer=0,sleepTimer=0,wakeTimer=0;
+  function clearIdle(){clearTimeout(sitTimer);clearTimeout(sleepTimer);clearTimeout(wakeTimer);delete avatar.dataset.idle;}
+  function armIdle(){clearIdle();if(dismissed||avatar.hidden||avatar.dataset.motion||typingQueue.length)return;sitTimer=setTimeout(()=>{if(dismissed||avatar.hidden)return;avatar.dataset.idle='sit';avatar.setAttribute('aria-label','NOVA resting');schedule();},60000);sleepTimer=setTimeout(()=>{if(dismissed||avatar.hidden)return;avatar.dataset.idle='sleep';setExpression('friendly');avatar.setAttribute('aria-label','NOVA sleeping. Click to wake her.');schedule();},180000);}
+  avatar.setAttribute('tabindex','0');avatar.setAttribute('aria-label','NOVA. Click to wake her.');
+  const wake=event=>{if(event.type==='keydown'&&!['Enter',' '].includes(event.key))return;event.preventDefault?.();event.stopPropagation?.();if(avatar.dataset.phase!=='ready')return;clearIdle();avatar.dataset.idle='wake';setExpression('friendly');avatar.setAttribute('aria-label','NOVA awake');schedule();wakeTimer=setTimeout(()=>{delete avatar.dataset.idle;armIdle();schedule();},450);};
+  avatar.addEventListener('click',wake);avatar.addEventListener('keydown',wake);
   host.novaUpdateMessage=data=>{
     if(!nameReady){pendingUpdate=data;return;}
     if(data.version&&announcedUpdates.has(data.version))return;
@@ -23615,7 +23634,7 @@ function installNovaWelcome(host) {
   function typeNext(){
     typingTimer=0;if(dismissed){stopTyping();return;}
     const item=typingQueue[0];
-    if(!item){card.setAttribute('aria-busy','false');const done=typingDone;typingDone=null;if(done)done();schedule();return;}
+    if(!item){card.setAttribute('aria-busy','false');const done=typingDone;typingDone=null;if(done)done();armIdle();schedule();return;}
     const character=item.characters.shift();item.node.textContent+=character;
     if(!item.characters.length){typingQueue.shift();if(item.after)item.after();}
     schedule();typingTimer=setTimeout(typeNext,/[.!?]/.test(character)?240:/[,;:]/.test(character)?130:55);
@@ -23635,11 +23654,14 @@ function installNovaWelcome(host) {
       }
       pageReady=true;clearTimeout(pageReadyTimer);pageReadyTimer=0;
     }
-    const bottom=chatsRect?.width?innerHeight-chatsRect.top+8:56;
-    avatar.style.right=(16-offsetX)+'px';avatar.style.bottom=(bottom-offsetY)+'px';avatar.hidden=false;
+    // Feet end 30 CSS pixels above the host bottom, scaled to 21.6px.
+    const bottom=chatsRect?.width?innerHeight-chatsRect.top-21.6:26.4;
+    const right=Number.isFinite(chatsRect?.left)?innerWidth-chatsRect.left-chatsRect.width/2-64.8:16;
+    avatar.style.right=(right-offsetX)+'px';avatar.style.bottom=(bottom-offsetY)+'px';avatar.hidden=false;
     if(!entranceStarted){entranceStarted=true;avatar.dataset.phase='peek';entranceTimer=setTimeout(()=>{if(dismissed)return;avatar.dataset.phase='jump';avatar.setAttribute('aria-label','NOVA jumping out');schedule();readyTimer=setTimeout(()=>{avatar.dataset.phase='ready';avatar.setAttribute('aria-label','NOVA waving');schedule();},650);},3600);}
     if(avatar.dataset.phase!=='ready'){card.hidden=true;tail.hidden=true;return;}
-    card.hidden=false;if(!typingStarted){typingStarted=true;typeNext();}const r={left:innerWidth-145.6+offsetX,right:innerWidth-16+offsetX,top:innerHeight-bottom-129.6+offsetY,bottom:innerHeight-bottom+offsetY},c=card.getBoundingClientRect();
+    if(avatar.dataset.idle==='sit'||avatar.dataset.idle==='sleep'){card.hidden=true;tail.hidden=true;return;}
+    card.hidden=false;if(!typingStarted){typingStarted=true;typeNext();}const r={left:innerWidth-right-129.6+offsetX,right:innerWidth-right+offsetX,top:innerHeight-bottom-129.6+offsetY,bottom:innerHeight-bottom+offsetY},c=card.getBoundingClientRect();
     const preferredLeft=r.left-c.width+55;
     card.style.left=Math.max(12,Math.min(innerWidth-c.width-12,preferredLeft))+'px';
     card.style.top=Math.max(12,Math.min(innerHeight-c.height-12,r.top-c.height+8))+'px';
@@ -23651,7 +23673,7 @@ function installNovaWelcome(host) {
   function schedule(){if(!frame)frame=requestAnimationFrame(position);}
   // Message blocks support readable text, branching actions and future GIFs.
   function show(data){
-    stopTyping();typingStarted=false;message=data;card.replaceChildren();card.setAttribute('aria-live','off');card.setAttribute('aria-busy','true');
+    clearIdle();stopTyping();typingStarted=false;message=data;card.replaceChildren();card.setAttribute('aria-live','off');card.setAttribute('aria-busy','true');
     let list=null;
     for(const row of [...(data.paragraphs||[]).map(text=>({text,bullet:false})),...(data.bullets||[]).map(text=>({text,bullet:true}))]){
       const p=document.createElement(row.bullet?'li':'p');const value=String(row.text).replace(/[\u2013\u2014\u2015]/g,',');p.setAttribute('aria-label',value);
