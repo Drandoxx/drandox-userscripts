@@ -37,7 +37,8 @@
 {"version":"2.36.542","fixes":true,"changes":[{"key":"nova-appearance","meaningful":true,"text":"NOVA has a smaller, softer look and a speech bubble above her head."},{"key":"auto-greet","meaningful":true,"text":"Auto-greet fills your saved shortcut directly without opening the shortcut menu."}]},
 {"version":"2.36.543","fixes":true,"changes":[]},
 {"version":"2.36.544","fixes":true,"changes":[{"key":"nova-updates","meaningful":true,"text":"NOVA announces available updates with a short summary tailored to your installed version."}]},
-{"version":"2.36.545","fixes":true,"changes":[]}
+{"version":"2.36.545","fixes":true,"changes":[]},
+{"version":"2.36.546","fixes":true,"changes":[]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -23528,7 +23529,7 @@ function installNovaWelcome(host) {
   const tail=document.createElement('div');tail.className='sn-ai-nova-tail';tail.hidden=true;tail.setAttribute('aria-hidden','true');
   // Overlap the bubble border with solid fill. Stroke only the outer curve,
   // never the joining edge, and round the short tip away from NOVA's head.
-  tail.innerHTML='<svg viewBox="0 0 40 24" width="40" height="24" xmlns="http://www.w3.org/2000/svg"><path d="M1 -3 H28 Q28 7 37 17 Q40 21 35 20 Q11 16 1 -3Z" fill="var(--sn-theme-251f31,#241c33)"/><path d="M1 0 Q11 16 35 20 Q40 21 37 17 Q28 7 28 0" fill="none" stroke="var(--sn-theme-655573,#74618b)" stroke-width="1" stroke-linecap="round"/></svg>';
+  tail.innerHTML='<svg viewBox="0 0 40 24" width="40" height="24" xmlns="http://www.w3.org/2000/svg"><path d="M1 0 H28 Q28 7 37 17 Q40 21 35 20 Q11 16 1 0Z" fill="var(--sn-theme-251f31,#241c33)"/><rect x="1" y="-1" width="27" height="2" fill="var(--sn-theme-251f31,#241c33)"/><path d="M1 0 Q11 16 35 20 Q40 21 37 17 Q28 7 28 0" fill="none" stroke="var(--sn-theme-655573,#74618b)" stroke-width="1" stroke-linecap="round"/></svg>';
   card.setAttribute('aria-label','Nova');card.setAttribute('aria-live','polite');
   const style=document.createElement('style');style.textContent=`
 .sn-ai-nova-message{position:fixed;z-index:102;width:min(330px,calc(100vw - 24px));padding:16px;border:1px solid var(--sn-theme-655573,#74618b);border-radius:18px 18px 5px 18px;background:var(--sn-theme-251f31,#241c33);color:var(--sn-theme-e6edf9,#eee6ff);box-shadow:0 8px 28px #0005;font:13px/1.5 system-ui;pointer-events:auto;max-height:calc(100vh - 24px);overflow:auto;animation:sn-nova-in .2s ease-out}
@@ -23600,7 +23601,7 @@ function installNovaWelcome(host) {
   const toggle=document.createElement('input');toggle.type='checkbox';toggle.disabled=true;
   preference.append(label,toggle);settings.append(preference);
   let key='',firstName='friend',message=null,dismissed=false,frame=0,entranceStarted=false,entranceTimer=0,readyTimer=0,typingTimer=0,typingStarted=false,typingQueue=[],typingDone=null;
-  let nameReady=false,pendingUpdate=null;const announcedUpdates=new Set();
+  let nameReady=false,pendingUpdate=null,pageReady=false,pageReadyTimer=0;const announcedUpdates=new Set();
   host.novaUpdateMessage=data=>{
     if(!nameReady){pendingUpdate=data;return;}
     if(data.version&&announcedUpdates.has(data.version))return;
@@ -23623,6 +23624,16 @@ function installNovaWelcome(host) {
     if(!message||dismissed){card.hidden=true;tail.hidden=true;avatar.hidden=true;return;}
     const chatsButton=document.getElementById('sn-ai-chats-today')?.shadowRoot?.querySelector('.launcher');
     const chatsRect=chatsButton?.getBoundingClientRect();
+    if(!pageReady){
+      const launcherRect=launcher.getBoundingClientRect();
+      const workspaceReady=!location.pathname.startsWith('/now/workspace/agent/')||Boolean(chatsRect?.width&&chatsRect?.height);
+      if(document.readyState!=='complete'||document.fonts?.status==='loading'||!workspaceReady||!launcherRect.width||!launcherRect.height){
+        card.hidden=true;tail.hidden=true;avatar.hidden=true;
+        if(!pageReadyTimer)pageReadyTimer=setTimeout(()=>{pageReadyTimer=0;schedule();},250);
+        return;
+      }
+      pageReady=true;clearTimeout(pageReadyTimer);pageReadyTimer=0;
+    }
     const bottom=chatsRect?.width?innerHeight-chatsRect.top+8:56;
     avatar.style.right=(16-offsetX)+'px';avatar.style.bottom=(bottom-offsetY)+'px';avatar.hidden=false;
     if(!entranceStarted){entranceStarted=true;avatar.dataset.phase='peek';entranceTimer=setTimeout(()=>{if(dismissed)return;avatar.dataset.phase='jump';avatar.setAttribute('aria-label','NOVA jumping out');schedule();readyTimer=setTimeout(()=>{avatar.dataset.phase='ready';avatar.setAttribute('aria-label','NOVA waving');schedule();},650);},3600);}
@@ -23633,7 +23644,7 @@ function installNovaWelcome(host) {
     card.style.top=Math.max(12,Math.min(innerHeight-c.height-12,r.top-c.height+8))+'px';
     const left=parseFloat(card.style.left),top=parseFloat(card.style.top);
     tail.hidden=false;
-    tail.dataset.side='bottom';tail.style.left=Math.max(left+14,Math.min(left+c.width-49,r.left+7))+'px';tail.style.top=(top+c.height-2)+'px';
+    tail.dataset.side='bottom';tail.style.left=Math.max(left+20,Math.min(left+c.width-49,r.left+7))+'px';tail.style.top=(top+c.height-.5)+'px';
     card.style.borderRadius='20px';
   }
   function schedule(){if(!frame)frame=requestAnimationFrame(position);}
@@ -23660,7 +23671,7 @@ function installNovaWelcome(host) {
   toggle.addEventListener('change',()=>{save(toggle.checked);dismissed=true;stopTyping();card.hidden=true;tail.hidden=true;avatar.hidden=true;});
   const observer=new MutationObserver(schedule);observer.observe(host,{subtree:true,attributes:true,attributeFilter:['class','hidden','aria-expanded','style']});
   window.addEventListener('resize',schedule);window.addEventListener('pointerup',schedule);
-  window.addEventListener('pagehide',()=>{observer.disconnect();cancelAnimationFrame(frame);clearTimeout(entranceTimer);clearTimeout(readyTimer);clearTimeout(motionTimer);stopTyping();card.remove();tail.remove();avatar.remove();style.remove();window.removeEventListener('resize',schedule);window.removeEventListener('pointerup',schedule);},{once:true});
+  window.addEventListener('pagehide',()=>{observer.disconnect();cancelAnimationFrame(frame);clearTimeout(entranceTimer);clearTimeout(readyTimer);clearTimeout(pageReadyTimer);clearTimeout(motionTimer);stopTyping();card.remove();tail.remove();avatar.remove();style.remove();window.removeEventListener('resize',schedule);window.removeEventListener('pointerup',schedule);},{once:true});
   (async()=>{
     const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
     const id=String(page.NOW?.user?.userID||page.g_user?.userID||'');if(!/^[a-f0-9]{32}$/i.test(id))return;
