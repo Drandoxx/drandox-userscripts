@@ -23719,10 +23719,45 @@ function installNovaWelcome(host) {
     dailySpeech=morning?`Good morning, ${firstName}. That coffee did the trick. Let’s take the day one chat at a time. ☀️`:lunch?`Hi ${firstName}, a little lunch-break energy for you. I hope you get a proper bite to eat today. We’ve got this. 💜`:current.hour<17?`Good afternoon, ${firstName}. I hope the day is treating you kindly. I’m here for a little company.`:`Good evening, ${firstName}. Let’s keep the rest of the day gentle.`;
     message={};dismissed=false;typingStarted=true;dailyStartPending=true;avatar.dataset.dailyKind=morning?'morning':lunch?'lunch':'quiet';schedule();
   }
-  let sitTimer=0,sleepTimer=0,wakeTimer=0;
+  let sleepTimer=0,wakeTimer=0,ambientTimer=0,ambientEndTimer=0;
+  const novaIdleKinds=['butterfly','fireflies','bubbles','juggle','flower','plane','star','heart','rain','dance','stretch','look'];
+  let idleDeck=[],lastIdle='';
+  function nextNovaIdle(){
+    if(!idleDeck.length){idleDeck=[...novaIdleKinds];for(let i=idleDeck.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[idleDeck[i],idleDeck[j]]=[idleDeck[j],idleDeck[i]];}if(idleDeck.at(-1)===lastIdle)[idleDeck[0],idleDeck[idleDeck.length-1]]=[idleDeck.at(-1),idleDeck[0]];}
+    return lastIdle=idleDeck.pop();
+  }
+  function stopAmbientIdle(){clearTimeout(ambientTimer);clearTimeout(ambientEndTimer);delete avatar.dataset.ambient;avatarRoot.querySelector('.ambient-scene')?.remove();avatarRoot.querySelector('.ambient-tool')?.remove();}
+  function queueAmbientIdle(){ambientTimer=setTimeout(()=>{
+    if(dismissed||avatar.hidden||avatar.dataset.idle)return;
+    if(document.hidden||message||avatar.dataset.motion||avatar.dataset.daily||avatar.dataset.reaction||ticketBusy()){queueAmbientIdle();return;}
+    playAmbientIdle(nextNovaIdle());queueAmbientIdle();
+  },20000+Math.floor(Math.random()*25000));}
+  function playAmbientIdle(kind){
+    if(!novaIdleKinds.includes(kind)||avatar.dataset.idle||avatar.dataset.motion||avatar.dataset.daily||message)return false;
+    clearTimeout(ambientEndTimer);avatarRoot.querySelector('.ambient-scene')?.remove();avatarRoot.querySelector('.ambient-tool')?.remove();
+    const figure=avatarRoot.querySelector('.nova');if(!figure)return false;
+    avatar.dataset.ambient=kind;
+    const art={
+      butterfly:'<g class="idle-flier"><ellipse cx="0" cy="0" rx="8" ry="10" fill="#ffc9eb"/><ellipse cx="12" cy="0" rx="8" ry="10" fill="#acddff"/><path d="M6 -7v16" stroke="#786097" stroke-width="3"/></g>',
+      fireflies:'<g class="idle-orbit"><circle cx="6" cy="4" r="3" fill="#fff5a8"/><circle cx="35" cy="16" r="2" fill="#fff5a8"/><circle cx="-18" cy="26" r="3" fill="#fff5a8"/></g>',
+      bubbles:'<g class="idle-rise"><circle cx="0" cy="0" r="9" fill="#bfeaff22" stroke="#bfeaff"/><circle cx="23" cy="17" r="5" fill="#bfeaff22" stroke="#bfeaff"/><circle cx="-17" cy="28" r="6" fill="#bfeaff22" stroke="#bfeaff"/></g>',
+      juggle:'<g class="idle-orbit"><circle cx="0" cy="0" r="5" fill="#ffc9eb"/><circle cx="26" cy="-4" r="5" fill="#bfeaff"/><circle cx="14" cy="21" r="5" fill="#ffe0a8"/></g>',
+      flower:'<g class="idle-flower"><path d="M0 0v23m0-7q-12-8-10-12" stroke="#8bbc9c" fill="none" stroke-width="3"/><g fill="#f2b6dc"><circle cx="-5" cy="-3" r="5"/><circle cx="5" cy="-3" r="5"/><circle cx="0" cy="-9" r="5"/><circle cx="0" cy="3" r="5"/></g><circle r="3" fill="#ffe6a4"/></g>',
+      plane:'<g class="idle-flier"><path d="M-14-7l30 7-30 9 7-9z" fill="#ddefff" stroke="#a1bddd"/></g>',
+      star:'<g class="idle-orbit"><path d="M0-12l3 8 9 1-7 6 2 9-7-5-7 5 2-9-7-6 9-1z" fill="#ffe7a3"/></g>',
+      heart:'<g class="idle-rise"><path d="M0 4C-18-7-12-19 0-10C12-19 18-7 0 4Z" fill="#efacd3"/></g>',
+      rain:'<g class="idle-cloud"><path d="M-22 0Q-29-16-13-16Q-6-30 7-18Q26-19 24 0Z" fill="#c3b8dd"/><path class="idle-drops" d="M-15 9l-3 6m17-6-3 6m17-6-3 6" stroke="#a9d7f7" stroke-width="3" stroke-linecap="round"/></g>',
+      look:'<g class="idle-orbit"><circle r="2" fill="#fff5"/><circle cx="30" cy="10" r="2" fill="#fff5"/></g>'
+    };
+    if(art[kind]){const scene=document.createElement('div');scene.className='ambient-scene';scene.setAttribute('aria-hidden','true');scene.innerHTML='<svg viewBox="-60 -55 160 160">'+art[kind]+'</svg>';figure.append(scene);}
+    if(kind==='butterfly'){const net=document.createElement('span');net.className='ambient-tool';net.setAttribute('aria-hidden','true');net.innerHTML='<svg viewBox="0 0 40 70"><path d="M20 31v37" stroke="#c89869" stroke-width="4"/><ellipse cx="20" cy="17" rx="17" ry="15" fill="#f5efff22" stroke="#e2d8ed" stroke-width="2"/><path d="M7 9l25 18M5 16l24 16M11 4l24 16M31 8L8 28M35 17L18 32" stroke="#e2d8ed77"/></svg>';parts['right-hand']?.append(net);}
+    ambientEndTimer=setTimeout(()=>{delete avatar.dataset.ambient;avatarRoot.querySelector('.ambient-scene')?.remove();avatarRoot.querySelector('.ambient-tool')?.remove();},8000);
+    return true;
+  }
+  host.novaIdlePreview=kind=>{clearIdle();return playAmbientIdle(kind);};
   function startSilentEntrance(){if(entranceStarted||message)return;message={silent:true};dismissed=false;schedule();}
-  function clearIdle(){clearTimeout(sitTimer);clearTimeout(sleepTimer);clearTimeout(wakeTimer);delete avatar.dataset.idle;}
-  function armIdle(){clearIdle();if(dismissed||avatar.hidden||avatar.dataset.motion||typingQueue.length||message?.actions?.length)return;sitTimer=setTimeout(()=>{if(dismissed||avatar.hidden)return;avatar.dataset.idle='sit';avatar.setAttribute('aria-label','NOVA resting');schedule();},60000);sleepTimer=setTimeout(()=>{if(dismissed||avatar.hidden)return;if(host.novaRestTransition)host.novaRestTransition('sleep');else{avatar.dataset.idle='sleep';setExpression('friendly');avatar.setAttribute('aria-label','NOVA sleeping. Click to wake her.');schedule();}},180000);}
+  function clearIdle(){stopAmbientIdle();clearTimeout(sleepTimer);clearTimeout(wakeTimer);delete avatar.dataset.idle;}
+  function armIdle(){clearIdle();if(dismissed||avatar.hidden||avatar.dataset.motion||typingQueue.length||message?.actions?.length)return;queueAmbientIdle();sleepTimer=setTimeout(()=>{if(dismissed||avatar.hidden)return;stopAmbientIdle();if(host.novaRestTransition)host.novaRestTransition('sleep');else{avatar.dataset.idle='sleep';setExpression('friendly');avatar.setAttribute('aria-label','NOVA sleeping. Click to wake her.');schedule();}},900000);}
   avatar.setAttribute('tabindex','0');avatar.setAttribute('aria-label','NOVA. Click to wake her.');
   const wake=event=>{if(event.type==='keydown'&&!['Enter',' '].includes(event.key))return;event.preventDefault?.();event.stopPropagation?.();if(avatar.dataset.phase!=='ready'||avatar.dataset.idle==='wake')return;if(avatar.dataset.idle==='sleep'&&host.novaRestTransition){host.novaRestTransition('wake');return;}if(!avatar.dataset.idle){clearIdle();avatar.dataset.reaction='wave';setExpression('happy');wakeTimer=setTimeout(()=>{delete avatar.dataset.reaction;setExpression('friendly');armIdle();},2400);return;}clearTimeout(messageTimer);stopTyping();clearIdle();avatar.dataset.idle='wake';setExpression('friendly');avatar.setAttribute('aria-label','NOVA waking up');schedule();wakeTimer=setTimeout(()=>{delete avatar.dataset.idle;avatar.setAttribute('aria-label','NOVA awake');const next=!message?messageQueue.shift():null;if(next)next.run();else if(message?.paragraphs){const latest=message;message=null;show(latest);}else armIdle();schedule();},750);};
   avatar.addEventListener('click',wake);avatar.addEventListener('keydown',wake);
