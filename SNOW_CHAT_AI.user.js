@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.561
+// @version      2.36.562
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -53,7 +53,8 @@
 {"version":"2.36.558","fixes":true,"changes":[{"key":"nova-movement","meaningful":false,"text":"NOVA side-view arms attach at her shoulder, with short connected legs and a mirrored hip-driven stride."}]},
 {"version":"2.36.559","fixes":true,"changes":[{"key":"nova-movement","meaningful":true,"text":"NOVA has softer attached hands, distinct side-view expressions and coordinated walking, coffee, climbing and flying animations."},{"key":"nova-idle","meaningful":true,"text":"NOVA settles into sleep with hidden feet and smoothly returns to her standing pose before typing."}]},
 {"version":"2.36.560","fixes":true,"changes":[{"key":"hp-ci","meaningful":true,"text":"HP mode preserves your CI search on retries and selects the first matching Configuration Item using contains search."}]},
-{"version":"2.36.561","fixes":true,"changes":[{"key":"nova-wave","meaningful":false,"text":"Both hands are visible in front view, with a broader, slower wave."}]}
+{"version":"2.36.561","fixes":true,"changes":[{"key":"nova-wave","meaningful":false,"text":"Both hands are visible in front view, with a broader, slower wave."}]},
+{"version":"2.36.562","fixes":true,"changes":[{"key":"nova-wave","meaningful":false,"text":"NOVA keeps her hand raised between two waves and lowers it only at the end."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -23623,8 +23624,8 @@ function installNovaWelcome(host) {
     @keyframes nova-arm-step{0%,100%{transform:rotate(14deg)}50%{transform:rotate(-14deg)}}
     @keyframes nova-foot-step{0%,100%{transform:translate(7px,0) rotate(-5deg)}45%{transform:translate(-7px,0) rotate(4deg)}65%{transform:translate(-4px,-5px) rotate(-7deg)}85%{transform:translate(5px,-3px) rotate(-5deg)}}
     @keyframes nova-step-bob{0%,100%{translate:0 0}50%{translate:0 -2px}}
-    :host([data-reaction="wave"]) .arm.right{animation:nova-small-wave 1.2s ease-in-out 2!important;z-index:3;transform-origin:50% 100%}
-    @keyframes nova-small-wave{0%,100%{transform:rotate(-15deg)}20%,70%{transform:translateY(-17px) rotate(-70deg)}45%,85%{transform:translateY(-12px) rotate(5deg)}}
+    :host([data-reaction="wave"]) .arm.right{animation:nova-small-wave 2.4s ease-in-out 1!important;z-index:3;transform-origin:50% 100%}
+    @keyframes nova-small-wave{0%,100%{transform:rotate(-15deg)}18%,48%,78%{transform:translateY(-17px) rotate(-70deg)}33%,63%{transform:translateY(-17px) rotate(5deg)}}
     :host([data-phase="ready"]) .nova{animation:none;pointer-events:auto;cursor:pointer;transform-origin:50% 130px;transition:transform .45s ease}
     :host([data-phase="ready"]) .body{animation:breathe 4s ease-in-out infinite}
     :host([data-motion]) .body{animation:none!important}
