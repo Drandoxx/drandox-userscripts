@@ -4944,9 +4944,11 @@
     incomingCallPresent = Boolean(alert);
     if (callTestEnabled(doc)) {
       syncCallTestLayout(doc);
-      if (alert && (!testCallSession || testCallSession.finishedAt || testCallSession.ringingEndedAt || testNativeAnswer?.closest('.messenger-message')!==alert)) {
+      const signal=currentLiveCallSignal();
+      if (alert && (!testCallSession || testCallSession.finishedAt || testCallSession.ringingEndedAt || (signal?.id && testCallSession.conversationId && signal.id!==testCallSession.conversationId) || testNativeAnswer?.closest('.messenger-message')!==alert)) {
         testNativeAnswer = alert.querySelector('[data-action="answerInteraction"] a');
         testCallSession = { id: String(Date.now()), incomingAt: new Date().toISOString(), startedMs: Date.now(), hovered: false, actions: [], country: null, phoneNumber: null };
+        testCallSession.conversationId=signal?.id || null;
         persistTestCall();
       }
       if (alert && testCallSession && !testCallSession.backgroundViewRequestedAt) {
@@ -6072,7 +6074,7 @@
         if(activeCallSummary.conversationId===c.conversationId) {
           const connectedAt=Date.parse(own?.connectedTime || own?.calls?.find(x=>x.connectedTime)?.connectedTime);
           if(Number.isFinite(connectedAt) && activeCallSummary.connectedAt!==connectedAt) {activeCallSummary.connectedAt=connectedAt;saveActiveCallWindow();}
-          const ended=own?.state==='disconnected' || (own?.calls?.length && own.calls.every(x=>['disconnected','terminated'].includes(x.state)));
+          const ended=['disconnected','terminated'].includes(own?.state) || (own?.calls?.length && own.calls.every(x=>['disconnected','terminated'].includes(x.state)));
           if(ended && activeCallSummary.connectedAt)finishActiveCall();
         }
       }
@@ -9949,7 +9951,7 @@ function fitDashboardMetricSpacing(doc) {
       performance:performanceReport(),
       callMeasurements:{...saved,active:measurementState || saved.active || null,pendingNetworkChanges:callNetworkChanges.slice()},
       todayCallCache:readTodayCallCache(),incomingCallHistory:GM_getValue(CALL_HISTORY_KEY,[]),
-      note:'Combined export may contain customer phone numbers and locations. Detailed measurements remain admin-only and require call popups enabled; empty sections mean no data was recorded.'};
+      note:'Combined export may contain customer phone numbers and locations. Detailed measurements are permitted for Laszlo Akim and Lilla S with call popups enabled. Payloads and retention are bounded; empty sections mean no data was recorded.'};
     const url=URL.createObjectURL(new Blob([JSON.stringify(report)],{type:'application/json'}));
     const link=document.createElement('a');link.href=url;link.download='genesys-v2-diagnostics.json';link.click();
     setTimeout(()=>URL.revokeObjectURL(url),1000);
