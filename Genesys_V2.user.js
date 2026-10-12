@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.569.0
+// @version      1.570.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -6530,7 +6530,7 @@
       if (!frameDoc || visited.has(frameDoc) || depth > 6) return;
       visited.add(frameDoc);
       const areas = [...frameDoc.querySelectorAll('.selected-interaction-container, .interactions, [data-testid="wrapup-main-container"]')];
-      const text = areas.map(area => area.innerText || '').join('\n').slice(0, 16000);
+      const text = areas.map(area => {watchCallScope(area);return callScopeText(area);}).join('\n').slice(0, 16000);
       const countdown = frameDoc.querySelector('[data-testid="wrapup-header-message-duration"]')?.textContent?.trim();
       const visual = collectCallVisualDiagnostics(frameDoc, callFrame);
       if (text || countdown || visual.surfaces.length || visual.controls.length || visual.identifiers.length || visual.timers.length) sources.push({url:frameDoc.location.href,text,countdown:countdown || null,visual});
