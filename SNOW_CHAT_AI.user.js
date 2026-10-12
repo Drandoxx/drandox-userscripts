@@ -640,13 +640,24 @@ const snAIChatDisplayNames=(()=>{
       // Select the greeting from the latest human message in this new offer.
       let chat=host;
       while(chat&&chat.localName!=='sn-agent-chat')chat=chat.parentElement||chat.getRootNode()?.host;
-      const agentMessages=chat?.shadowRoot?.querySelectorAll('now-chat-message')||[];
-      if ([...agentMessages].some(message=>message.shadowRoot?.querySelector('.now-chat-message.right:not(.system)'))) {
+      const chatMessages=()=>{
+        const result=[];
+        const visit=root=>{if(!root)return;for(const node of root.querySelectorAll('*')){if(node.localName==='now-chat-message')result.push(node);if(node.shadowRoot)visit(node.shadowRoot);}};
+        visit(chat?.shadowRoot);return result;
+      };
+      const messageInfo=message=>{
+        const props=message.getProperties?.(),native=props?.message?.data?.props?.message;
+        return {right:props?.orientation==='right'||Boolean(message.shadowRoot?.querySelector('.now-chat-message.right:not(.system)')),
+          system:Boolean(props?.isSystem||native?.is_system),text:native?.formatted_message??message.shadowRoot?.querySelector('.now-chat-message.right:not(.system)')?.textContent,
+          status:native?.delivery_status,key:native?.messageId||native?.sys_id||message};
+      };
+      const agentMessages=chatMessages();
+      if (agentMessages.some(message=>{const info=messageInfo(message);return info.right&&!info.system;})) {
         greetTrace('skipped-agent-already-replied',{ims:record.number.value});return;
       }
       try {
-        const lastMessage=[...agentMessages].filter(message=>message.shadowRoot?.querySelector('.now-chat-message:not(.system)')).at(-1);
-        const userLast=Boolean(lastMessage?.shadowRoot?.querySelector('.now-chat-message:not(.right):not(.system)'));
+        const lastMessage=agentMessages.filter(message=>!messageInfo(message).system).at(-1);
+        const userLast=Boolean(lastMessage&&!messageInfo(lastMessage).right);
         const query=userLast?'q':'w', command='/r '+query;
         host.dispatch('CHAT_INPUT#MESSAGE_ENTERED',{message:command,command:'r',query,currentParamIndex:0,caretPos:4});
         const option=await wait(()=>ownElements().find(node=>node.id==='quickaction-param-'+query));
@@ -660,16 +671,15 @@ const snAIChatDisplayNames=(()=>{
         // Same native send control as the operator. No retries after submission.
         rememberGreetingAttempt(id);
         greetTrace('sending',{ims:record.number.value});
-        const beforeMessages=new Set(chat?.shadowRoot?.querySelectorAll('now-chat-message')||[]);
+        const beforeMessages=new Set(chatMessages().map(message=>messageInfo(message).key));
         send.click();
         // Read-only confirmation. A click/empty composer is not proof of delivery;
         // require a new outgoing bubble containing the expanded greeting.
         const normalize=value=>String(value||'').replace(/\s+/g,' ').trim();
         let confirmed=false;
         for(let check=0;check<100;check++){
-          const messages=chat?.shadowRoot?.querySelectorAll('now-chat-message')||[];
-          confirmed=[...messages].some(message=>!beforeMessages.has(message)
-            && normalize(message.shadowRoot?.querySelector('.now-chat-message.right:not(.system)')?.textContent)===normalize(expected));
+          confirmed=chatMessages().some(message=>{const info=messageInfo(message);return !beforeMessages.has(info.key)&&info.right&&!info.system
+            &&(!info.status||info.status==='delivered'||info.status==='sent')&&normalize(info.text)===normalize(expected);});
           if(confirmed)break;
           if(!chat?.isConnected)break;
           await new Promise(resolve=>setTimeout(resolve,100));
@@ -23482,7 +23492,8 @@ function installNovaWelcome(host) {
     const id=String(page.NOW?.user?.userID||page.g_user?.userID||'');if(!/^[a-f0-9]{32}$/i.test(id))return;
     key='sn-ai-nova-messages-v1:'+id;
     let choice=null;try{choice=localStorage.getItem(key);}catch{}
-    toggle.checked=choice==='yes';toggle.disabled=false;if(choice!==null)return;
+    // Testing: show the welcome on every page reload, regardless of saved choice.
+    toggle.checked=choice==='yes';toggle.disabled=false;
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
     try{const response=await fetch('/api/now/table/sys_user/'+id+'?sysparm_fields=first_name',{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':page.g_ck},signal:controller.signal});if(response.ok){const data=await response.json();firstName=String(data.result?.first_name||'friend').trim().split(/\s+/)[0]||'friend';}}catch{}finally{clearTimeout(timer);}
     if(!host.isConnected)return;
