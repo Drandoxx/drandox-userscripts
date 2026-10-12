@@ -23505,6 +23505,7 @@ function installNovaWelcome(host) {
   // Named slots are replaceable independently, with no external image assets.
   const parts={};for(const part of avatarRoot.querySelectorAll('[data-part]'))parts[part.dataset.part]=part;
   const setExpression=expression=>{const face=avatarRoot.querySelector('.nova');if(face)face.dataset.expression=expression;};
+  avatar.novaAppearance=Object.freeze({setExpression,setPart(name,content){if(parts[name]&&content instanceof Node)parts[name].replaceChildren(content);}});
   const preference=document.createElement('label');preference.className='sn-ai-nova-preference';
   const label=document.createElement('span');label.textContent='Nova friendly messages';
   const toggle=document.createElement('input');toggle.type='checkbox';toggle.disabled=true;
