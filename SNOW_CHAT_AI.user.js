@@ -4898,85 +4898,34 @@ const snAIChatDisplayNames=(()=>{
   }
   function syncNativeActionWidth(root) {
     syncRecordHeaderRows(root);
-    const host = root.host;
-    if (host && ['sn-form-internal-header-layout','now-record-common-uiactionbar','sn-form-internal-uiactionbar'].includes(host.localName)) {
-      // Normalize the parent source too: native reactive updates propagate it
-      // down again, otherwise restoring forced overflow and excluded actions.
-      let owner=host,header=null;
-      while(owner){if(owner.localName==='sn-form-internal-header-layout'){header=owner;break;}owner=owner.parentElement||owner.getRootNode?.().host;}
-      const incident=(header?.getProperties?.().table||header?.table)==='incident';
-      for(owner=host;owner;owner=owner.parentElement||owner.getRootNode?.().host){
-        if(['sn-form-internal-header-layout','now-record-common-uiactionbar','sn-form-internal-uiactionbar'].includes(owner.localName)){
-          const nodes=owner.getProperties?.().actionNodes;
-          if(Array.isArray(nodes)){
-            const fit=nodes.flatMap(node=>{
-              const children=(node.children||[]).filter(child=>!incident||!hiddenIncidentActionIds.has(String(child.id)));
-              return node.children&&!children.length?[]:[{...node,overflow:false,...(node.children?{children}:{})}];
-            });
-            if(JSON.stringify(nodes)!==JSON.stringify(fit))owner.actionNodes=fit;
-          }
-        }
-        if(owner===header)break;
-      }
-    }
-    if (host?.localName !== 'sn-form-internal-uiactionbar') return;
-    let entry = actionWidthObservers.get(host);
-    if (!entry) {
-      // Native rendering accepts an explicit width; its default budget is
-      // half the offset-parent width minus 48px, not the action bar's width.
-      const update = () => {
-        let owner = host, incident = false;
-        while (owner) {
-          if (owner.localName === 'sn-form-internal-header-layout') {
-            incident = owner.table === 'incident';break;
-          }
-          owner = owner.parentElement || owner.getRootNode?.().host;
-        }
-        const nodes = host.getProperties?.().actionNodes;
-        if (Array.isArray(nodes)) {
-          // Keep native actions/handlers and native width-based overflow, but
-          // remove server "always More" flags and excluded actions from its budget.
-          const fit = nodes.flatMap(node => {
-            const children = (node.children || []).filter(child => !incident || !hiddenIncidentActionIds.has(String(child.id)));
-            return node.children && !children.length ? [] : [{...node, overflow:false, ...(node.children ? {children} : {})}];
-          });
-          if (JSON.stringify(nodes) !== JSON.stringify(fit)) host.actionNodes = fit;
-        }
-        const width = Math.floor(host.getBoundingClientRect().width);
-        if (width > 0 && Math.abs(Number(host.width || 0) - width) >= 1) host.width = width;
-        if (width > 0 && Array.isArray(nodes) && !host.hasAttribute('data-sn-ai-actions-ready') && !entry.readyScheduled) {
-          entry.readyScheduled = true;
-          // A fixed two-frame delay can expire before native record loading and
-          // conditional actions finish. Keep the reserved row hidden until the
-          // native form is ready AND actions/width remain stable across frames.
-          let stableFrames=0,lastSignature='';
-          const settle=()=>{
-            if(!host.isConnected){entry.readyScheduled=false;return;}
-            entry.update();
-            let form=host;
-            while(form&&form.localName!=='sn-form-internal-workspace-form-layout')form=form.parentElement||form.getRootNode?.().host;
-            const props=form?.getProperties?.();
-            const currentWidth=Math.floor(host.getBoundingClientRect().width);
-            // Hidden/background record panels resume through ResizeObserver;
-            // do not keep a per-frame loop alive for an inactive tab.
-            if(currentWidth<=0){entry.readyScheduled=false;return;}
-            const signature=currentWidth+':'+JSON.stringify(host.getProperties?.().actionNodes||[]);
-            const nativeReady=!props?.isLoadingRecord&&!props?.isReloading&&currentWidth>0
-              &&Math.abs(Number(host.width||0)-currentWidth)<1;
-            stableFrames=nativeReady&&signature===lastSignature?stableFrames+1:0;
-            lastSignature=signature;
-            if(stableFrames>=4){
-              entry.readyScheduled=false;host.setAttribute('data-sn-ai-actions-ready','');return;
-            }
-            requestAnimationFrame(settle);
-          };
+    const host=root.host;
+    if(!host||!['sn-form-internal-header-layout','now-record-common-uiactionbar','sn-form-internal-uiactionbar'].includes(host.localName))return;
+    // Native fixedButtonNumber exposes overflow-marked actions without changing
+    // actionNodes, action identities, condition data, or click handlers.
+    const nodes=host.getProperties?.().actionNodes;
+    if(Array.isArray(nodes)&&Number(host.fixedButtonNumber||0)!==nodes.length)host.fixedButtonNumber=nodes.length;
+    if(host.localName!=='sn-form-internal-uiactionbar')return;
+    let entry=actionWidthObservers.get(host);
+    if(!entry){
+      const update=()=>{
+        const width=Math.floor(host.getBoundingClientRect().width);
+        if(width>0&&Math.abs(Number(host.width||0)-width)>=1)host.width=width;
+        if(width<=0||host.hasAttribute('data-sn-ai-actions-ready')||entry.pending)return;
+        entry.pending=true;
+        let last='',stable=0;
+        const settle=()=>{
+          if(!host.isConnected||host.getBoundingClientRect().width<=0){entry.pending=false;return;}
+          let form=host;
+          while(form&&form.localName!=='sn-form-internal-workspace-form-layout')form=form.parentElement||form.getRootNode?.().host;
+          const props=form?.getProperties?.();
+          const signature=Math.floor(host.getBoundingClientRect().width)+':'+JSON.stringify(host.getProperties?.().actionNodes||[]);
+          stable=!props?.isLoadingRecord&&!props?.isReloading&&signature===last?stable+1:0;last=signature;
+          if(stable>=4){entry.pending=false;host.setAttribute('data-sn-ai-actions-ready','');return;}
           requestAnimationFrame(settle);
-        }
+        };
+        requestAnimationFrame(settle);
       };
-      const observer = new ResizeObserver(update);
-      entry = { observer, update };
-      actionWidthObservers.set(host, entry);
-      observer.observe(host);
+      const observer=new ResizeObserver(update);entry={observer,update,pending:false};actionWidthObservers.set(host,entry);observer.observe(host);
     }
     entry.update();
   }
