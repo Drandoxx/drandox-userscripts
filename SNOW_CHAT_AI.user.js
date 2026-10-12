@@ -617,7 +617,13 @@ const snAIChatDisplayNames=(()=>{
           visible:Boolean(node.getBoundingClientRect?.().width&&node.getBoundingClientRect?.().height),path:path(node)}))};
     };
     const safe=()=>autoGreetEnabled&&host.isConnected&&(host.sysId||host.getAttribute('sys-id'))===id&&host.isChatOwner===true&&!input()?.disabled&&!input()?.readOnly&&ownElements().some(node=>node.matches('[aria-selected="true"]')&&/Public Chat/i.test(node.getAttribute('aria-label')||node.textContent));
-    const wait=async predicate=>{for(let i=0;i<20;i++){if(!safe())return null;const result=predicate();if(result)return result;await new Promise(resolve=>setTimeout(resolve,100));}return null;};
+    const wait=async predicate=>{for(let i=0;i<50;i++){
+      if(!autoGreetEnabled||!host.isConnected||(host.sysId||host.getAttribute('sys-id'))!==id||host.isChatOwner!==true)return null;
+      // Native snippet selection replaces the textarea. Wait through that
+      // transient readonly/missing control instead of treating it as failure.
+      if(safe()){const result=predicate();if(result)return result;}
+      await new Promise(resolve=>setTimeout(resolve,100));
+    }return null;};
     setTimeout(async()=>{
       // Wait for native controls to mount; never insert a command into a partial/error view.
       let loaded=false;
@@ -655,19 +661,27 @@ const snAIChatDisplayNames=(()=>{
       if (agentMessages.some(message=>{const info=messageInfo(message);return info.right&&!info.system;})) {
         greetTrace('skipped-agent-already-replied',{ims:record.number.value});return;
       }
+      let composerEditedByUser=false;
+      const observeComposerEdit=event=>{if(event.isTrusted){composerEditedByUser=true;greetTrace('manual-composer-edit',{ims:record.number.value,composerSnapshot:composerSnapshot()});}};
+      host.addEventListener('input',observeComposerEdit,true);
       try {
         const lastMessage=agentMessages.filter(message=>!messageInfo(message).system).at(-1);
         const userLast=Boolean(lastMessage&&!messageInfo(lastMessage).right);
         const query=userLast?'q':'w', command='/r '+query;
+        greetTrace('shortcut-requested',{ims:record.number.value,code:query,nativeAction:'CHAT_INPUT#MESSAGE_ENTERED'});
         host.dispatch('CHAT_INPUT#MESSAGE_ENTERED',{message:command,command:'r',query,currentParamIndex:0,caretPos:4});
         const option=await wait(()=>ownElements().find(node=>node.id==='quickaction-param-'+query));
-        if(!option){greetTrace('quick-action-not-found',{code:query});return;}
+        if(!option){outcome('not-sent','quick-action-not-found');return;}
         const expected=option.querySelector('.sn-action-menu-display-value')?.textContent.trim();
+        if(composerEditedByUser){outcome('skipped','composer-edited-by-user');return;}
         if(!expected||!safe()||input().value.trim()!==command){outcome('not-sent',!expected?'quick-action-empty':!safe()?'chat-no-longer-safe':'command-not-retained');return;}
-        option.click();
+        greetTrace('shortcut-selected',{ims:record.number.value,code:query,nativeAction:'CHAT_INPUT#SNIPPET_SELECTED',expected});
+        host.dispatch('CHAT_INPUT#SNIPPET_SELECTED',{itemSelected:{displayValue:expected}});
         const ready=await wait(()=>input()?.value.trim()===expected);
+        if(composerEditedByUser){outcome('skipped','composer-edited-by-user');return;}
         const send=ownElements().find(node=>node.matches('button[aria-label="Send Message"]'));
         if(!ready||!safe()||input().value.trim()!==expected||!send||send.disabled){outcome('not-sent',!ready?'quick-action-did-not-fill':!safe()?'chat-no-longer-safe':!send?'send-control-missing':send.disabled?'send-control-disabled':'composer-edited');return;}
+        greetTrace('shortcut-expanded',{ims:record.number.value,code:query,composerSnapshot:composerSnapshot()});
         // Use the native action dispatched by ServiceNow's Send/Enter handler.
         // A DOM click can hit a stale nested button during quick-action rendering.
         // Observe trusted operator sends separately; never claim them as automation.
@@ -701,6 +715,7 @@ const snAIChatDisplayNames=(()=>{
         else outcome(confirmed?'sent-confirmed':'send-unconfirmed',confirmed?'script-native-enter-outgoing-greeting-confirmed':!chat?.isConnected?'chat-disconnected-before-confirmation':'no-matching-outgoing-bubble-within-10s',confirmed);
         }finally{host.removeEventListener('click',observeManual,true);host.removeEventListener('keydown',observeManual,true);}
       } catch(error) { outcome('not-sent','native-greeting-error: '+String(error.message||error));console.warn('SN AI auto-greet stopped',error); }
+      finally{host.removeEventListener('input',observeComposerEdit,true);}
     },greetDelayMs);
   }
   try { acceptedIMS = new Set(JSON.parse(sessionStorage.getItem('sn-ai-unseen-accepted-ims-v1') || '[]')); } catch {}
