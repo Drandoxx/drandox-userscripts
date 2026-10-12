@@ -4872,7 +4872,7 @@
     try{return GM_getValue('genesys-v2-call-popups-enabled',false)===true;}catch(_){return false;}
   }
   function callRecordingAllowed(doc) {
-    return ['laszlo akim','lilla s'].includes(currentAgentName(doc));
+    return true; // Diagnostic recording is independent of Admin permissions.
   }
   function popupOnlyCallEnabled(doc) {
     // The regular popup setting owns native UI suppression for every user.
@@ -5875,7 +5875,7 @@
     const own=body.participants?.find(p=>(p.userId || p.user?.id)===currentAgentApiId);
     const state=own?.state || own?.calls?.[0]?.state;
     const diagnosticState=state || (body.participants?.some(p=>p.purpose==='agent' && ['alerting','contacting','connected'].includes(p.state))?'active-unresolved':null);
-    if(transport==='call-push' && callPopupsEnabled() && ['alerting','contacting','connected','active-unresolved'].includes(diagnosticState)) {
+    if(transport==='call-push' && ['alerting','contacting','connected','active-unresolved'].includes(diagnosticState)) {
       if(measurementState?.conversationId && measurementState.conversationId!==id) {
         const old=measurementState;old.endedAt=new Date().toISOString();old.endReason='next-call';
         persistCallMeasurements([...(GM_getValue('genesys-v2-call-measurements',{calls:[]}).calls || []),old],null);measurementState=null;
@@ -6531,10 +6531,10 @@
     const visit = (frameDoc, depth = 0, callFrame = false) => {
       if (!frameDoc || visited.has(frameDoc) || depth > 6) return;
       visited.add(frameDoc);
-      const areas = [...frameDoc.querySelectorAll('.selected-interaction-container, .interactions, [data-testid="wrapup-main-container"]')];
+      const areas = callPopupsEnabled() ? [...frameDoc.querySelectorAll('.selected-interaction-container, .interactions, [data-testid="wrapup-main-container"]')] : [];
       const text = areas.map(area => {watchCallScope(area);return callScopeText(area);}).join('\n').slice(0, 16000);
       const countdown = frameDoc.querySelector('[data-testid="wrapup-header-message-duration"]')?.textContent?.trim();
-      const visual = collectCallVisualDiagnostics(frameDoc, callFrame);
+      const visual = callPopupsEnabled() ? collectCallVisualDiagnostics(frameDoc, callFrame) : {surfaces:[],controls:[],identifiers:[],timers:[],snapshots:[]};
       if (text || countdown || visual.surfaces.length || visual.controls.length || visual.identifiers.length || visual.timers.length) sources.push({url:frameDoc.location.href,text,countdown:countdown || null,visual});
       frameDoc.querySelectorAll('iframe').forEach(frame => {
         try { const nested = accessibleFrameDocument(frame); if (nested) visit(nested,depth+1,callFrame || !!frame.closest('.command-panel.active.agent, .selected-interaction-container')); else inaccessible.push(frame.title || frame.src); }
@@ -9925,6 +9925,21 @@ function fitDashboardMetricSpacing(doc) {
   }
 
   const PERFORMANCE_LOG_KEY='genesys-v2-light-performance-v1';
+  function resetDiagnosticsForVersion() {
+    if(window!==window.top)return;
+    const key='genesys-v2-diagnostics-version',version=GM_info.script.version;
+    const previous=GM_getValue(key,null);
+    if(previous!==version) {
+      // Reset diagnostic recordings only. Never delete real history, cards,
+      // preferences or the API cache used by My calls Today.
+      GM_deleteValue('genesys-v2-call-measurements');
+      GM_setValue(key,version);
+    }
+    try {
+      const saved=JSON.parse(sessionStorage.getItem(PERFORMANCE_LOG_KEY)||'null');
+      if(saved && saved.version!==version)sessionStorage.removeItem(PERFORMANCE_LOG_KEY);
+    }catch(_){try{sessionStorage.removeItem(PERFORMANCE_LOG_KEY);}catch(_){}}
+  }
   let lightweightPerformance=null;
   function performanceMeasure(name,callback) {
     if(!lightweightPerformance)return callback();
@@ -9966,7 +9981,7 @@ function fitDashboardMetricSpacing(doc) {
       performance:performanceReport(),
       callMeasurements:{...saved,active:measurementState || saved.active || null,pendingNetworkChanges:callNetworkChanges.slice()},
       todayCallCache:readTodayCallCache(),incomingCallHistory:GM_getValue(CALL_HISTORY_KEY,[]),
-      note:'Combined export may contain customer phone numbers and locations. Detailed measurements are permitted for Laszlo Akim and Lilla S with call popups enabled. Payloads and retention are bounded; empty sections mean no data was recorded.'};
+      note:'Combined export may contain customer phone numbers and locations. API call diagnostics record for every user while Genesys V2 is running, including when custom popups are disabled. Targeted popup/control observations require custom popups. New script versions reset diagnostic recordings; real history and API cache are retained. Payloads and retention are bounded.'};
     const url=URL.createObjectURL(new Blob([JSON.stringify(report)],{type:'application/json'}));
     const link=document.createElement('a');link.href=url;link.download='genesys-v2-diagnostics.json';link.click();
     setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -9976,7 +9991,7 @@ function fitDashboardMetricSpacing(doc) {
     lightweightPerformance={schemaVersion:1,version:GM_info.script.version,startedAt:Date.now(),work:{},samples:[],events:[],longTasks:{count:0,totalMs:0,maxMs:0},limitations:'No watts or script-isolated heap measurement. Heap is browser-provided page estimate. Timed work covers instrumented synchronous paths, not all script or Genesys CPU. No call contents, tokens, HTML, network bodies or source code.'};
     try {
       const saved=JSON.parse(sessionStorage.getItem(PERFORMANCE_LOG_KEY)||'null');
-      if(saved?.schemaVersion===1 && Date.now()-saved.exportedAt<86400000){lightweightPerformance.samples=(saved.samples||[]).slice(-60);lightweightPerformance.events=(saved.events||[]).slice(-39);}
+      if(saved?.schemaVersion===1 && saved.version===GM_info.script.version && Date.now()-saved.exportedAt<86400000){lightweightPerformance.samples=(saved.samples||[]).slice(-60);lightweightPerformance.events=(saved.events||[]).slice(-39);}
     }catch(_){}
     lightweightPerformance.device={cores:navigator.hardwareConcurrency||null,memoryGB:navigator.deviceMemory||null,browser:navigator.userAgent.slice(0,200)};
     let last=performance.now(),lastMinute=0,lastCallState='';
@@ -10032,6 +10047,7 @@ function fitDashboardMetricSpacing(doc) {
     });
   }
 
+  resetDiagnosticsForVersion();
   startLightweightPerformance();
   // OFF runs only the independent settings launcher plus bounded diagnostics. No loader, logo rewrite,
   // sorting, iframe work, styling, native recovery, or layout hooks are started.
