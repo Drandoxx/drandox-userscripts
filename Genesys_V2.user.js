@@ -4968,7 +4968,9 @@
         }
         if (!alert && !testCallSession.ringingEndedAt) {
           testCallSession.ringingEndedAt = new Date().toISOString();
-          testCallSession.ringingDurationMs = elapsed;
+          // Native alert removal happens after answer; never overwrite the
+          // earlier answer-click duration with that later DOM removal time.
+          if(!testCallSession.answeredAt)testCallSession.ringingDurationMs = elapsed;
           persistTestCall();
         }
         syncCallInformationPopup(doc);
@@ -9801,14 +9803,14 @@ function fitDashboardMetricSpacing(doc) {
     // Once marked, only revisit the one board that needs the once-per-second update.
     const markedBoards = doc.querySelectorAll('table.gbs-board');
     if (markedBoards.length) {
-      markedBoards.forEach(sortBoard);
+      markedBoards.forEach(table=>performanceMeasure('board-sort',()=>sortBoard(table)));
     } else {
       doc.querySelectorAll('table').forEach(table => {
-        if (isAgentBoard(table)) sortBoard(table);
+        if (isAgentBoard(table)) performanceMeasure('board-sort',()=>sortBoard(table));
       });
     }
-    syncHoverCardStatusColors(doc);
-    finishReadyComponentLoads(doc);
+    performanceMeasure('board-hover-colours',()=>syncHoverCardStatusColors(doc));
+    performanceMeasure('board-loader-completion',()=>finishReadyComponentLoads(doc));
     });
   }
 
