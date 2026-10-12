@@ -23646,7 +23646,7 @@ function installNovaWelcome(host) {
   }
   function runDaily(){
     dailyStartPending=false;clearIdle();const steps=[['enter',2500],['yawn',1500],['sip',2000],['cheer',900]];let index=0;
-    const next=()=>{if(dismissed||ticketBusy()){delete avatar.dataset.daily;delete avatar.dataset.dailyKind;return;}if(index===steps.length){delete avatar.dataset.daily;delete avatar.dataset.dailyKind;setExpression('happy');show({paragraphs:[dailySpeech]});return;}const [phase,delay]=steps[index++];avatar.dataset.daily=phase;if(phase==='cheer')setExpression('happy');dailyTimer=setTimeout(next,delay);};next();
+    const next=()=>{if(dismissed||ticketBusy()){delete avatar.dataset.daily;delete avatar.dataset.dailyKind;message=null;schedule();try{localStorage.removeItem(key+':daily');}catch{}if(!dismissed)dailyTimer=setTimeout(greetDaily,1000);return;}if(index===steps.length){delete avatar.dataset.daily;delete avatar.dataset.dailyKind;setExpression('happy');show({paragraphs:[dailySpeech]});return;}const [phase,delay]=steps[index++];avatar.dataset.daily=phase;if(phase==='cheer')setExpression('happy');dailyTimer=setTimeout(next,delay);};next();
   }
   async function greetDaily(){
     const current=novaBudapestDay(),dayKey=key+':daily';
@@ -23673,7 +23673,7 @@ function installNovaWelcome(host) {
     if(data.version){clearTimeout(entranceTimer);clearTimeout(readyTimer);entranceStarted=false;delete avatar.dataset.phase;}
     setExpression('happy');
     if(data.reload){show({paragraphs:['The update page is open. Once the update is installed, reload this page to use the new version.'],actions:[{label:'Reload page',run:()=>location.reload()}]});return;}
-    show({paragraphs:[`Hi ${firstName},`,`I have a new update for you, version ${data.version}.`,`Here’s what’s new:`],bullets:summarizeNovaReleaseNotes(data.notes,data.currentVersion,data.version),actions:[{label:'Update now',run:data.update},{label:'Later',run:()=>{data.later?.();stopTyping();message=null;card.hidden=true;tail.hidden=true;avatar.hidden=true;}}]});
+    show({novaUpdate:data,paragraphs:[`Hi ${firstName},`,`I have a new update for you, version ${data.version}.`,`Here’s what’s new:`],bullets:summarizeNovaReleaseNotes(data.notes,data.currentVersion,data.version),actions:[{label:'Update now',run:data.update},{label:'Later',run:()=>{data.later?.();stopTyping();message=null;card.hidden=true;tail.hidden=true;avatar.hidden=true;}}]});
   };
   function stopTyping(){clearTimeout(typingTimer);typingTimer=0;typingQueue=[];typingDone=null;card.removeAttribute('aria-busy');}
   function typeNext(){
@@ -23686,6 +23686,7 @@ function installNovaWelcome(host) {
   }
   function position(){
     frame=0;
+    if(message?.novaUpdate&&ticketBusy()){deferredUpdate=message.novaUpdate;announcedUpdates.delete(deferredUpdate.version);stopTyping();message=null;unfrozenSince=0;waitForUpdate();}
     if(!message||dismissed){card.hidden=true;tail.hidden=true;avatar.hidden=true;return;}
     const chatsButton=document.getElementById('sn-ai-chats-today')?.shadowRoot?.querySelector('.launcher');
     const chatsRect=chatsButton?.getBoundingClientRect();
