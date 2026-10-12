@@ -23875,7 +23875,7 @@ function installNovaWelcome(host) {
     @keyframes nova-soft-blink{0%,31%,35%,72%,76%,100%{scale:1 1}33%,74%{scale:1 .08}}
     @keyframes nova-soft-glance{0%,20%,42%,70%,100%{translate:0 0}25%,35%{translate:3px -1px}76%,87%{translate:-3px 0}}
     .ambient-scene{position:absolute;left:17px;top:-35px;width:145px;height:145px;pointer-events:none;z-index:5;animation:nova-idle-fade 8s ease both}.ambient-scene svg{width:100%;height:100%;overflow:visible}
-    .ambient-tool{position:absolute;left:5px;bottom:14px;width:40px;height:70px;transform-origin:50% 100%;animation:nova-net-scoop 8s ease-in-out both;pointer-events:none}.ambient-tool svg{width:100%;height:100%}
+    .ambient-tool{position:absolute;left:-3px;bottom:14px;width:30px;height:50px;transform-origin:50% 100%;animation:nova-net-scoop 8s ease-in-out both;pointer-events:none}.ambient-tool svg{width:100%;height:100%}
     .idle-flier{animation:nova-idle-flier 8s ease-in-out both}.idle-orbit{animation:nova-idle-orbit 4s ease-in-out 2}.idle-rise{animation:nova-idle-rise 4s ease-out 2}.idle-flower{animation:nova-idle-flower 8s ease-in-out both}.idle-cloud{animation:nova-idle-cloud 8s ease-in-out both}.idle-drops{animation:nova-idle-drops .9s ease-in infinite}
     :host([data-ambient="butterfly"]) .arm.right{animation:nova-net-hand 8s ease-in-out both!important;z-index:6}
     :host([data-ambient="dance"]) .body{animation:nova-idle-dance 1.6s ease-in-out 5!important}
@@ -23886,7 +23886,7 @@ function installNovaWelcome(host) {
     @keyframes nova-idle-fade{0%,100%{opacity:0}8%,90%{opacity:1}}
     @keyframes nova-idle-flier{0%{transform:translate(72px,25px) rotate(-15deg)}25%{transform:translate(-15px,-10px) rotate(15deg)}50%{transform:translate(30px,-22px) rotate(-15deg)}70%{transform:translate(60px,30px) rotate(15deg)}100%{transform:translate(110px,-40px)}}
     @keyframes nova-net-hand{0%,100%{transform:rotate(-15deg)}35%,65%{transform:translateY(-4px) rotate(-10deg)}}
-    @keyframes nova-net-scoop{0%,20%,100%{rotate:25deg}40%{rotate:55deg}65%{rotate:15deg}}
+    @keyframes nova-net-scoop{0%,20%,100%{rotate:15deg}40%{rotate:30deg}65%{rotate:5deg}}
     @keyframes nova-idle-orbit{0%,100%{transform:translate(30px,-3px)}25%{transform:translate(-10px,10px)}50%{transform:translate(25px,28px)}75%{transform:translate(70px,5px)}}
     @keyframes nova-idle-rise{0%{opacity:0;transform:translate(40px,65px)}20%{opacity:1}100%{opacity:0;transform:translate(55px,-30px)}}
     @keyframes nova-idle-flower{0%,100%{transform:translate(80px,85px);opacity:0}20%,80%{transform:translate(72px,66px);opacity:1}}
