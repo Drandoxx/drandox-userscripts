@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.552
+// @version      2.36.553
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -44,7 +44,8 @@
 {"version":"2.36.549","fixes":true,"changes":[{"key":"nova-daily","meaningful":true,"text":"NOVA greets you once daily using Budapest time, with a coffee routine or a lunchtime snack."},{"key":"nova-updates","meaningful":true,"text":"NOVA waits until ticket logging ends and the screen has stayed unfrozen for 10 seconds before announcing an update."}]},
 {"version":"2.36.550","fixes":true,"changes":[{"key":"nova-appearance","meaningful":true,"text":"NOVA speech bubbles grow as she speaks, revealing bullets and media only when ready."}]},
 {"version":"2.36.551","fixes":true,"changes":[{"key":"nova-daily","meaningful":true,"text":"NOVA daily greetings include a reply button and replay after reload until you acknowledge them."}]},
-{"version":"2.36.552","fixes":true,"changes":[]}
+{"version":"2.36.552","fixes":true,"changes":[]},
+{"version":"2.36.553","fixes":true,"changes":[{"key":"nova-speech","meaningful":true,"text":"NOVA queues messages until you reply or finish reading, with gentle transitions and no repeated entrance."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -7967,7 +7968,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-const payload={schema:2,version:'2.36.552',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+const payload={schema:2,version:'2.36.553',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -21287,7 +21288,7 @@ const payload={schema:2,version:'2.36.552',day:log.day,chatCount:log.chats.size,
       installAutomationFreeze();
       document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
     }
-    addLog('info', 'helper-version', { version: '2.36.552' });
+    addLog('info', 'helper-version', { version: '2.36.553' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -23771,7 +23772,7 @@ function installNovaWelcome(host) {
   toggle.addEventListener('change',()=>{save(toggle.checked);dismissed=true;stopTyping();card.hidden=true;tail.hidden=true;avatar.hidden=true;});
   const observer=new MutationObserver(schedule);observer.observe(host,{subtree:true,attributes:true,attributeFilter:['class','hidden','aria-expanded','style']});
   window.addEventListener('resize',schedule);window.addEventListener('pointerup',schedule);
-window.addEventListener('pagehide',()=>{observer.disconnect();cancelAnimationFrame(frame);clearTimeout(entranceTimer);clearTimeout(readyTimer);clearTimeout(pageReadyTimer);clearTimeout(motionTimer);clearTimeout(dailyTimer);clearTimeout(updateWaitTimer);clearIdle();stopTyping();card.remove();tail.remove();avatar.remove();style.remove();window.removeEventListener('resize',schedule);window.removeEventListener('pointerup',schedule);},{once:true});
+window.addEventListener('pagehide',()=>{clearTimeout(messageTimer);clearTimeout(transitionTimer);messageQueue.length=0;observer.disconnect();cancelAnimationFrame(frame);clearTimeout(entranceTimer);clearTimeout(readyTimer);clearTimeout(pageReadyTimer);clearTimeout(motionTimer);clearTimeout(dailyTimer);clearTimeout(updateWaitTimer);clearIdle();stopTyping();card.remove();tail.remove();avatar.remove();style.remove();window.removeEventListener('resize',schedule);window.removeEventListener('pointerup',schedule);},{once:true});
   (async()=>{
     const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
     const id=String(page.NOW?.user?.userID||page.g_user?.userID||'');if(!/^[a-f0-9]{32}$/i.test(id))return;
