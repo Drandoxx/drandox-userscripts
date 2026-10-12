@@ -8191,16 +8191,16 @@
       rankCell.className = 'gbs-rank-cell';
       agentCell.before(rankCell);
     }
-    if (rankCell) rankCell.textContent = String(number);
+    if (rankCell && rankCell.textContent!==String(number)) rankCell.textContent = String(number);
     // Ember can briefly clear the Status cell while it removes a colleague.
     // Retain a row's last known real colour during that single reconciliation
     // frame rather than repainting every row with the unknown/grey fallback.
     const previousKey = row.dataset.gbsStatus || Array.from(row.classList)
       .find(name => name.startsWith('gbs-status-'))?.slice('gbs-status-'.length) || '';
     const stableKey = key && key !== 'unknown' ? key : (previousKey && previousKey !== 'unknown' ? previousKey : 'unknown');
-    row.classList.remove(...Array.from(row.classList).filter(name => name.startsWith('gbs-status-')));
-    row.classList.add(`gbs-status-${stableKey}`);
-    row.dataset.gbsStatus = stableKey;
+    for(const name of Array.from(row.classList))if(name.startsWith('gbs-status-') && name!==`gbs-status-${stableKey}`)row.classList.remove(name);
+    if(!row.classList.contains(`gbs-status-${stableKey}`))row.classList.add(`gbs-status-${stableKey}`);
+    if(row.dataset.gbsStatus!==stableKey)row.dataset.gbsStatus = stableKey;
   }
 
   function ensureCompleteBoardRow(row) {
@@ -8241,13 +8241,15 @@
   }
 
   function syncHoverCardStatusColors(doc) {
+    const cards=doc.querySelectorAll('.entity-v3-hover-card-popover .entity-v3-mini-card');
+    if(!cards.length)return; // Most maintenance passes have no hover card to colour.
     const statusByAgent = new Map();
     doc.querySelectorAll('table.gbs-board tbody tr').forEach(row => {
       const name = row.querySelector('td.column-agent a')?.textContent || row.querySelector('td.column-agent')?.textContent;
       const key = Array.from(row.classList).find(name => name.startsWith('gbs-status-'))?.slice('gbs-status-'.length);
       if (name && key) statusByAgent.set(normalizeAgentName(name), key);
     });
-    doc.querySelectorAll('.entity-v3-hover-card-popover .entity-v3-mini-card').forEach(card => {
+    cards.forEach(card => {
       const name = card.querySelector('.name-header')?.textContent;
       const key = statusByAgent.get(normalizeAgentName(name));
       if (key) {
@@ -8572,11 +8574,14 @@
         badge = null;
       }
       if (isCurrent && badge) {
+        if(!badge.__gbsMeasuredAt || Date.now()-badge.__gbsMeasuredAt>=5000) {
         const badgeStyle = getComputedStyle(badge);
         // Use the rendered badge width, including its gap, both for the visible
         // name area and for responsive Agent-column measurement below.
         const badgeSpace = Math.ceil(badge.getBoundingClientRect().width + (parseFloat(badgeStyle.marginRight) || 0));
-        agentCell.style.setProperty('--gbs-agent-badge-space', `${badgeSpace}px`);
+        badge.__gbsMeasuredSpace=`${badgeSpace}px`;badge.__gbsMeasuredAt=Date.now();
+        }
+        if(agentCell.style.getPropertyValue('--gbs-agent-badge-space')!==badge.__gbsMeasuredSpace)agentCell.style.setProperty('--gbs-agent-badge-space',badge.__gbsMeasuredSpace);
       } else {
         agentCell?.style.removeProperty('--gbs-agent-badge-space');
       }
@@ -9164,8 +9169,14 @@
       const key = statusKey(row.querySelector('td.column-status')?.textContent || '');
       if (identity && key && key !== 'unknown') knownStatuses.set(identity, key);
     });
+    // ResizeObserver already owns live width fitting. Do not force layout for
+    // an unchanged duration tick; periodically refresh this structural fallback.
+    if(!table.__gbsShapeWidthAt || Date.now()-table.__gbsShapeWidthAt>=5000) {
+      table.__gbsShapeWidth=Math.round(table.closest('.table-wrapper')?.getBoundingClientRect().width || table.getBoundingClientRect().width);
+      table.__gbsShapeWidthAt=Date.now();
+    }
     const boardShape = [
-      Math.round(table.closest('.table-wrapper')?.getBoundingClientRect().width || table.getBoundingClientRect().width),
+      table.__gbsShapeWidth,
       ...structuralRows.map(row => {
         const agent = row.querySelector('td.column-agent a[href]')?.getAttribute('href') || row.querySelector('td.column-agent')?.textContent.trim() || '';
         const status = statusKey(row.querySelector('td.column-status')?.textContent || '');
@@ -9213,7 +9224,7 @@
       categoryPosition = item.key === previousKey ? categoryPosition + 1 : 1;
       previousKey = item.key;
       setRowPresentation(item.row, categoryPosition, item.key);
-      item.row.style.order = String(order);
+      if(item.row.style.order!==String(order))item.row.style.order = String(order);
     });
     highlightCurrentAgent(table);
     // Rank and any conditionally omitted Genesys cells now exist, so all six
