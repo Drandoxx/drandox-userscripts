@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.537
+// @version      2.36.538
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7940,7 +7940,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-const payload={schema:2,version:'2.36.537',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+const payload={schema:2,version:'2.36.538',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -21259,7 +21259,7 @@ const payload={schema:2,version:'2.36.537',day:log.day,chatCount:log.chats.size,
       installAutomationFreeze();
       document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
     }
-    addLog('info', 'helper-version', { version: '2.36.537' });
+    addLog('info', 'helper-version', { version: '2.36.538' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -23484,7 +23484,7 @@ function installNovaWelcome(host) {
   document.documentElement.append(style,card);
   style.textContent+=' .sn-ai-nova-message .nova-actions[hidden]{display:none!important}';
   const avatar=document.createElement('div');avatar.id='sn-ai-nova-companion';avatar.hidden=true;
-  avatar.style.cssText='position:fixed;width:140px;height:160px;z-index:2147483646;pointer-events:none;overflow:hidden;';
+  avatar.style.cssText='position:fixed;width:180px;height:180px;transform:scale(.72);transform-origin:bottom right;z-index:2147483646;pointer-events:none;overflow:visible;';
   avatar.setAttribute('role','img');avatar.setAttribute('aria-label','NOVA peeking');
   const avatarRoot=avatar.attachShadow({mode:'open'});
   avatarRoot.innerHTML=`<style>
@@ -23506,10 +23506,15 @@ function installNovaWelcome(host) {
     <div class="cape" data-part="cape">N</div><div class="flight-effects" data-part="flight-effects"><span></span><span></span><span></span></div>
     <div class="arm left" data-part="left-arm"><div class="hand" data-part="left-hand"></div></div><div class="arm right" data-part="right-arm"><div class="hand" data-part="right-hand"></div></div>
     <div class="foot left" data-part="left-foot"></div><div class="foot right" data-part="right-foot"></div>
-    <div class="body" data-part="body"><div class="eyes" data-part="eyes"><div class="eye left" data-part="left-eye"></div><div class="eye right" data-part="right-eye"></div></div><div class="cheek left" data-part="left-cheek"></div><div class="cheek right" data-part="right-cheek"></div><div class="mouth" data-part="mouth"></div><div class="facial-hair" data-part="facial-hair"></div><div class="outfit" data-part="outfit"></div></div>
-    <div class="headwear" data-part="headwear"><div class="bow"><span></span></div></div>
+    <div class="body" data-part="body"><div class="eyes" data-part="eyes"><div class="eye left" data-part="left-eye"></div><div class="eye right" data-part="right-eye"></div></div><div class="cheek left" data-part="left-cheek"></div><div class="cheek right" data-part="right-cheek"></div><div class="mouth" data-part="mouth"></div><div class="facial-hair" data-part="facial-hair"></div><div class="outfit" data-part="outfit"></div><div class="headwear" data-part="headwear"><div class="bow"><span></span></div></div></div>
   </div>`;
-  avatarRoot.innerHTML=avatarRoot.innerHTML.replaceAll('translateY(114px)','translateY(85px)').replaceAll('translateY(110px)','translateY(82px)').replace('</style>',' :host([data-motion^="fly-"]) .body{transform:scale(.78);transform-origin:left center}:host([data-motion^="fly-"]) .headwear{right:40px}</style>');
+  avatarRoot.innerHTML=avatarRoot.innerHTML.replace('</style>',`
+    .nova{left:20px;bottom:20px;transform:translateX(155px)}.headwear{top:-7px;right:0}
+    @keyframes peek{0%{transform:translateX(155px)}35%,80%{transform:translateX(110px)}100%{transform:translateX(105px)}}
+    @keyframes jump{0%{transform:translateX(105px)}55%{transform:translateX(-10px) rotate(-7deg)}78%{transform:translateX(4px) rotate(3deg)}100%{transform:none}}
+    :host([data-motion^="fly-"]) .body{transform:scale(.78);transform-origin:left center}
+    @media(prefers-reduced-motion:reduce){:host([data-phase="peek"]) .nova{transform:translateX(110px)}:host([data-phase="ready"]) .nova,:host([data-phase="jump"]) .nova{transform:none}}
+  </style>`);
   document.documentElement.append(avatar);
   // Named slots are replaceable independently, with no external image assets.
   const parts={};for(const part of avatarRoot.querySelectorAll('[data-part]'))parts[part.dataset.part]=part;
@@ -23549,7 +23554,7 @@ function installNovaWelcome(host) {
     avatar.style.right=(16-offsetX)+'px';avatar.style.bottom=(bottom-offsetY)+'px';avatar.hidden=false;
     if(!entranceStarted){entranceStarted=true;avatar.dataset.phase='peek';entranceTimer=setTimeout(()=>{if(dismissed)return;avatar.dataset.phase='jump';avatar.setAttribute('aria-label','NOVA jumping out');schedule();readyTimer=setTimeout(()=>{avatar.dataset.phase='ready';avatar.setAttribute('aria-label','NOVA waving');schedule();},650);},2500);}
     if(avatar.dataset.phase!=='ready'){card.hidden=true;return;}
-    card.hidden=false;if(!typingStarted){typingStarted=true;typeNext();}const r={left:innerWidth-156+offsetX,right:innerWidth-16+offsetX,top:innerHeight-bottom-160+offsetY,bottom:innerHeight-bottom+offsetY},c=card.getBoundingClientRect();
+    card.hidden=false;if(!typingStarted){typingStarted=true;typeNext();}const r={left:innerWidth-145.6+offsetX,right:innerWidth-16+offsetX,top:innerHeight-bottom-129.6+offsetY,bottom:innerHeight-bottom+offsetY},c=card.getBoundingClientRect();
     const preferredLeft=r.left-c.width-10;
     card.style.left=Math.max(12,Math.min(innerWidth-c.width-12,preferredLeft))+'px';
     card.style.top=Math.max(12,Math.min(innerHeight-c.height-12,r.bottom-c.height))+'px';
