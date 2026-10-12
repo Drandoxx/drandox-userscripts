@@ -23759,11 +23759,12 @@ function installNovaWelcome(host) {
     const properties=['transform','translate','rotate','scale','opacity'];
     const poses=selectors.map(selector=>{const node=avatarRoot.querySelector(selector);if(!node)return null;const style=getComputedStyle(node);return {selector,before:Object.fromEntries(properties.map(property=>[property,style[property]]))};}).filter(Boolean);
     const eyes=avatarRoot.querySelector('.eyes'),oldFace=eyes?.querySelector('svg')?.cloneNode(true);
+    if(oldFace){for(const selector of ['.nova-eye-drawing','.nova-mouth-drawing','.nova-bite-mouth']){const original=eyes.querySelector(selector),copy=oldFace.querySelector(selector);if(original&&copy){const style=getComputedStyle(original);copy.style.animation='none';for(const property of ['transform','translate','rotate','scale','display'])copy.style[property]=style[property];}}}
     // Keep a visual copy of outgoing props while the real story is cleaned up.
     for(const prop of fadeProps?avatarRoot.querySelectorAll('.ambient-tool,.ambient-scene,.ambient-detail'):[]){
       const style=getComputedStyle(prop),copy=prop.cloneNode(true);copy.className='nova-return-overlay';
       for(const property of ['position','left','top','bottom','right','width','height','transform','translate','rotate','scale','opacity','zIndex'])copy.style[property]=style[property];
-      copy.style.pointerEvents='none';prop.parentNode.append(copy);
+      copy.style.pointerEvents='none';copy.querySelectorAll('svg').forEach(svg=>{svg.style.width='100%';svg.style.height='100%';});prop.parentNode.append(copy);
       ambientReturnAnimations.push(copy.animate([{opacity:style.opacity},{opacity:0}],{duration:450,fill:'forwards'}));
     }
     change();
