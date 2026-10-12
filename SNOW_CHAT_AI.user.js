@@ -667,17 +667,24 @@ const snAIChatDisplayNames=(()=>{
       try {
         const lastMessage=agentMessages.filter(message=>!messageInfo(message).system).at(-1);
         const userLast=Boolean(lastMessage&&!messageInfo(lastMessage).right);
-        const query=userLast?'q':'w', command='/r '+query;
-        greetTrace('shortcut-requested',{ims:record.number.value,code:query,nativeAction:'CHAT_INPUT#MESSAGE_ENTERED'});
-        host.dispatch('CHAT_INPUT#MESSAGE_ENTERED',{message:command,command:'r',query,currentParamIndex:0,caretPos:4});
-        const option=await wait(()=>ownElements().find(node=>node.id==='quickaction-param-'+query));
-        if(!option){outcome('not-sent','quick-action-not-found');return;}
-        const expected=option.querySelector('.sn-action-menu-display-value')?.textContent.trim();
+        const query=userLast?'q':'w';
+        greetTrace('shortcut-requested',{ims:record.number.value,code:query,source:'native-read-only-quick-reply-lookup',menuOpened:false});
+        const controller=new AbortController(),lookupTimer=setTimeout(()=>controller.abort(),8000);
+        let snippet;
+        try{
+          const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
+          const response=await fetch('/api/now/graphql',{method:'POST',credentials:'same-origin',signal:controller.signal,headers:{'Content-Type':'application/json','X-UserToken':page.g_ck},body:JSON.stringify({query:'query($commandName:String!,$query:String!,$table:String!,$sysId:String!,$index:Int!){now{quickActions{searchParams(commandName:$commandName,query:$query,table:$table,sysId:$sysId,index:$index){items{value displayValue}}}}}',variables:{commandName:'r',query,table:host.table||'interaction',sysId:id,index:0}})});
+          const data=await response.json();if(!response.ok||data.errors?.length)throw Error('quick-reply-lookup-failed: '+response.status);
+          const matches=(data.data?.now?.quickActions?.searchParams?.items||[]).filter(item=>item.value===query);
+          if(matches.length!==1){outcome('not-sent','quick-action-not-unique');return;}snippet=matches[0];
+        }finally{clearTimeout(lookupTimer);}
+        const decoder=document.createElement('span');decoder.innerHTML=snippet.displayValue||'';const expected=decoder.textContent.trim();
         if(composerEditedByUser){outcome('skipped','composer-edited-by-user');return;}
-        if(!expected||!safe()||input().value.trim()!==command){outcome('not-sent',!expected?'quick-action-empty':!safe()?'chat-no-longer-safe':'command-not-retained');return;}
+        if(!expected||!safe()||input().value.trim()){outcome('not-sent',!expected?'quick-action-empty':!safe()?'chat-no-longer-safe':'composer-edited');return;}
         greetTrace('shortcut-selected',{ims:record.number.value,code:query,nativeAction:'CHAT_INPUT#SNIPPET_SELECTED',expected});
-        host.dispatch('CHAT_INPUT#SNIPPET_SELECTED',{itemSelected:{displayValue:expected}});
-        const ready=await wait(()=>input()?.value.trim()===expected);
+        host.dispatch('CHAT_INPUT#SNIPPET_SELECTED',{itemSelected:snippet});
+        host.dispatch('CHAT_INPUT#MENU_STATE',0);
+        const ready=await wait(()=>{const send=ownElements().find(node=>node.matches('button[aria-label="Send Message"]'));return input()?.value.trim()===expected&&send&&!send.disabled;});
         if(composerEditedByUser){outcome('skipped','composer-edited-by-user');return;}
         const send=ownElements().find(node=>node.matches('button[aria-label="Send Message"]'));
         if(!ready||!safe()||input().value.trim()!==expected||!send||send.disabled){outcome('not-sent',!ready?'quick-action-did-not-fill':!safe()?'chat-no-longer-safe':!send?'send-control-missing':send.disabled?'send-control-disabled':'composer-edited');return;}
