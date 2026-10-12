@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.515
+// @version      2.36.516
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -4799,6 +4799,23 @@ const snAIChatDisplayNames=(()=>{
       // Native rendering accepts an explicit width; its default budget is
       // half the offset-parent width minus 48px, not the action bar's width.
       const update = () => {
+        let owner = host, incident = false;
+        while (owner) {
+          if (owner.localName === 'sn-form-internal-header-layout') {
+            incident = owner.table === 'incident';break;
+          }
+          owner = owner.parentElement || owner.getRootNode?.().host;
+        }
+        const nodes = host.getProperties?.().actionNodes;
+        if (Array.isArray(nodes)) {
+          // Keep native actions/handlers and native width-based overflow, but
+          // remove server "always More" flags and excluded actions from its budget.
+          const fit = nodes.flatMap(node => {
+            const children = (node.children || []).filter(child => !incident || !hiddenIncidentActionIds.has(String(child.id)));
+            return node.children && !children.length ? [] : [{...node, overflow:false, ...(node.children ? {children} : {})}];
+          });
+          if (JSON.stringify(nodes) !== JSON.stringify(fit)) host.actionNodes = fit;
+        }
         const width = Math.floor(host.getBoundingClientRect().width);
         if (width > 0 && Math.abs(Number(host.width || 0) - width) >= 1) host.width = width;
       };
@@ -7722,7 +7739,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.515',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.516',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -21036,7 +21053,7 @@ function startSNAI(tabIdentity) {
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
     installAutomationFreeze();
     document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
-    addLog('info', 'helper-version', { version: '2.36.515' });
+    addLog('info', 'helper-version', { version: '2.36.516' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
