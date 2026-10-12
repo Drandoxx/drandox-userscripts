@@ -23485,6 +23485,7 @@ function installNovaWelcome(host) {
   if(!launcher||!settings)return;
   const card=document.createElement('aside');card.className='sn-ai-nova-message';card.hidden=true;
   const tail=document.createElement('div');tail.className='sn-ai-nova-tail';tail.hidden=true;tail.setAttribute('aria-hidden','true');
+  tail.innerHTML='<svg viewBox="0 0 48 34" width="48" height="34" xmlns="http://www.w3.org/2000/svg"><path d="M1 0 H29 Q28 18 46 32 Q14 27 1 0Z" fill="var(--sn-theme-251f31,#241c33)" stroke="var(--sn-theme-655573,#74618b)" stroke-width="1"/><path d="M2 0H29" stroke="var(--sn-theme-251f31,#241c33)" stroke-width="3"/></svg>';
   card.setAttribute('aria-label','Nova');card.setAttribute('aria-live','polite');
   const style=document.createElement('style');style.textContent=`
     .sn-ai-nova-message{position:fixed;z-index:2147483647;width:min(330px,calc(100vw - 24px));padding:16px;border:1px solid var(--sn-theme-655573,#74618b);border-radius:18px 18px 5px 18px;background:var(--sn-theme-251f31,#241c33);color:var(--sn-theme-e6edf9,#eee6ff);box-shadow:0 8px 28px #0005;font:13px/1.5 system-ui;pointer-events:auto;max-height:calc(100vh - 24px);overflow:auto;animation:sn-nova-in .2s ease-out}
@@ -23492,6 +23493,7 @@ function installNovaWelcome(host) {
   document.documentElement.append(style,tail,card);
   style.textContent+=` .sn-ai-nova-tail{position:fixed;width:28px;height:24px;z-index:2147483647;pointer-events:none;background:var(--sn-theme-655573,#74618b);clip-path:polygon(0 0,100% 100%,0 80%)}.sn-ai-nova-tail::after{content:'';position:absolute;inset:1px 2px 1px 0;background:var(--sn-theme-251f31,#241c33);clip-path:polygon(0 0,100% 100%,0 80%)}.sn-ai-nova-tail[hidden]{display:none!important}.sn-ai-nova-tail[data-side="bottom"]{clip-path:polygon(0 0,100% 0,50% 100%)}.sn-ai-nova-tail[data-side="bottom"]::after{inset:0 1px 2px;clip-path:polygon(0 0,100% 0,50% 100%)}`;
   style.textContent+=' .sn-ai-nova-message .nova-actions[hidden]{display:none!important}';
+  style.textContent+=' .sn-ai-nova-tail,.sn-ai-nova-tail[data-side="bottom"]{width:48px;height:34px;background:none;clip-path:none}.sn-ai-nova-tail::after{display:none}.sn-ai-nova-tail svg{display:block;overflow:visible}';
   const avatar=document.createElement('div');avatar.id='sn-ai-nova-companion';avatar.hidden=true;
   avatar.style.cssText='position:fixed;width:180px;height:180px;transform:scale(.72);transform-origin:bottom right;z-index:2147483646;pointer-events:none;overflow:visible;';
   avatar.setAttribute('role','img');avatar.setAttribute('aria-label','NOVA peeking');
@@ -23574,19 +23576,17 @@ function installNovaWelcome(host) {
     if(!entranceStarted){entranceStarted=true;avatar.dataset.phase='peek';entranceTimer=setTimeout(()=>{if(dismissed)return;avatar.dataset.phase='jump';avatar.setAttribute('aria-label','NOVA jumping out');schedule();readyTimer=setTimeout(()=>{avatar.dataset.phase='ready';avatar.setAttribute('aria-label','NOVA waving');schedule();},650);},3600);}
     if(avatar.dataset.phase!=='ready'){card.hidden=true;tail.hidden=true;return;}
     card.hidden=false;if(!typingStarted){typingStarted=true;typeNext();}const r={left:innerWidth-145.6+offsetX,right:innerWidth-16+offsetX,top:innerHeight-bottom-129.6+offsetY,bottom:innerHeight-bottom+offsetY},c=card.getBoundingClientRect();
-    const preferredLeft=r.left-c.width-10;
+    const preferredLeft=r.left-c.width+55;
     card.style.left=Math.max(12,Math.min(innerWidth-c.width-12,preferredLeft))+'px';
-    card.style.top=Math.max(12,Math.min(innerHeight-c.height-12,r.bottom-c.height))+'px';
-    if(preferredLeft<12)card.style.top=Math.max(12,r.top-c.height-10)+'px';
+    card.style.top=Math.max(12,Math.min(innerHeight-c.height-12,r.top-c.height+8))+'px';
     const left=parseFloat(card.style.left),top=parseFloat(card.style.top);
     tail.hidden=false;
-    if(preferredLeft<12){tail.dataset.side='bottom';tail.style.left=Math.max(left+14,Math.min(left+c.width-42,(r.left+r.right)/2-14))+'px';tail.style.top=(top+c.height-1)+'px';}
-    else{tail.dataset.side='right';tail.style.left=(left+c.width-1)+'px';tail.style.top=Math.max(top+14,Math.min(top+c.height-38,r.bottom-77))+'px';}
+    tail.dataset.side='bottom';tail.style.left=Math.max(left+14,Math.min(left+c.width-49,r.left+7))+'px';tail.style.top=(top+c.height-1)+'px';
     const rightCorner=(r.left+r.right)/2>=left+c.width/2;
     const topCorner=(r.top+r.bottom)/2<top+c.height/2;
     const corners=['18px','18px','18px','18px'];
     corners[topCorner?(rightCorner?1:0):(rightCorner?2:3)]='4px';
-    card.style.borderRadius=corners.join(' ');
+    card.style.borderRadius='20px';
   }
   function schedule(){if(!frame)frame=requestAnimationFrame(position);}
   // Message blocks support readable text, branching actions and future GIFs.
