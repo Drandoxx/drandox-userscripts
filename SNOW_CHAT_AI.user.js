@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.536
+// @version      2.36.537
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7940,7 +7940,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-const payload={schema:2,version:'2.36.536',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+const payload={schema:2,version:'2.36.537',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -21259,7 +21259,7 @@ const payload={schema:2,version:'2.36.536',day:log.day,chatCount:log.chats.size,
       installAutomationFreeze();
       document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
     }
-    addLog('info', 'helper-version', { version: '2.36.536' });
+    addLog('info', 'helper-version', { version: '2.36.537' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -23482,6 +23482,7 @@ function installNovaWelcome(host) {
     .sn-ai-nova-message{position:fixed;z-index:2147483647;width:min(330px,calc(100vw - 24px));padding:16px;border:1px solid var(--sn-theme-655573,#74618b);border-radius:18px 18px 5px 18px;background:var(--sn-theme-251f31,#241c33);color:var(--sn-theme-e6edf9,#eee6ff);box-shadow:0 8px 28px #0005;font:13px/1.5 system-ui;pointer-events:auto;max-height:calc(100vh - 24px);overflow:auto;animation:sn-nova-in .2s ease-out}
     .sn-ai-nova-message[hidden]{display:none!important}.sn-ai-nova-message p{margin:8px 0}.sn-ai-nova-message strong{color:var(--sn-theme-ac94ec,#ac94ec)}.sn-ai-nova-message .nova-actions{display:flex;gap:8px;margin-top:12px}.sn-ai-nova-message button{font:inherit;padding:7px 18px;border:1px solid var(--sn-theme-655573,#74618b);border-radius:8px;background:var(--sn-theme-302951,#302951);color:inherit;cursor:pointer}.sn-ai-nova-message img{display:block;max-width:100%;border-radius:8px}.sn-ai-nova-preference{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0;font:inherit}@keyframes sn-nova-in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}@media(prefers-reduced-motion:reduce){.sn-ai-nova-message{animation:none}}`;
   document.documentElement.append(style,card);
+  style.textContent+=' .sn-ai-nova-message .nova-actions[hidden]{display:none!important}';
   const avatar=document.createElement('div');avatar.id='sn-ai-nova-companion';avatar.hidden=true;
   avatar.style.cssText='position:fixed;width:140px;height:160px;z-index:2147483646;pointer-events:none;overflow:hidden;';
   avatar.setAttribute('role','img');avatar.setAttribute('aria-label','NOVA peeking');
@@ -23508,6 +23509,7 @@ function installNovaWelcome(host) {
     <div class="body" data-part="body"><div class="eyes" data-part="eyes"><div class="eye left" data-part="left-eye"></div><div class="eye right" data-part="right-eye"></div></div><div class="cheek left" data-part="left-cheek"></div><div class="cheek right" data-part="right-cheek"></div><div class="mouth" data-part="mouth"></div><div class="facial-hair" data-part="facial-hair"></div><div class="outfit" data-part="outfit"></div></div>
     <div class="headwear" data-part="headwear"><div class="bow"><span></span></div></div>
   </div>`;
+  avatarRoot.innerHTML=avatarRoot.innerHTML.replaceAll('translateY(114px)','translateY(85px)').replaceAll('translateY(110px)','translateY(82px)').replace('</style>',' :host([data-motion^="fly-"]) .body{transform:scale(.78);transform-origin:left center}:host([data-motion^="fly-"]) .headwear{right:40px}</style>');
   document.documentElement.append(avatar);
   // Named slots are replaceable independently, with no external image assets.
   const parts={};for(const part of avatarRoot.querySelectorAll('[data-part]'))parts[part.dataset.part]=part;
