@@ -23494,8 +23494,15 @@ function installNovaWelcome(host) {
     :host([data-phase="ready"]) .arm.right{z-index:3;animation:wave 2s ease-in-out 2}.foot{position:absolute;bottom:10px;width:28px;height:15px;background:#b89ae9;border-radius:50%;z-index:1}.foot.left{left:30px}.foot.right{right:30px}.shadow{position:absolute;bottom:2px;left:28px;width:84px;height:10px;background:#0003;border-radius:50%;filter:blur(4px)}.headwear{position:absolute;top:8px;right:17px;z-index:4;transform:rotate(12deg)}.bow{width:27px;height:18px}.bow::before,.bow::after{content:'';position:absolute;top:2px;width:14px;height:15px;background:#eaa6ce;border-radius:4px 9px 9px 4px;box-shadow:inset 0 2px #ffd5ed77}.bow::after{right:0;transform:scaleX(-1)}.bow span{position:absolute;left:10px;top:5px;width:7px;height:9px;background:#c77fac;border-radius:4px;z-index:1}.outfit,.facial-hair{position:absolute;inset:0;pointer-events:none;z-index:3}
     [data-expression="happy"] .eye{height:10px;background:transparent;border-top:3px solid #392748;border-radius:50%;animation:none}[data-expression="happy"] .eye::before,[data-expression="happy"] .eye::after{display:none}[data-expression="happy"] .mouth{height:13px;background:#51315c;border-radius:4px 4px 15px 15px}
     @keyframes peek{0%{transform:translateY(145px)}35%,80%{transform:translateY(114px)}100%{transform:translateY(110px)}}@keyframes jump{0%{transform:translateY(110px)}55%{transform:translateY(-9px) scale(.97,1.04)}78%{transform:translateY(3px) scale(1.03,.97)}100%{transform:none}}@keyframes breathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}@keyframes blink{0%,42%,46%,100%{transform:scaleY(1)}44%{transform:scaleY(.08)}}@keyframes wave{0%,100%{transform:rotate(-145deg)}25%{transform:rotate(-118deg)}65%{transform:rotate(-160deg)}}@media(prefers-reduced-motion:reduce){.nova,.eye,.arm{animation:none!important}:host([data-phase="ready"]) .nova,:host([data-phase="jump"]) .nova{transform:none}}
+    .cape{display:none;position:absolute;top:41px;left:84px;width:49px;height:72px;background:linear-gradient(100deg,#8b1e38,#e84656 55%,#be2541);border-radius:9px 8px 18px 6px;clip-path:polygon(0 0,77% 6%,100% 100%,36% 88%);z-index:1;transform-origin:10% 10%;color:#fff4ce;font:bold 24px/1 system-ui;text-align:center;padding-top:26px;text-shadow:0 1px 2px #691324}
+    .flight-effects{display:none;position:absolute;inset:0;z-index:0}.flight-effects span{position:absolute;top:70px;left:2px;width:20px;height:2px;border-radius:3px;background:#d3b2ff;animation:trail .7s linear infinite}.flight-effects span:nth-child(2){top:87px;left:4px;animation-delay:.2s}.flight-effects span:nth-child(3){top:106px;left:9px;animation-delay:.4s}
+    :host([data-motion^="walk-"]) .nova,:host([data-motion^="climb-"]) .nova{animation:none!important}:host([data-motion^="walk-"]) .foot.left{animation:step .4s ease-in-out infinite}:host([data-motion^="walk-"]) .foot.right{animation:step .4s ease-in-out infinite reverse}:host([data-motion^="walk-"]) .arm{animation:swing .4s ease-in-out infinite!important}:host([data-motion^="walk-"]) .arm.right{animation-direction:reverse!important}
+    :host([data-motion^="climb-"]) .arm.left{animation:reach .6s ease-in-out infinite!important;z-index:3}:host([data-motion^="climb-"]) .arm.right{animation:reach .6s ease-in-out infinite reverse!important;z-index:3}:host([data-motion^="climb-"]) .foot{animation:step .6s ease-in-out infinite}:host([data-motion^="climb-"]) .foot.right{animation-direction:reverse}
+    :host([data-motion^="fly-"]) .nova{animation:hover-flight 1.1s ease-in-out infinite!important}:host([data-motion^="fly-"]) .cape{display:block;animation:cape .45s ease-in-out infinite alternate}:host([data-motion^="fly-"]) .flight-effects{display:block}:host([data-motion^="fly-"]) .arm.left{transform:rotate(140deg);animation:none!important;z-index:3}:host([data-motion^="fly-"]) .arm.right{transform:rotate(-140deg);animation:none!important;z-index:3}:host([data-motion="fly-left"]) .flight-effects{transform:scaleX(-1)}:host([data-motion="fly-up"]) .flight-effects{transform:rotate(-90deg)}:host([data-motion="fly-down"]) .flight-effects{transform:rotate(90deg)}
+    @keyframes step{0%,100%{transform:translateY(0) rotate(-12deg)}50%{transform:translateY(-7px) rotate(12deg)}}@keyframes swing{0%,100%{transform:rotate(25deg)}50%{transform:rotate(-25deg)}}@keyframes reach{0%,100%{transform:rotate(135deg)}50%{transform:rotate(30deg)}}@keyframes hover-flight{0%,100%{transform:translateY(-3px)}50%{transform:translateY(-7px)}}@keyframes cape{from{transform:rotate(-8deg) skewY(-4deg)}to{transform:rotate(9deg) skewY(5deg)}}@keyframes trail{from{opacity:0;transform:translateX(0) scaleX(.4)}30%{opacity:.8}to{opacity:0;transform:translateX(-15px) scaleX(1)}}@media(prefers-reduced-motion:reduce){:host([data-motion]) *{animation:none!important}}
   </style><div class="nova" data-expression="friendly">
     <div class="shadow" data-part="shadow"></div>
+    <div class="cape" data-part="cape">N</div><div class="flight-effects" data-part="flight-effects"><span></span><span></span><span></span></div>
     <div class="arm left" data-part="left-arm"><div class="hand" data-part="left-hand"></div></div><div class="arm right" data-part="right-arm"><div class="hand" data-part="right-hand"></div></div>
     <div class="foot left" data-part="left-foot"></div><div class="foot right" data-part="right-foot"></div>
     <div class="body" data-part="body"><div class="eyes" data-part="eyes"><div class="eye left" data-part="left-eye"></div><div class="eye right" data-part="right-eye"></div></div><div class="cheek left" data-part="left-cheek"></div><div class="cheek right" data-part="right-cheek"></div><div class="mouth" data-part="mouth"></div><div class="facial-hair" data-part="facial-hair"></div><div class="outfit" data-part="outfit"></div></div>
@@ -23505,7 +23512,18 @@ function installNovaWelcome(host) {
   // Named slots are replaceable independently, with no external image assets.
   const parts={};for(const part of avatarRoot.querySelectorAll('[data-part]'))parts[part.dataset.part]=part;
   const setExpression=expression=>{const face=avatarRoot.querySelector('.nova');if(face)face.dataset.expression=expression;};
-  avatar.novaAppearance=Object.freeze({setExpression,setPart(name,content){if(parts[name]&&content instanceof Node)parts[name].replaceChildren(content);}});
+  let offsetX=0,offsetY=0,motionTimer=0;
+  const move=(kind,direction,distance=80,duration=1200)=>{
+    if(!['walk','climb','fly'].includes(kind)||!['left','right','up','down'].includes(direction)||dismissed||avatar.hidden||avatar.dataset.phase!=='ready')return false;
+    if(kind==='walk'&&!['left','right'].includes(direction)||kind==='climb'&&!['up','down'].includes(direction))return false;
+    distance=Math.min(400,Math.max(0,Number(distance)||0));duration=Math.min(10000,Math.max(250,Number(duration)||1200));
+    offsetX=Math.max(-innerWidth+170,Math.min(0,offsetX+(direction==='left'?-distance:direction==='right'?distance:0)));
+    offsetY=Math.max(-innerHeight+230,Math.min(0,offsetY+(direction==='up'?-distance:direction==='down'?distance:0)));
+    avatar.dataset.motion=kind+'-'+direction;avatar.style.transition=`right ${duration}ms linear,bottom ${duration}ms linear`;
+    card.style.transition=`left ${duration}ms linear,top ${duration}ms linear`;clearTimeout(motionTimer);schedule();
+    motionTimer=setTimeout(()=>{delete avatar.dataset.motion;avatar.style.transition='';card.style.transition='';},duration);return true;
+  };
+  avatar.novaAppearance=Object.freeze({setExpression,move,setPart(name,content){if(parts[name]&&content instanceof Node)parts[name].replaceChildren(content);}});
   const preference=document.createElement('label');preference.className='sn-ai-nova-preference';
   const label=document.createElement('span');label.textContent='Nova friendly messages';
   const toggle=document.createElement('input');toggle.type='checkbox';toggle.disabled=true;
@@ -23518,10 +23536,10 @@ function installNovaWelcome(host) {
     const chatsButton=document.getElementById('sn-ai-chats-today')?.shadowRoot?.querySelector('.launcher');
     const chatsRect=chatsButton?.getBoundingClientRect();
     const bottom=chatsRect?.width?innerHeight-chatsRect.top+8:56;
-    avatar.style.right='16px';avatar.style.bottom=bottom+'px';avatar.hidden=false;
+    avatar.style.right=(16-offsetX)+'px';avatar.style.bottom=(bottom-offsetY)+'px';avatar.hidden=false;
     if(!entranceStarted){entranceStarted=true;avatar.dataset.phase='peek';entranceTimer=setTimeout(()=>{if(dismissed||isOpen())return;avatar.dataset.phase='jump';avatar.setAttribute('aria-label','NOVA jumping out');schedule();readyTimer=setTimeout(()=>{avatar.dataset.phase='ready';avatar.setAttribute('aria-label','NOVA waving');schedule();},650);},2500);}
     if(avatar.dataset.phase!=='ready'){card.hidden=true;return;}
-    card.hidden=false;const r={left:innerWidth-156,right:innerWidth-16,top:innerHeight-bottom-160,bottom:innerHeight-bottom},c=card.getBoundingClientRect();
+    card.hidden=false;const r={left:innerWidth-156+offsetX,right:innerWidth-16+offsetX,top:innerHeight-bottom-160+offsetY,bottom:innerHeight-bottom+offsetY},c=card.getBoundingClientRect();
     const preferredLeft=r.left-c.width-10;
     card.style.left=Math.max(12,Math.min(innerWidth-c.width-12,preferredLeft))+'px';
     card.style.top=Math.max(12,Math.min(innerHeight-c.height-12,r.bottom-c.height))+'px';
@@ -23547,7 +23565,7 @@ function installNovaWelcome(host) {
   toggle.addEventListener('change',()=>{save(toggle.checked);dismissed=true;card.hidden=true;avatar.hidden=true;});
   const observer=new MutationObserver(schedule);observer.observe(host,{subtree:true,attributes:true,attributeFilter:['class','hidden','aria-expanded','style']});
   window.addEventListener('resize',schedule);window.addEventListener('pointerup',schedule);
-  window.addEventListener('pagehide',()=>{observer.disconnect();cancelAnimationFrame(frame);clearTimeout(entranceTimer);clearTimeout(readyTimer);card.remove();avatar.remove();style.remove();window.removeEventListener('resize',schedule);window.removeEventListener('pointerup',schedule);},{once:true});
+  window.addEventListener('pagehide',()=>{observer.disconnect();cancelAnimationFrame(frame);clearTimeout(entranceTimer);clearTimeout(readyTimer);clearTimeout(motionTimer);card.remove();avatar.remove();style.remove();window.removeEventListener('resize',schedule);window.removeEventListener('pointerup',schedule);},{once:true});
   (async()=>{
     const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
     const id=String(page.NOW?.user?.userID||page.g_user?.userID||'');if(!/^[a-f0-9]{32}$/i.test(id))return;
