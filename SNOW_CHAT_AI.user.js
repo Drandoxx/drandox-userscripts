@@ -23533,22 +23533,21 @@ function installNovaWelcome(host) {
   let key='',firstName='friend',message=null,dismissed=false,frame=0,entranceStarted=false,entranceTimer=0,readyTimer=0,typingTimer=0,typingStarted=false,typingQueue=[],typingDone=null;
   function stopTyping(){clearTimeout(typingTimer);typingTimer=0;typingQueue=[];typingDone=null;card.removeAttribute('aria-busy');}
   function typeNext(){
-    typingTimer=0;if(dismissed||isOpen()){stopTyping();return;}
+    typingTimer=0;if(dismissed){stopTyping();return;}
     const item=typingQueue[0];
     if(!item){card.setAttribute('aria-busy','false');const done=typingDone;typingDone=null;if(done)done();schedule();return;}
     const character=item.characters.shift();item.node.textContent+=character;
     if(!item.characters.length)typingQueue.shift();
     schedule();typingTimer=setTimeout(typeNext,/[.!?]/.test(character)?240:/[,;:]/.test(character)?130:55);
   }
-  function isOpen(){return !host.classList.contains('collapsed')||launcher.getAttribute('aria-expanded')==='true'||[...host.querySelectorAll('[role="dialog"],.local-sn-command-popover')].some(el=>!el.hidden&&el.getBoundingClientRect().width>0);}
   function position(){
-    frame=0;if(isOpen()){if(!avatar.hidden)dismissed=true;card.hidden=true;avatar.hidden=true;clearTimeout(entranceTimer);clearTimeout(readyTimer);stopTyping();return;}
+    frame=0;
     if(!message||dismissed){card.hidden=true;avatar.hidden=true;return;}
     const chatsButton=document.getElementById('sn-ai-chats-today')?.shadowRoot?.querySelector('.launcher');
     const chatsRect=chatsButton?.getBoundingClientRect();
     const bottom=chatsRect?.width?innerHeight-chatsRect.top+8:56;
     avatar.style.right=(16-offsetX)+'px';avatar.style.bottom=(bottom-offsetY)+'px';avatar.hidden=false;
-    if(!entranceStarted){entranceStarted=true;avatar.dataset.phase='peek';entranceTimer=setTimeout(()=>{if(dismissed||isOpen())return;avatar.dataset.phase='jump';avatar.setAttribute('aria-label','NOVA jumping out');schedule();readyTimer=setTimeout(()=>{avatar.dataset.phase='ready';avatar.setAttribute('aria-label','NOVA waving');schedule();},650);},2500);}
+    if(!entranceStarted){entranceStarted=true;avatar.dataset.phase='peek';entranceTimer=setTimeout(()=>{if(dismissed)return;avatar.dataset.phase='jump';avatar.setAttribute('aria-label','NOVA jumping out');schedule();readyTimer=setTimeout(()=>{avatar.dataset.phase='ready';avatar.setAttribute('aria-label','NOVA waving');schedule();},650);},2500);}
     if(avatar.dataset.phase!=='ready'){card.hidden=true;return;}
     card.hidden=false;if(!typingStarted){typingStarted=true;typeNext();}const r={left:innerWidth-156+offsetX,right:innerWidth-16+offsetX,top:innerHeight-bottom-160+offsetY,bottom:innerHeight-bottom+offsetY},c=card.getBoundingClientRect();
     const preferredLeft=r.left-c.width-10;
