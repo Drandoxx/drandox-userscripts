@@ -5955,6 +5955,17 @@
     lightweightPerformance.network.push({at:Date.now(),lastAt:Date.now(),signature,path:safePath,status,method,transport,count:1,recentAction:action,popupsEnabled:callPopupsEnabled()});
     if(lightweightPerformance.network.length>60)lightweightPerformance.network.shift();
   }
+  function recordCallRequestIntent(path,method,body,transport) {
+    if(!measurementState || !/\/conversations\/(?:calls\/)?[^/]+\/participants\//.test(path) || !/PATCH|POST/i.test(method))return;
+    try {
+      if(typeof body!=='string' || body.length>4096)return;
+      const raw=JSON.parse(body),intent={};
+      for(const key of ['muted','held','state'])if(typeof raw[key]==='boolean' || (key==='state' && typeof raw[key]==='string'))intent[key]=raw[key];
+      if(!Object.keys(intent).length)return;
+      callNetworkChanges.push({at:new Date().toISOString(),kind:'control-request',path:String(path).split('?')[0].slice(0,200),method,transport,intent});
+      while(callNetworkChanges.length>120)callNetworkChanges.shift();
+    }catch(_){}
+  }
   let currentAgentApiId = null, callCacheBusy = false, lastLiveApiAt = 0, liveApiBusy = false, pendingEndedCallRefresh = false, nextCallApiAttemptAt = 0;
   function callDayKey(date = new Date()) {
     return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
@@ -6147,6 +6158,7 @@
       const wrappedFetch=function(input,options) {
         const u=observed(typeof input==='string'?input:input?.url);
         if(u) {try{authorization=new win.Headers(options?.headers || input?.headers).get('authorization') || authorization;}catch(_){}}
+        if(u)recordCallRequestIntent(u.pathname,String(options?.method || input?.method || 'GET'),options?.body,'fetch');
         const request=nativeFetch.apply(this,arguments);
         if(u && diagnosticPath(u.pathname)) request.then(response=>{
           recordCallNetworkMetadata(u.pathname,response.status,String(options?.method || input?.method || 'GET'),'fetch');
@@ -6159,6 +6171,7 @@
       const wrappedHeader=function(name,value) {if(requests.get(this)?.u && String(name).toLowerCase()==='authorization')authorization=String(value);return originalHeader.apply(this,arguments);};
       const wrappedSend=function() {
         const u=requests.get(this)?.u;
+        if(u)recordCallRequestIntent(u.pathname,requests.get(this)?.method || 'GET',arguments[0],'xhr');
         if(u && diagnosticPath(u.pathname)) this.addEventListener('load',()=>{
           recordCallNetworkMetadata(u.pathname,this.status,requests.get(this)?.method || 'GET','xhr');
           try{if(relevant(u.pathname) && this.status>=200 && this.status<300 && (this.responseType==='json' || !this.responseType || this.responseType==='text')) {
@@ -6957,7 +6970,7 @@
     // mode; otherwise a real selected interaction is mislabeled Connected and
     // exposes Mute/Hold/Hang up before the agent has answered it.
     const apiSignal=currentLiveCallSignal();
-    const incoming = Boolean(incomingAction) || apiSignal?.state==='alerting' || (callTestEnabled(doc) && Boolean(testCallSession
+    const incoming = (apiSignal ? apiSignal.state==='alerting' : Boolean(incomingAction)) || (!apiSignal && callTestEnabled(doc) && Boolean(testCallSession
       && !testCallSession.answeredAt && !testCallSession.finishedAt && !testCallSession.timeoutAt));
     if(incoming)completePreviousWrapupOnIncoming();
     const selected = [...doc.querySelectorAll('.selected-interaction-container')].find(visible);
