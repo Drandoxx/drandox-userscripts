@@ -23789,7 +23789,7 @@ function installNovaWelcome(host) {
     const snack=avatarRoot.querySelector('[data-idle-tool="snack"] svg');
     if(snack){const food=snack.innerHTML;snack.innerHTML='<defs><mask id="nova-food-bite"><rect width="40" height="65" fill="white"/><circle class="snack-bite" cx="32" cy="9" r="9" fill="black"/></mask></defs><g mask="url(#nova-food-bite)">'+food+'</g>';}
     const book=avatarRoot.querySelector('[data-idle-tool="book"] svg');if(book)book.innerHTML+='<path class="book-page" d="M20 10L35 8V30L20 34Z" fill="#fff1d8"/>';
-    ambientStoryTimers=(novaIdleStories[kind]||[]).map(([at,phase,expression])=>setTimeout(()=>{if(avatar.dataset.ambient!==kind)return;avatar.dataset.ambientPhase=phase;setExpression(expression);},at));
+    ambientStoryTimers=(novaIdleStories[kind]||[]).map(([at,phase,expression])=>setTimeout(()=>{if(avatar.dataset.ambient!==kind)return;avatar.dataset.ambientPhase=phase;if(kind==='snack'&&phase==='bite')avatarRoot.querySelector('.snack-bite')?.style.setProperty('opacity','1');setExpression(expression);},at));
     // Resolve the gaze from the actual moving prop, not a separate guessed cycle.
     const targetSelector={butterfly:'.idle-flier',fireflies:'.idle-orbit',bubbles:'.idle-rise',juggle:'.idle-orbit',flower:'.idle-flower',plane:'.idle-flier',star:'.idle-orbit',heart:'.idle-rise',book:'[data-idle-tool="book"]',brush:'.ambient-detail',magnifier:'.ambient-detail',kite:'.kite-sail',yoyo:'.yoyo-disc',snack:'[data-idle-tool="snack"]'}[kind];
     const follow=()=>{
@@ -24017,6 +24017,25 @@ function installNovaWelcome(host) {
     :host([data-ambient-phase="settle"]) .arm{animation:none!important;transform:rotate(-15deg);transition:transform .5s}
     :host([data-ambient]) .nova-eye-drawing{translate:var(--nova-gaze-x,0px) var(--nova-gaze-y,0px);animation:nova-soft-blink 4.8s linear infinite!important;transition:translate .1s linear}
     :host([data-ambient="look"]) .nova-eye-drawing{animation:nova-soft-blink 4.8s linear infinite,nova-idle-look 8s ease-in-out 1!important}
+    /* Story poses extend the same attached-pad rig rather than floating hands. */
+    :host([data-ambient="book"][data-ambient-phase="closed"]) .arm.right{transform:translate(-8px,3px) rotate(-10deg);transition:transform .6s}
+    :host([data-ambient="brush"][data-ambient-phase="admire"]) .arm.right{animation:none!important;transform:rotate(-15deg);transition:transform .5s}
+    :host([data-ambient="brush"][data-ambient-phase="admire"]) .body{rotate:-3deg;transition:rotate .5s}
+    :host([data-ambient="magnifier"][data-ambient-phase="found"]) .arm.right{animation:none!important;transform:translate(-7px,-5px) rotate(-4deg)}
+    :host([data-ambient="butterfly"][data-ambient-phase="catch"]) .ambient-tool{animation:none;rotate:35deg;transition:rotate .5s}
+    :host([data-ambient="butterfly"][data-ambient-phase="release"]) .ambient-tool{animation:none;rotate:0deg;opacity:0;transition:opacity .8s,rotate .8s}
+    :host([data-ambient="fireflies"][data-ambient-phase="land"]) .arm.right,:host([data-ambient="fireflies"][data-ambient-phase="hold"]) .arm.right,:host([data-ambient="star"][data-ambient-phase="hold"]) .arm.right{animation:none!important;transform:translate(0,-5px) rotate(-35deg);transition:transform .5s}
+    :host([data-ambient="juggle"][data-ambient-phase="caught"]) .arm{animation:none!important;transform:rotate(-15deg);transition:transform .4s}
+    :host([data-ambient="flower"][data-ambient-phase="sniff"]) .arm.right{animation:none!important;transform:translate(-10px,-5px) rotate(-45deg)}
+    :host([data-ambient="flower"][data-ambient-phase="sneeze"]) .idle-flower{animation:nova-flower-flutter 1.2s ease-out both}
+    @keyframes nova-flower-flutter{from{transform:translate(45px,54px);opacity:1}to{transform:translate(95px,76px) rotate(25deg);opacity:.7}}
+    :host([data-ambient="plane"][data-ambient-phase="catch"]) .arm.right{animation:none!important;transform:rotate(-35deg);transition:transform .4s}
+    :host([data-ambient="rain"][data-ambient-phase="shelter"]) .arm.right{animation:none!important;transform:translate(-3px,-4px) rotate(0);transition:transform .5s}
+    :host([data-ambient="heart"][data-ambient-phase="offer"]) .arm{animation:none!important;transform:translateY(-3px) rotate(-40deg);transition:transform .5s}
+    :host([data-ambient="bubbles"][data-ambient-phase="pop"]) .arm.right{animation:none!important;transform:translateY(-13px) rotate(-65deg);transition:transform .25s}
+    :host([data-ambient="dance"][data-ambient-phase="flourish"]) .arm{animation:nova-idle-stretch 1s ease-in-out 1!important}
+    :host([data-ambient="stretch"][data-ambient-phase="yawn"]) .nova-bite-mouth{display:block}
+    :host([data-ambient="stretch"][data-ambient-phase="yawn"]) .nova-mouth-drawing{display:none}
     @media(prefers-reduced-motion:reduce){.nova-eye-drawing,.ambient-scene,.ambient-scene *,.ambient-tool{animation:none!important}.ambient-scene,.ambient-tool,.ambient-detail{display:none}}
     /* Motion belongs to the rig; expression drawings never own keyframes. */
     .body{transform:none!important}.eyes{inset:0!important;transform:none!important;translate:none!important;transition:none}
