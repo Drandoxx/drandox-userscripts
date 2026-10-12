@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.514
+// @version      2.36.515
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -4764,6 +4764,7 @@ const snAIChatDisplayNames=(()=>{
   }
   const actionWidthObservers = new WeakMap();
   function syncRecordHeaderRows(root) {
+    if (root.host?.localName === 'now-record-common-header') root = root.host.getRootNode();
     if (root.host?.localName !== 'sn-form-internal-header-layout') return;
     const row = root.querySelector('.sn-header-layout-row');
     const actions = row?.querySelector('.sn-header-layout-content.-last');
@@ -4772,7 +4773,7 @@ const snAIChatDisplayNames=(()=>{
     const number = [props?.recordDisplayValue, props?.primaryValue, props?.primaryItem?.displayValue]
       .find(value => /^(?:EVNT|INC|IMS|REQ|RITM)\d+$/i.test(String(value || '').trim()));
     if (!row || !actions || !common?.shadowRoot || !number) return;
-    row.setAttribute('data-sn-ai-record-rows', '');
+    if (!row.hasAttribute('data-sn-ai-record-rows')) row.setAttribute('data-sn-ai-record-rows', '');
     let label = actions.querySelector('.sn-ai-header-record-number');
     if (!label) {
       label = document.createElement('div');
@@ -4783,7 +4784,8 @@ const snAIChatDisplayNames=(()=>{
     }
     if (label.textContent !== String(number).trim()) label.textContent = String(number).trim();
     for (const heading of common.shadowRoot.querySelectorAll('now-heading')) {
-      const value = heading.shadowRoot?.textContent || heading.textContent || common.getProperties?.().primaryValue;
+      const value = heading.shadowRoot?.querySelector('h1,h2,h3,[role="heading"]')?.textContent
+        || heading.textContent || common.getProperties?.().primaryValue;
       heading.toggleAttribute('data-sn-ai-number-moved', String(value || '').trim() === String(number).trim()
         || common.getProperties?.().primaryValue === number);
     }
@@ -7720,7 +7722,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-    const payload={schema:2,version:'2.36.514',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const payload={schema:2,version:'2.36.515',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -21034,7 +21036,7 @@ function startSNAI(tabIdentity) {
     requestCodexDescription=withValidatedAICorrection(requestCodexDescription,'TEXT');
     installAutomationFreeze();
     document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
-    addLog('info', 'helper-version', { version: '2.36.514' });
+    addLog('info', 'helper-version', { version: '2.36.515' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
