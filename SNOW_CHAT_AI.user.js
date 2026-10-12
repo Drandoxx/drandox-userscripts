@@ -56,7 +56,7 @@
 {"version":"2.36.561","fixes":true,"changes":[{"key":"nova-wave","meaningful":false,"text":"Both hands are visible in front view, with a broader, slower wave."}]},
 {"version":"2.36.562","fixes":true,"changes":[{"key":"nova-wave","meaningful":false,"text":"NOVA keeps her hand raised between two waves and lowers it only at the end."}]},
 {"version":"2.36.563","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA blinks and glances around, enjoys twelve shuffled quiet activities, and sleeps after 15 idle minutes without sitting first."}]},
-{"version":"2.36.564","fixes":true,"changes":[{"key":"nova-idle-look","meaningful":false,"text":"NOVA looks left and right with her eyes instead of floating dots."}]}
+{"version":"2.36.564","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA enjoys eighteen shuffled idle routines, including books, painting, a magnifying glass, a kite, a yo-yo and a snack held in her hand."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -23722,7 +23722,7 @@ function installNovaWelcome(host) {
     message={};dismissed=false;typingStarted=true;dailyStartPending=true;avatar.dataset.dailyKind=morning?'morning':lunch?'lunch':'quiet';schedule();
   }
   let sleepTimer=0,wakeTimer=0,ambientTimer=0,ambientEndTimer=0;
-  const novaIdleKinds=['butterfly','fireflies','bubbles','juggle','flower','plane','star','heart','rain','dance','stretch','look'];
+  const novaIdleKinds=['butterfly','fireflies','bubbles','juggle','flower','plane','star','heart','rain','dance','stretch','look','book','brush','magnifier','kite','yoyo','snack'];
   let idleDeck=[],lastIdle='';
   function nextNovaIdle(){
     if(!idleDeck.length){idleDeck=[...novaIdleKinds];for(let i=idleDeck.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[idleDeck[i],idleDeck[j]]=[idleDeck[j],idleDeck[i]];}if(idleDeck.at(-1)===lastIdle)[idleDeck[0],idleDeck[idleDeck.length-1]]=[idleDeck.at(-1),idleDeck[0]];}
@@ -23752,6 +23752,15 @@ function installNovaWelcome(host) {
       look:''
     };
     if(art[kind]){const scene=document.createElement('div');scene.className='ambient-scene';scene.setAttribute('aria-hidden','true');scene.innerHTML='<svg viewBox="-60 -55 160 160">'+art[kind]+'</svg>';figure.append(scene);}
+    const heldProps={
+      book:'<path d="M3 8Q13 4 20 10Q27 4 37 8V31Q27 28 20 34Q13 28 3 31Z" fill="#b5d9ef" stroke="#6587ab" stroke-width="2"/><path d="M20 10v24M7 13l9 1m-9 5 9 1m8-6 9-1m-9 7 9-1" stroke="#f6fbff" fill="none"/>',
+      brush:'<path d="M20 35v22" stroke="#c49a72" stroke-width="5"/><path d="M16 35v-8h8v8Z" fill="#c4c2db"/><path d="M16 27q-6-14 4-19q10 5 4 19Z" fill="#d7a0e9"/><circle cx="8" cy="18" r="3" fill="#d7a0e9" opacity=".5"/>',
+      magnifier:'<path d="M20 32v25" stroke="#b494d2" stroke-width="6"/><circle cx="20" cy="18" r="14" fill="#bce8fa33" stroke="#d8c8e9" stroke-width="4"/><path d="M13 11q6-6 11 0" stroke="#fff9" fill="none" stroke-width="2"/>',
+      kite:'<path d="M20 60q-16-17 0-32" fill="none" stroke="#e9d7f1"/><path d="M20 0l17 14-17 18L3 14Z" fill="#ecc2e4" stroke="#fbefff"/><path d="M20 0v32M3 14h34" stroke="#be9bd3"/><path d="M20 32l-6 5 12 4-12 5" fill="none" stroke="#b9ddfa"/>',
+      yoyo:'<path class="yoyo-string" d="M20 3v39" stroke="#efe5ff"/><g class="yoyo-disc"><circle cx="20" cy="43" r="10" fill="#c7b7fa" stroke="#eee4ff" stroke-width="2"/><circle cx="20" cy="43" r="3" fill="#9172c5"/></g>',
+      snack:'<path d="M6 12q14-18 28 0l-4 19H10Z" fill="#d9a66a" stroke="#f4d4a1" stroke-width="2"/><path d="M10 22h20v16H10Z" fill="#c6c2ee"/><circle cx="14" cy="10" r="2" fill="#976a42"/><circle cx="25" cy="14" r="2" fill="#976a42"/>'
+    };
+    if(heldProps[kind]){const prop=document.createElement('span');prop.className='ambient-tool';prop.dataset.idleTool=kind;prop.setAttribute('aria-hidden','true');prop.innerHTML='<svg viewBox="0 0 40 65">'+heldProps[kind]+'</svg>';parts['right-hand']?.append(prop);}
     if(kind==='butterfly'){const net=document.createElement('span');net.className='ambient-tool';net.setAttribute('aria-hidden','true');net.innerHTML='<svg viewBox="0 0 40 70"><path d="M20 31v37" stroke="#c89869" stroke-width="4"/><ellipse cx="20" cy="17" rx="17" ry="15" fill="#f5efff22" stroke="#e2d8ed" stroke-width="2"/><path d="M7 9l25 18M5 16l24 16M11 4l24 16M31 8L8 28M35 17L18 32" stroke="#e2d8ed77"/></svg>';parts['right-hand']?.append(net);}
     ambientEndTimer=setTimeout(()=>{delete avatar.dataset.ambient;avatarRoot.querySelector('.ambient-scene')?.remove();avatarRoot.querySelector('.ambient-tool')?.remove();},8000);
     return true;
@@ -23877,6 +23886,21 @@ function installNovaWelcome(host) {
     @keyframes nova-soft-glance{0%,20%,42%,70%,100%{translate:0 0}25%,35%{translate:3px -1px}76%,87%{translate:-3px 0}}
     .ambient-scene{position:absolute;left:17px;top:-35px;width:145px;height:145px;pointer-events:none;z-index:5;animation:nova-idle-fade 8s ease both}.ambient-scene svg{width:100%;height:100%;overflow:visible}
     .ambient-tool{position:absolute;left:-3px;bottom:14px;width:30px;height:50px;transform-origin:50% 100%;animation:nova-net-scoop 8s ease-in-out both;pointer-events:none}.ambient-tool svg{width:100%;height:100%}
+    .ambient-tool[data-idle-tool]{animation:nova-idle-fade 8s ease both;left:0;bottom:4px;width:32px;height:52px;rotate:0deg}
+    .ambient-tool[data-idle-tool="book"],.ambient-tool[data-idle-tool="snack"]{left:-9px;bottom:-4px;width:40px;height:43px}
+    .ambient-tool[data-idle-tool="kite"]{height:72px;bottom:4px;rotate:10deg}
+    .ambient-tool[data-idle-tool="yoyo"]{bottom:-42px;left:-4px;rotate:0deg}
+    .yoyo-disc{animation:nova-yoyo 1.6s ease-in-out 5}.yoyo-string{transform-origin:20px 3px;animation:nova-yoyo-string 1.6s ease-in-out 5}
+    @keyframes nova-yoyo{0%,100%{translate:0 -23px}50%{translate:0 8px}}
+    @keyframes nova-yoyo-string{0%,100%{scale:1 .4}50%{scale:1 1.2}}
+    :host([data-ambient="book"]) .arm.right{transform:translate(-13px,-7px) rotate(-5deg);animation:none!important}
+    :host([data-ambient="brush"]) .arm.right{animation:nova-paint-hand 2s ease-in-out 4!important}
+    :host([data-ambient="magnifier"]) .arm.right{animation:nova-examine-hand 8s ease-in-out both!important}
+    :host([data-ambient="kite"]) .arm.right,:host([data-ambient="yoyo"]) .arm.right{animation:pad-swing 2s ease-in-out 4!important}
+    :host([data-ambient="snack"]) .arm.right{animation:nova-snack-hand 8s ease-in-out both!important}
+    @keyframes nova-paint-hand{0%,100%{transform:translate(-4px,-3px) rotate(-10deg)}50%{transform:translate(-8px,-10px) rotate(15deg)}}
+    @keyframes nova-examine-hand{0%,100%{transform:rotate(-15deg)}30%,70%{transform:translate(-11px,-8px) rotate(-5deg)}}
+    @keyframes nova-snack-hand{0%,100%{transform:rotate(-15deg)}35%,60%{transform:translate(-18px,-12px) rotate(15deg)}}
     .idle-flier{animation:nova-idle-flier 8s ease-in-out both}.idle-orbit{animation:nova-idle-orbit 4s ease-in-out 2}.idle-rise{animation:nova-idle-rise 4s ease-out 2}.idle-flower{animation:nova-idle-flower 8s ease-in-out both}.idle-cloud{animation:nova-idle-cloud 8s ease-in-out both}.idle-drops{animation:nova-idle-drops .9s ease-in infinite}
     :host([data-ambient="butterfly"]) .arm.right{animation:nova-net-hand 8s ease-in-out both!important;z-index:6}
     :host([data-ambient="dance"]) .body{animation:nova-idle-dance 1.6s ease-in-out 5!important}
