@@ -9722,6 +9722,7 @@ function fitDashboardMetricSpacing(doc) {
   }
 
   function sortDocument(doc) {
+    performanceMeasure('maintenance-setup',()=>{
     applyPowerMode(doc);
     syncCallTestLayout(doc);
     injectStyles(doc);
@@ -9741,6 +9742,8 @@ function fitDashboardMetricSpacing(doc) {
     installAvatarShadowStyleHook(doc);
     publishTopProfileStatus(doc);
     syncInteractionAppTheme(doc);
+    });
+    performanceMeasure('maintenance-controls',()=>{
     ensureTopAgentWorkspaceToggleHook(doc);
     ensureAgentWorkspaceCompactMonitor(doc);
     ensureThemeToggle(doc);
@@ -9760,8 +9763,12 @@ function fitDashboardMetricSpacing(doc) {
     restoreNativeAgentWorkspaceLayout(doc);
     syncDashboardWidgetsForWorkspace(doc);
     ensureTabUnderlines(doc);
+    });
+    performanceMeasure('maintenance-dashboard-layout',()=>{
     fitAnalyticsFrameToViewport(doc);
+    });
     if (Date.now() < themeTransitionUntil) return;
+    performanceMeasure('maintenance-dashboard-enhancements',()=>{
     shortenDashboardQueueLabels(doc);
     suppressQueueActionTooltips(doc);
     ensureQueueLabelObserver(doc);
@@ -9774,6 +9781,8 @@ function fitDashboardMetricSpacing(doc) {
     // next paint instead of making the user wait for the 1-second maintenance
     // cycle that keeps the rest of the dashboard inexpensive.
     ensureImmediateBoardStatusRefresh(doc);
+    });
+    performanceMeasure('maintenance-board',()=>{
     // Once marked, only revisit the one board that needs the once-per-second update.
     const markedBoards = doc.querySelectorAll('table.gbs-board');
     if (markedBoards.length) {
@@ -9785,6 +9794,7 @@ function fitDashboardMetricSpacing(doc) {
     }
     syncHoverCardStatusColors(doc);
     finishReadyComponentLoads(doc);
+    });
   }
 
   function registerEmbeddedDocument(frame, seenDocuments = MANAGED_DOCUMENTS) {
@@ -9910,6 +9920,11 @@ function fitDashboardMetricSpacing(doc) {
   }
   function performanceEvent(type,fields={}) {
     if(!lightweightPerformance)return;
+    if(/call-push|native-call-state|call-control-action/.test(type)) {
+      lightweightPerformance.callEvents ||= [];
+      lightweightPerformance.callEvents.push({at:Date.now(),type,...fields});
+      if(lightweightPerformance.callEvents.length>40)lightweightPerformance.callEvents.shift();
+    }
     lightweightPerformance.events.push({at:Date.now(),type,popupsEnabled:callPopupsEnabled(),...fields});
     if(lightweightPerformance.events.length>40)lightweightPerformance.events.shift();
   }
@@ -9922,6 +9937,7 @@ function fitDashboardMetricSpacing(doc) {
       if(report.network?.length)report.network.shift();
       else if(report.events.length)report.events.shift();
       else if(report.samples.length)report.samples.shift();
+      else if(report.callEvents?.length)report.callEvents.shift();
       else break;
       report.exportTrimmed=true;
     }
