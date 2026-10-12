@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.559
+// @version      2.36.560
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -51,7 +51,8 @@
 {"version":"2.36.556","fixes":true,"changes":[{"key":"nova-movement","meaningful":true,"text":"NOVA walks in sideways after reload, then turns and waves silently when no greeting is due."}]},
 {"version":"2.36.557","fixes":true,"changes":[{"key":"nova-movement","meaningful":true,"text":"NOVA walks with smaller oval hands, gentle arm swings and alternating planted steps. Standing clicks trigger a smile and wave without jumping."}]},
 {"version":"2.36.558","fixes":true,"changes":[{"key":"nova-movement","meaningful":false,"text":"NOVA side-view arms attach at her shoulder, with short connected legs and a mirrored hip-driven stride."}]},
-{"version":"2.36.559","fixes":true,"changes":[{"key":"nova-movement","meaningful":true,"text":"NOVA has softer attached hands, distinct side-view expressions and coordinated walking, coffee, climbing and flying animations."},{"key":"nova-idle","meaningful":true,"text":"NOVA settles into sleep with hidden feet and smoothly returns to her standing pose before typing."}]}
+{"version":"2.36.559","fixes":true,"changes":[{"key":"nova-movement","meaningful":true,"text":"NOVA has softer attached hands, distinct side-view expressions and coordinated walking, coffee, climbing and flying animations."},{"key":"nova-idle","meaningful":true,"text":"NOVA settles into sleep with hidden feet and smoothly returns to her standing pose before typing."}]},
+{"version":"2.36.560","fixes":true,"changes":[{"key":"hp-ci","meaningful":true,"text":"HP mode preserves your CI search on retries and selects the first matching Configuration Item using contains search."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -14707,6 +14708,7 @@ const payload={schema:2,version:'2.36.558',day:log.day,chatCount:log.chats.size,
             expected: ciLookup.expected,
             match: 'contains',
             first: true,
+            forceReselect: true,
             code: 'HP_CI_COMMIT_FAILED',
           });
         }
@@ -20782,6 +20784,9 @@ const payload={schema:2,version:'2.36.558',day:log.day,chatCount:log.chats.size,
                 supplied,
                 state.autoSession?.genericSchema || state.wizard?.genericSchema,
               );
+              // The conflict merge contains AI Values only. CI belongs to the
+              // operator and must survive retries independently of that merge.
+              cachedCommand.HP['Configuration Item'] = supplied['configuration-item'] || '';
               reusableAICommand = await writeCachedAICommand('HP', pinnedIMS, JSON.stringify(cachedCommand));
             } catch { /* Normal command parsing below reports an unusable cache. */ }
             titleMain.textContent = `${pinnedIMS} - Retrying cached HP…`; setProgress(58); collapsedCommandInput.value = reusableAICommand;
@@ -20817,7 +20822,7 @@ const payload={schema:2,version:'2.36.558',day:log.day,chatCount:log.chats.size,
               const ciLookup = hpConfigurationItemLookup(supplied['configuration-item']);
               if (ciLookup) {
                 await autoLookup('Configuration Item', ciLookup.search, {
-                  expected: ciLookup.expected, match: 'contains', first: true, code: 'HP_CI_COMMIT_FAILED',
+                  expected: ciLookup.expected, match: 'contains', first: true, forceReselect: true, code: 'HP_CI_COMMIT_FAILED',
                 });
               }
             }
@@ -20854,7 +20859,10 @@ const payload={schema:2,version:'2.36.558',day:log.day,chatCount:log.chats.size,
           }
           setProgress(100); dialog.classList.remove('is-running', 'is-error'); dialog.classList.add('is-success', 'is-hp-reminder');
           titleMain.textContent = `${pinnedIMS} - HP complete`;
-          completeNote.textContent = `Change the CI! - printer model:\n${finalStatus.result.printerModel || 'Not provided'}`; completeNote.hidden = false;
+          completeNote.textContent = finalStatus.result.configurationItem
+            ? `CI selected from your search: ${finalStatus.result.configurationItem}. Please review before saving.`
+            : `Change the CI! - printer model:\n${finalStatus.result.printerModel || 'Not provided'}`;
+          completeNote.hidden = false;
           await clearCachedAICommand('HP', pinnedIMS); reusableAICommand = '';
           if (!chatCacheReleased) { chatCacheReleased = true; releaseAIChatCache(pinnedIMS); }
           if (state.feedbackEnabled && shell.showFeedback()) shell.feedbackClose = closeAndRemove;
