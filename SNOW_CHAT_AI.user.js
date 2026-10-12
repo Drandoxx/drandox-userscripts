@@ -4946,17 +4946,28 @@ const snAIChatDisplayNames=(()=>{
         if (width > 0 && Math.abs(Number(host.width || 0) - width) >= 1) host.width = width;
         if (width > 0 && Array.isArray(nodes) && !host.hasAttribute('data-sn-ai-actions-ready') && !entry.readyScheduled) {
           entry.readyScheduled = true;
-          // Two paint boundaries allow native reactive rendering and flex sizing
-          // to reconcile, without displaying the intermediate server action list.
-          requestAnimationFrame(() => {
+          // A fixed two-frame delay can expire before native record loading and
+          // conditional actions finish. Keep the reserved row hidden until the
+          // native form is ready AND actions/width remain stable across frames.
+          let stableFrames=0,lastSignature='';
+          const settle=()=>{
+            if(!host.isConnected){entry.readyScheduled=false;return;}
             entry.update();
-            requestAnimationFrame(() => {
-              entry.readyScheduled = false;
-              if (!host.isConnected || host.getBoundingClientRect().width <= 0) return;
-              host.setAttribute('data-sn-ai-actions-ready', '');
-              entry.update();
-            });
-          });
+            let form=host;
+            while(form&&form.localName!=='sn-form-internal-workspace-form-layout')form=form.parentElement||form.getRootNode?.().host;
+            const props=form?.getProperties?.();
+            const currentWidth=Math.floor(host.getBoundingClientRect().width);
+            const signature=currentWidth+':'+JSON.stringify(host.getProperties?.().actionNodes||[]);
+            const nativeReady=!props?.isLoadingRecord&&!props?.isReloading&&currentWidth>0
+              &&Math.abs(Number(host.width||0)-currentWidth)<1;
+            stableFrames=nativeReady&&signature===lastSignature?stableFrames+1:0;
+            lastSignature=signature;
+            if(stableFrames>=4){
+              entry.readyScheduled=false;host.setAttribute('data-sn-ai-actions-ready','');return;
+            }
+            requestAnimationFrame(settle);
+          };
+          requestAnimationFrame(settle);
         }
       };
       const observer = new ResizeObserver(update);
