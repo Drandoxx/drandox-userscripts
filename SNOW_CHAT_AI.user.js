@@ -575,7 +575,7 @@ const snAIChatDisplayNames=(()=>{
     if(!record?.number?.value||!acceptedAt||Date.now()-acceptedAt>180000){greetTrace('offer-not-matched',{reason:!record?.number?.value?'ims-number-unavailable':'no-recent-accepted-offer'});pendingGreetingIds.delete(id);greetSeenHosts.delete(host);return;}
     greetTrace('offer-matched',{ims:record.number.value});
     const started=Date.now();
-    const outcome=(stage,reason,ok=false)=>greetTrace(stage,{ims:record.number.value,reason,ok,elapsedMs:Date.now()-started});
+    const outcome=(stage,reason,ok=false)=>{pendingGreetingIds.delete(id);greetTrace(stage,{ims:record.number.value,reason,ok,elapsedMs:Date.now()-started});};
     const greetDelayMs=0;
     const ownElements=()=>{const list=[];const visit=root=>{for(const node of root.querySelectorAll('*')){list.push(node);if(node.shadowRoot)visit(node.shadowRoot);}};if(host.shadowRoot)visit(host.shadowRoot);return list;};
     const input=()=>ownElements().find(node=>node.matches('textarea[name="CHAT_INPUT#CHAT_TEXTAREA"]'));
@@ -22089,7 +22089,7 @@ function startSNAI(tabIdentity) {
               document.dispatchEvent(new CustomEvent('sn-ai-accepted-chat-id',{detail:{id:candidates[0].sysId||candidates[0].getAttribute('sys-id'),acceptedAt}}));
               return;
             }
-            if(++checks<120)setTimeout(confirmComposer,250);
+            if(++checks<40)setTimeout(confirmComposer,500);
             else document.dispatchEvent(new CustomEvent('sn-ai-greet-diagnostic',{detail:{stage:'acceptance-unconfirmed',reason:candidates.length>1?'multiple-new-composers':'no-new-owned-composer-after-native-accept'}}));
           };
           setTimeout(confirmComposer,0);
