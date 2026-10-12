@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.539
+// @version      2.36.540
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7940,7 +7940,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-const payload={schema:2,version:'2.36.539',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+const payload={schema:2,version:'2.36.540',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -21259,7 +21259,7 @@ const payload={schema:2,version:'2.36.539',day:log.day,chatCount:log.chats.size,
       installAutomationFreeze();
       document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
     }
-    addLog('info', 'helper-version', { version: '2.36.539' });
+    addLog('info', 'helper-version', { version: '2.36.540' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -23507,13 +23507,22 @@ function installNovaWelcome(host) {
     <div class="arm left" data-part="left-arm"><div class="hand" data-part="left-hand"></div></div><div class="arm right" data-part="right-arm"><div class="hand" data-part="right-hand"></div></div>
     <div class="foot left" data-part="left-foot"></div><div class="foot right" data-part="right-foot"></div>
     <div class="body" data-part="body"><div class="eyes" data-part="eyes"><div class="eye left" data-part="left-eye"></div><div class="eye right" data-part="right-eye"></div></div><div class="cheek left" data-part="left-cheek"></div><div class="cheek right" data-part="right-cheek"></div><div class="mouth" data-part="mouth"></div><div class="facial-hair" data-part="facial-hair"></div><div class="outfit" data-part="outfit"></div><div class="headwear" data-part="headwear"><div class="bow"><span></span></div></div></div>
-  </div>`;
+  </div><div class="peek-grip upper" data-part="peek-upper-hand"></div><div class="peek-grip lower" data-part="peek-lower-hand"></div>`;
   avatarRoot.innerHTML=avatarRoot.innerHTML.replace('</style>',`
     .nova{left:20px;bottom:20px;transform:translateX(155px)}.headwear{top:-7px;right:0}
-    @keyframes peek{0%{transform:translateX(155px)}35%,80%{transform:translateX(110px)}100%{transform:translateX(105px)}}
-    @keyframes jump{0%{transform:translateX(105px)}55%{transform:translateX(-10px) rotate(-7deg)}78%{transform:translateX(4px) rotate(3deg)}100%{transform:none}}
+    :host([data-phase="peek"]) .nova{animation:peek .45s ease-out both;transform-origin:right center}
+    :host([data-phase="peek"]) .body{transform:perspective(250px) rotateY(-24deg) rotate(-16deg);transform-origin:right center}
+    :host([data-phase="peek"]) .arm,:host([data-phase="peek"]) .foot,:host([data-phase="peek"]) .shadow{visibility:hidden}
+    .peek-grip{display:none;position:absolute;right:-20px;width:25px;height:31px;background:linear-gradient(90deg,#e5d3ff,#b99aea);border-radius:12px 7px 7px 12px;z-index:6;box-shadow:inset 0 -2px 3px #8058b655;transform:rotate(-6deg)}
+    .peek-grip.upper{top:37px}.peek-grip.lower{top:111px;transform:rotate(6deg)}
+    .peek-grip::before{content:'';position:absolute;left:4px;top:7px;width:22px;height:2px;border-radius:3px;background:#9473bb66;box-shadow:0 7px #9473bb66,0 14px #9473bb66}
+    .peek-grip::after{content:'';position:absolute;left:-5px;top:0;width:11px;height:16px;border-radius:8px;background:#dac2ff;transform:rotate(-20deg)}
+    :host([data-phase="peek"]) .peek-grip{display:block;animation:grip-in .45s ease-out both}
+    @keyframes grip-in{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+    @keyframes peek{0%{transform:translateX(155px)}100%{transform:translateX(90px)}}
+    @keyframes jump{0%{transform:translateX(90px)}55%{transform:translateX(-10px) rotate(-7deg)}78%{transform:translateX(4px) rotate(3deg)}100%{transform:none}}
     :host([data-motion^="fly-"]) .body{transform:scale(.78);transform-origin:left center}
-    @media(prefers-reduced-motion:reduce){:host([data-phase="peek"]) .nova{transform:translateX(110px)}:host([data-phase="ready"]) .nova,:host([data-phase="jump"]) .nova{transform:none}}
+    @media(prefers-reduced-motion:reduce){:host([data-phase="peek"]) .nova{transform:translateX(90px)}.peek-grip{animation:none!important}:host([data-phase="ready"]) .nova,:host([data-phase="jump"]) .nova{transform:none}}
   </style>`);
   document.documentElement.append(avatar);
   // Named slots are replaceable independently, with no external image assets.
@@ -23552,7 +23561,7 @@ function installNovaWelcome(host) {
     const chatsRect=chatsButton?.getBoundingClientRect();
     const bottom=chatsRect?.width?innerHeight-chatsRect.top+8:56;
     avatar.style.right=(16-offsetX)+'px';avatar.style.bottom=(bottom-offsetY)+'px';avatar.hidden=false;
-    if(!entranceStarted){entranceStarted=true;avatar.dataset.phase='peek';entranceTimer=setTimeout(()=>{if(dismissed)return;avatar.dataset.phase='jump';avatar.setAttribute('aria-label','NOVA jumping out');schedule();readyTimer=setTimeout(()=>{avatar.dataset.phase='ready';avatar.setAttribute('aria-label','NOVA waving');schedule();},650);},2500);}
+    if(!entranceStarted){entranceStarted=true;avatar.dataset.phase='peek';entranceTimer=setTimeout(()=>{if(dismissed)return;avatar.dataset.phase='jump';avatar.setAttribute('aria-label','NOVA jumping out');schedule();readyTimer=setTimeout(()=>{avatar.dataset.phase='ready';avatar.setAttribute('aria-label','NOVA waving');schedule();},650);},3600);}
     if(avatar.dataset.phase!=='ready'){card.hidden=true;return;}
     card.hidden=false;if(!typingStarted){typingStarted=true;typeNext();}const r={left:innerWidth-145.6+offsetX,right:innerWidth-16+offsetX,top:innerHeight-bottom-129.6+offsetY,bottom:innerHeight-bottom+offsetY},c=card.getBoundingClientRect();
     const preferredLeft=r.left-c.width-10;
