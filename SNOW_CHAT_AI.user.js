@@ -575,10 +575,20 @@ const snAIChatDisplayNames=(()=>{
     if(!record?.number?.value||!acceptedAt||Date.now()-acceptedAt>180000){greetTrace('offer-not-matched',{reason:!record?.number?.value?'ims-number-unavailable':'no-recent-accepted-offer'});pendingGreetingIds.delete(id);greetSeenHosts.delete(host);return;}
     greetTrace('offer-matched',{ims:record.number.value});
     const started=Date.now();
-    const outcome=(stage,reason,ok=false)=>{pendingGreetingIds.delete(id);greetTrace(stage,{ims:record.number.value,reason,ok,elapsedMs:Date.now()-started});};
+    const outcome=(stage,reason,ok=false)=>{pendingGreetingIds.delete(id);greetTrace(stage,{ims:record.number.value,reason,ok,elapsedMs:Date.now()-started,...(!ok&&/composer|command|quick-action-did-not-fill/.test(reason)?{composerSnapshot:composerSnapshot()}: {})});};
     const greetDelayMs=0;
     const ownElements=()=>{const list=[];const visit=root=>{for(const node of root.querySelectorAll('*')){list.push(node);if(node.shadowRoot)visit(node.shadowRoot);}};if(host.shadowRoot)visit(host.shadowRoot);return list;};
     const input=()=>ownElements().find(node=>node.matches('textarea[name="CHAT_INPUT#CHAT_TEXTAREA"]'));
+    const composerSnapshot=()=>{
+      const matches=ownElements().filter(node=>node.matches('textarea[name="CHAT_INPUT#CHAT_TEXTAREA"]'));
+      const path=node=>{const parts=[];for(let current=node;current&&parts.length<12;current=current.parentElement||current.getRootNode?.().host){parts.unshift(current.localName+(current.id?'#'+current.id:''));if(current===host)break;}return parts.join(' > ');};
+      return {selector:'textarea[name="CHAT_INPUT#CHAT_TEXTAREA"]',matchCount:matches.length,selectedIndex:0,chatId:id,
+        candidates:matches.slice(0,10).map(node=>({tag:node.localName,id:node.id||'',name:node.name||'',label:node.getAttribute('aria-label')||'',
+          value:String(node.value??''),valueLength:String(node.value??'').length,defaultValue:String(node.defaultValue??''),
+          placeholder:node.getAttribute('placeholder')||'',textContent:node.textContent||'',
+          disabled:Boolean(node.disabled),readOnly:Boolean(node.readOnly),focused:node.getRootNode()?.activeElement===node,
+          visible:Boolean(node.getBoundingClientRect?.().width&&node.getBoundingClientRect?.().height),path:path(node)}))};
+    };
     const safe=()=>autoGreetEnabled&&host.isConnected&&(host.sysId||host.getAttribute('sys-id'))===id&&host.isChatOwner===true&&!input()?.disabled&&!input()?.readOnly&&ownElements().some(node=>node.matches('[aria-selected="true"]')&&/Public Chat/i.test(node.getAttribute('aria-label')||node.textContent));
     const wait=async predicate=>{for(let i=0;i<20;i++){if(!safe())return null;const result=predicate();if(result)return result;await new Promise(resolve=>setTimeout(resolve,100));}return null;};
     setTimeout(async()=>{
@@ -7771,6 +7781,10 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore(),now=action.startsWith('extension-')&&Number.isFinite(details.at)?details.at:Date.now(),safe={};
     if(action.startsWith('extension-')&&now<new Date().setHours(0,0,0,0))return;
     for(const [key,value]of Object.entries(details||{})){
+      // Explicitly requested exact draft evidence, only on greeting failures.
+      // Preserve whitespace/line breaks and do not truncate through the general
+      // 180-character diagnostic string filter.
+      if(key==='composerSnapshot'&&action==='auto-greet'){safe[key]=value;continue;}
       if(key==='chatContent'&&action==='chat-data-collected'){safe[key]=String(value);continue;}
       if(key==='responseContent'&&action==='ai-response-data'){safe[key]=String(value);continue;}
       if(key==='network'&&action==='form-network'){safe[key]=value;continue;}
