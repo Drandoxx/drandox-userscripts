@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.540
+// @version      2.36.541
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -7940,7 +7940,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-const payload={schema:2,version:'2.36.540',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+const payload={schema:2,version:'2.36.541',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -21259,7 +21259,7 @@ const payload={schema:2,version:'2.36.540',day:log.day,chatCount:log.chats.size,
       installAutomationFreeze();
       document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
     }
-    addLog('info', 'helper-version', { version: '2.36.540' });
+    addLog('info', 'helper-version', { version: '2.36.541' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -23477,11 +23477,13 @@ function installNovaWelcome(host) {
   const settings=host.querySelector('[data-settings-panel="ai"]');
   if(!launcher||!settings)return;
   const card=document.createElement('aside');card.className='sn-ai-nova-message';card.hidden=true;
+  const tail=document.createElement('div');tail.className='sn-ai-nova-tail';tail.hidden=true;tail.setAttribute('aria-hidden','true');
   card.setAttribute('aria-label','Nova');card.setAttribute('aria-live','polite');
   const style=document.createElement('style');style.textContent=`
     .sn-ai-nova-message{position:fixed;z-index:2147483647;width:min(330px,calc(100vw - 24px));padding:16px;border:1px solid var(--sn-theme-655573,#74618b);border-radius:18px 18px 5px 18px;background:var(--sn-theme-251f31,#241c33);color:var(--sn-theme-e6edf9,#eee6ff);box-shadow:0 8px 28px #0005;font:13px/1.5 system-ui;pointer-events:auto;max-height:calc(100vh - 24px);overflow:auto;animation:sn-nova-in .2s ease-out}
     .sn-ai-nova-message[hidden]{display:none!important}.sn-ai-nova-message p{margin:8px 0}.sn-ai-nova-message strong{color:var(--sn-theme-ac94ec,#ac94ec)}.sn-ai-nova-message .nova-actions{display:flex;gap:8px;margin-top:12px}.sn-ai-nova-message button{font:inherit;padding:7px 18px;border:1px solid var(--sn-theme-655573,#74618b);border-radius:8px;background:var(--sn-theme-302951,#302951);color:inherit;cursor:pointer}.sn-ai-nova-message img{display:block;max-width:100%;border-radius:8px}.sn-ai-nova-preference{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0;font:inherit}@keyframes sn-nova-in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}@media(prefers-reduced-motion:reduce){.sn-ai-nova-message{animation:none}}`;
-  document.documentElement.append(style,card);
+  document.documentElement.append(style,tail,card);
+  style.textContent+=` .sn-ai-nova-tail{position:fixed;width:28px;height:24px;z-index:2147483647;pointer-events:none;background:var(--sn-theme-655573,#74618b);clip-path:polygon(0 0,100% 100%,0 80%)}.sn-ai-nova-tail::after{content:'';position:absolute;inset:1px 2px 1px 0;background:var(--sn-theme-251f31,#241c33);clip-path:polygon(0 0,100% 100%,0 80%)}.sn-ai-nova-tail[hidden]{display:none!important}.sn-ai-nova-tail[data-side="bottom"]{clip-path:polygon(0 0,100% 0,50% 100%)}.sn-ai-nova-tail[data-side="bottom"]::after{inset:0 1px 2px;clip-path:polygon(0 0,100% 0,50% 100%)}`;
   style.textContent+=' .sn-ai-nova-message .nova-actions[hidden]{display:none!important}';
   const avatar=document.createElement('div');avatar.id='sn-ai-nova-companion';avatar.hidden=true;
   avatar.style.cssText='position:fixed;width:180px;height:180px;transform:scale(.72);transform-origin:bottom right;z-index:2147483646;pointer-events:none;overflow:visible;';
@@ -23522,6 +23524,7 @@ function installNovaWelcome(host) {
     @keyframes peek{0%{transform:translateX(155px)}100%{transform:translateX(90px)}}
     @keyframes jump{0%{transform:translateX(90px)}55%{transform:translateX(-10px) rotate(-7deg)}78%{transform:translateX(4px) rotate(3deg)}100%{transform:none}}
     :host([data-motion^="fly-"]) .body{transform:scale(.78);transform-origin:left center}
+    .hand,.peek-grip{border-radius:50%;width:22px;height:25px}.hand::before,.hand::after,.peek-grip::before,.peek-grip::after{display:none}
     @media(prefers-reduced-motion:reduce){:host([data-phase="peek"]) .nova{transform:translateX(90px)}.peek-grip{animation:none!important}:host([data-phase="ready"]) .nova,:host([data-phase="jump"]) .nova{transform:none}}
   </style>`);
   document.documentElement.append(avatar);
@@ -23536,8 +23539,8 @@ function installNovaWelcome(host) {
     offsetX=Math.max(-innerWidth+170,Math.min(0,offsetX+(direction==='left'?-distance:direction==='right'?distance:0)));
     offsetY=Math.max(-innerHeight+230,Math.min(0,offsetY+(direction==='up'?-distance:direction==='down'?distance:0)));
     avatar.dataset.motion=kind+'-'+direction;avatar.style.transition=`right ${duration}ms linear,bottom ${duration}ms linear`;
-    card.style.transition=`left ${duration}ms linear,top ${duration}ms linear`;clearTimeout(motionTimer);schedule();
-    motionTimer=setTimeout(()=>{delete avatar.dataset.motion;avatar.style.transition='';card.style.transition='';},duration);return true;
+    card.style.transition=`left ${duration}ms linear,top ${duration}ms linear`;tail.style.transition=card.style.transition;clearTimeout(motionTimer);schedule();
+    motionTimer=setTimeout(()=>{delete avatar.dataset.motion;avatar.style.transition='';card.style.transition='';tail.style.transition='';},duration);return true;
   };
   avatar.novaAppearance=Object.freeze({setExpression,move,setPart(name,content){if(parts[name]&&content instanceof Node)parts[name].replaceChildren(content);}});
   const preference=document.createElement('label');preference.className='sn-ai-nova-preference';
@@ -23556,19 +23559,22 @@ function installNovaWelcome(host) {
   }
   function position(){
     frame=0;
-    if(!message||dismissed){card.hidden=true;avatar.hidden=true;return;}
+    if(!message||dismissed){card.hidden=true;tail.hidden=true;avatar.hidden=true;return;}
     const chatsButton=document.getElementById('sn-ai-chats-today')?.shadowRoot?.querySelector('.launcher');
     const chatsRect=chatsButton?.getBoundingClientRect();
     const bottom=chatsRect?.width?innerHeight-chatsRect.top+8:56;
     avatar.style.right=(16-offsetX)+'px';avatar.style.bottom=(bottom-offsetY)+'px';avatar.hidden=false;
     if(!entranceStarted){entranceStarted=true;avatar.dataset.phase='peek';entranceTimer=setTimeout(()=>{if(dismissed)return;avatar.dataset.phase='jump';avatar.setAttribute('aria-label','NOVA jumping out');schedule();readyTimer=setTimeout(()=>{avatar.dataset.phase='ready';avatar.setAttribute('aria-label','NOVA waving');schedule();},650);},3600);}
-    if(avatar.dataset.phase!=='ready'){card.hidden=true;return;}
+    if(avatar.dataset.phase!=='ready'){card.hidden=true;tail.hidden=true;return;}
     card.hidden=false;if(!typingStarted){typingStarted=true;typeNext();}const r={left:innerWidth-145.6+offsetX,right:innerWidth-16+offsetX,top:innerHeight-bottom-129.6+offsetY,bottom:innerHeight-bottom+offsetY},c=card.getBoundingClientRect();
     const preferredLeft=r.left-c.width-10;
     card.style.left=Math.max(12,Math.min(innerWidth-c.width-12,preferredLeft))+'px';
     card.style.top=Math.max(12,Math.min(innerHeight-c.height-12,r.bottom-c.height))+'px';
     if(preferredLeft<12)card.style.top=Math.max(12,r.top-c.height-10)+'px';
     const left=parseFloat(card.style.left),top=parseFloat(card.style.top);
+    tail.hidden=false;
+    if(preferredLeft<12){tail.dataset.side='bottom';tail.style.left=Math.max(left+14,Math.min(left+c.width-42,(r.left+r.right)/2-14))+'px';tail.style.top=(top+c.height-1)+'px';}
+    else{tail.dataset.side='right';tail.style.left=(left+c.width-1)+'px';tail.style.top=Math.max(top+14,Math.min(top+c.height-38,r.bottom-77))+'px';}
     const rightCorner=(r.left+r.right)/2>=left+c.width/2;
     const topCorner=(r.top+r.bottom)/2<top+c.height/2;
     const corners=['18px','18px','18px','18px'];
@@ -23594,10 +23600,10 @@ function installNovaWelcome(host) {
   }
   function save(enabled){try{localStorage.setItem(key,enabled?'yes':'no');}catch{}toggle.checked=enabled;}
   function reply(enabled){save(enabled);setExpression(enabled?'happy':'friendly');show({paragraphs:[enabled?'Sounds good. I’ll pop by with a little encouragement or something fun now and then. For now, this is just our first hello. 💜':'No worries at all. If you change your mind, open SN AI settings → AI settings and turn on “Nova friendly messages”. I’ll be happy to say hello again.']});}
-  toggle.addEventListener('change',()=>{save(toggle.checked);dismissed=true;stopTyping();card.hidden=true;avatar.hidden=true;});
+  toggle.addEventListener('change',()=>{save(toggle.checked);dismissed=true;stopTyping();card.hidden=true;tail.hidden=true;avatar.hidden=true;});
   const observer=new MutationObserver(schedule);observer.observe(host,{subtree:true,attributes:true,attributeFilter:['class','hidden','aria-expanded','style']});
   window.addEventListener('resize',schedule);window.addEventListener('pointerup',schedule);
-  window.addEventListener('pagehide',()=>{observer.disconnect();cancelAnimationFrame(frame);clearTimeout(entranceTimer);clearTimeout(readyTimer);clearTimeout(motionTimer);stopTyping();card.remove();avatar.remove();style.remove();window.removeEventListener('resize',schedule);window.removeEventListener('pointerup',schedule);},{once:true});
+  window.addEventListener('pagehide',()=>{observer.disconnect();cancelAnimationFrame(frame);clearTimeout(entranceTimer);clearTimeout(readyTimer);clearTimeout(motionTimer);stopTyping();card.remove();tail.remove();avatar.remove();style.remove();window.removeEventListener('resize',schedule);window.removeEventListener('pointerup',schedule);},{once:true});
   (async()=>{
     const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
     const id=String(page.NOW?.user?.userID||page.g_user?.userID||'');if(!/^[a-f0-9]{32}$/i.test(id))return;
