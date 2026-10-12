@@ -23597,6 +23597,15 @@ function installNovaWelcome(host) {
   const toggle=document.createElement('input');toggle.type='checkbox';toggle.disabled=true;
   preference.append(label,toggle);settings.append(preference);
   let key='',firstName='friend',message=null,dismissed=false,frame=0,entranceStarted=false,entranceTimer=0,readyTimer=0,typingTimer=0,typingStarted=false,typingQueue=[],typingDone=null;
+  let nameReady=false,pendingUpdate=null;const announcedUpdates=new Set();
+  host.novaUpdateMessage=data=>{
+    if(!nameReady){pendingUpdate=data;return;}
+    if(data.version&&announcedUpdates.has(data.version))return;
+    if(data.version)announcedUpdates.add(data.version);
+    dismissed=false;setExpression('happy');
+    if(data.reload){show({paragraphs:['The update page is open. Once the update is installed, reload this page to use the new version.'],actions:[{label:'Reload page',run:()=>location.reload()}]});return;}
+    show({paragraphs:[`Hi ${firstName},`,`I have a new update for you, version ${data.version}.`,`Here’s what’s new since your version ${data.currentVersion}:`],bullets:summarizeNovaReleaseNotes(data.notes,data.currentVersion,data.version),actions:[{label:'Update now',run:data.update},{label:'Later',run:()=>{data.later?.();stopTyping();message=null;card.hidden=true;tail.hidden=true;avatar.hidden=true;}}]});
+  };
   function stopTyping(){clearTimeout(typingTimer);typingTimer=0;typingQueue=[];typingDone=null;card.removeAttribute('aria-busy');}
   function typeNext(){
     typingTimer=0;if(dismissed){stopTyping();return;}
@@ -23628,8 +23637,10 @@ function installNovaWelcome(host) {
   // Message blocks support readable text, branching actions and future GIFs.
   function show(data){
     stopTyping();typingStarted=false;message=data;card.replaceChildren();card.setAttribute('aria-live','off');card.setAttribute('aria-busy','true');
-    for(const text of data.paragraphs||[]){
-      const p=document.createElement('p');const value=String(text).replace(/[\u2013\u2014\u2015]/g,',');p.setAttribute('aria-label',value);card.append(p);
+    let list=null;
+    for(const row of [...(data.paragraphs||[]).map(text=>({text,bullet:false})),...(data.bullets||[]).map(text=>({text,bullet:true}))]){
+      const p=document.createElement(row.bullet?'li':'p');const value=String(row.text).replace(/[\u2013\u2014\u2015]/g,',');p.setAttribute('aria-label',value);
+      if(row.bullet){if(!list){list=document.createElement('ul');list.style.cssText='padding-left:20px;margin:10px 0';card.append(list);}list.append(p);}else card.append(p);
       for(const chunk of value.split(/(\bNova\b)/gi).filter(Boolean)){
         const isName=/^Nova$/i.test(chunk),node=document.createElement(isName?'strong':'span');node.textContent='';p.append(node);
         let after;
@@ -23657,6 +23668,7 @@ function installNovaWelcome(host) {
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
     try{const response=await fetch('/api/now/table/sys_user/'+id+'?sysparm_fields=first_name',{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':page.g_ck},signal:controller.signal});if(response.ok){const data=await response.json();firstName=String(data.result?.first_name||'friend').trim().split(/\s+/)[0]||'friend';}}catch{}finally{clearTimeout(timer);}
     if(!host.isConnected)return;
+    nameReady=true;if(pendingUpdate){const update=pendingUpdate;pendingUpdate=null;host.novaUpdateMessage(update);return;}
     show({paragraphs:[`Hi ${firstName},`,`I’m Nova, your little chat-side friend. If the day gets tricky or you have a quiet moment, I can bring a little encouragement, a smile, or something fun.`,`Would you like friendly messages from me?`],actions:[{label:'Yes',run:()=>reply(true)},{label:'No',run:()=>reply(false)}]});
   })();
 }
