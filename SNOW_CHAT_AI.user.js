@@ -23482,21 +23482,49 @@ function installNovaWelcome(host) {
     .sn-ai-nova-message{position:fixed;z-index:2147483647;width:min(330px,calc(100vw - 24px));padding:16px;border:1px solid var(--sn-theme-655573,#74618b);border-radius:18px 18px 5px 18px;background:var(--sn-theme-251f31,#241c33);color:var(--sn-theme-e6edf9,#eee6ff);box-shadow:0 8px 28px #0005;font:13px/1.5 system-ui;pointer-events:auto;max-height:calc(100vh - 24px);overflow:auto;animation:sn-nova-in .2s ease-out}
     .sn-ai-nova-message[hidden]{display:none!important}.sn-ai-nova-message p{margin:8px 0}.sn-ai-nova-message strong{color:var(--sn-theme-ac94ec,#ac94ec)}.sn-ai-nova-message .nova-actions{display:flex;gap:8px;margin-top:12px}.sn-ai-nova-message button{font:inherit;padding:7px 18px;border:1px solid var(--sn-theme-655573,#74618b);border-radius:8px;background:var(--sn-theme-302951,#302951);color:inherit;cursor:pointer}.sn-ai-nova-message img{display:block;max-width:100%;border-radius:8px}.sn-ai-nova-preference{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0;font:inherit}@keyframes sn-nova-in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}@media(prefers-reduced-motion:reduce){.sn-ai-nova-message{animation:none}}`;
   document.documentElement.append(style,card);
+  const avatar=document.createElement('div');avatar.id='sn-ai-nova-companion';avatar.hidden=true;
+  avatar.style.cssText='position:fixed;width:140px;height:160px;z-index:2147483646;pointer-events:none;overflow:hidden;';
+  avatar.setAttribute('role','img');avatar.setAttribute('aria-label','NOVA peeking');
+  const avatarRoot=avatar.attachShadow({mode:'open'});
+  avatarRoot.innerHTML=`<style>
+    :host([hidden]){display:none!important}*{box-sizing:border-box}.nova{position:absolute;left:0;bottom:5px;width:140px;height:140px;transform:translateY(114px)}
+    :host([data-phase="peek"]) .nova{animation:peek 2.5s ease-in-out both}:host([data-phase="jump"]) .nova{animation:jump .65s cubic-bezier(.2,.8,.3,1) both}:host([data-phase="ready"]) .nova{transform:none;animation:breathe 4s ease-in-out infinite}
+    .body{position:absolute;left:17px;top:19px;width:106px;height:101px;border-radius:48% 48% 44% 44%;background:linear-gradient(145deg,#e2d3ff,#af92ec 60%,#8a68c9);box-shadow:inset 0 4px 3px #fff6,inset 0 -5px 12px #6c48934d,0 8px 18px #0003;z-index:2}.eyes{position:absolute;inset:0}.eye{position:absolute;top:36px;width:11px;height:17px;border-radius:50%;background:#392748;animation:blink 5s infinite}.eye.left{left:29px}.eye.right{right:29px}.eye::before{content:'';position:absolute;width:4px;height:5px;background:#fff9;border-radius:50%;top:3px;left:3px}.eye::after{content:'';position:absolute;top:0;left:-3px;width:16px;height:5px;border-top:2px solid #483058;border-radius:50%}.cheek{position:absolute;top:59px;width:18px;height:8px;background:#ec94c6a6;border-radius:50%;filter:blur(1px)}.cheek.left{left:15px}.cheek.right{right:15px}.mouth{position:absolute;left:45px;top:58px;width:17px;height:10px;border:3px solid #51315c;border-top:0;border-radius:0 0 15px 15px}
+    .arm{position:absolute;top:69px;width:15px;height:35px;border-radius:14px;background:linear-gradient(#d9c6ff,#ac8ae4);z-index:1;transform-origin:50% 6px}.arm.left{left:9px;transform:rotate(24deg)}.arm.right{right:8px;transform:rotate(-25deg)}.hand{position:absolute;bottom:-5px;left:-3px;width:21px;height:24px;border-radius:10px 10px 12px 12px;background:#d6beff;box-shadow:inset 0 -2px 3px #966ac54d}.hand::before{content:'';position:absolute;left:-4px;top:8px;width:8px;height:11px;border-radius:8px;background:#d6beff;transform:rotate(-25deg)}.hand::after{content:'';position:absolute;top:3px;left:6px;width:2px;height:7px;background:#b398d533;box-shadow:4px 0 #b398d533;border-radius:2px}
+    :host([data-phase="ready"]) .arm.right{z-index:3;animation:wave 2s ease-in-out 2}.foot{position:absolute;bottom:10px;width:28px;height:15px;background:#b89ae9;border-radius:50%;z-index:1}.foot.left{left:30px}.foot.right{right:30px}.shadow{position:absolute;bottom:2px;left:28px;width:84px;height:10px;background:#0003;border-radius:50%;filter:blur(4px)}.headwear{position:absolute;top:8px;right:17px;z-index:4;transform:rotate(12deg)}.bow{width:27px;height:18px}.bow::before,.bow::after{content:'';position:absolute;top:2px;width:14px;height:15px;background:#eaa6ce;border-radius:4px 9px 9px 4px;box-shadow:inset 0 2px #ffd5ed77}.bow::after{right:0;transform:scaleX(-1)}.bow span{position:absolute;left:10px;top:5px;width:7px;height:9px;background:#c77fac;border-radius:4px;z-index:1}.outfit,.facial-hair{position:absolute;inset:0;pointer-events:none;z-index:3}
+    [data-expression="happy"] .eye{height:10px;background:transparent;border-top:3px solid #392748;border-radius:50%;animation:none}[data-expression="happy"] .eye::before,[data-expression="happy"] .eye::after{display:none}[data-expression="happy"] .mouth{height:13px;background:#51315c;border-radius:4px 4px 15px 15px}
+    @keyframes peek{0%{transform:translateY(145px)}35%,80%{transform:translateY(114px)}100%{transform:translateY(110px)}}@keyframes jump{0%{transform:translateY(110px)}55%{transform:translateY(-9px) scale(.97,1.04)}78%{transform:translateY(3px) scale(1.03,.97)}100%{transform:none}}@keyframes breathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}@keyframes blink{0%,42%,46%,100%{transform:scaleY(1)}44%{transform:scaleY(.08)}}@keyframes wave{0%,100%{transform:rotate(-145deg)}25%{transform:rotate(-118deg)}65%{transform:rotate(-160deg)}}@media(prefers-reduced-motion:reduce){.nova,.eye,.arm{animation:none!important}:host([data-phase="ready"]) .nova,:host([data-phase="jump"]) .nova{transform:none}}
+  </style><div class="nova" data-expression="friendly">
+    <div class="shadow" data-part="shadow"></div>
+    <div class="arm left" data-part="left-arm"><div class="hand" data-part="left-hand"></div></div><div class="arm right" data-part="right-arm"><div class="hand" data-part="right-hand"></div></div>
+    <div class="foot left" data-part="left-foot"></div><div class="foot right" data-part="right-foot"></div>
+    <div class="body" data-part="body"><div class="eyes" data-part="eyes"><div class="eye left" data-part="left-eye"></div><div class="eye right" data-part="right-eye"></div></div><div class="cheek left" data-part="left-cheek"></div><div class="cheek right" data-part="right-cheek"></div><div class="mouth" data-part="mouth"></div><div class="facial-hair" data-part="facial-hair"></div><div class="outfit" data-part="outfit"></div></div>
+    <div class="headwear" data-part="headwear"><div class="bow"><span></span></div></div>
+  </div>`;
+  document.documentElement.append(avatar);
+  // Named slots are replaceable independently, with no external image assets.
+  const parts={};for(const part of avatarRoot.querySelectorAll('[data-part]'))parts[part.dataset.part]=part;
+  const setExpression=expression=>{const face=avatarRoot.querySelector('.nova');if(face)face.dataset.expression=expression;};
   const preference=document.createElement('label');preference.className='sn-ai-nova-preference';
   const label=document.createElement('span');label.textContent='Nova friendly messages';
   const toggle=document.createElement('input');toggle.type='checkbox';toggle.disabled=true;
   preference.append(label,toggle);settings.append(preference);
-  let key='',firstName='friend',message=null,dismissed=false,frame=0;
+  let key='',firstName='friend',message=null,dismissed=false,frame=0,entranceStarted=false,entranceTimer=0,readyTimer=0;
   function isOpen(){return !host.classList.contains('collapsed')||launcher.getAttribute('aria-expanded')==='true'||[...host.querySelectorAll('[role="dialog"],.local-sn-command-popover')].some(el=>!el.hidden&&el.getBoundingClientRect().width>0);}
   function position(){
-    frame=0;if(isOpen()){if(!card.hidden)dismissed=true;card.hidden=true;return;}
-    if(!message||dismissed){card.hidden=true;return;}
-    card.hidden=false;const r=launcher.getBoundingClientRect(),c=card.getBoundingClientRect();
-    const launcherOnRight=(r.left+r.right)/2>=innerWidth/2;
-    const preferredLeft=launcherOnRight?r.right-c.width-10:r.left+10;
+    frame=0;if(isOpen()){if(!avatar.hidden)dismissed=true;card.hidden=true;avatar.hidden=true;clearTimeout(entranceTimer);clearTimeout(readyTimer);return;}
+    if(!message||dismissed){card.hidden=true;avatar.hidden=true;return;}
+    const chatsButton=document.getElementById('sn-ai-chats-today')?.shadowRoot?.querySelector('.launcher');
+    const chatsRect=chatsButton?.getBoundingClientRect();
+    const bottom=chatsRect?.width?innerHeight-chatsRect.top+8:56;
+    avatar.style.right='16px';avatar.style.bottom=bottom+'px';avatar.hidden=false;
+    if(!entranceStarted){entranceStarted=true;avatar.dataset.phase='peek';entranceTimer=setTimeout(()=>{if(dismissed||isOpen())return;avatar.dataset.phase='jump';avatar.setAttribute('aria-label','NOVA jumping out');schedule();readyTimer=setTimeout(()=>{avatar.dataset.phase='ready';avatar.setAttribute('aria-label','NOVA waving');schedule();},650);},2500);}
+    if(avatar.dataset.phase!=='ready'){card.hidden=true;return;}
+    card.hidden=false;const r={left:innerWidth-156,right:innerWidth-16,top:innerHeight-bottom-160,bottom:innerHeight-bottom},c=card.getBoundingClientRect();
+    const preferredLeft=r.left-c.width-10;
     card.style.left=Math.max(12,Math.min(innerWidth-c.width-12,preferredLeft))+'px';
-    card.style.top=Math.max(12,Math.min(innerHeight-c.height-12,r.bottom+10))+'px';
-    if(r.bottom+10+c.height>innerHeight-12)card.style.top=Math.max(12,r.top-c.height-10)+'px';
+    card.style.top=Math.max(12,Math.min(innerHeight-c.height-12,r.bottom-c.height))+'px';
+    if(preferredLeft<12)card.style.top=Math.max(12,r.top-c.height-10)+'px';
     const left=parseFloat(card.style.left),top=parseFloat(card.style.top);
     const rightCorner=(r.left+r.right)/2>=left+c.width/2;
     const topCorner=(r.top+r.bottom)/2<top+c.height/2;
@@ -23507,18 +23535,18 @@ function installNovaWelcome(host) {
   function schedule(){if(!frame)frame=requestAnimationFrame(position);}
   // Message blocks support readable text, branching actions and future GIFs.
   function show(data){
-    message=data;card.replaceChildren();const title=document.createElement('strong');title.textContent='✦ Nova';card.append(title);
+    message=data;card.replaceChildren();const title=document.createElement('strong');title.textContent='✦ NOVA';card.append(title);
     for(const text of data.paragraphs||[]){const p=document.createElement('p');p.textContent=String(text).replace(/[\u2013\u2014\u2015]/g,',');card.append(p);}
     if(data.image){try{const url=new URL(data.image.url,location.href);if(url.protocol==='https:'||url.origin===location.origin){const img=document.createElement('img');img.src=url.href;img.alt=data.image.alt||'';card.append(img);}}catch{}}
     if(data.actions?.length){const actions=document.createElement('div');actions.className='nova-actions';for(const action of data.actions){const button=document.createElement('button');button.type='button';button.textContent=action.label;button.addEventListener('click',action.run);actions.append(button);}card.append(actions);}
     schedule();
   }
   function save(enabled){try{localStorage.setItem(key,enabled?'yes':'no');}catch{}toggle.checked=enabled;}
-  function reply(enabled){save(enabled);show({paragraphs:[enabled?'Sounds good. I’ll pop by with a little encouragement or something fun now and then. For now, this is just our first hello. 💜':'No worries at all. If you change your mind, open SN AI settings → AI settings and turn on “Nova friendly messages”. I’ll be happy to say hello again.']});}
-  toggle.addEventListener('change',()=>{save(toggle.checked);dismissed=true;card.hidden=true;});
+  function reply(enabled){save(enabled);setExpression(enabled?'happy':'friendly');show({paragraphs:[enabled?'Sounds good. I’ll pop by with a little encouragement or something fun now and then. For now, this is just our first hello. 💜':'No worries at all. If you change your mind, open SN AI settings → AI settings and turn on “Nova friendly messages”. I’ll be happy to say hello again.']});}
+  toggle.addEventListener('change',()=>{save(toggle.checked);dismissed=true;card.hidden=true;avatar.hidden=true;});
   const observer=new MutationObserver(schedule);observer.observe(host,{subtree:true,attributes:true,attributeFilter:['class','hidden','aria-expanded','style']});
   window.addEventListener('resize',schedule);window.addEventListener('pointerup',schedule);
-  window.addEventListener('pagehide',()=>{observer.disconnect();cancelAnimationFrame(frame);card.remove();style.remove();window.removeEventListener('resize',schedule);window.removeEventListener('pointerup',schedule);},{once:true});
+  window.addEventListener('pagehide',()=>{observer.disconnect();cancelAnimationFrame(frame);clearTimeout(entranceTimer);clearTimeout(readyTimer);card.remove();avatar.remove();style.remove();window.removeEventListener('resize',schedule);window.removeEventListener('pointerup',schedule);},{once:true});
   (async()=>{
     const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
     const id=String(page.NOW?.user?.userID||page.g_user?.userID||'');if(!/^[a-f0-9]{32}$/i.test(id))return;
