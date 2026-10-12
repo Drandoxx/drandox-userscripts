@@ -40,7 +40,7 @@
 {"version":"2.36.545","fixes":true,"changes":[]},
 {"version":"2.36.546","fixes":true,"changes":[]},
 {"version":"2.36.547","fixes":true,"changes":[]},
-{"version":"2.36.548","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA rests on Chats Today, sits or sleeps when idle, and springs up when clicked."}]}
+{"version":"2.36.548","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA rests on Chats Today, sits or sleeps when idle, and springs up when clicked."},{"key":"nova-preference","meaningful":true,"text":"NOVA remembers your introduction answer. Important update messages still appear if friendly messages are off."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -23626,7 +23626,9 @@ function installNovaWelcome(host) {
     if(!nameReady){pendingUpdate=data;return;}
     if(data.version&&announcedUpdates.has(data.version))return;
     if(data.version)announcedUpdates.add(data.version);
-    dismissed=false;setExpression('happy');
+    dismissed=false;clearIdle();
+    if(data.version){clearTimeout(entranceTimer);clearTimeout(readyTimer);entranceStarted=false;delete avatar.dataset.phase;}
+    setExpression('happy');
     if(data.reload){show({paragraphs:['The update page is open. Once the update is installed, reload this page to use the new version.'],actions:[{label:'Reload page',run:()=>location.reload()}]});return;}
     show({paragraphs:[`Hi ${firstName},`,`I have a new update for you, version ${data.version}.`,`Here’s what’s new:`],bullets:summarizeNovaReleaseNotes(data.notes,data.currentVersion,data.version),actions:[{label:'Update now',run:data.update},{label:'Later',run:()=>{data.later?.();stopTyping();message=null;card.hidden=true;tail.hidden=true;avatar.hidden=true;}}]});
   };
@@ -23694,18 +23696,19 @@ function installNovaWelcome(host) {
   toggle.addEventListener('change',()=>{save(toggle.checked);dismissed=true;stopTyping();card.hidden=true;tail.hidden=true;avatar.hidden=true;});
   const observer=new MutationObserver(schedule);observer.observe(host,{subtree:true,attributes:true,attributeFilter:['class','hidden','aria-expanded','style']});
   window.addEventListener('resize',schedule);window.addEventListener('pointerup',schedule);
-  window.addEventListener('pagehide',()=>{observer.disconnect();cancelAnimationFrame(frame);clearTimeout(entranceTimer);clearTimeout(readyTimer);clearTimeout(pageReadyTimer);clearTimeout(motionTimer);stopTyping();card.remove();tail.remove();avatar.remove();style.remove();window.removeEventListener('resize',schedule);window.removeEventListener('pointerup',schedule);},{once:true});
+window.addEventListener('pagehide',()=>{observer.disconnect();cancelAnimationFrame(frame);clearTimeout(entranceTimer);clearTimeout(readyTimer);clearTimeout(pageReadyTimer);clearTimeout(motionTimer);clearIdle();stopTyping();card.remove();tail.remove();avatar.remove();style.remove();window.removeEventListener('resize',schedule);window.removeEventListener('pointerup',schedule);},{once:true});
   (async()=>{
     const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
     const id=String(page.NOW?.user?.userID||page.g_user?.userID||'');if(!/^[a-f0-9]{32}$/i.test(id))return;
     key='sn-ai-nova-messages-v1:'+id;
     let choice=null;try{choice=localStorage.getItem(key);}catch{}
-    // Testing: show the welcome on every page reload, regardless of saved choice.
+    // Persist the introduction answer; update announcements are independent.
     toggle.checked=choice==='yes';toggle.disabled=false;
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
     try{const response=await fetch('/api/now/table/sys_user/'+id+'?sysparm_fields=first_name',{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':page.g_ck},signal:controller.signal});if(response.ok){const data=await response.json();firstName=String(data.result?.first_name||'friend').trim().split(/\s+/)[0]||'friend';}}catch{}finally{clearTimeout(timer);}
     if(!host.isConnected)return;
     nameReady=true;if(pendingUpdate){const update=pendingUpdate;pendingUpdate=null;host.novaUpdateMessage(update);return;}
+    if(choice==='yes'||choice==='no')return;
     show({paragraphs:[`Hi ${firstName},`,`I’m Nova, your little chat-side friend. If the day gets tricky or you have a quiet moment, I can bring a little encouragement, a smile, or something fun.`,`Would you like friendly messages from me?`],actions:[{label:'Yes',run:()=>reply(true)},{label:'No',run:()=>reply(false)}]});
   })();
 }
