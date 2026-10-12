@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.567.0
+// @version      1.568.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -5088,7 +5088,7 @@
       if (callCardDragging) return;
       refreshMeasurementInfo();
     },1000);
-    lastCall.append(title, info, historyDownload, measurementDownload, measurementInfo, removeMeasurements); body.appendChild(lastCall);
+    lastCall.append(title, info, measurementInfo, removeMeasurements); body.appendChild(lastCall);
     checkbox.checked = showAdminCallButton(doc);
     popover.querySelector('.gbs-settings-footer .gbs-settings-save').addEventListener('click', () => {
       if (!isSavedAdmin(doc)) return;
