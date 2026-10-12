@@ -23723,12 +23723,33 @@ function installNovaWelcome(host) {
   }
   let sleepTimer=0,wakeTimer=0,ambientTimer=0,ambientEndTimer=0;
   const novaIdleKinds=['butterfly','fireflies','bubbles','juggle','flower','plane','star','heart','rain','dance','stretch','look','book','brush','magnifier','kite','yoyo','snack'];
-  let idleDeck=[],lastIdle='';
+  let idleDeck=[],lastIdle='',ambientStoryTimers=[];
+  const novaIdleStories={
+    snack:[[2400,'bite','happy'],[4800,'eaten','happy'],[6800,'settle','friendly']],
+    kite:[[1800,'watch','friendly'],[3800,'gust','surprised'],[5100,'sad','sad'],[7000,'settle','friendly']],
+    butterfly:[[2200,'watch','friendly'],[4300,'catch','surprised'],[6000,'release','happy']],
+    book:[[2300,'page','friendly'],[5200,'closed','happy'],[7000,'settle','friendly']],
+    brush:[[2800,'paint','friendly'],[5000,'admire','happy'],[7000,'settle','friendly']],
+    magnifier:[[2300,'follow','friendly'],[5000,'found','surprised'],[6800,'settle','happy']],
+    yoyo:[[3500,'tangle','surprised'],[5000,'fixed','friendly'],[6800,'settle','happy']],
+    bubbles:[[4500,'pop','surprised'],[6000,'settle','happy']],
+    juggle:[[4300,'catch-one','friendly'],[5200,'catch-two','friendly'],[6100,'caught','happy']],
+    flower:[[2000,'sniff','friendly'],[4700,'sneeze','surprised'],[6100,'settle','happy']],
+    plane:[[2300,'watch','friendly'],[5000,'catch','surprised'],[6400,'settle','happy']],
+    star:[[3000,'catch','surprised'],[4600,'hold','happy'],[6200,'release','friendly']],
+    heart:[[2500,'offer','happy'],[5000,'release','happy'],[6900,'settle','friendly']],
+    rain:[[1800,'shelter','surprised'],[5500,'clear','happy'],[7000,'settle','friendly']],
+    fireflies:[[2700,'land','surprised'],[5000,'hold','happy'],[6500,'release','friendly']],
+    dance:[[5700,'flourish','happy'],[7000,'settle','friendly']],
+    stretch:[[3500,'yawn','sleepy'],[5800,'shake','happy'],[7000,'settle','friendly']],
+    look:[[2400,'curious','surprised'],[5000,'other-side','friendly'],[7000,'settle','friendly']]
+  };
+  function clearNovaStory(){ambientStoryTimers.forEach(clearTimeout);ambientStoryTimers=[];delete avatar.dataset.ambientPhase;avatarRoot.querySelector('.ambient-detail')?.remove();setExpression('friendly');}
   function nextNovaIdle(){
     if(!idleDeck.length){idleDeck=[...novaIdleKinds];for(let i=idleDeck.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[idleDeck[i],idleDeck[j]]=[idleDeck[j],idleDeck[i]];}if(idleDeck.at(-1)===lastIdle)[idleDeck[0],idleDeck[idleDeck.length-1]]=[idleDeck.at(-1),idleDeck[0]];}
     return lastIdle=idleDeck.pop();
   }
-  function stopAmbientIdle(){clearTimeout(ambientTimer);clearTimeout(ambientEndTimer);delete avatar.dataset.ambient;avatarRoot.querySelector('.ambient-scene')?.remove();avatarRoot.querySelector('.ambient-tool')?.remove();}
+  function stopAmbientIdle(){clearTimeout(ambientTimer);clearTimeout(ambientEndTimer);clearNovaStory();delete avatar.dataset.ambient;avatarRoot.querySelector('.ambient-scene')?.remove();avatarRoot.querySelector('.ambient-tool')?.remove();}
   function queueAmbientIdle(){ambientTimer=setTimeout(()=>{
     if(dismissed||avatar.hidden||avatar.dataset.idle)return;
     if(document.hidden||message||avatar.dataset.motion||avatar.dataset.daily||avatar.dataset.reaction||ticketBusy()){queueAmbientIdle();return;}
@@ -23736,7 +23757,7 @@ function installNovaWelcome(host) {
   },20000+Math.floor(Math.random()*25000));}
   function playAmbientIdle(kind){
     if(!novaIdleKinds.includes(kind)||avatar.dataset.idle||avatar.dataset.motion||avatar.dataset.daily||message)return false;
-    clearTimeout(ambientEndTimer);avatarRoot.querySelector('.ambient-scene')?.remove();avatarRoot.querySelector('.ambient-tool')?.remove();
+    clearTimeout(ambientEndTimer);clearNovaStory();avatarRoot.querySelector('.ambient-scene')?.remove();avatarRoot.querySelector('.ambient-tool')?.remove();
     const figure=avatarRoot.querySelector('.nova');if(!figure)return false;
     avatar.dataset.ambient=kind;
     const art={
@@ -23762,7 +23783,13 @@ function installNovaWelcome(host) {
     };
     if(heldProps[kind]){const prop=document.createElement('span');prop.className='ambient-tool';prop.dataset.idleTool=kind;prop.setAttribute('aria-hidden','true');prop.innerHTML='<svg viewBox="0 0 40 65">'+heldProps[kind]+'</svg>';parts['right-hand']?.append(prop);}
     if(kind==='butterfly'){const net=document.createElement('span');net.className='ambient-tool';net.setAttribute('aria-hidden','true');net.innerHTML='<svg viewBox="0 0 40 70"><path d="M20 31v37" stroke="#c89869" stroke-width="4"/><ellipse cx="20" cy="17" rx="17" ry="15" fill="#f5efff22" stroke="#e2d8ed" stroke-width="2"/><path d="M7 9l25 18M5 16l24 16M11 4l24 16M31 8L8 28M35 17L18 32" stroke="#e2d8ed77"/></svg>';parts['right-hand']?.append(net);}
-    ambientEndTimer=setTimeout(()=>{delete avatar.dataset.ambient;avatarRoot.querySelector('.ambient-scene')?.remove();avatarRoot.querySelector('.ambient-tool')?.remove();},8000);
+    const details={brush:'<path d="M20 28v16" stroke="#93b995"/><g fill="#e8afd5"><circle cx="15" cy="23" r="5"/><circle cx="25" cy="23" r="5"/><circle cx="20" cy="17" r="5"/><circle cx="20" cy="28" r="5"/></g><circle cx="20" cy="23" r="3" fill="#ffe6a4"/>',magnifier:'<ellipse cx="20" cy="25" rx="5" ry="3" fill="#a0c6a1"/><path d="M16 22l-3-3m11 3 3-3" stroke="#a0c6a1"/>',kite:'<path d="M2 15h29q8 0 8-6M8 25h26M4 35h24q8 0 8 6" fill="none" stroke="#d8e6fa" stroke-width="2"/>',rain:'<path d="M3 21Q20-5 37 21Z" fill="#b5d9ef" stroke="#8da9c9"/><path d="M20 21v24q0 8-6 5" fill="none" stroke="#dcc9ee" stroke-width="3"/>'};
+    if(details[kind]){const detail=document.createElement('span');detail.className='ambient-detail';detail.setAttribute('aria-hidden','true');detail.innerHTML='<svg viewBox="0 0 40 55">'+details[kind]+'</svg>';if(kind==='rain')parts['right-hand']?.append(detail);else figure.append(detail);}
+    const snack=avatarRoot.querySelector('[data-idle-tool="snack"] svg');
+    if(snack){const food=snack.innerHTML;snack.innerHTML='<defs><mask id="nova-food-bite"><rect width="40" height="65" fill="white"/><circle class="snack-bite" cx="32" cy="9" r="9" fill="black"/></mask></defs><g mask="url(#nova-food-bite)">'+food+'</g>';}
+    const book=avatarRoot.querySelector('[data-idle-tool="book"] svg');if(book)book.innerHTML+='<path class="book-page" d="M20 10L35 8V30L20 34Z" fill="#fff1d8"/>';
+    ambientStoryTimers=(novaIdleStories[kind]||[]).map(([at,phase,expression])=>setTimeout(()=>{if(avatar.dataset.ambient!==kind)return;avatar.dataset.ambientPhase=phase;setExpression(expression);},at));
+    ambientEndTimer=setTimeout(()=>{clearNovaStory();delete avatar.dataset.ambient;avatarRoot.querySelector('.ambient-scene')?.remove();avatarRoot.querySelector('.ambient-tool')?.remove();},8000);
     return true;
   }
   host.novaIdlePreview=kind=>{clearIdle();return playAmbientIdle(kind);};
