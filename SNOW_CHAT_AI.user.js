@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.554
+// @version      2.36.555
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -46,7 +46,8 @@
 {"version":"2.36.551","fixes":true,"changes":[{"key":"nova-daily","meaningful":true,"text":"NOVA daily greetings include a reply button and replay after reload until you acknowledge them."}]},
 {"version":"2.36.552","fixes":true,"changes":[]},
 {"version":"2.36.553","fixes":true,"changes":[{"key":"nova-speech","meaningful":true,"text":"NOVA queues messages until you reply or finish reading, with gentle transitions and no repeated entrance."}]},
-{"version":"2.36.554","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA sleeps on her back with floating Zzz, gets up before speaking, and types her message again after waking."}]}
+{"version":"2.36.554","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA sleeps on her back with floating Zzz, gets up before speaking, and types her message again after waking."}]},
+{"version":"2.36.555","fixes":true,"changes":[{"key":"nova-movement","meaningful":true,"text":"NOVA walks in directly for daily greetings and turns sideways while walking or sleeping."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -7969,7 +7970,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-const payload={schema:2,version:'2.36.554',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+const payload={schema:2,version:'2.36.555',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -21289,7 +21290,7 @@ const payload={schema:2,version:'2.36.554',day:log.day,chatCount:log.chats.size,
       installAutomationFreeze();
       document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
     }
-    addLog('info', 'helper-version', { version: '2.36.554' });
+    addLog('info', 'helper-version', { version: '2.36.555' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -23620,7 +23621,14 @@ function installNovaWelcome(host) {
     :host([data-daily="cheer"]) .daily-cup{animation:cup-toss .8s ease-in both}:host([data-daily="cheer"]) .headwear{animation:hat-toss .8s ease-in both}
     :host([data-daily-kind="morning"]) .headwear{width:34px;height:27px;background:#80a9d9;clip-path:polygon(0 90%,70% 0,100% 90%);border-radius:8px;top:-19px;right:2px}:host([data-daily-kind="morning"]) .bow{visibility:hidden}
     :host([data-daily-kind="lunch"]) .daily-cup{background:#d9a56b;border-radius:50%;box-shadow:inset 0 0 0 3px #f0c68b}:host([data-daily-kind="lunch"]) .daily-cup::after{display:none}
-    @keyframes morning-walk{from{transform:translateX(90px)}to{transform:none}}@keyframes cup-toss{to{transform:translate(80px,-65px) rotate(150deg);opacity:0}}@keyframes hat-toss{to{transform:translate(50px,-80px) rotate(90deg);opacity:0}}
+    @keyframes morning-walk{from{transform:translateX(210px)}to{transform:none}}@keyframes cup-toss{to{transform:translate(80px,-65px) rotate(150deg);opacity:0}}@keyframes hat-toss{to{transform:translate(50px,-80px) rotate(90deg);opacity:0}}
+    .body{transition:transform .3s ease}.eyes,.mouth,.cheek{transition:translate .3s ease}
+    :host([data-daily="enter"]) .body,:host([data-motion="walk-left"]) .body{transform:perspective(250px) rotateY(-38deg)}
+    :host([data-daily="enter"]) .eyes,:host([data-motion="walk-left"]) .eyes{translate:-17px 0}
+    :host([data-daily="enter"]) .eye.right,:host([data-motion="walk-left"]) .eye.right,:host([data-daily="enter"]) .cheek.right,:host([data-motion="walk-left"]) .cheek.right{visibility:hidden}
+    :host([data-daily="enter"]) .mouth,:host([data-motion="walk-left"]) .mouth{translate:-27px 0}
+    :host([data-motion="walk-right"]) .body{transform:perspective(250px) rotateY(38deg)}:host([data-motion="walk-right"]) .eyes{translate:17px 0}:host([data-motion="walk-right"]) .eye.left,:host([data-motion="walk-right"]) .cheek.left{visibility:hidden}:host([data-motion="walk-right"]) .mouth{translate:27px 0}
+    :host([data-idle="sleep"]) .body{transform:perspective(250px) rotateY(-48deg) rotate(-12deg)}:host([data-idle="sleep"]) .eye.right,:host([data-idle="sleep"]) .cheek.right{visibility:hidden}:host([data-idle="sleep"]) .eyes{translate:-16px -7px}:host([data-idle="sleep"]) .mouth{translate:-24px -12px}
     @media(prefers-reduced-motion:reduce){:host([data-phase="peek"]) .nova{transform:translateX(90px)}.peek-grip{animation:none!important}:host([data-phase="ready"]) .nova,:host([data-phase="jump"]) .nova{transform:none}}
   </style>`);
   avatarRoot.innerHTML+='<div class="sleep-marks" aria-hidden="true" data-part="sleep-marks"><span>Z</span><span>z</span><span>z</span></div>';
@@ -23727,6 +23735,8 @@ function installNovaWelcome(host) {
     const bottom=chatsRect?.width?innerHeight-chatsRect.top-21.6:26.4;
     const right=Number.isFinite(chatsRect?.left)?innerWidth-chatsRect.left-chatsRect.width/2-64.8:16;
     avatar.style.right=(right-offsetX)+'px';avatar.style.bottom=(bottom-offsetY)+'px';avatar.hidden=false;
+    // Daily routines own their entrance: walk in directly, never peek/jump first.
+    if(dailyStartPending){entranceStarted=true;avatar.dataset.phase='ready';avatar.setAttribute('aria-label','NOVA walking in');card.hidden=true;tail.hidden=true;runDaily();return;}
     if(!entranceStarted){entranceStarted=true;avatar.dataset.phase='peek';entranceTimer=setTimeout(()=>{if(dismissed)return;avatar.dataset.phase='jump';avatar.setAttribute('aria-label','NOVA jumping out');schedule();readyTimer=setTimeout(()=>{avatar.dataset.phase='ready';avatar.setAttribute('aria-label','NOVA waving');schedule();},650);},3600);}
     if(avatar.dataset.phase!=='ready'){card.hidden=true;tail.hidden=true;return;}
     if(dailyStartPending){card.hidden=true;tail.hidden=true;runDaily();return;}
