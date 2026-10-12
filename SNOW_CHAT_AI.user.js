@@ -23638,6 +23638,10 @@ function installNovaWelcome(host) {
   preference.append(label,toggle);settings.append(preference);
   let key='',firstName='friend',message=null,dismissed=false,frame=0,entranceStarted=false,entranceTimer=0,readyTimer=0,typingTimer=0,typingStarted=false,typingQueue=[],typingDone=null;
   let nameReady=false,pendingUpdate=null,pageReady=false,pageReadyTimer=0;const announcedUpdates=new Set();
+  let messageTimer=0,transitionTimer=0,answering=false;const messageQueue=[];
+  function enqueueMessage(run,id){if(id&&messageQueue.some(item=>item.id===id))return;if(messageQueue.length<8)messageQueue.push({run,id});}
+  function finishMessage(){clearTimeout(messageTimer);messageTimer=0;card.style.opacity='0';tail.style.opacity='0';clearTimeout(transitionTimer);transitionTimer=setTimeout(()=>{transitionTimer=0;stopTyping();message=null;card.hidden=true;tail.hidden=true;card.style.opacity='';tail.style.opacity='';const next=messageQueue.shift();if(next)next.run();schedule();},180);}
+  style.textContent+=' .sn-ai-nova-message,.sn-ai-nova-tail{transition:opacity .18s ease}';
   let deferredUpdate=null,updateWaitTimer=0,unfrozenSince=0,dailyTimer=0,dailyStartPending=false,dailySpeech='',dailyReply='',dailyGreetingDay='';
   const ticketBusy=()=>Boolean(host.novaTicketBusy?.()||host.querySelector('[data-pinned-ims].is-running')||document.querySelector?.('[data-sn-automation-frozen]'));
   function waitForUpdate(){
@@ -23671,21 +23675,22 @@ function installNovaWelcome(host) {
   avatar.addEventListener('click',wake);avatar.addEventListener('keydown',wake);
   host.novaUpdateMessage=data=>{
     if(!nameReady){pendingUpdate=data;return;}
+    if((message||dailyStartPending||avatar.dataset.daily||transitionTimer)&&!answering){enqueueMessage(()=>host.novaUpdateMessage(data),data.reload?'reload':data.version);return;}
     if(host.novaTicketUnfrozenAt>unfrozenSince)unfrozenSince=host.novaTicketUnfrozenAt;
     if(!data.reload&&(ticketBusy()||deferredUpdate||unfrozenSince&&Date.now()-unfrozenSince<10000)){deferredUpdate=data;waitForUpdate();return;}
     if(data.version&&announcedUpdates.has(data.version))return;
     if(data.version)announcedUpdates.add(data.version);
     dismissed=false;clearIdle();clearTimeout(dailyTimer);delete avatar.dataset.daily;delete avatar.dataset.dailyKind;dailyStartPending=false;
-    if(data.version){clearTimeout(entranceTimer);clearTimeout(readyTimer);entranceStarted=false;delete avatar.dataset.phase;}
+    if(data.version&&avatar.hidden){clearTimeout(entranceTimer);clearTimeout(readyTimer);entranceStarted=false;delete avatar.dataset.phase;}
     setExpression('happy');
-    if(data.reload){show({paragraphs:['The update page is open. Once the update is installed, reload this page to use the new version.'],actions:[{label:'Reload page',run:()=>location.reload()}]});return;}
-    show({novaUpdate:data,paragraphs:[`Hi ${firstName},`,`I have a new update for you, version ${data.version}.`,`Here’s what’s new:`],bullets:summarizeNovaReleaseNotes(data.notes,data.currentVersion,data.version),actions:[{label:'Update now',run:data.update},{label:'Later',run:()=>{data.later?.();stopTyping();message=null;card.hidden=true;tail.hidden=true;avatar.hidden=true;}}]});
+    if(data.reload){show({paragraphs:['The update page is open. Once the update is installed, reload this page to use the new version.'],actions:[{label:'Reload page',run:()=>location.reload()},{label:'Later',run:finishMessage}]});return;}
+    show({novaUpdate:data,paragraphs:[`Hi ${firstName},`,`I have a new update for you, version ${data.version}.`,`Here’s what’s new:`],bullets:summarizeNovaReleaseNotes(data.notes,data.currentVersion,data.version),actions:[{label:'Update now',run:()=>{data.update?.();if(message?.novaUpdate===data)finishMessage();}},{label:'Later',run:()=>{data.later?.();finishMessage();}}]});
   };
   function stopTyping(){clearTimeout(typingTimer);typingTimer=0;typingQueue=[];typingDone=null;card.removeAttribute('aria-busy');}
   function typeNext(){
     typingTimer=0;if(dismissed){stopTyping();return;}
     const item=typingQueue[0];
-    if(!item){card.setAttribute('aria-busy','false');const done=typingDone;typingDone=null;if(done)done();armIdle();schedule();return;}
+    if(!item){card.setAttribute('aria-busy','false');const done=typingDone;typingDone=null;if(done)done();if(!message?.actions?.length)messageTimer=setTimeout(finishMessage,12000);armIdle();schedule();return;}
     if(item.reveal){item.reveal();item.reveal=null;}
     const character=item.characters.shift();item.node.textContent+=character;
     if(!item.characters.length){typingQueue.shift();if(item.after)item.after();}
@@ -23694,7 +23699,7 @@ function installNovaWelcome(host) {
   function position(){
     frame=0;
     if(message?.novaUpdate&&ticketBusy()){deferredUpdate=message.novaUpdate;announcedUpdates.delete(deferredUpdate.version);stopTyping();message=null;unfrozenSince=0;waitForUpdate();}
-    if(!message||dismissed){card.hidden=true;tail.hidden=true;avatar.hidden=true;return;}
+    if(!message||dismissed){card.hidden=true;tail.hidden=true;if(dismissed||!entranceStarted)avatar.hidden=true;return;}
     const chatsButton=document.getElementById('sn-ai-chats-today')?.shadowRoot?.querySelector('.launcher');
     const chatsRect=chatsButton?.getBoundingClientRect();
     if(!pageReady){
@@ -23728,6 +23733,11 @@ function installNovaWelcome(host) {
   function schedule(){if(!frame)frame=requestAnimationFrame(position);}
   // Message blocks support readable text, branching actions and future GIFs.
   function show(data){
+    if(message&&message!==data&&!dailyStartPending&&!avatar.dataset.daily&&message.paragraphs){
+      if(!answering){enqueueMessage(()=>show(data));return;}
+      clearTimeout(messageTimer);card.style.opacity='0';tail.style.opacity='0';clearTimeout(transitionTimer);transitionTimer=setTimeout(()=>{transitionTimer=0;message=null;card.style.opacity='';tail.style.opacity='';show(data);},180);return;
+    }
+    clearTimeout(messageTimer);messageTimer=0;
     clearIdle();stopTyping();typingStarted=false;message=data;card.replaceChildren();card.setAttribute('aria-live','off');card.setAttribute('aria-busy','true');
     let list=null;
     for(const row of [...(data.paragraphs||[]).map(text=>({text,bullet:false})),...(data.bullets||[]).map(text=>({text,bullet:true}))]){
@@ -23752,7 +23762,7 @@ function installNovaWelcome(host) {
         element.src=url.href;card.append(element);revealMedia.push(()=>{spoken=true;reveal();});
       }catch{}
     }
-    if(data.actions?.length){const actions=document.createElement('div');actions.className='nova-actions';actions.hidden=true;for(const action of data.actions){const button=document.createElement('button');button.type='button';button.textContent=action.label;button.addEventListener('click',action.run);actions.append(button);}card.append(actions);typingDone=()=>{actions.hidden=false;};}
+    if(data.actions?.length){const actions=document.createElement('div');actions.className='nova-actions';actions.hidden=true;for(const action of data.actions){const button=document.createElement('button');button.type='button';button.textContent=action.label;button.addEventListener('click',()=>{if(message!==data||actions.hidden)return;actions.hidden=true;answering=true;try{action.run?.();}finally{answering=false;}});actions.append(button);}card.append(actions);typingDone=()=>{actions.hidden=false;};}
     const revealActions=typingDone;typingDone=()=>{for(const reveal of revealMedia)reveal();if(revealActions)revealActions();};
     schedule();
   }
