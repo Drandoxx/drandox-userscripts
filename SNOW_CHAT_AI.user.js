@@ -557,7 +557,7 @@ const snAIChatDisplayNames=(()=>{
     const greetDelayMs=0;
     const ownElements=()=>{const list=[];const visit=root=>{for(const node of root.querySelectorAll('*')){list.push(node);if(node.shadowRoot)visit(node.shadowRoot);}};if(host.shadowRoot)visit(host.shadowRoot);return list;};
     const input=()=>ownElements().find(node=>node.matches('textarea[name="CHAT_INPUT#CHAT_TEXTAREA"]'));
-    const safe=()=>autoGreetEnabled&&host.isConnected&&(host.sysId||host.getAttribute('sys-id'))===id&&host.isChatOwner===true&&!input()?.disabled&&!input()?.readOnly&&ownElements().some(node=>node.matches('[role="tab"][aria-selected="true"]')&&/Public Chat/i.test(node.textContent));
+    const safe=()=>autoGreetEnabled&&host.isConnected&&(host.sysId||host.getAttribute('sys-id'))===id&&host.isChatOwner===true&&!input()?.disabled&&!input()?.readOnly&&ownElements().some(node=>node.matches('[aria-selected="true"]')&&/Public Chat/i.test(node.getAttribute('aria-label')||node.textContent));
     const wait=async predicate=>{for(let i=0;i<20;i++){if(!safe())return null;const result=predicate();if(result)return result;await new Promise(resolve=>setTimeout(resolve,100));}return null;};
     setTimeout(async()=>{
       // Wait for native controls to mount; never insert a command into a partial/error view.
@@ -576,7 +576,6 @@ const snAIChatDisplayNames=(()=>{
       let chat=host;
       while(chat&&chat.localName!=='sn-agent-chat')chat=chat.parentElement||chat.getRootNode()?.host;
       const agentMessages=chat?.shadowRoot?.querySelectorAll('now-chat-message')||[];
-      rememberGreetingAttempt(id);
       try {
         const lastMessage=[...agentMessages].filter(message=>message.shadowRoot?.querySelector('.now-chat-message:not(.system)')).at(-1);
         const userLast=Boolean(lastMessage?.shadowRoot?.querySelector('.now-chat-message:not(.right):not(.system)'));
@@ -591,6 +590,7 @@ const snAIChatDisplayNames=(()=>{
         const send=ownElements().find(node=>node.matches('button[aria-label="Send Message"]'));
         if(!ready||!safe()||input().value.trim()!==expected||!send||send.disabled)return;
         // Same native send control as the operator. No retries after submission.
+        rememberGreetingAttempt(id);
         send.click();
       } catch(error) { console.warn('SN AI auto-greet stopped',error); }
     },greetDelayMs);
@@ -2351,6 +2351,8 @@ const snAIChatDisplayNames=(()=>{
     .sn-loading-state,:host(now-loader.sn-loading-state) {
       background:var(--sn-theme-14121c)!important;color:var(--sn-theme-e6edf9)!important;
     }
+    /* Do not paint the original two-column header before the record row exists. */
+    :host(sn-form-internal-header-layout:not([data-sn-ai-header-ready])) { visibility:hidden!important; }
     /* Reserve the native row while its first width/action reconciliation runs. */
     :host(sn-form-internal-uiactionbar:not([data-sn-ai-actions-ready])) { visibility:hidden!important;min-height:32px!important; }
     now-heading[data-sn-ai-number-moved] { display:none!important; }
@@ -4790,6 +4792,13 @@ const snAIChatDisplayNames=(()=>{
         || heading.textContent || common.getProperties?.().primaryValue;
       heading.toggleAttribute('data-sn-ai-number-moved', String(value || '').trim() === String(number).trim()
         || common.getProperties?.().primaryValue === number);
+    }
+    if (common.shadowRoot && !root.host.hasAttribute('data-sn-ai-header-ready') && !root.host.snAiHeaderRevealPending) {
+      root.host.snAiHeaderRevealPending = true;
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        root.host.snAiHeaderRevealPending = false;
+        if (root.host.isConnected) root.host.setAttribute('data-sn-ai-header-ready', '');
+      }));
     }
   }
   function syncNativeActionWidth(root) {
