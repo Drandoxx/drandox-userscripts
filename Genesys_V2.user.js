@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.568.0
+// @version      1.569.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -4899,6 +4899,7 @@
       style.textContent = `html.gbs-call-test-mode .command-panel.active.agent{position:fixed!important;left:-20000px!important;right:auto!important;top:0!important;width:1000px!important;height:100vh!important;opacity:0!important;pointer-events:none!important;transform:none!important;contain:layout paint!important}html.gbs-call-test-mode .gbs-agent-workspace-resizer{display:none!important}html.gbs-call-test-mode main.center-stage{width:100%!important;max-width:100%!important;flex:1 1 auto!important}html.gbs-call-test-mode .messenger-message:has([data-action="answerInteraction"]){display:none!important}`;
       style.textContent += `html.gbs-popup-only-call-mode .command-panel.agent{position:fixed!important;left:-20000px!important;right:auto!important;top:0!important;width:1000px!important;height:100vh!important;opacity:0!important;pointer-events:none!important;transform:none!important;contain:layout paint!important}html.gbs-popup-only-call-mode .messenger-message:has([data-action="openAcdInteraction"]),html.gbs-popup-only-call-mode #gbs-incoming-call-notice{display:none!important}html.gbs-popup-only-call-mode [data-test-id="command-bar-agent"],html.gbs-popup-only-call-mode button[aria-label="Agent Workspace"]{cursor:not-allowed!important;opacity:.45!important}html.gbs-popup-only-call-mode .gbs-workspace-open-scene{display:none!important}`;
       // Keep native alert controls mounted and measurable for background View/Answer.
+      style.textContent += `html.gbs-popup-only-call-mode [data-test-id="command-bar-agent"],html.gbs-popup-only-call-mode button[aria-label="Agent Workspace"]{display:none!important}`;
       // Never hide an iframe or its content document with display:none.
       style.textContent += `html.gbs-call-test-mode .messenger-message:has([data-action="answerInteraction"]),html.gbs-popup-only-call-mode .messenger-message:has([data-action="openAcdInteraction"]){display:block!important;position:fixed!important;left:-20000px!important;top:0!important;width:420px!important;opacity:0!important;pointer-events:none!important}`;
       doc.head.appendChild(style);
