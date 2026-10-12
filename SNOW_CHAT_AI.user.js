@@ -668,11 +668,24 @@ const snAIChatDisplayNames=(()=>{
         const ready=await wait(()=>input()?.value.trim()===expected);
         const send=ownElements().find(node=>node.matches('button[aria-label="Send Message"]'));
         if(!ready||!safe()||input().value.trim()!==expected||!send||send.disabled){outcome('not-sent',!ready?'quick-action-did-not-fill':!safe()?'chat-no-longer-safe':!send?'send-control-missing':send.disabled?'send-control-disabled':'composer-edited');return;}
-        // Same native send control as the operator. No retries after submission.
+        // Use the native action dispatched by ServiceNow's Send/Enter handler.
+        // A DOM click can hit a stale nested button during quick-action rendering.
+        // Observe trusted operator sends separately; never claim them as automation.
+        let manualSend=false;
+        const observeManual=event=>{
+          if(!event.isTrusted)return;
+          const path=event.composedPath?.()||[];
+          const clickedSend=event.type==='click'&&path.some(node=>node.matches?.('button[aria-label="Send Message"],now-button.sn-chat-toolbar-send'));
+          const pressedEnter=event.type==='keydown'&&event.key==='Enter'&&!event.shiftKey&&path.some(node=>node.matches?.('textarea[name="CHAT_INPUT#CHAT_TEXTAREA"]'));
+          if(!clickedSend&&!pressedEnter)return;
+          manualSend=true;greetTrace('manual-send-observed',{ims:record.number.value,source:clickedSend?'manual-send-button':'manual-enter',composerSnapshot:composerSnapshot()});
+        };
+        host.addEventListener('click',observeManual,true);host.addEventListener('keydown',observeManual,true);
         rememberGreetingAttempt(id);
-        greetTrace('sending',{ims:record.number.value});
+        greetTrace('sending',{ims:record.number.value,source:'script-native-enter',nativeAction:'CHAT_INPUT#ENTER',chatId:id});
         const beforeMessages=new Set(chatMessages().map(message=>messageInfo(message).key));
-        send.click();
+        try {
+        host.dispatch('CHAT_INPUT#ENTER',{table:host.table||'interaction',sysId:id,message:expected,caretPosition:input().selectionStart});
         // Read-only confirmation. A click/empty composer is not proof of delivery;
         // require a new outgoing bubble containing the expanded greeting.
         const normalize=value=>String(value||'').replace(/\s+/g,' ').trim();
@@ -684,7 +697,9 @@ const snAIChatDisplayNames=(()=>{
           if(!chat?.isConnected)break;
           await new Promise(resolve=>setTimeout(resolve,100));
         }
-        outcome(confirmed?'sent-confirmed':'send-unconfirmed',confirmed?'outgoing-greeting-visible':!chat?.isConnected?'chat-disconnected-before-confirmation':'no-matching-outgoing-bubble-within-10s',confirmed);
+        if(manualSend)outcome('manual-send-observed','operator-sent-during-auto-greet-confirmation');
+        else outcome(confirmed?'sent-confirmed':'send-unconfirmed',confirmed?'script-native-enter-outgoing-greeting-confirmed':!chat?.isConnected?'chat-disconnected-before-confirmation':'no-matching-outgoing-bubble-within-10s',confirmed);
+        }finally{host.removeEventListener('click',observeManual,true);host.removeEventListener('keydown',observeManual,true);}
       } catch(error) { outcome('not-sent','native-greeting-error: '+String(error.message||error));console.warn('SN AI auto-greet stopped',error); }
     },greetDelayMs);
   }
