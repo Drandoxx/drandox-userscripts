@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.560
+// @version      2.36.561
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -52,7 +52,8 @@
 {"version":"2.36.557","fixes":true,"changes":[{"key":"nova-movement","meaningful":true,"text":"NOVA walks with smaller oval hands, gentle arm swings and alternating planted steps. Standing clicks trigger a smile and wave without jumping."}]},
 {"version":"2.36.558","fixes":true,"changes":[{"key":"nova-movement","meaningful":false,"text":"NOVA side-view arms attach at her shoulder, with short connected legs and a mirrored hip-driven stride."}]},
 {"version":"2.36.559","fixes":true,"changes":[{"key":"nova-movement","meaningful":true,"text":"NOVA has softer attached hands, distinct side-view expressions and coordinated walking, coffee, climbing and flying animations."},{"key":"nova-idle","meaningful":true,"text":"NOVA settles into sleep with hidden feet and smoothly returns to her standing pose before typing."}]},
-{"version":"2.36.560","fixes":true,"changes":[{"key":"hp-ci","meaningful":true,"text":"HP mode preserves your CI search on retries and selects the first matching Configuration Item using contains search."}]}
+{"version":"2.36.560","fixes":true,"changes":[{"key":"hp-ci","meaningful":true,"text":"HP mode preserves your CI search on retries and selects the first matching Configuration Item using contains search."}]},
+{"version":"2.36.561","fixes":true,"changes":[{"key":"nova-wave","meaningful":false,"text":"Both hands are visible in front view, with a broader, slower wave."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -23622,8 +23623,8 @@ function installNovaWelcome(host) {
     @keyframes nova-arm-step{0%,100%{transform:rotate(14deg)}50%{transform:rotate(-14deg)}}
     @keyframes nova-foot-step{0%,100%{transform:translate(7px,0) rotate(-5deg)}45%{transform:translate(-7px,0) rotate(4deg)}65%{transform:translate(-4px,-5px) rotate(-7deg)}85%{transform:translate(5px,-3px) rotate(-5deg)}}
     @keyframes nova-step-bob{0%,100%{translate:0 0}50%{translate:0 -2px}}
-    :host([data-reaction="wave"]) .arm.right{animation:nova-small-wave .5s ease-in-out 2!important;z-index:3}
-    @keyframes nova-small-wave{0%,100%{transform:rotate(-25deg)}25%,75%{transform:rotate(-115deg)}50%{transform:rotate(-95deg)}}
+    :host([data-reaction="wave"]) .arm.right{animation:nova-small-wave 1.2s ease-in-out 2!important;z-index:3;transform-origin:50% 100%}
+    @keyframes nova-small-wave{0%,100%{transform:rotate(-15deg)}20%,70%{transform:translateY(-17px) rotate(-70deg)}45%,85%{transform:translateY(-12px) rotate(5deg)}}
     :host([data-phase="ready"]) .nova{animation:none;pointer-events:auto;cursor:pointer;transform-origin:50% 130px;transition:transform .45s ease}
     :host([data-phase="ready"]) .body{animation:breathe 4s ease-in-out infinite}
     :host([data-motion]) .body{animation:none!important}
@@ -23722,7 +23723,7 @@ function installNovaWelcome(host) {
   function clearIdle(){clearTimeout(sitTimer);clearTimeout(sleepTimer);clearTimeout(wakeTimer);delete avatar.dataset.idle;}
   function armIdle(){clearIdle();if(dismissed||avatar.hidden||avatar.dataset.motion||typingQueue.length||message?.actions?.length)return;sitTimer=setTimeout(()=>{if(dismissed||avatar.hidden)return;avatar.dataset.idle='sit';avatar.setAttribute('aria-label','NOVA resting');schedule();},60000);sleepTimer=setTimeout(()=>{if(dismissed||avatar.hidden)return;if(host.novaRestTransition)host.novaRestTransition('sleep');else{avatar.dataset.idle='sleep';setExpression('friendly');avatar.setAttribute('aria-label','NOVA sleeping. Click to wake her.');schedule();}},180000);}
   avatar.setAttribute('tabindex','0');avatar.setAttribute('aria-label','NOVA. Click to wake her.');
-  const wake=event=>{if(event.type==='keydown'&&!['Enter',' '].includes(event.key))return;event.preventDefault?.();event.stopPropagation?.();if(avatar.dataset.phase!=='ready'||avatar.dataset.idle==='wake')return;if(avatar.dataset.idle==='sleep'&&host.novaRestTransition){host.novaRestTransition('wake');return;}if(!avatar.dataset.idle){clearIdle();avatar.dataset.reaction='wave';setExpression('happy');wakeTimer=setTimeout(()=>{delete avatar.dataset.reaction;setExpression('friendly');armIdle();},1000);return;}clearTimeout(messageTimer);stopTyping();clearIdle();avatar.dataset.idle='wake';setExpression('friendly');avatar.setAttribute('aria-label','NOVA waking up');schedule();wakeTimer=setTimeout(()=>{delete avatar.dataset.idle;avatar.setAttribute('aria-label','NOVA awake');const next=!message?messageQueue.shift():null;if(next)next.run();else if(message?.paragraphs){const latest=message;message=null;show(latest);}else armIdle();schedule();},750);};
+  const wake=event=>{if(event.type==='keydown'&&!['Enter',' '].includes(event.key))return;event.preventDefault?.();event.stopPropagation?.();if(avatar.dataset.phase!=='ready'||avatar.dataset.idle==='wake')return;if(avatar.dataset.idle==='sleep'&&host.novaRestTransition){host.novaRestTransition('wake');return;}if(!avatar.dataset.idle){clearIdle();avatar.dataset.reaction='wave';setExpression('happy');wakeTimer=setTimeout(()=>{delete avatar.dataset.reaction;setExpression('friendly');armIdle();},2400);return;}clearTimeout(messageTimer);stopTyping();clearIdle();avatar.dataset.idle='wake';setExpression('friendly');avatar.setAttribute('aria-label','NOVA waking up');schedule();wakeTimer=setTimeout(()=>{delete avatar.dataset.idle;avatar.setAttribute('aria-label','NOVA awake');const next=!message?messageQueue.shift():null;if(next)next.run();else if(message?.paragraphs){const latest=message;message=null;show(latest);}else armIdle();schedule();},750);};
   avatar.addEventListener('click',wake);avatar.addEventListener('keydown',wake);
   host.novaUpdateMessage=data=>{
     if(!nameReady){pendingUpdate=data;return;}
@@ -23836,7 +23837,7 @@ function installNovaWelcome(host) {
     .hand{background:none!important;box-shadow:none!important;overflow:visible}.hand svg{width:100%;height:100%;display:block}
     /* Round cutout silhouette; limbs are soft pads, not dangling sticks. */
     .body{left:17px;top:19px;width:106px;height:101px;border-radius:50%;background:radial-gradient(circle at 35% 24%,#e5d6ff,#baa0ec 62%,#9671d5);box-shadow:inset 0 3px 4px #fff5,inset 0 -3px 8px #7953b233,0 5px 9px #0002}
-    .arm{top:75px;width:23px;height:25px;background:none;transform-origin:50% 45%}.arm.left{left:7px;transform:rotate(15deg)}.arm.right{right:6px;transform:rotate(-15deg)}
+    .arm{top:75px;width:23px;height:25px;background:none;transform-origin:50% 45%;z-index:3}.arm.left{left:7px;transform:rotate(15deg)}.arm.right{right:6px;transform:rotate(-15deg)}
     .hand{left:0;bottom:0;width:23px;height:25px}.hand-drawing{display:block;width:100%;height:100%}
     .foot{width:29px;height:17px;bottom:10px;background:#b499df}.foot.left{left:28px}.foot.right{right:27px}
     .headwear{top:-3px;right:2px;scale:.86;transform-origin:50% 100%}
