@@ -4919,6 +4919,7 @@
   }
   function watchIncomingCall(doc) {
     if(!callPopupsEnabled())return;
+    if(!callDomFallbackAllowed())return;
     if (window === window.top && (themeMode(doc) !== 'light' || popupOnlyCallEnabled(doc))) {
       const view = doc.querySelector('.messenger-shown [data-action="openAcdInteraction"] a');
       if (view && !view.dataset.gbsAutoViewed) { view.dataset.gbsAutoViewed = 'true'; view.click(); }
@@ -5830,6 +5831,28 @@
   const callNetworkFields = new Map();
   const callNetworkBridges = new Set();
   const liveCallSignals=new Map();
+  let callRecoveryFailures=0,callRecoveryBusy=false,callRecoveryAt=0,callSourceMode='api-pending';
+  const callSourceCounts={websocket:0,api:0,domFallback:0,nativeControlLookup:0};
+  function callPushHealthy(){return callPushSocket?.readyState===1 && Date.now()-callPushLastMessageAt<120000;}
+  function callDomFallbackAllowed(){return !callPushHealthy() && callRecoveryFailures>=2;}
+  function recordCallSource(source,reason='') {
+    if(source in callSourceCounts)callSourceCounts[source]++;
+    const mode=source==='domFallback'?'dom-fallback':source==='websocket'?'websocket':source==='api'?'api':callSourceMode;
+    if(mode!==callSourceMode){callSourceMode=mode;performanceEvent('call-source-changed',{source:mode,reason,failedAttempts:callRecoveryFailures});}
+  }
+  async function recoverCallDetection() {
+    if(callPushHealthy()){callRecoveryFailures=0;return;}
+    if(callRecoveryBusy || Date.now()-callRecoveryAt<5000)return;
+    callRecoveryBusy=true;callRecoveryAt=Date.now();
+    try {
+      const bridge=readyCallApiBridge();if(!bridge)throw Error('authentication-not-ready');
+      if(!currentAgentApiId)rememberCallApi('/api/v2/users/me',200,await bridge.request('/api/v2/users/me'));
+      if(!currentAgentApiId)throw Error('identity-not-ready');
+      rememberCallApi('/api/v2/conversations/calls',200,await bridge.request('/api/v2/conversations/calls'));
+      callRecoveryFailures=0;recordCallSource('api','push-unavailable-api-recovery');
+    }catch(error){callRecoveryFailures++;performanceEvent('call-api-recovery-failed',{attempt:callRecoveryFailures,reason:String(error.message).slice(0,100)});if(callDomFallbackAllowed())recordCallSource('domFallback','two-api-recovery-failures');}
+    finally{callRecoveryBusy=false;}
+  }
   const callPayloadPrelude=new Map();
   function persistCallMeasurements(calls,active) {
     // Completed diagnostics expire and share a 2MB budget, independent of daily API cache.
@@ -6041,6 +6064,7 @@
     const raw = data?.conversations || data?.entities || (data?.conversationId || data?.participants ? [data] : []);
     if(!path.includes('/analytics/'))for(const body of raw)captureCallPayload(path,status,body,transport);
     const projected = raw.map(compactApiConversation).filter(Boolean);
+    if(!path.includes('/analytics/'))recordCallSource(/websocket|call-push/.test(transport)?'websocket':'api');
     if(!path.includes('/analytics/') && currentAgentApiId)for(const c of projected) {
       const own=c.participants.find(p=>p.purpose==='agent' && p.userId===currentAgentApiId);
       if(!own)continue;
@@ -6566,10 +6590,10 @@
     const visit = (frameDoc, depth = 0, callFrame = false) => {
       if (!frameDoc || visited.has(frameDoc) || depth > 6) return;
       visited.add(frameDoc);
-      const areas = callPopupsEnabled() ? [...frameDoc.querySelectorAll('.selected-interaction-container, .interactions, [data-testid="wrapup-main-container"]')] : [];
+      const areas = callDomFallbackAllowed() && callPopupsEnabled() ? [...frameDoc.querySelectorAll('.selected-interaction-container, .interactions, [data-testid="wrapup-main-container"]')] : [];
       const text = areas.map(area => {watchCallScope(area);return callScopeText(area);}).join('\n').slice(0, 16000);
-      const countdown = frameDoc.querySelector('[data-testid="wrapup-header-message-duration"]')?.textContent?.trim();
-      const visual = callPopupsEnabled() ? collectCallVisualDiagnostics(frameDoc, callFrame) : {surfaces:[],controls:[],identifiers:[],timers:[],snapshots:[]};
+      const countdown = callDomFallbackAllowed() ? frameDoc.querySelector('[data-testid="wrapup-header-message-duration"]')?.textContent?.trim() : null;
+      const visual = callDomFallbackAllowed() && callPopupsEnabled() ? collectCallVisualDiagnostics(frameDoc, callFrame) : {surfaces:[],controls:[],identifiers:[],timers:[],snapshots:[]};
       if (text || countdown || visual.surfaces.length || visual.controls.length || visual.identifiers.length || visual.timers.length) sources.push({url:frameDoc.location.href,text,countdown:countdown || null,visual});
       frameDoc.querySelectorAll('iframe').forEach(frame => {
         try { const nested = accessibleFrameDocument(frame); if (nested) visit(nested,depth+1,callFrame || !!frame.closest('.command-panel.active.agent, .selected-interaction-container')); else inaccessible.push(frame.title || frame.src); }
@@ -6593,6 +6617,7 @@
     const popupText = popup?.innerText || '';
     const popupPhone = popupText.match(/\+\d[\d ()-]{6,}\d/)?.[0]?.replace(/\D/g,'') || null;
     const sample = {at:new Date().toISOString(),incoming:!!incoming,viewClicked:!!view?.dataset.gbsMeasurementViewed,
+      source:callDomFallbackAllowed()?'dom-fallback':'api',
       sources,inaccessible,popupText,sourcePhone,popupPhone,phoneMatches:sourcePhone ? sourcePhone === popupPhone : null,
       countdown:sources.find(source => source.countdown)?.countdown || null,popupCountdown:(popup || lastPopup)?.querySelector('[role="timer"]')?.textContent || null};
     const at = sample.at;
@@ -6947,8 +6972,10 @@
       doc.getElementById('gbs-call-information')?.remove();
       return;
     }
-    const selectedRoot=doc.querySelector('.selected-interaction-container');
-    const alertRoot=doc.querySelector('.messenger-shown [data-action="answerInteraction"]')?.closest('.messenger-message');
+    const domFallback=callDomFallbackAllowed();
+    if(domFallback)recordCallSource('domFallback','api-recovery-unavailable');
+    const selectedRoot=domFallback?doc.querySelector('.selected-interaction-container'):null;
+    const alertRoot=domFallback?doc.querySelector('.messenger-shown [data-action="answerInteraction"]')?.closest('.messenger-message'):null;
     watchCallScope(selectedRoot);watchCallScope(alertRoot);
     for(const [scope,observer]of callScopeObservers)if(!scope.isConnected){observer.disconnect();callScopeObservers.delete(scope);}
     // Native scope observers/API events trigger immediate refreshes. Slow fallback
@@ -6967,7 +6994,7 @@
     // Customer details stay in the live DOM only; never persist or transmit them.
     const visible = element => element && element.getBoundingClientRect().width > 0
       && element.getBoundingClientRect().height > 0;
-    const incomingAction = doc.querySelector('.messenger-shown [data-action="answerInteraction"]');
+    const incomingAction = domFallback?doc.querySelector('.messenger-shown [data-action="answerInteraction"]'):null;
     // The native Genesys Answer action is the authoritative ringing signal in
     // normal operation too. Restrict only the synthetic fallback to call-test
     // mode; otherwise a real selected interaction is mislabeled Connected and
@@ -6976,14 +7003,16 @@
     const incoming = (apiSignal ? apiSignal.state==='alerting' : Boolean(incomingAction)) || (!apiSignal && callTestEnabled(doc) && Boolean(testCallSession
       && !testCallSession.answeredAt && !testCallSession.finishedAt && !testCallSession.timeoutAt));
     if(incoming)completePreviousWrapupOnIncoming();
-    const selected = [...doc.querySelectorAll('.selected-interaction-container')].find(visible);
-    const wrapup = [...reachableCallDocuments].flatMap(frameDoc => [...frameDoc.querySelectorAll('[data-testid="wrapup-main-container"], .wrapup-message-container')]).find(element => element.querySelector('[data-testid="wrapup-header-message-duration"]'));
+    // Native controls/SNOW still require mounted elements; this lookup does not detect calls.
+    const selected = doc.querySelector('.selected-interaction-container');
+    if(selected)callSourceCounts.nativeControlLookup++;
+    const wrapup = domFallback?[...reachableCallDocuments].flatMap(frameDoc => [...frameDoc.querySelectorAll('[data-testid="wrapup-main-container"], .wrapup-message-container')]).find(element => element.querySelector('[data-testid="wrapup-header-message-duration"]')):null;
     let popup = doc.getElementById('gbs-call-information');
-    const currentConnected = apiSignal?.state==='connected' || /Interaction State\s*:\s*Connected/i.test(callScopeText(selected));
+    const currentConnected = apiSignal?.state==='connected' || (domFallback && /Interaction State\s*:\s*Connected/i.test(callScopeText(selected)));
     if (wrapup && !incoming && !currentConnected) {
       finishActiveCall(); syncLastCallDataPopup(doc, wrapup); return;
     }
-    if (!selected && !incoming && !currentConnected) {
+    if ((!domFallback || !selected) && !incoming && !currentConnected) {
       if (activeCallSummary) finishActiveCall();
       // Panel disappearance is not an explicit Disconnected transition.
       syncLastCallDataPopup(doc, wrapup);
@@ -7019,7 +7048,7 @@
     }
     for (const scope of scopes) {
       // Rich API fields avoid re-reading all call iframe text when complete.
-      const text = apiSignal?.phone && apiSignal?.queue && apiSignal?.location ? '' : callScopeText(scope);
+      const text = domFallback && !(apiSignal?.phone && apiSignal?.queue && apiSignal?.location) ? callScopeText(scope) : '';
       const phone = text.match(/(?:tel:)?\+\d[\d ()-]{6,}\d/);
       if (phone) add('Phone number', phone[0].replace(/^tel:/, ''));
       for (const label of ['Interaction State', 'Queue Name', "Customer's Number", 'Customer Name', 'Country', 'Location']) {
@@ -10014,6 +10043,7 @@ function fitDashboardMetricSpacing(doc) {
   function downloadPerformanceDiagnostics() {
     const saved=GM_getValue('genesys-v2-call-measurements',{calls:[],active:null});
     const report={schemaVersion:1,version:GM_info.script.version,exportedAt:new Date().toISOString(),
+      callSources:{mode:callSourceMode,failedRecoveryAttempts:callRecoveryFailures,pushHealthy:callPushHealthy(),counts:{...callSourceCounts}},
       performance:performanceReport(),
       callMeasurements:{...saved,active:measurementState || saved.active || null,pendingNetworkChanges:callNetworkChanges.slice()},
       todayCallCache:readTodayCallCache(),incomingCallHistory:GM_getValue(CALL_HISTORY_KEY,[]),
@@ -10162,6 +10192,7 @@ function fitDashboardMetricSpacing(doc) {
     if (window !== window.top || callCardDragging) return;
     performanceMeasure('frame-discovery',()=>discoverCallNetworkBridges());
     void ensureCallPush();
+    void recoverCallDetection();
     void refreshTodayCallCache();
     void refreshLiveCallApi();
     ensureMyCallsTodayPanel();myCallsPanelRender?.();
