@@ -23596,13 +23596,20 @@ function installNovaWelcome(host) {
     :host([data-motion]) .body{animation:none!important}
     :host([data-idle="sit"]) .nova{transform:translateY(8px) scaleY(.91)}
     :host([data-idle="sit"]) .arm{animation:none!important;transform:rotate(5deg)}
-    :host([data-idle="sleep"]) .nova{transform:translateY(3px) rotate(75deg) scale(.83);animation:none!important}
+    :host([data-idle="sleep"]) .nova{transform:translateY(32px) scale(1,.55);animation:none!important}
+    :host([data-idle="sleep"]) .eyes{transform:translateY(-12px)}
     :host([data-idle="sleep"]) .eye{height:3px;top:43px;animation:none;border-radius:3px}
     :host([data-idle="sleep"]) .eye::before,:host([data-idle="sleep"]) .eye::after{display:none}
     :host([data-idle="sleep"]) .mouth{width:8px;height:8px;left:49px;top:64px;border:0;border-radius:50%;background:#51315c}
-    :host([data-idle="sleep"]) .arm{animation:none!important;transform:rotate(10deg)}
-    :host([data-idle="wake"]) .nova{animation:wake-up .45s ease-out both!important}
-    @keyframes wake-up{0%{transform:translateY(6px) rotate(50deg) scale(.85)}45%{transform:translateY(-12px) rotate(-8deg) scale(1.02)}75%{transform:translateY(2px) rotate(3deg)}100%{transform:none}}
+    :host([data-idle="sleep"]) .arm{animation:none!important;transform:rotate(125deg)}
+    :host([data-idle="sleep"]) .foot{transform:translateY(-4px)}
+    .sleep-marks{display:none;position:absolute;right:30px;bottom:90px;color:#d6beff;font:bold 18px system-ui;pointer-events:none}.sleep-marks span{position:absolute;animation:sleep-zzz 2.8s ease-out infinite}.sleep-marks span:nth-child(2){animation-delay:.9s}.sleep-marks span:nth-child(3){animation-delay:1.8s}:host([data-idle="sleep"]) .sleep-marks{display:block}
+    @keyframes sleep-zzz{0%{opacity:0;transform:translate(0,0) scale(.6)}20%{opacity:1}100%{opacity:0;transform:translate(22px,-45px) scale(1.2)}}
+    :host([data-idle="wake"]) .nova{animation:wake-up .75s ease-out both!important}
+    :host([data-idle="wake"]) .arm{animation:wake-stretch .75s ease-out both!important}
+    @keyframes wake-stretch{0%{transform:rotate(125deg)}50%{transform:rotate(155deg)}100%{transform:rotate(24deg)}}
+    @keyframes wake-up{0%{transform:translateY(32px) scale(1,.55)}35%{transform:translateY(8px) scale(.98,.88)}65%{transform:translateY(-9px) scale(.96,1.06)}85%{transform:translateY(2px) scale(1.03,.97)}100%{transform:none}}
+    @media(prefers-reduced-motion:reduce){.sleep-marks span{animation:none;position:static}:host([data-idle="wake"]) .nova{animation:none!important;transform:none}}
     .daily-cup{display:none;position:absolute;left:-5px;top:0;width:22px;height:21px;border-radius:3px 3px 7px 7px;background:#f4e6cf;box-shadow:inset 0 3px #704637;color:#704637;font:bold 12px system-ui;text-align:center}.daily-cup::after{content:'';position:absolute;right:-7px;top:4px;width:8px;height:10px;border:3px solid #f4e6cf;border-radius:50%}
     :host([data-daily]) .arm.right{animation:none!important;transform:rotate(-50deg);z-index:5}:host([data-daily]) .daily-cup{display:block}
     :host([data-daily="enter"]) .nova{animation:morning-walk 2.5s ease-out both!important}:host([data-daily="enter"]) .foot{animation:step .65s infinite}
@@ -23615,6 +23622,7 @@ function installNovaWelcome(host) {
     @keyframes morning-walk{from{transform:translateX(90px)}to{transform:none}}@keyframes cup-toss{to{transform:translate(80px,-65px) rotate(150deg);opacity:0}}@keyframes hat-toss{to{transform:translate(50px,-80px) rotate(90deg);opacity:0}}
     @media(prefers-reduced-motion:reduce){:host([data-phase="peek"]) .nova{transform:translateX(90px)}.peek-grip{animation:none!important}:host([data-phase="ready"]) .nova,:host([data-phase="jump"]) .nova{transform:none}}
   </style>`);
+  avatarRoot.innerHTML+='<div class="sleep-marks" aria-hidden="true" data-part="sleep-marks"><span>Z</span><span>z</span><span>z</span></div>';
   document.documentElement.append(avatar);
   // Named slots are replaceable independently, with no external image assets.
   const parts={};for(const part of avatarRoot.querySelectorAll('[data-part]'))parts[part.dataset.part]=part;
@@ -23672,10 +23680,11 @@ function installNovaWelcome(host) {
   function clearIdle(){clearTimeout(sitTimer);clearTimeout(sleepTimer);clearTimeout(wakeTimer);delete avatar.dataset.idle;}
   function armIdle(){clearIdle();if(dismissed||avatar.hidden||avatar.dataset.motion||typingQueue.length||message?.actions?.length)return;sitTimer=setTimeout(()=>{if(dismissed||avatar.hidden)return;avatar.dataset.idle='sit';avatar.setAttribute('aria-label','NOVA resting');schedule();},60000);sleepTimer=setTimeout(()=>{if(dismissed||avatar.hidden)return;avatar.dataset.idle='sleep';setExpression('friendly');avatar.setAttribute('aria-label','NOVA sleeping. Click to wake her.');schedule();},180000);}
   avatar.setAttribute('tabindex','0');avatar.setAttribute('aria-label','NOVA. Click to wake her.');
-  const wake=event=>{if(event.type==='keydown'&&!['Enter',' '].includes(event.key))return;event.preventDefault?.();event.stopPropagation?.();if(avatar.dataset.phase!=='ready')return;clearIdle();avatar.dataset.idle='wake';setExpression('friendly');avatar.setAttribute('aria-label','NOVA awake');schedule();wakeTimer=setTimeout(()=>{delete avatar.dataset.idle;armIdle();schedule();},450);};
+  const wake=event=>{if(event.type==='keydown'&&!['Enter',' '].includes(event.key))return;event.preventDefault?.();event.stopPropagation?.();if(avatar.dataset.phase!=='ready'||avatar.dataset.idle==='wake')return;clearTimeout(messageTimer);stopTyping();clearIdle();avatar.dataset.idle='wake';setExpression('friendly');avatar.setAttribute('aria-label','NOVA waking up');schedule();wakeTimer=setTimeout(()=>{delete avatar.dataset.idle;avatar.setAttribute('aria-label','NOVA awake');const next=messageQueue.shift();if(next&&!message)next.run();else if(message?.paragraphs){const latest=message;message=null;show(latest);}else armIdle();schedule();},750);};
   avatar.addEventListener('click',wake);avatar.addEventListener('keydown',wake);
   host.novaUpdateMessage=data=>{
     if(!nameReady){pendingUpdate=data;return;}
+    if(['sleep','sit','wake'].includes(avatar.dataset.idle)){enqueueMessage(()=>host.novaUpdateMessage(data),data.reload?'reload':data.version);wake({});return;}
     if((message||dailyStartPending||avatar.dataset.daily||transitionTimer)&&!answering){enqueueMessage(()=>host.novaUpdateMessage(data),data.reload?'reload':data.version);return;}
     if(host.novaTicketUnfrozenAt>unfrozenSince)unfrozenSince=host.novaTicketUnfrozenAt;
     if(!data.reload&&(ticketBusy()||deferredUpdate||unfrozenSince&&Date.now()-unfrozenSince<10000)){deferredUpdate=data;waitForUpdate();return;}
@@ -23721,7 +23730,7 @@ function installNovaWelcome(host) {
     if(avatar.dataset.phase!=='ready'){card.hidden=true;tail.hidden=true;return;}
     if(dailyStartPending){card.hidden=true;tail.hidden=true;runDaily();return;}
     if(avatar.dataset.daily){card.hidden=true;tail.hidden=true;return;}
-    if(avatar.dataset.idle==='sit'||avatar.dataset.idle==='sleep'){card.hidden=true;tail.hidden=true;return;}
+    if(['sit','sleep','wake'].includes(avatar.dataset.idle)){card.hidden=true;tail.hidden=true;return;}
     card.hidden=false;if(!typingStarted){typingStarted=true;typeNext();}const r={left:innerWidth-right-129.6+offsetX,right:innerWidth-right+offsetX,top:innerHeight-bottom-129.6+offsetY,bottom:innerHeight-bottom+offsetY},c=card.getBoundingClientRect();
     const preferredLeft=r.left-c.width+55;
     card.style.left=Math.max(12,Math.min(innerWidth-c.width-12,preferredLeft))+'px';
@@ -23734,6 +23743,7 @@ function installNovaWelcome(host) {
   function schedule(){if(!frame)frame=requestAnimationFrame(position);}
   // Message blocks support readable text, branching actions and future GIFs.
   function show(data){
+    if(['sleep','sit','wake'].includes(avatar.dataset.idle)){enqueueMessage(()=>show(data));wake({});return;}
     if(message&&message!==data&&!dailyStartPending&&!avatar.dataset.daily&&message.paragraphs){
       if(!answering){enqueueMessage(()=>show(data));return;}
       clearTimeout(messageTimer);card.style.opacity='0';tail.style.opacity='0';clearTimeout(transitionTimer);transitionTimer=setTimeout(()=>{transitionTimer=0;message=null;card.style.opacity='';tail.style.opacity='';show(data);},180);return;
