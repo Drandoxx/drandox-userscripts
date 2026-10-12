@@ -23753,20 +23753,20 @@ function installNovaWelcome(host) {
   }
   let ambientReturnAnimations=[],ambientReturnTimer=0,ambientReturnFrame=0;
   function cancelAmbientReturn(){clearTimeout(ambientReturnTimer);cancelAnimationFrame(ambientReturnFrame);ambientReturnAnimations.forEach(animation=>animation.cancel());ambientReturnAnimations=[];avatarRoot.querySelectorAll('.nova-return-overlay').forEach(node=>node.remove());}
-  function finishAmbientStory(){
+  function blendAmbientPose(change,fadeProps=false){
     cancelAmbientReturn();
     const selectors=['.body','.arm.left','.arm.right','.foot.left','.foot.right','.headwear','.nova-eye-drawing'];
     const properties=['transform','translate','rotate','scale','opacity'];
     const poses=selectors.map(selector=>{const node=avatarRoot.querySelector(selector);if(!node)return null;const style=getComputedStyle(node);return {selector,before:Object.fromEntries(properties.map(property=>[property,style[property]]))};}).filter(Boolean);
     const eyes=avatarRoot.querySelector('.eyes'),oldFace=eyes?.querySelector('svg')?.cloneNode(true);
     // Keep a visual copy of outgoing props while the real story is cleaned up.
-    for(const prop of avatarRoot.querySelectorAll('.ambient-tool,.ambient-scene,.ambient-detail')){
+    for(const prop of fadeProps?avatarRoot.querySelectorAll('.ambient-tool,.ambient-scene,.ambient-detail'):[]){
       const style=getComputedStyle(prop),copy=prop.cloneNode(true);copy.className='nova-return-overlay';
       for(const property of ['position','left','top','bottom','right','width','height','transform','translate','rotate','scale','opacity','zIndex'])copy.style[property]=style[property];
       copy.style.pointerEvents='none';prop.parentNode.append(copy);
       ambientReturnAnimations.push(copy.animate([{opacity:style.opacity},{opacity:0}],{duration:450,fill:'forwards'}));
     }
-    clearNovaStory();delete avatar.dataset.ambient;avatarRoot.querySelector('.ambient-scene')?.remove();avatarRoot.querySelector('.ambient-tool')?.remove();
+    change();
     // Expression rendering happens in a shadow-root observer. Blend after it runs.
     ambientReturnFrame=requestAnimationFrame(()=>{
       for(const {selector,before} of poses){const node=avatarRoot.querySelector(selector);if(!node)continue;const style=getComputedStyle(node),after=Object.fromEntries(properties.map(property=>[property,style[property]]));ambientReturnAnimations.push(node.animate([before,after],{duration:650,easing:'cubic-bezier(.22,.8,.3,1)'}));}
@@ -23774,6 +23774,7 @@ function installNovaWelcome(host) {
       ambientReturnTimer=setTimeout(cancelAmbientReturn,700);
     });
   }
+  function finishAmbientStory(){blendAmbientPose(()=>{clearNovaStory();delete avatar.dataset.ambient;avatarRoot.querySelector('.ambient-scene')?.remove();avatarRoot.querySelector('.ambient-tool')?.remove();},true);}
   function stopAmbientIdle(){cancelAmbientReturn();clearTimeout(ambientTimer);clearTimeout(ambientEndTimer);clearNovaStory();delete avatar.dataset.ambient;avatarRoot.querySelector('.ambient-scene')?.remove();avatarRoot.querySelector('.ambient-tool')?.remove();}
   function queueAmbientIdle(){ambientTimer=setTimeout(()=>{
     if(dismissed||avatar.hidden||avatar.dataset.idle)return;
@@ -23802,7 +23803,7 @@ function installNovaWelcome(host) {
       book:'<path d="M3 8Q13 4 20 10Q27 4 37 8V31Q27 28 20 34Q13 28 3 31Z" fill="#b5d9ef" stroke="#6587ab" stroke-width="2"/><path d="M20 10v24M7 13l9 1m-9 5 9 1m8-6 9-1m-9 7 9-1" stroke="#f6fbff" fill="none"/>',
       brush:'<path d="M20 35v22" stroke="#c49a72" stroke-width="5"/><path d="M16 35v-8h8v8Z" fill="#c4c2db"/><path d="M16 27q-6-14 4-19q10 5 4 19Z" fill="#d7a0e9"/><circle cx="8" cy="18" r="3" fill="#d7a0e9" opacity=".5"/>',
       magnifier:'<path d="M20 32v25" stroke="#b494d2" stroke-width="6"/><circle cx="20" cy="18" r="14" fill="#bce8fa33" stroke="#d8c8e9" stroke-width="4"/><path d="M13 11q6-6 11 0" stroke="#fff9" fill="none" stroke-width="2"/>',
-      kite:'<path class="kite-rope" d="M20 60Q10 45 20 32" fill="none" stroke="#e9d7f1"/><g class="kite-sail"><path d="M20 0l17 14-17 18L3 14Z" fill="#ecc2e4" stroke="#fbefff"/><path d="M20 0v32M3 14h34" stroke="#be9bd3"/><path d="M20 32l-6 5 12 4-12 5" fill="none" stroke="#b9ddfa"/></g>',
+      kite:'<path class="kite-rope" d="M20 60C5 54 33 43 20 32" fill="none" stroke="#e9d7f1"/><g class="kite-sail"><path d="M20 0l17 14-17 18L3 14Z" fill="#ecc2e4" stroke="#fbefff"/><path d="M20 0v32M3 14h34" stroke="#be9bd3"/></g>',
       yoyo:'<path class="yoyo-string" d="M20 3v39" stroke="#efe5ff"/><g class="yoyo-disc"><circle cx="20" cy="43" r="10" fill="#c7b7fa" stroke="#eee4ff" stroke-width="2"/><circle cx="20" cy="43" r="3" fill="#9172c5"/></g>',
       snack:'<path d="M6 12q14-18 28 0l-4 19H10Z" fill="#d9a66a" stroke="#f4d4a1" stroke-width="2"/><path d="M10 22h20v16H10Z" fill="#c6c2ee"/><circle cx="14" cy="10" r="2" fill="#976a42"/><circle cx="25" cy="14" r="2" fill="#976a42"/>'
     };
@@ -23814,7 +23815,9 @@ function installNovaWelcome(host) {
     if(snack){const food=snack.innerHTML;snack.innerHTML='<defs><mask id="nova-food-bite"><rect width="40" height="65" fill="white"/><circle class="snack-bite" cx="32" cy="9" r="9" fill="black"/></mask></defs><g mask="url(#nova-food-bite)">'+food+'</g>';}
     const book=avatarRoot.querySelector('[data-idle-tool="book"] svg');if(book)book.innerHTML+='<path class="book-page" d="M20 10L35 8V30L20 34Z" fill="#fff1d8"/>';
     ambientStoryTimers=(novaIdleStories[kind]||[]).map(([at,phase,expression])=>setTimeout(()=>{
-      if(avatar.dataset.ambient!==kind)return;avatar.dataset.ambientPhase=phase;
+      if(avatar.dataset.ambient!==kind)return;
+      if(phase==='settle'){blendAmbientPose(()=>{avatar.dataset.ambientPhase=phase;setExpression(expression);});return;}
+      avatar.dataset.ambientPhase=phase;
       if(kind==='snack'&&phase==='bite')avatarRoot.querySelector('.snack-bite')?.style.setProperty('opacity','1');
       if(kind==='juggle'){
         const index=['catch-one','catch-two','caught'].indexOf(phase),ball=index>=0?avatarRoot.querySelectorAll('.idle-orbit circle')[index]:null,hand=avatarRoot.querySelector(index===1?'.arm.left .hand':'.arm.right .hand');
@@ -24017,7 +24020,8 @@ function installNovaWelcome(host) {
     :host([data-ambient="kite"]) .kite-sail{transform-origin:20px 32px;animation:nova-kite-breeze 1.4s ease-in-out infinite}
     @keyframes nova-kite-breeze{50%{rotate:9deg}}
     :host([data-ambient="kite"][data-ambient-phase="pull"]) .kite-sail{animation:nova-kite-tug 1s ease-in both}
-    :host([data-ambient="kite"][data-ambient-phase="pull"]) .kite-rope{d:path('M20 60 L32 12')}
+    .kite-rope{transition:d 1s ease-in}
+    :host([data-ambient="kite"][data-ambient-phase="pull"]) .kite-rope{d:path('M20 60C24 44 28 28 32 12')}
     :host([data-ambient="kite"][data-ambient-phase="pull"]) .body{rotate:-5deg;translate:-3px 0;transition:rotate .5s,translate .5s}
     :host([data-ambient="kite"][data-ambient-phase="pull"]) .arm.right{animation:none!important;transform:translate(-5px,4px) rotate(-25deg)}
     @keyframes nova-kite-tug{to{translate:12px -20px;rotate:15deg}}
