@@ -23981,7 +23981,7 @@ function installNovaWelcome(host) {
     :host([data-ambient-phase="release"]) .idle-orbit,:host([data-ambient-phase="release"]) .idle-rise,:host([data-ambient="butterfly"][data-ambient-phase="release"]) .idle-flier{animation:nova-release 1.3s ease-in both}
     @keyframes nova-release{from{transform:translate(75px,70px);opacity:1}to{transform:translate(130px,-75px);opacity:0}}
     :host([data-ambient-phase="offer"]) .idle-rise{animation:none;transform:translate(70px,68px);opacity:1}
-    :host([data-ambient="rain"]) .ambient-detail{left:-9px;top:-40px;width:58px;height:70px}
+    :host([data-ambient="rain"]) .ambient-detail{left:-35px;top:-75px;width:82px;height:105px}
     :host([data-ambient-phase="shelter"]) .ambient-detail{opacity:1}
     :host([data-ambient-phase="clear"]) .ambient-scene,:host([data-ambient-phase="clear"]) .ambient-detail{opacity:0!important;transition:opacity .7s}
     :host([data-ambient="fireflies"][data-ambient-phase="land"]) .idle-orbit{animation:none;transform:translate(75px,80px);transition:transform .8s}
