@@ -23949,7 +23949,46 @@ function installNovaWelcome(host) {
     @keyframes nova-idle-drops{from{translate:0 0;opacity:1}to{translate:0 13px;opacity:0}}
     @keyframes nova-idle-dance{0%,100%{rotate:0deg}25%{rotate:-5deg;translate:-2px -2px}75%{rotate:5deg;translate:2px -2px}}
     @keyframes nova-idle-stretch{0%,100%{transform:rotate(-15deg)}30%,65%{transform:translateY(-10px) rotate(-65deg)}}
-    @media(prefers-reduced-motion:reduce){.nova-eye-drawing,.ambient-scene,.ambient-scene *,.ambient-tool{animation:none!important}.ambient-scene,.ambient-tool{display:none}}
+    .ambient-detail{position:absolute;left:112px;top:66px;width:36px;height:45px;opacity:0;transition:opacity .35s;pointer-events:none}.ambient-detail svg{width:100%;height:100%}
+    .snack-bite{opacity:0}.book-page{opacity:0;transform-origin:20px 20px}
+    :host([data-ambient-phase="bite"]) .snack-bite{opacity:1}
+    :host([data-ambient-phase="eaten"]) [data-idle-tool="snack"],:host([data-ambient-phase="settle"]) .ambient-tool,:host([data-ambient-phase="settle"]) .ambient-scene{opacity:0!important;transition:opacity .4s}
+    :host([data-ambient="snack"]) .arm.right{animation:nova-two-bites 8s ease-in-out both!important}
+    @keyframes nova-two-bites{0%,15%,42%,72%,100%{transform:rotate(-15deg)}27%,33%,55%,60%{transform:translate(-24px,-17px) rotate(20deg)}}
+    :host([data-ambient="kite"][data-ambient-phase="watch"]) .nova-eye-drawing{animation:none;translate:4px -3px}
+    :host([data-ambient="kite"][data-ambient-phase="gust"]) .ambient-detail{opacity:1;animation:nova-gust 1.3s ease-out both}
+    :host([data-ambient="kite"][data-ambient-phase="gust"]) [data-idle-tool="kite"]{animation:nova-kite-escape 1.2s ease-in both}
+    :host([data-ambient="kite"][data-ambient-phase="sad"]) [data-idle-tool="kite"],:host([data-ambient="kite"][data-ambient-phase="settle"]) [data-idle-tool="kite"]{visibility:hidden}
+    @keyframes nova-kite-escape{from{transform:translate(0,0) rotate(0);opacity:1}to{transform:translate(130px,-150px) rotate(45deg);opacity:0}}
+    @keyframes nova-gust{from{translate:-80px 0;opacity:0}30%{opacity:1}to{translate:90px -20px;opacity:0}}
+    :host([data-ambient-phase="page"]) .book-page{opacity:1;animation:nova-page-turn 1s ease-in-out both}
+    @keyframes nova-page-turn{from{transform:scaleX(1)}to{transform:scaleX(-1)}}
+    :host([data-ambient-phase="closed"]) [data-idle-tool="book"]{scale:.5 1;transition:scale .6s}
+    :host([data-ambient="brush"][data-ambient-phase="paint"]) .ambient-detail,:host([data-ambient="brush"][data-ambient-phase="admire"]) .ambient-detail,:host([data-ambient="magnifier"][data-ambient-phase="follow"]) .ambient-detail,:host([data-ambient="magnifier"][data-ambient-phase="found"]) .ambient-detail{opacity:1}
+    :host([data-ambient="magnifier"]) .ambient-detail{animation:nova-bug-walk 8s ease-in-out both}
+    @keyframes nova-bug-walk{0%,20%{translate:0 0}60%,100%{translate:-32px 0}}
+    :host([data-ambient-phase="tangle"]) .yoyo-string{animation:none;transform:rotate(35deg) scaleY(.5)}
+    :host([data-ambient-phase="tangle"]) .yoyo-disc{animation:none;translate:8px -15px}
+    :host([data-ambient-phase="fixed"]) .yoyo-disc{animation:nova-yoyo 1.6s ease-in-out 1}
+    :host([data-ambient="bubbles"][data-ambient-phase="pop"]) .idle-rise{animation:nova-pop .45s ease-out both}
+    @keyframes nova-pop{from{transform:translate(55px,-15px) scale(1);opacity:1}to{transform:translate(55px,-15px) scale(1.5);opacity:0}}
+    :host([data-ambient-phase="catch-one"]) .idle-orbit circle:first-child,:host([data-ambient-phase="catch-two"]) .idle-orbit circle:nth-child(-n+2),:host([data-ambient-phase="caught"]) .idle-orbit{opacity:0;transition:opacity .3s}
+    :host([data-ambient-phase="sniff"]) .idle-flower{animation:none;transform:translate(45px,54px);opacity:1}
+    :host([data-ambient-phase="sneeze"]) .body{animation:nova-sneeze .65s ease-in-out 1!important}
+    @keyframes nova-sneeze{0%,100%{rotate:0}30%{rotate:-7deg;translate:0 2px}60%{rotate:6deg;translate:0 -2px}}
+    :host([data-ambient="plane"][data-ambient-phase="catch"]) .idle-flier{animation:none;transform:translate(77px,82px);transition:transform .5s}
+    :host([data-ambient-phase="hold"]) .idle-orbit{animation:none;transform:translate(75px,80px);transition:transform .5s}
+    :host([data-ambient-phase="release"]) .idle-orbit,:host([data-ambient-phase="release"]) .idle-rise,:host([data-ambient="butterfly"][data-ambient-phase="release"]) .idle-flier{animation:nova-release 1.3s ease-in both}
+    @keyframes nova-release{from{transform:translate(75px,70px);opacity:1}to{transform:translate(130px,-75px);opacity:0}}
+    :host([data-ambient-phase="offer"]) .idle-rise{animation:none;transform:translate(70px,68px);opacity:1}
+    :host([data-ambient="rain"]) .ambient-detail{left:-9px;top:-40px;width:58px;height:70px}
+    :host([data-ambient-phase="shelter"]) .ambient-detail{opacity:1}
+    :host([data-ambient-phase="clear"]) .ambient-scene,:host([data-ambient-phase="clear"]) .ambient-detail{opacity:0!important;transition:opacity .7s}
+    :host([data-ambient="fireflies"][data-ambient-phase="land"]) .idle-orbit{animation:none;transform:translate(75px,80px);transition:transform .8s}
+    :host([data-ambient-phase="flourish"]) .body{animation:nova-sneeze .8s ease-in-out 1!important}
+    :host([data-ambient-phase="shake"]) .body{animation:nova-sneeze .6s ease-in-out 1!important}
+    :host([data-ambient-phase="settle"]) .arm{animation:none!important;transform:rotate(-15deg);transition:transform .5s}
+    @media(prefers-reduced-motion:reduce){.nova-eye-drawing,.ambient-scene,.ambient-scene *,.ambient-tool{animation:none!important}.ambient-scene,.ambient-tool,.ambient-detail{display:none}}
     /* Motion belongs to the rig; expression drawings never own keyframes. */
     .body{transform:none!important}.eyes{inset:0!important;transform:none!important;translate:none!important;transition:none}
     .eyes svg{width:106px;height:101px;display:block}.mouth{display:none!important}.cheek{display:none!important}
