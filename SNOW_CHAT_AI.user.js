@@ -23790,7 +23790,15 @@ function installNovaWelcome(host) {
     const snack=avatarRoot.querySelector('[data-idle-tool="snack"] svg');
     if(snack){const food=snack.innerHTML;snack.innerHTML='<defs><mask id="nova-food-bite"><rect width="40" height="65" fill="white"/><circle class="snack-bite" cx="32" cy="9" r="9" fill="black"/></mask></defs><g mask="url(#nova-food-bite)">'+food+'</g>';}
     const book=avatarRoot.querySelector('[data-idle-tool="book"] svg');if(book)book.innerHTML+='<path class="book-page" d="M20 10L35 8V30L20 34Z" fill="#fff1d8"/>';
-    ambientStoryTimers=(novaIdleStories[kind]||[]).map(([at,phase,expression])=>setTimeout(()=>{if(avatar.dataset.ambient!==kind)return;avatar.dataset.ambientPhase=phase;if(kind==='snack'&&phase==='bite')avatarRoot.querySelector('.snack-bite')?.style.setProperty('opacity','1');setExpression(expression);},at));
+    ambientStoryTimers=(novaIdleStories[kind]||[]).map(([at,phase,expression])=>setTimeout(()=>{
+      if(avatar.dataset.ambient!==kind)return;avatar.dataset.ambientPhase=phase;
+      if(kind==='snack'&&phase==='bite')avatarRoot.querySelector('.snack-bite')?.style.setProperty('opacity','1');
+      if(kind==='juggle'){
+        const index=['catch-one','catch-two','caught'].indexOf(phase),ball=index>=0?avatarRoot.querySelectorAll('.idle-orbit circle')[index]:null,hand=avatarRoot.querySelector(index===1?'.arm.left .hand':'.arm.right .hand');
+        if(ball&&hand){const b=hand.getBoundingClientRect(),matrix=ball.getScreenCTM();if(matrix){const p=new DOMPoint(b.left+b.width/2,b.top+b.height/2).matrixTransform(matrix.inverse());ball.animate([{transform:'translate(0,0)',opacity:1},{transform:`translate(${p.x-ball.cx.baseVal.value}px,${p.y-ball.cy.baseVal.value}px)`,opacity:1},{transform:`translate(${p.x-ball.cx.baseVal.value}px,${p.y-ball.cy.baseVal.value}px)`,opacity:0}],{duration:500,fill:'forwards'});}}
+      }
+      setExpression(expression);
+    },at));
     // Resolve the gaze from the actual moving prop, not a separate guessed cycle.
     const targetSelector={butterfly:'.idle-flier',fireflies:'.idle-orbit',bubbles:'.idle-rise',juggle:'.idle-orbit',flower:'.idle-flower',plane:'.idle-flier',star:'.idle-orbit',heart:'.idle-rise',book:'[data-idle-tool="book"]',brush:'.ambient-detail',magnifier:'.ambient-detail',kite:'.kite-sail',yoyo:'.yoyo-disc',snack:'[data-idle-tool="snack"]'}[kind];
     const follow=()=>{
@@ -24007,7 +24015,7 @@ function installNovaWelcome(host) {
     :host([data-ambient-phase="fixed"]) .yoyo-disc{animation:nova-yoyo 1.6s ease-in-out 1}
     :host([data-ambient="bubbles"][data-ambient-phase="pop"]) .idle-rise{animation:nova-pop .45s ease-out both}
     @keyframes nova-pop{from{transform:translate(55px,-15px) scale(1);opacity:1}to{transform:translate(55px,-15px) scale(1.5);opacity:0}}
-    :host([data-ambient-phase="catch-one"]) .idle-orbit circle:first-child,:host([data-ambient-phase="catch-two"]) .idle-orbit circle:nth-child(-n+2),:host([data-ambient-phase="caught"]) .idle-orbit{opacity:0;transition:opacity .3s}
+    :host([data-ambient="juggle"][data-ambient-phase]) .idle-orbit{animation-play-state:paused}
     :host([data-ambient-phase="sniff"]) .idle-flower{animation:none;transform:translate(45px,54px);opacity:1}
     :host([data-ambient-phase="sneeze"]) .body{animation:nova-sneeze .65s ease-in-out 1!important}
     @keyframes nova-sneeze{0%,100%{rotate:0}30%{rotate:-7deg;translate:0 2px}60%{rotate:6deg;translate:0 -2px}}
@@ -24047,6 +24055,8 @@ function installNovaWelcome(host) {
     :host([data-ambient="dance"][data-ambient-phase="flourish"]) .arm{animation:nova-idle-stretch 1s ease-in-out 1!important}
     :host([data-ambient="stretch"][data-ambient-phase="yawn"]) .nova-bite-mouth{display:block}
     :host([data-ambient="stretch"][data-ambient-phase="yawn"]) .nova-mouth-drawing{display:none}
+    :host([data-ambient]) .body{transition:rotate .4s,translate .4s}
+    :host([data-ambient-phase="settle"]) .ambient-detail{opacity:0;transition:opacity .4s}
     @media(prefers-reduced-motion:reduce){.nova-eye-drawing,.ambient-scene,.ambient-scene *,.ambient-tool{animation:none!important}.ambient-scene,.ambient-tool,.ambient-detail{display:none}}
     /* Motion belongs to the rig; expression drawings never own keyframes. */
     .body{transform:none!important}.eyes{inset:0!important;transform:none!important;translate:none!important;transition:none}
