@@ -5872,7 +5872,8 @@
     if(!/^[a-f0-9-]{36}$/i.test(id || '') || !(transport==='call-push' || body.participants?.some(p=>(p.userId || p.user?.id)===currentAgentApiId)))return;
     const own=body.participants?.find(p=>(p.userId || p.user?.id)===currentAgentApiId);
     const state=own?.state || own?.calls?.[0]?.state;
-    if(transport==='call-push' && callPopupsEnabled() && ['alerting','contacting','connected'].includes(state)) {
+    const diagnosticState=state || (body.participants?.some(p=>p.purpose==='agent' && ['alerting','contacting','connected'].includes(p.state))?'active-unresolved':null);
+    if(transport==='call-push' && callPopupsEnabled() && ['alerting','contacting','connected','active-unresolved'].includes(diagnosticState)) {
       if(measurementState?.conversationId && measurementState.conversationId!==id) {
         const old=measurementState;old.endedAt=new Date().toISOString();old.endReason='next-call';
         persistCallMeasurements([...(GM_getValue('genesys-v2-call-measurements',{calls:[]}).calls || []),old],null);measurementState=null;
@@ -5883,6 +5884,7 @@
     // One small seed per current conversation catches the event before its popup mounts.
     if(!measurementState){callPayloadPrelude.set(id,{at:Date.now(),path,status,transport,payload});while(callPayloadPrelude.size>10)callPayloadPrelude.delete(callPayloadPrelude.keys().next().value);return;}
     if(measurementState.conversationId===id && state)measurementState.lastApiState=state;
+    if(measurementState.conversationId===id && !own)measurementState.identityUnresolved=true;
     const fields={},flatten=(v,p)=>{if(v && typeof v==='object')for(const [k,x]of Object.entries(v))flatten(x,p+'/'+k);else fields[p]=v;};
     flatten(payload,'');
     const previous=callNetworkFields.get(key) || {},changes={},removed=[];
@@ -6039,7 +6041,7 @@
       }
       while(liveCallSignals.size>10)liveCallSignals.delete(liveCallSignals.keys().next().value);
     }
-    if (measurementState) {
+    if (measurementState && path.includes('/analytics/')) {
       for(const c of projected.filter(c=>c.conversationId===activeCallSummary?.conversationId || c.conversationId===lastCallSummary?.conversationId || c.participants.some(p=>p.userId===currentAgentApiId))) {
         const fields={},flatten=(value,key)=>{
           if(value && typeof value==='object')for(const [name,item]of Object.entries(value))flatten(item,key+'/'+name);
