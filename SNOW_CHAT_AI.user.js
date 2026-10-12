@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.562
+// @version      2.36.563
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -54,7 +54,8 @@
 {"version":"2.36.559","fixes":true,"changes":[{"key":"nova-movement","meaningful":true,"text":"NOVA has softer attached hands, distinct side-view expressions and coordinated walking, coffee, climbing and flying animations."},{"key":"nova-idle","meaningful":true,"text":"NOVA settles into sleep with hidden feet and smoothly returns to her standing pose before typing."}]},
 {"version":"2.36.560","fixes":true,"changes":[{"key":"hp-ci","meaningful":true,"text":"HP mode preserves your CI search on retries and selects the first matching Configuration Item using contains search."}]},
 {"version":"2.36.561","fixes":true,"changes":[{"key":"nova-wave","meaningful":false,"text":"Both hands are visible in front view, with a broader, slower wave."}]},
-{"version":"2.36.562","fixes":true,"changes":[{"key":"nova-wave","meaningful":false,"text":"NOVA keeps her hand raised between two waves and lowers it only at the end."}]}
+{"version":"2.36.562","fixes":true,"changes":[{"key":"nova-wave","meaningful":false,"text":"NOVA keeps her hand raised between two waves and lowers it only at the end."}]},
+{"version":"2.36.563","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA blinks and glances around, enjoys twelve shuffled quiet activities, and sleeps after 15 idle minutes without sitting first."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
