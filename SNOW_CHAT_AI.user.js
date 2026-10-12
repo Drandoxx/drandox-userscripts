@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.544
+// @version      2.36.545
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -36,7 +36,8 @@
 {"version":"2.36.541","fixes":true,"changes":[{"key":"nova-appearance","meaningful":false,"text":"Softer hands and a speech-bubble tail."}]},
 {"version":"2.36.542","fixes":true,"changes":[{"key":"nova-appearance","meaningful":true,"text":"NOVA has a smaller, softer look and a speech bubble above her head."},{"key":"auto-greet","meaningful":true,"text":"Auto-greet fills your saved shortcut directly without opening the shortcut menu."}]},
 {"version":"2.36.543","fixes":true,"changes":[]},
-{"version":"2.36.544","fixes":true,"changes":[{"key":"nova-updates","meaningful":true,"text":"NOVA announces available updates with a short summary tailored to your installed version."}]}
+{"version":"2.36.544","fixes":true,"changes":[{"key":"nova-updates","meaningful":true,"text":"NOVA announces available updates with a short summary tailored to your installed version."}]},
+{"version":"2.36.545","fixes":true,"changes":[]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -7959,7 +7960,7 @@ function startSNAI(tabIdentity) {
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
-const payload={schema:2,version:'2.36.544',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+const payload={schema:2,version:'2.36.545',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
@@ -21278,7 +21279,7 @@ const payload={schema:2,version:'2.36.544',day:log.day,chatCount:log.chats.size,
       installAutomationFreeze();
       document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
     }
-    addLog('info', 'helper-version', { version: '2.36.544' });
+    addLog('info', 'helper-version', { version: '2.36.545' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
     // snapshot and its serialised DOM-sized text until an explicit command
     // or inspector view actually requests one.
@@ -23525,7 +23526,9 @@ function installNovaWelcome(host) {
   if(!launcher||!settings)return;
   const card=document.createElement('aside');card.className='sn-ai-nova-message';card.hidden=true;
   const tail=document.createElement('div');tail.className='sn-ai-nova-tail';tail.hidden=true;tail.setAttribute('aria-hidden','true');
-  tail.innerHTML='<svg viewBox="0 0 48 34" width="48" height="34" xmlns="http://www.w3.org/2000/svg"><path d="M1 0 H29 Q28 18 46 32 Q14 27 1 0Z" fill="var(--sn-theme-251f31,#241c33)" stroke="var(--sn-theme-655573,#74618b)" stroke-width="1"/><path d="M2 0H29" stroke="var(--sn-theme-251f31,#241c33)" stroke-width="3"/></svg>';
+  // Overlap the bubble border with solid fill. Stroke only the outer curve,
+  // never the joining edge, and round the short tip away from NOVA's head.
+  tail.innerHTML='<svg viewBox="0 0 40 24" width="40" height="24" xmlns="http://www.w3.org/2000/svg"><path d="M1 -3 H28 Q28 7 37 17 Q40 21 35 20 Q11 16 1 -3Z" fill="var(--sn-theme-251f31,#241c33)"/><path d="M1 0 Q11 16 35 20 Q40 21 37 17 Q28 7 28 0" fill="none" stroke="var(--sn-theme-655573,#74618b)" stroke-width="1" stroke-linecap="round"/></svg>';
   card.setAttribute('aria-label','Nova');card.setAttribute('aria-live','polite');
   const style=document.createElement('style');style.textContent=`
 .sn-ai-nova-message{position:fixed;z-index:102;width:min(330px,calc(100vw - 24px));padding:16px;border:1px solid var(--sn-theme-655573,#74618b);border-radius:18px 18px 5px 18px;background:var(--sn-theme-251f31,#241c33);color:var(--sn-theme-e6edf9,#eee6ff);box-shadow:0 8px 28px #0005;font:13px/1.5 system-ui;pointer-events:auto;max-height:calc(100vh - 24px);overflow:auto;animation:sn-nova-in .2s ease-out}
@@ -23533,7 +23536,7 @@ function installNovaWelcome(host) {
   document.documentElement.append(style,tail,card);
   style.textContent+=` .sn-ai-nova-tail{position:fixed;width:28px;height:24px;z-index:102;pointer-events:none;background:var(--sn-theme-655573,#74618b);clip-path:polygon(0 0,100% 100%,0 80%)}.sn-ai-nova-tail::after{content:'';position:absolute;inset:1px 2px 1px 0;background:var(--sn-theme-251f31,#241c33);clip-path:polygon(0 0,100% 100%,0 80%)}.sn-ai-nova-tail[hidden]{display:none!important}.sn-ai-nova-tail[data-side="bottom"]{clip-path:polygon(0 0,100% 0,50% 100%)}.sn-ai-nova-tail[data-side="bottom"]::after{inset:0 1px 2px;clip-path:polygon(0 0,100% 0,50% 100%)}`;
   style.textContent+=' .sn-ai-nova-message .nova-actions[hidden]{display:none!important}';
-  style.textContent+=' .sn-ai-nova-tail,.sn-ai-nova-tail[data-side="bottom"]{width:48px;height:34px;background:none;clip-path:none}.sn-ai-nova-tail::after{display:none}.sn-ai-nova-tail svg{display:block;overflow:visible}';
+  style.textContent+=' .sn-ai-nova-tail,.sn-ai-nova-tail[data-side="bottom"]{width:40px;height:24px;z-index:103;background:none;clip-path:none}.sn-ai-nova-tail::after{display:none}.sn-ai-nova-tail svg{display:block;overflow:visible}';
   const avatar=document.createElement('div');avatar.id='sn-ai-nova-companion';avatar.hidden=true;
   avatar.style.cssText='position:fixed;width:180px;height:180px;transform:scale(.72);transform-origin:bottom right;z-index:100;pointer-events:none;overflow:visible;';
   avatar.setAttribute('role','img');avatar.setAttribute('aria-label','NOVA peeking');
@@ -23630,7 +23633,7 @@ function installNovaWelcome(host) {
     card.style.top=Math.max(12,Math.min(innerHeight-c.height-12,r.top-c.height+8))+'px';
     const left=parseFloat(card.style.left),top=parseFloat(card.style.top);
     tail.hidden=false;
-    tail.dataset.side='bottom';tail.style.left=Math.max(left+14,Math.min(left+c.width-49,r.left+7))+'px';tail.style.top=(top+c.height-1)+'px';
+    tail.dataset.side='bottom';tail.style.left=Math.max(left+14,Math.min(left+c.width-49,r.left+7))+'px';tail.style.top=(top+c.height-2)+'px';
     card.style.borderRadius='20px';
   }
   function schedule(){if(!frame)frame=requestAnimationFrame(position);}
