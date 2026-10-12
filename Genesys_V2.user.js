@@ -4872,7 +4872,8 @@
     try{return GM_getValue('genesys-v2-call-popups-enabled',false)===true;}catch(_){return false;}
   }
   function popupOnlyCallEnabled(doc) {
-    try { return callPopupsEnabled() && isSavedAdmin(doc) && GM_getValue(POPUP_ONLY_CALL_MODE_KEY,false) === true; } catch (_) { return false; }
+    // The regular popup setting owns native UI suppression for every user.
+    return callPopupsEnabled();
   }
   function callTestEnabled(doc) {
     // One switch controls the entire test workflow; legacy saved flags are ignored.
@@ -5183,6 +5184,7 @@
     powerCard.appendChild(powerSelect); popover.querySelector('.gbs-settings-body').appendChild(powerCard);
     const callPopupRow=doc.createElement('label');callPopupRow.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;border:1px solid #397382;border-radius:8px;margin-top:14px';
     callPopupRow.append(doc.createTextNode('Show call and After-Call popups'));
+    callPopupRow.title='Use custom call popups only. Native incoming alerts, Agent Workspace and its menu button are hidden; background controls and data remain loaded.';
     const callPopupToggle=doc.createElement('input');callPopupToggle.type='checkbox';callPopupToggle.setAttribute('role','switch');callPopupToggle.setAttribute('aria-label','Show call and After-Call popups');callPopupToggle.checked=callPopupsEnabled();callPopupToggle.style.cssText='accent-color:#22d3ee;width:22px;height:22px';
     callPopupToggle.addEventListener('change',()=>{
       GM_setValue('genesys-v2-call-popups-enabled',callPopupToggle.checked);
