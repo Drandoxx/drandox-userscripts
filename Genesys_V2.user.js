@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.573.0
+// @version      1.574.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -6579,7 +6579,7 @@
   function measureCallPopup(doc) {
     if (window !== window.top || !callRecordingAllowed(doc) || themeMode(doc) === 'light') return;
     if (!measurementState && !doc.getElementById('gbs-call-information')) return;
-    const incoming = doc.querySelector('.messenger-shown [data-action="answerInteraction"]');
+    const incoming = callDomFallbackAllowed()?doc.querySelector('.messenger-shown [data-action="answerInteraction"]'):null;
     const view = incoming?.closest('.messenger-message')?.querySelector('[data-action="openAcdInteraction"] a');
     // View only loads the native panel; never answer or operate call controls.
     if (view && !view.dataset.gbsAutoViewed && !view.dataset.gbsMeasurementViewed) {
@@ -6777,7 +6777,7 @@
     if(window!==window.top)return;
     const timer=document.querySelector('#gbs-last-call-data [role="timer"]');
     if(lastCallSummary && !lastCallSummary.wrapupComplete) {
-      const text=nativeCallTimerElement?.isConnected ? nativeCallTimerElement.textContent.trim() : '';
+      const text=callDomFallbackAllowed() && nativeCallTimerElement?.isConnected ? nativeCallTimerElement.textContent.trim() : '';
       if(lastCallSummary.wrapupSource!=='api' && /^\d+:\d{2}$/.test(text) && text!==lastCallSummary.nativeCountdown) {
         const [m,s]=text.split(':').map(Number);
         lastCallSummary.nativeCountdown=text;lastCallSummary.wrapupSeconds=m*60+s;lastCallSummary.wrapupObservedAt=Date.now();
@@ -7291,6 +7291,7 @@
     return true;
   }
   function watchNativeWrapupEnd(doc) {
+    if(!callDomFallbackAllowed())return;
     if (window !== window.top || doc !== document || themeMode(doc) === 'light') return;
     if(doc.querySelector('.messenger-shown [data-action="answerInteraction"]') || /Interaction State\s*:\s*Connected/i.test(doc.querySelector('.selected-interaction-container')?.innerText || '')) {
       nativeWrapupWatch=null;return;
@@ -7317,6 +7318,7 @@
     }
   }
   function closeWorkspaceAfterCallEnds(doc) {
+    if(!callDomFallbackAllowed())return;
     watchNativeWrapupEnd(doc);
     const panel = doc.querySelector('.command-panel.active.agent');
     if (!panel || panel.classList.contains('hidden')) return;
@@ -10017,7 +10019,7 @@ function fitDashboardMetricSpacing(doc) {
   }
   function performanceEvent(type,fields={}) {
     if(!lightweightPerformance)return;
-    if(/call-push|native-call-state|call-control-action/.test(type)) {
+    if(/call-push|native-call-state|call-control-action|call-source|call-api-recovery/.test(type)) {
       lightweightPerformance.callEvents ||= [];
       lightweightPerformance.callEvents.push({at:Date.now(),type,...fields});
       if(lightweightPerformance.callEvents.length>40)lightweightPerformance.callEvents.shift();
