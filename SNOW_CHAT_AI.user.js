@@ -23860,6 +23860,7 @@ function installNovaWelcome(host) {
     :host([data-idle="sleep"]) .headwear{right:5px;top:0;rotate:15deg}
     :host([data-idle="sleep"]) .sleep-marks{right:83px;bottom:123px}
     :host([data-rest-blending]) .sleep-marks{display:none!important}
+    :host([data-rest-blending]) .nova,:host([data-rest-blending]) .arm{animation:none!important}
     :host([data-daily="enter"]) .nova{animation:morning-walk 2.5s ease-out both!important}
     :host([data-daily]) .arm.right{animation:none!important;transform:rotate(-25deg);right:12px;top:73px;z-index:1}
     :host([data-daily="enter"]) .arm.right{animation:pad-swing .8s ease-in-out infinite!important;animation-delay:-.4s!important;left:92px;right:auto;top:72px}
@@ -23926,6 +23927,8 @@ function installNovaWelcome(host) {
       // Suppress autonomous breathing until the pose reaches its endpoint.
       root.querySelector('.body').style.setProperty('animation','none','important');
       const after=elements.map(read);
+      // Keep speech queued until the visual stand-up reaches its endpoint.
+      if(!sleep)avatar.dataset.idle='wake';
       restAnimations=elements.map((element,index)=>element.animate([before[index],after[index]],{duration:matchMedia('(prefers-reduced-motion: reduce)').matches?1:sleep?1400:900,easing:'cubic-bezier(.4,0,.2,1)',fill:'none'}));
       const newFace=root.querySelector('.eyes svg');previousFace.style.cssText='position:absolute;left:0;top:0;pointer-events:none';root.querySelector('.eyes').append(previousFace);restOverlays.push(previousFace);
       const faceTiming={duration:sleep?1400:900,easing:'ease-in-out'};restAnimations.push(previousFace.animate([{opacity:1},{opacity:0}],faceTiming),newFace.animate([{opacity:0},{opacity:1}],faceTiming));
@@ -23933,6 +23936,7 @@ function installNovaWelcome(host) {
       if(token!==restToken)return;
       root.querySelector('.body').style.removeProperty('animation');restAnimations=[];restOverlays.forEach(element=>element.remove());restOverlays=[];delete nova.dataset.restBlending;
       if(kind==='wake'){
+        delete avatar.dataset.idle;
         avatar.setAttribute('aria-label','NOVA awake');
         const next=!message?messageQueue.shift():null;
         if(next)next.run();else if(message?.paragraphs){const latest=message;message=null;show(latest);}else armIdle();
