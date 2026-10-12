@@ -5009,7 +5009,8 @@ const snAIChatDisplayNames=(()=>{
       const id=link?.id||field.getAttribute('value');
       const number=String(link?.number||field.displayValue||field.shadowRoot?.querySelector('now-record-typeahead')?.getAttribute('value')||'').trim();
       let button=header.querySelector('.sn-ai-event-incident-shortcut') || field.getRootNode()?.querySelector('.sn-ai-event-incident-shortcut');
-      if (button && button.parentElement !== header) header.append(button.closest('.sn-ai-event-incident-actions') || button);
+      const existingGroup=button?.closest('.sn-ai-event-incident-actions')||button;
+      if(existingGroup&&existingGroup.parentElement!==header)header.append(existingGroup);
       if(!/^INC\d+$/.test(number)||!id){header.querySelector('.sn-ai-event-incident-actions')?.remove();button?.remove();continue;}
       if(!button){
         button=document.createElement('button');button.type='button';button.className='sn-ai-event-incident-shortcut';
