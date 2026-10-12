@@ -56,7 +56,7 @@
 {"version":"2.36.561","fixes":true,"changes":[{"key":"nova-wave","meaningful":false,"text":"Both hands are visible in front view, with a broader, slower wave."}]},
 {"version":"2.36.562","fixes":true,"changes":[{"key":"nova-wave","meaningful":false,"text":"NOVA keeps her hand raised between two waves and lowers it only at the end."}]},
 {"version":"2.36.563","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA blinks and glances around, enjoys twelve shuffled quiet activities, and sleeps after 15 idle minutes without sitting first."}]},
-{"version":"2.36.564","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA enjoys eighteen shuffled idle routines, including books, painting, a magnifying glass, a kite, a yo-yo and a snack held in her hand."}]}
+{"version":"2.36.564","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA enjoys eighteen shuffled idle routines, including books, painting, a magnifying glass, a kite, a yo-yo and a snack held in her hand."},{"key":"nova-wave","meaningful":false,"text":"Reload, daily greeting and click reactions share one continuous wave function."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -23707,7 +23707,7 @@ function installNovaWelcome(host) {
   }
   function runDaily(){
     dailyStartPending=false;clearIdle();const steps=[['enter',2500],['yawn',1500],['sip',2000],['cheer',900]];let index=0;
-    const next=()=>{if(dismissed||ticketBusy()){delete avatar.dataset.daily;delete avatar.dataset.dailyKind;message=null;schedule();if(!dismissed)dailyTimer=setTimeout(greetDaily,1000);return;}if(index===steps.length){delete avatar.dataset.daily;delete avatar.dataset.dailyKind;setExpression('happy');const greetedDay=dailyGreetingDay;show({paragraphs:[dailySpeech],actions:[{label:dailyReply,run:()=>{try{localStorage.setItem(key+':daily-seen',greetedDay);}catch{}setExpression('happy');show({paragraphs:['A little smile to start us off. Hope your day goes smoothly. 💜']});}}]});return;}const [phase,delay]=steps[index++];avatar.dataset.daily=phase;if(phase==='cheer')setExpression('happy');dailyTimer=setTimeout(next,delay);};next();
+    const next=()=>{if(dismissed||ticketBusy()){delete avatar.dataset.daily;delete avatar.dataset.dailyKind;message=null;schedule();if(!dismissed)dailyTimer=setTimeout(greetDaily,1000);return;}if(index===steps.length){delete avatar.dataset.daily;delete avatar.dataset.dailyKind;setExpression('happy');const greetedDay=dailyGreetingDay;show({paragraphs:[dailySpeech],actions:[{label:dailyReply,run:()=>{try{localStorage.setItem(key+':daily-seen',greetedDay);}catch{}setExpression('happy');show({paragraphs:['A little smile to start us off. Hope your day goes smoothly. 💜']});}}]});waveNova();return;}const [phase,delay]=steps[index++];avatar.dataset.daily=phase;if(phase==='cheer')setExpression('happy');dailyTimer=setTimeout(next,delay);};next();
   }
   async function greetDaily(){
     const current=novaBudapestDay(),dayKey=key+':daily-seen';
@@ -23767,7 +23767,7 @@ function installNovaWelcome(host) {
   }
   host.novaIdlePreview=kind=>{clearIdle();return playAmbientIdle(kind);};
   function startSilentEntrance(){if(entranceStarted||message)return;message={silent:true};dismissed=false;schedule();}
-  function clearIdle(){stopAmbientIdle();clearTimeout(sleepTimer);clearTimeout(wakeTimer);delete avatar.dataset.idle;}
+  function clearIdle(){stopAmbientIdle();clearTimeout(sleepTimer);clearTimeout(wakeTimer);delete avatar.dataset.idle;delete avatar.dataset.reaction;}
   function armIdle(){clearIdle();if(dismissed||avatar.hidden||avatar.dataset.motion||typingQueue.length||message?.actions?.length)return;queueAmbientIdle();sleepTimer=setTimeout(()=>{if(dismissed||avatar.hidden)return;stopAmbientIdle();if(host.novaRestTransition)host.novaRestTransition('sleep');else{avatar.dataset.idle='sleep';setExpression('friendly');avatar.setAttribute('aria-label','NOVA sleeping. Click to wake her.');schedule();}},900000);}
   avatar.setAttribute('tabindex','0');avatar.setAttribute('aria-label','NOVA. Click to wake her.');
   function waveNova(){clearIdle();avatar.dataset.reaction='wave';setExpression('happy');wakeTimer=setTimeout(()=>{delete avatar.dataset.reaction;setExpression('friendly');armIdle();},2400);}
