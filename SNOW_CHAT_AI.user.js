@@ -552,6 +552,12 @@ const snAIChatDisplayNames=(()=>{
     greetTrace('offer-accepted',{ims});
     scanGreetingHosts();
   });
+  document.addEventListener('sn-ai-accepted-chat-id',event=>{
+    const {id,acceptedAt}=event.detail||{};
+    if(!/^[a-f0-9]{32}$/i.test(id||''))return;
+    autoGreetOffers.set(id,acceptedAt||Date.now());
+    greetTrace('accepted-composer-confirmed');scanGreetingHosts();
+  });
   for(const type of ['pointerdown','keydown','input'])window.addEventListener(type,event=>{
     // Browsing the non-modal report is not manual work in the chat composer.
     if(event.isTrusted&&!event.composedPath().some(node=>node?.id==='sn-ai-chats-today'))lastOperatorActivity=Date.now();
@@ -559,14 +565,14 @@ const snAIChatDisplayNames=(()=>{
   async function queueNewChatGreeting(host) {
     if(host?.localName!=='sn-chat-input'||greetSeenHosts.has(host))return;
     const id=host.sysId||host.getAttribute('sys-id');
-    if(!autoGreetEnabled||!id||greetAttempted.has(id)||!autoGreetOffers.size)return;
+    if(!autoGreetEnabled||!id||greetAttempted.has(id)||pendingGreetingIds.has(id)||!autoGreetOffers.size)return;
     pendingGreetingIds.add(id);
     greetTrace('composer-discovered');
     greetSeenHosts.add(host);
     let record;
     try{record=imsPreviewRecords.get(id)||await fetchIMSRecord('sys_id='+id);}catch(error){greetTrace('ims-lookup-failed',{error:String(error.message||error)});pendingGreetingIds.delete(id);greetSeenHosts.delete(host);return;}
-    const acceptedAt=autoGreetOffers.get(record?.number?.value);
-    if(!acceptedAt||Date.now()-acceptedAt>180000){pendingGreetingIds.delete(id);greetSeenHosts.delete(host);return;}
+    const acceptedAt=autoGreetOffers.get(id)||autoGreetOffers.get(record?.number?.value);
+    if(!record?.number?.value||!acceptedAt||Date.now()-acceptedAt>180000){greetTrace('offer-not-matched',{reason:!record?.number?.value?'ims-number-unavailable':'no-recent-accepted-offer'});pendingGreetingIds.delete(id);greetSeenHosts.delete(host);return;}
     greetTrace('offer-matched',{ims:record.number.value});
     const started=Date.now();
     const outcome=(stage,reason,ok=false)=>greetTrace(stage,{ims:record.number.value,reason,ok,elapsedMs:Date.now()-started});
@@ -22070,6 +22076,24 @@ function startSNAI(tabIdentity) {
         if (!/^(accept|accept chat|accept work item)$/.test(name)) continue;
         if (inboxPolicy.seen.has(button)) continue;
         inboxPolicy.seen.add(button);
+        // Track the actual native Accept action, for manual and automatic
+        // acceptance alike. Tab titles and notice rendering are not identity.
+        button.addEventListener('click',()=>{
+          const acceptedAt=Date.now();
+          const previousIds=new Set(allPageElements().filter(e=>e.localName==='sn-chat-input'&&e.isChatOwner===true).map(e=>e.sysId||e.getAttribute('sys-id')));
+          let checks=0;
+          const confirmComposer=()=>{
+            const candidates=allPageElements().filter(e=>e.localName==='sn-chat-input'&&e.isChatOwner===true
+              && !previousIds.has(e.sysId||e.getAttribute('sys-id')));
+            if(!button.isConnected&&candidates.length===1){
+              document.dispatchEvent(new CustomEvent('sn-ai-accepted-chat-id',{detail:{id:candidates[0].sysId||candidates[0].getAttribute('sys-id'),acceptedAt}}));
+              return;
+            }
+            if(++checks<120)setTimeout(confirmComposer,250);
+            else document.dispatchEvent(new CustomEvent('sn-ai-greet-diagnostic',{detail:{stage:'acceptance-unconfirmed',reason:candidates.length>1?'multiple-new-composers':'no-new-owned-composer-after-native-accept'}}));
+          };
+          setTimeout(confirmComposer,0);
+        },{capture:true,once:true});
         document.dispatchEvent(new CustomEvent('sn-ai-new-chat-arrived'));
         inboxLog('accept-button-found', { html: button.outerHTML, enabled: !button.disabled, autoAccept: inboxPolicy.autoAccept });
         if (!inboxPolicy.autoAccept) continue;
