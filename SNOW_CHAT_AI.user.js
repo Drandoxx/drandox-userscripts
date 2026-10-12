@@ -4602,6 +4602,34 @@ const snAIChatDisplayNames=(()=>{
   }
   window.addEventListener('pagehide',saveIMSReplyTimes);
   const imsTimerTabs = new Set();
+  let imsStatusPending=false,imsStatusNextCheck=0,imsStatusCursor=0;
+  async function refreshOpenIMSStatuses() {
+    const numbers=new Set();
+    for(const tab of imsTimerTabs){
+      if(!tab.isConnected){imsTimerTabs.delete(tab);continue;}
+      const ims=tab.getAttribute('aria-label');if(/^IMS\d+$/.test(ims||''))numbers.add(ims);
+    }
+    // Retain current tabs plus at most 200 small recent metadata records.
+    // No transcripts/DOM nodes are stored in this status cache.
+    for(const [id,record]of imsPreviewRecords){
+      if(imsPreviewRecords.size<=Math.max(200,numbers.size))break;
+      if(!numbers.has(record.number?.value))imsPreviewRecords.delete(id);
+    }
+    for(const ims of loadedIMSTabNumbers)if(!numbers.has(ims)){loadedIMSTabNumbers.delete(ims);imsTabLookupAttempts.delete(ims);}
+    const candidates=[...numbers].filter(ims=>!isInactiveIMS(imsTimerRecord(ims)));
+    if(!candidates.length||imsStatusPending||Date.now()<imsStatusNextCheck)return;
+    imsStatusPending=true;imsStatusNextCheck=Date.now()+10000;
+    // Fair bounded batches even when an unusually large number of tabs is open.
+    imsStatusCursor%=candidates.length;
+    const batch=Array.from({length:Math.min(100,candidates.length)},(_,index)=>candidates[(imsStatusCursor+index)%candidates.length]);
+    imsStatusCursor=(imsStatusCursor+batch.length)%candidates.length;
+    try{
+      for(const record of await fetchIMSRecords('numberIN'+batch.join(','))){
+        imsPreviewRecords.set(record.sys_id.value,record);paintIMSPreview(record);
+      }
+    }catch(error){imsStatusNextCheck=Date.now()+30000;console.warn('[SN AI IMS status]',error.message);}
+    finally{imsStatusPending=false;}
+  }
   const imsTimerUnread = new WeakMap();
   let imsReplyTicker = null;
   const imsTimerAlert = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
@@ -4692,6 +4720,7 @@ const snAIChatDisplayNames=(()=>{
     paintIMSReplyTimers();saveIMSReplyTimes();
   }
   function paintIMSReplyTimers() {
+    void refreshOpenIMSStatuses();
     const now = Date.now();
     const format = seconds => Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
     for (const tab of imsTimerTabs) {
