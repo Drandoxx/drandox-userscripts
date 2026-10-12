@@ -2396,6 +2396,11 @@ const snAIChatDisplayNames=(()=>{
     /* Reserve the native row while its first width/action reconciliation runs. */
     :host(sn-form-internal-uiactionbar:not([data-sn-ai-actions-ready])) { visibility:hidden!important;min-height:32px!important; }
     now-heading[data-sn-ai-number-moved] { display:none!important; }
+    now-button[component-name$="aeff33bb1b696d10a14cec60f54bcb96"],
+    now-button[component-name$="0bdd499d77773300112f8b51a9106179"],
+    now-button[component-name$="084959b087081300e3010cf888cb0b0e"],
+    now-button[component-name$="807e83d1878010100e3dd61e36cb0b89"],
+    now-button[component-name$="d566c8c9eb703010e0ef83c45e5228be"] { display:none!important;width:0!important;min-width:0!important;margin:0!important;padding:0!important; }
     .sn-header-layout-row[data-sn-ai-record-rows] { display:flex!important;flex-direction:column!important;gap:12px!important; }
     .sn-header-layout-row[data-sn-ai-record-rows].sn-header-layout-row > .sn-header-layout-content:not(.-last) {
       order:2!important;width:100%!important;flex:0 0 auto!important;
@@ -4849,6 +4854,26 @@ const snAIChatDisplayNames=(()=>{
   function syncNativeActionWidth(root) {
     syncRecordHeaderRows(root);
     const host = root.host;
+    if (host && ['sn-form-internal-header-layout','now-record-common-uiactionbar','sn-form-internal-uiactionbar'].includes(host.localName)) {
+      // Normalize the parent source too: native reactive updates propagate it
+      // down again, otherwise restoring forced overflow and excluded actions.
+      let owner=host,header=null;
+      while(owner){if(owner.localName==='sn-form-internal-header-layout'){header=owner;break;}owner=owner.parentElement||owner.getRootNode?.().host;}
+      const incident=(header?.getProperties?.().table||header?.table)==='incident';
+      for(owner=host;owner;owner=owner.parentElement||owner.getRootNode?.().host){
+        if(['sn-form-internal-header-layout','now-record-common-uiactionbar','sn-form-internal-uiactionbar'].includes(owner.localName)){
+          const nodes=owner.getProperties?.().actionNodes;
+          if(Array.isArray(nodes)){
+            const fit=nodes.flatMap(node=>{
+              const children=(node.children||[]).filter(child=>!incident||!hiddenIncidentActionIds.has(String(child.id)));
+              return node.children&&!children.length?[]:[{...node,overflow:false,...(node.children?{children}:{})}];
+            });
+            if(JSON.stringify(nodes)!==JSON.stringify(fit))owner.actionNodes=fit;
+          }
+        }
+        if(owner===header)break;
+      }
+    }
     if (host?.localName !== 'sn-form-internal-uiactionbar') return;
     let entry = actionWidthObservers.get(host);
     if (!entry) {
