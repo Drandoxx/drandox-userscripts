@@ -56,7 +56,7 @@
 {"version":"2.36.561","fixes":true,"changes":[{"key":"nova-wave","meaningful":false,"text":"Both hands are visible in front view, with a broader, slower wave."}]},
 {"version":"2.36.562","fixes":true,"changes":[{"key":"nova-wave","meaningful":false,"text":"NOVA keeps her hand raised between two waves and lowers it only at the end."}]},
 {"version":"2.36.563","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA blinks and glances around, enjoys twelve shuffled quiet activities, and sleeps after 15 idle minutes without sitting first."}]},
-{"version":"2.36.564","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA enjoys eighteen shuffled idle routines, including books, painting, a magnifying glass, a kite, a yo-yo and a snack held in her hand."},{"key":"nova-wave","meaningful":false,"text":"Reload, daily greeting and click reactions share one continuous wave function."}]}
+{"version":"2.36.564","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA enjoys eighteen shuffled idle routines, including books, painting, a magnifying glass, a kite, a yo-yo and a snack held in her hand."},{"key":"nova-wave","meaningful":false,"text":"Reload, daily greeting and click reactions share one continuous wave function."},{"key":"tab-theme","meaningful":false,"text":"Accepted unseen chat tabs use the selected theme for their surface, text, border and corners."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -2166,19 +2166,19 @@ const snAIChatDisplayNames=(()=>{
       animation:sn-ai-unread-tab-pulse 2.6s ease-in-out infinite!important;
     }
     .sn-chrome-one-tab.sn-chrome-one-tab.sn-chrome-one-tab[data-sn-ai-unseen-accepted] {
-      /* Keep incoming offers purple even when native SNOW tokens are blue. */
-      --sn-tab-notice-surface:#49385f;
-      --sn-tab-notice-corner:none;
-      background:#49385f!important;color:#f5efff!important;
-      box-shadow:inset 0 0 0 2px #bba1ed!important;
+      /* Accepted/unseen is a notice state, not a hard-coded dark theme. */
+      --sn-tab-notice-surface:var(--sn-tab-updated-surface,color-mix(in srgb,var(--sn-theme-ac94ec) 52%,var(--sn-theme-251f31)));
+      --sn-tab-notice-corner:var(--sn-tab-updated-corner);
+      background:var(--sn-tab-notice-surface)!important;color:var(--sn-theme-e6edf9)!important;
+      box-shadow:inset 0 0 0 2px var(--sn-theme-ac94ec)!important;
       animation:none!important;
     }
     .sn-chrome-one-tab.sn-chrome-one-tab.sn-chrome-one-tab.is-selected[data-sn-ai-unseen-accepted] {
-      box-shadow:inset 0 0 0 2px #bba1ed!important;
+      box-shadow:inset 0 0 0 2px var(--sn-theme-ac94ec)!important;
     }
     .sn-chrome-one-tab.sn-chrome-one-tab.sn-chrome-one-tab[data-sn-ai-unseen-accepted]>.sn-chrome-one-tab-content,
     .sn-chrome-one-tab.sn-chrome-one-tab.sn-chrome-one-tab[data-sn-ai-unseen-accepted]>.sn-chrome-one-tab-content * {
-      color:#f5efff!important;
+      color:var(--sn-theme-e6edf9)!important;
     }
     .sn-chrome-one-tab.sn-chrome-one-tab.sn-chrome-one-tab[data-sn-ai-read]:not([data-sn-ai-unseen-accepted]) {
       animation:none!important;text-decoration:none!important;color:var(--sn-theme-e6edf9)!important;
