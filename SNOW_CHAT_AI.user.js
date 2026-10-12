@@ -23593,7 +23593,19 @@ function installNovaWelcome(host) {
     @keyframes peek{0%{transform:translateX(155px)}100%{transform:translateX(90px)}}
     @keyframes jump{0%{transform:translateX(90px)}55%{transform:translateX(-10px) rotate(-7deg)}78%{transform:translateX(4px) rotate(3deg)}100%{transform:none}}
     :host([data-motion^="fly-"]) .body{transform:scale(.78);transform-origin:left center}
-    .hand,.peek-grip{border-radius:50%;width:22px;height:25px}.hand::before,.hand::after,.peek-grip::before,.peek-grip::after{display:none}
+    .hand{border-radius:50%;width:17px;height:19px;left:-2px;bottom:-3px}.peek-grip{border-radius:50%;width:22px;height:25px}.hand::before,.hand::after,.peek-grip::before,.peek-grip::after{display:none}
+    .arm{width:13px;height:25px;top:73px;transform-origin:50% 4px}.arm.left{left:13px}.arm.right{right:12px}.foot{width:24px;height:12px;transform-origin:50% 50%}
+    :host([data-motion^="walk-"]) .arm,:host([data-daily="enter"]) .arm{animation:nova-arm-step .8s ease-in-out infinite!important}
+    :host([data-motion^="walk-"]) .arm.right,:host([data-daily="enter"]) .arm.right{animation-direction:normal!important;animation-delay:-.4s;z-index:1}
+    :host([data-motion^="walk-"]) .foot,:host([data-daily="enter"]) .foot{animation:nova-foot-step .8s linear infinite!important}
+    :host([data-motion^="walk-"]) .foot.right,:host([data-daily="enter"]) .foot.right{animation-direction:normal!important;animation-delay:-.4s}
+    :host([data-motion^="walk-"]) .body,:host([data-daily="enter"]) .body{animation:nova-step-bob .4s ease-in-out infinite!important}
+    :host([data-motion="walk-left"]) .arm.left,:host([data-daily="enter"]) .arm.left{left:48px;z-index:3}:host([data-motion="walk-left"]) .arm.right,:host([data-daily="enter"]) .arm.right{right:29px;opacity:.65}
+    :host([data-motion="walk-right"]) .arm.right{right:48px;z-index:3}:host([data-motion="walk-right"]) .arm.left{left:29px;opacity:.65}
+    :host([data-motion^="walk-"]) .foot.left,:host([data-daily="enter"]) .foot.left{left:45px}:host([data-motion^="walk-"]) .foot.right,:host([data-daily="enter"]) .foot.right{right:40px}
+    @keyframes nova-arm-step{0%,100%{transform:rotate(14deg)}50%{transform:rotate(-14deg)}}
+    @keyframes nova-foot-step{0%,100%{transform:translate(7px,0) rotate(-5deg)}45%{transform:translate(-7px,0) rotate(4deg)}65%{transform:translate(-4px,-5px) rotate(-7deg)}85%{transform:translate(5px,-3px) rotate(-5deg)}}
+    @keyframes nova-step-bob{0%,100%{translate:0 0}50%{translate:0 -2px}}
     :host([data-phase="ready"]) .nova{animation:none;pointer-events:auto;cursor:pointer;transform-origin:50% 130px;transition:transform .45s ease}
     :host([data-phase="ready"]) .body{animation:breathe 4s ease-in-out infinite}
     :host([data-motion]) .body{animation:none!important}
