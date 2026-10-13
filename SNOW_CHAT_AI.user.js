@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.590
+// @version      2.36.591
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -83,6 +83,7 @@
 ,{"version":"2.36.588","fixes":true,"changes":[{"key":"nova-morning-coffee","meaningful":true,"text":"Nova lifts an upright cup with a thinning coffee surface, then changes back in a small magic whirlwind without tossing the cup."}]}
 ,{"version":"2.36.589","fixes":true,"changes":[{"key":"nova-profile-face","meaningful":true,"text":"Satisfied side faces use a clear eye and profile smile. Eye and mouth variants can now be combined independently."}]}
 ,{"version":"2.36.590","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":true,"text":"Nova hides her message before cutting an overlapping notification. Automatic chat acceptance notices use a translucent background."},{"key":"nova-profile-face","meaningful":true,"text":"Satisfied side expressions have a relaxed half-closed eye and lifted smile."}]}
+,{"version":"2.36.591","fixes":true,"changes":[{"key":"ai-response-completion","meaningful":true,"text":"Companion 0.4.36 delivers finished replies to validation and reports stalled partial replies without sending duplicate prompts."},{"key":"nova-profile-face","meaningful":true,"text":"Nova has a separate mischievous evil expression in front and side views, with a warmer satisfied expression."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -24297,7 +24298,8 @@ function installNovaWelcome(host) {
       if(view!=='front'&&expression==='happy')eyeArt='<ellipse cx="'+xs[0]+'" cy="39" rx="5.5" ry="8" fill="#392748" stroke="none"/><ellipse cx="'+(xs[0]-1.5)+'" cy="36" rx="2" ry="2" fill="#f9efff" stroke="none"/>';
       if(expression==='angry'||expression==='focused')eyeArt+=xs.map((x,i)=>'<path d="M'+(x-7)+' '+(expression==='angry'?(i===0?27:31):30)+' Q'+x+' '+(expression==='angry'?29:27)+' '+(x+7)+' '+(expression==='angry'?(i===0?31:27):30)+'"/>').join('');
       if(expression==='satisfied')eyeArt=view==='front'?xs.map(x=>'<path d="M'+(x-6)+' 41 q6 -7 12 0"/>').join(''):'<ellipse cx="'+xs[0]+'" cy="40" rx="5.5" ry="7" fill="#392748" stroke="none"/><ellipse cx="'+(xs[0]-1.5)+'" cy="37" rx="2" ry="2" fill="#f9efff" stroke="none"/>';
-      if(expression==='satisfied'&&view!=='front')eyeArt='<ellipse cx="'+xs[0]+'" cy="42" rx="5.5" ry="3.5" fill="#392748" stroke="none"/><circle cx="'+(xs[0]-1)+'" cy="41" r="1.2" fill="#f9efff" stroke="none"/><path d="M'+(xs[0]-6)+' 39 q6 2 12 0" stroke-width="2"/>';
+      if(expression==='evil')eyeArt=xs.map((x,i)=>'<ellipse cx="'+x+'" cy="42" rx="5.5" ry="3.5" fill="#392748" stroke="none"/><circle cx="'+(x-1)+'" cy="41" r="1.2" fill="#f9efff" stroke="none"/><path d="M'+(x-6)+' '+(view==='front'&&i===1?40:38)+' l12 '+(view==='front'&&i===1?-2:2)+'" stroke-width="2"/>').join('');
+      if(expression==='satisfied'&&view!=='front')eyeArt='<ellipse cx="'+xs[0]+'" cy="40" rx="5.5" ry="5.5" fill="#392748" stroke="none"/><circle cx="'+(xs[0]-1.5)+'" cy="38" r="2" fill="#f9efff" stroke="none"/>';
       return eyeArt;
     }
     function faceMouth(view,expression){
@@ -24313,11 +24315,12 @@ function installNovaWelcome(host) {
       if(expression==='angry')mouth='<path d="M'+(mx-5)+' 65 q5 -5 10 0"/>';
       if(expression==='focused')mouth='<path d="M'+(mx-4)+' 63 q4 -1 8 0"/>';
       if(expression==='satisfied')mouth=view==='front'?'<path d="M'+(mx-5)+' 61 q5 7 10 0"/>':'<path d="M'+(mx+(view==='left'?-7:7))+' 60 q'+(view==='left'?3:-3)+' 3 '+(view==='left'?6:-6)+' 2" stroke-width="2.3"/>';
-      if(expression==='satisfied'&&view!=='front')mouth='<path d="M'+(mx+(view==='left'?-7:7))+' 59 q'+(view==='left'?3:-3)+' 6 '+(view==='left'?7:-7)+' 3" stroke-width="2.3"/>';
+      if(expression==='evil')mouth=view==='front'?'<path d="M47 61 Q54 69 61 58" stroke-width="2.3"/>':'<path d="M'+(mx+(view==='left'?-7:7))+' 59 q'+(view==='left'?3:-3)+' 6 '+(view==='left'?7:-7)+' 3" stroke-width="2.3"/>';
+      if(expression==='satisfied'&&view!=='front')mouth='<path d="M'+(mx+(view==='left'?-6:6))+' 59 q'+(view==='left'?4:-4)+' 7 '+(view==='left'?8:-8)+' 1" stroke-width="2.3"/>';
       return mouth;
     }
     function faceDrawing(view,expression,parts={}){
-      const recipe=faceRecipes[expression]||faceRecipes.friendly;
+      const recipe=expression==='evil'?{eyes:'evil',mouth:'evil'}:faceRecipes[expression]||faceRecipes.friendly;
       const eyeArt=faceEyes(view,parts.eyes||recipe.eyes),mouth=faceMouth(view,parts.mouth||recipe.mouth),mx=view==='front'?53:view==='left'?20:86;
       return '<svg viewBox="0 0 106 101" data-face="'+expression+'" aria-hidden="true"><g fill="none" stroke="#51315c" stroke-width="2.5" stroke-linecap="round"><g class="nova-eye-drawing">'+eyeArt+'</g><g class="nova-mouth-drawing">'+mouth+'</g><ellipse class="nova-bite-mouth" cx="'+mx+'" cy="62" rx="5" ry="4" fill="#51315c" stroke="none"/></g><ellipse cx="'+(view==='right'?65:view==='left'?37:28)+'" cy="58" rx="8" ry="3.5" fill="#ec94c6" opacity=".65"/></svg>';
     }
