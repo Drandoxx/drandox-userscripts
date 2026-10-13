@@ -24387,6 +24387,7 @@ function installNovaCutEffects(host, avatar) {
     const nova=document.getElementById('sn-ai-nova-companion');if(!nova)return;
     nova.style.zIndex='100';delete nova.dataset.motion;const root=nova.shadowRoot;
     root.querySelector('.nova-cut-grumpy')?.remove();root.querySelector('.nova-mouth-drawing')?.style.removeProperty('visibility');
+    const figure=root.querySelector('.nova');if(figure)figure.dataset.expression='friendly';
     for(const selector of ['.arm.left','.arm.right','.nova-eye-drawing','.nova']){const e=root.querySelector(selector);e?.style.removeProperty('transform');e?.style.removeProperty('translate');e?.style.removeProperty('animation');e?.style.removeProperty('visibility');e?.style.removeProperty('z-index');e?.style.removeProperty('will-change');}
   };
   const close=()=>{cancelAnimationFrame(visibilityFrame);visibilityFrame=0;if(current){if(!current.complete){current.target.style.maskImage=current.previousMask;current.target.style.webkitMaskImage=current.previousWebkitMask;}current.animations.forEach(a=>a.cancel());}host.novaCutHold?.(false);++token;cancelAnimationFrame(frame);current?.panel.remove();current?.saber.remove();current?.close.remove();current=null;resetNova();status.textContent='';};
@@ -24511,6 +24512,7 @@ function installNovaCutEffects(host, avatar) {
     };
     const finish=async()=>{
       if(!idleOnly){
+      root.querySelector('.nova-cut-grumpy')?.remove();root.querySelector('.nova-mouth-drawing')?.style.removeProperty('visibility');root.querySelector('.nova').dataset.expression='happy';
       savedCuts.set(key,{d:door,w,h});current.complete=true;nativeMask(true);hole.setAttribute('opacity','1');flap.setAttribute('opacity',wasCut?'0':'1');
       track.style.strokeDashoffset='0';edge.style.strokeDashoffset='0';core.style.strokeDashoffset='0';saber.style.opacity=wasCut?'0':'1';
       for(const path of gluedPaths)path.style.strokeDashoffset='0';
@@ -24632,7 +24634,10 @@ function installNovaCutEffects(host, avatar) {
     await new Promise(resolve=>setTimeout(resolve,300));if(mine!==token)return;
     const ignitionStart=performance.now();
     await new Promise(resolve=>{const ignite=now=>{if(mine!==token){resolve();return;}const t=Math.min(1,(now-ignitionStart)/450);grip(drawX,drawY,28,40*t);if(t<1)frame=requestAnimationFrame(ignite);else resolve();};frame=requestAnimationFrame(ignite);});if(mine!==token)return;}
-    grumpy.remove();mouth?.style.removeProperty('visibility');
+    // Concentrating brows and a small determined mouth remain for the full cut.
+    // Keep the eye drawing separate so gaze can still follow the contact point.
+    grumpy.innerHTML='<path d="M29 29 Q34 27 40 29 M66 29 Q72 27 77 29 M49 65 Q53 64 57 65"/>';
+    grumpy.dataset.expression='focused';
     const first=track.getPointAtLength(0),tx=box.left+first.x,ty=box.top+first.y;
     const cx=bodyBox.left+bodyBox.width/2,cy=bodyBox.top+bodyBox.height*.63,dx=tx-cx,dy=ty-cy,norm=Math.max(1,Math.hypot(dx,dy));
     const destination={x:tx-dx/norm*59,y:ty-dy/norm*59,angle:Math.atan2(dy,dx)*180/Math.PI+90};
