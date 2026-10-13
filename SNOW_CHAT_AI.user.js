@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.589
+// @version      2.36.590
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -82,6 +82,7 @@
 ,{"version":"2.36.587","fixes":true,"changes":[{"key":"nova-morning-coffee","meaningful":true,"text":"Coffee sipping follows the actual cup rim and handle with continuous two-hand movement."},{"key":"nova-profile-face","meaningful":true,"text":"Cute profile faces have one clearly defined, expressive eye and one small smile."}]}
 ,{"version":"2.36.588","fixes":true,"changes":[{"key":"nova-morning-coffee","meaningful":true,"text":"Nova lifts an upright cup with a thinning coffee surface, then changes back in a small magic whirlwind without tossing the cup."}]}
 ,{"version":"2.36.589","fixes":true,"changes":[{"key":"nova-profile-face","meaningful":true,"text":"Satisfied side faces use a clear eye and profile smile. Eye and mouth variants can now be combined independently."}]}
+,{"version":"2.36.590","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":true,"text":"Nova hides her message before cutting an overlapping notification. Automatic chat acceptance notices use a translucent background."},{"key":"nova-profile-face","meaningful":true,"text":"Satisfied side expressions have a relaxed half-closed eye and lifted smile."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -22289,6 +22290,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       box.setAttribute('role', 'status');
       box.style.cssText = 'position:relative;flex:0 0 auto;width:100%;box-sizing:border-box;padding:20px 48px 20px 20px;border:1px solid var(--sn-theme-9de2f5,#9de2f5);border-radius:10px;background:var(--sn-theme-251f31,#251f31);color:var(--sn-theme-e6edf9,#e6edf9);font:17px/1.5 system-ui;box-shadow:0 5px 24px #0005;cursor:pointer';
       box.textContent = `New chat has been automatically accepted${ims ? ' - ' + ims : ''}`;
+      box.style.background='color-mix(in srgb,var(--sn-theme-251f31,#251f31) 68%,transparent)';
       const close = document.createElement('button');
       close.type = 'button'; close.textContent = '×'; close.setAttribute('aria-label', 'Dismiss automatic chat acceptance notification');
       close.style.cssText = 'position:absolute;right:10px;top:10px;background:transparent;border:0;color:inherit;font:22px system-ui;cursor:pointer';
@@ -24295,6 +24297,7 @@ function installNovaWelcome(host) {
       if(view!=='front'&&expression==='happy')eyeArt='<ellipse cx="'+xs[0]+'" cy="39" rx="5.5" ry="8" fill="#392748" stroke="none"/><ellipse cx="'+(xs[0]-1.5)+'" cy="36" rx="2" ry="2" fill="#f9efff" stroke="none"/>';
       if(expression==='angry'||expression==='focused')eyeArt+=xs.map((x,i)=>'<path d="M'+(x-7)+' '+(expression==='angry'?(i===0?27:31):30)+' Q'+x+' '+(expression==='angry'?29:27)+' '+(x+7)+' '+(expression==='angry'?(i===0?31:27):30)+'"/>').join('');
       if(expression==='satisfied')eyeArt=view==='front'?xs.map(x=>'<path d="M'+(x-6)+' 41 q6 -7 12 0"/>').join(''):'<ellipse cx="'+xs[0]+'" cy="40" rx="5.5" ry="7" fill="#392748" stroke="none"/><ellipse cx="'+(xs[0]-1.5)+'" cy="37" rx="2" ry="2" fill="#f9efff" stroke="none"/>';
+      if(expression==='satisfied'&&view!=='front')eyeArt='<ellipse cx="'+xs[0]+'" cy="42" rx="5.5" ry="3.5" fill="#392748" stroke="none"/><circle cx="'+(xs[0]-1)+'" cy="41" r="1.2" fill="#f9efff" stroke="none"/><path d="M'+(xs[0]-6)+' 39 q6 2 12 0" stroke-width="2"/>';
       return eyeArt;
     }
     function faceMouth(view,expression){
@@ -24310,6 +24313,7 @@ function installNovaWelcome(host) {
       if(expression==='angry')mouth='<path d="M'+(mx-5)+' 65 q5 -5 10 0"/>';
       if(expression==='focused')mouth='<path d="M'+(mx-4)+' 63 q4 -1 8 0"/>';
       if(expression==='satisfied')mouth=view==='front'?'<path d="M'+(mx-5)+' 61 q5 7 10 0"/>':'<path d="M'+(mx+(view==='left'?-7:7))+' 60 q'+(view==='left'?3:-3)+' 3 '+(view==='left'?6:-6)+' 2" stroke-width="2.3"/>';
+      if(expression==='satisfied'&&view!=='front')mouth='<path d="M'+(mx+(view==='left'?-7:7))+' 59 q'+(view==='left'?3:-3)+' 6 '+(view==='left'?7:-7)+' 3" stroke-width="2.3"/>';
       return mouth;
     }
     function faceDrawing(view,expression,parts={}){
@@ -24376,8 +24380,8 @@ function installNovaWelcome(host) {
     };
     window.addEventListener('pagehide',()=>{rigObserver.disconnect();++restToken;restAnimations.forEach(animation=>animation.cancel());restOverlays.forEach(element=>element.remove());},{once:true});
   })();
-  host.novaCutCanStart=()=>!ticketBusy()&&!message&&!dailyStartPending&&!transitionTimer;
-  host.novaCutHold=active=>{host.novaCutActive=active;if(active)clearIdle();else{armIdle();schedule();}};
+  host.novaCutCanStart=()=>!ticketBusy()&&!dailyStartPending&&!transitionTimer;
+  host.novaCutHold=active=>{const wasActive=host.novaCutActive;host.novaCutActive=active;if(active){clearIdle();card.hidden=true;tail.hidden=true;clearTimeout(typingTimer);typingTimer=0;}else{if(wasActive&&message&&typingQueue.length)typeNext();armIdle();schedule();}};
   installNovaCutEffects(host,avatar);
   const observer=new MutationObserver(schedule);observer.observe(host,{subtree:true,attributes:true,attributeFilter:['class','hidden','aria-expanded','style']});
   window.addEventListener('resize',schedule);window.addEventListener('pointerup',schedule);
