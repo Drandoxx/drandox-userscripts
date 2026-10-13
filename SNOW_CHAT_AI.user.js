@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.588
+// @version      2.36.589
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -81,6 +81,7 @@
 ,{"version":"2.36.586","fixes":false,"changes":[{"key":"nova-morning-coffee","meaningful":true,"text":"NOVA brings her cup to her mouth, tips it with both hands and smiles with cute eyes while drinking."}]}
 ,{"version":"2.36.587","fixes":true,"changes":[{"key":"nova-morning-coffee","meaningful":true,"text":"Coffee sipping follows the actual cup rim and handle with continuous two-hand movement."},{"key":"nova-profile-face","meaningful":true,"text":"Cute profile faces have one clearly defined, expressive eye and one small smile."}]}
 ,{"version":"2.36.588","fixes":true,"changes":[{"key":"nova-morning-coffee","meaningful":true,"text":"Nova lifts an upright cup with a thinning coffee surface, then changes back in a small magic whirlwind without tossing the cup."}]}
+,{"version":"2.36.589","fixes":true,"changes":[{"key":"nova-profile-face","meaningful":true,"text":"Satisfied side faces use a clear eye and profile smile. Eye and mouth variants can now be combined independently."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -24286,14 +24287,18 @@ function installNovaWelcome(host) {
     });coffeePhaseObserver.observe(nova,{attributes:true,attributeFilter:['data-daily']});
     const viewControl={value:'auto'},faceControl={value:'auto'};
     const drawings=new Map();
-    function faceDrawing(view,expression){
+    const faceRecipes={friendly:{eyes:'friendly',mouth:'friendly'},happy:{eyes:'happy',mouth:'happy'},sleepy:{eyes:'sleepy',mouth:'friendly'},sleeping:{eyes:'sleeping',mouth:'sleeping'},surprised:{eyes:'surprised',mouth:'surprised'},sad:{eyes:'friendly',mouth:'sad'},angry:{eyes:'angry',mouth:'angry'},focused:{eyes:'focused',mouth:'focused'},satisfied:{eyes:'satisfied',mouth:'satisfied'}};
+    function faceEyes(view,expression){
       const xs=view==='front'?[35,71]:view==='left'?[23]:[83];
       const eyes=xs.map(x=>expression==='sleeping'?'<path d="M'+(x-6)+' 39 q6 5 12 0"/>':expression==='happy'?'<path d="M'+(x-6)+' 41 q6 -9 12 0"/>':expression==='sleepy'?'<path d="M'+(x-6)+' 39 h12"/><ellipse cx="'+x+'" cy="43" rx="4" ry="3" fill="#392748"/>':'<ellipse cx="'+x+'" cy="40" rx="5" ry="'+(expression==='surprised'?10:8)+'" fill="#392748"/><circle cx="'+(x-1)+'" cy="37" r="2" fill="#f9efff" stroke="none"/>').join('');
-      const mx=view==='front'?53:view==='left'?20:86;
       let eyeArt=eyes;
       if(view!=='front'&&expression==='happy')eyeArt='<ellipse cx="'+xs[0]+'" cy="39" rx="5.5" ry="8" fill="#392748" stroke="none"/><ellipse cx="'+(xs[0]-1.5)+'" cy="36" rx="2" ry="2" fill="#f9efff" stroke="none"/>';
       if(expression==='angry'||expression==='focused')eyeArt+=xs.map((x,i)=>'<path d="M'+(x-7)+' '+(expression==='angry'?(i===0?27:31):30)+' Q'+x+' '+(expression==='angry'?29:27)+' '+(x+7)+' '+(expression==='angry'?(i===0?31:27):30)+'"/>').join('');
-      if(expression==='satisfied')eyeArt=xs.map(x=>'<path d="M'+(x-6)+' 41 q6 -7 12 0"/>').join('');
+      if(expression==='satisfied')eyeArt=view==='front'?xs.map(x=>'<path d="M'+(x-6)+' 41 q6 -7 12 0"/>').join(''):'<ellipse cx="'+xs[0]+'" cy="40" rx="5.5" ry="7" fill="#392748" stroke="none"/><ellipse cx="'+(xs[0]-1.5)+'" cy="37" rx="2" ry="2" fill="#f9efff" stroke="none"/>';
+      return eyeArt;
+    }
+    function faceMouth(view,expression){
+      const mx=view==='front'?53:view==='left'?20:86;
       let mouth;
       if(view!=='front'){
         // A short profile mark follows the cheek contour, not a frontal U.
@@ -24304,7 +24309,12 @@ function installNovaWelcome(host) {
       if(view!=='front'&&expression==='happy'){const direction=view==='left'?-1:1,edge=mx+direction*7;mouth='<path d="M'+edge+' 60 q'+(-direction*3)+' 5 '+(-direction*7)+' 2" stroke-width="2.3"/>';}
       if(expression==='angry')mouth='<path d="M'+(mx-5)+' 65 q5 -5 10 0"/>';
       if(expression==='focused')mouth='<path d="M'+(mx-4)+' 63 q4 -1 8 0"/>';
-      if(expression==='satisfied')mouth='<path d="M'+(mx-5)+' 61 q5 7 10 0"/>';
+      if(expression==='satisfied')mouth=view==='front'?'<path d="M'+(mx-5)+' 61 q5 7 10 0"/>':'<path d="M'+(mx+(view==='left'?-7:7))+' 60 q'+(view==='left'?3:-3)+' 3 '+(view==='left'?6:-6)+' 2" stroke-width="2.3"/>';
+      return mouth;
+    }
+    function faceDrawing(view,expression,parts={}){
+      const recipe=faceRecipes[expression]||faceRecipes.friendly;
+      const eyeArt=faceEyes(view,parts.eyes||recipe.eyes),mouth=faceMouth(view,parts.mouth||recipe.mouth),mx=view==='front'?53:view==='left'?20:86;
       return '<svg viewBox="0 0 106 101" data-face="'+expression+'" aria-hidden="true"><g fill="none" stroke="#51315c" stroke-width="2.5" stroke-linecap="round"><g class="nova-eye-drawing">'+eyeArt+'</g><g class="nova-mouth-drawing">'+mouth+'</g><ellipse class="nova-bite-mouth" cx="'+mx+'" cy="62" rx="5" ry="4" fill="#51315c" stroke="none"/></g><ellipse cx="'+(view==='right'?65:view==='left'?37:28)+'" cy="58" rx="8" ry="3.5" fill="#ec94c6" opacity=".65"/></svg>';
     }
     // Front and both side drawings exist for every expression and hand variant.
@@ -24316,7 +24326,7 @@ function installNovaWelcome(host) {
       const inferredFace=nova.dataset.idle==='sleep'?'sleeping':nova.dataset.daily==='sip'?'happy':['enter','yawn'].includes(nova.dataset.daily)?'sleepy':root.querySelector('.nova').dataset.expression||'friendly';
       const face=faceControl.value==='auto'?inferredFace:faceControl.value;
       if(nova.dataset.rigView!==view)nova.dataset.rigView=view;
-      const faceKey=view+':'+face;if(faceKey!==lastFace){root.querySelector('.eyes').innerHTML=drawings.get(faceKey)||drawings.get(view+':friendly');lastFace=faceKey;}
+      const faceKey=view+':'+face+':'+(nova.dataset.eyeVariant||'')+':'+(nova.dataset.mouthVariant||'');if(faceKey!==lastFace){root.querySelector('.eyes').innerHTML=faceDrawing(view,face,{eyes:nova.dataset.eyeVariant,mouth:nova.dataset.mouthVariant});lastFace=faceKey;}
       const handKey=view+':'+Boolean(nova.dataset.daily);if(handKey!==lastHands){
         for(const side of ['left','right']){const hand=root.querySelector('.arm.'+side+' .hand');let art=hand.querySelector('.hand-drawing');if(!art){art=document.createElement('span');art.className='hand-drawing';hand.prepend(art);}art.innerHTML='<svg viewBox="0 0 20 24" aria-hidden="true"><ellipse cx="10" cy="12" rx="'+(view==='front'?9:6.5)+'" ry="10" fill="#d6beff"/></svg>';}
         lastHands=handKey;
@@ -24324,6 +24334,7 @@ function installNovaWelcome(host) {
     }
     const rigObserver=new MutationObserver(syncRig);rigObserver.observe(nova,{subtree:true,attributes:true,attributeFilter:['data-motion','data-daily','data-idle','data-expression','data-phase']});rigObserver.observe(root,{subtree:true,attributes:true,attributeFilter:['data-expression']});
     host.novaRigPreview=(view,face)=>{viewControl.value=view;faceControl.value=face;syncRig();};
+    host.novaFaceParts=(eyes,mouth)=>{if(eyes&&eyes!=='auto')nova.dataset.eyeVariant=eyes;else delete nova.dataset.eyeVariant;if(mouth&&mouth!=='auto')nova.dataset.mouthVariant=mouth;else delete nova.dataset.mouthVariant;syncRig();};
     syncRig();
     // FLIP-style pose blending: snapshot the visible pose, then interpolate to
     // the real destination geometry. Interrupted blends start where they are.
