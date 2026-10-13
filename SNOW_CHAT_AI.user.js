@@ -24280,8 +24280,8 @@ function installNovaWelcome(host) {
         const spin=body.animate([{transform:'scale(.72) rotateY(0deg)'},{transform:'scale(.72) rotateY(1080deg)'}],{duration:1500,easing:'ease-in-out'});
         whirl.animate([{opacity:0,transform:'rotate(0deg) scale(.6)'},{opacity:1,offset:.25},{opacity:1,offset:.65},{opacity:0,transform:'rotate(720deg) scale(1.15)'}],{duration:1500});
         const change=setTimeout(()=>{cup.style.setProperty('visibility','hidden','important');root.querySelector('.headwear').style.visibility='hidden';},750);
-        spin.onfinish=()=>{clearTimeout(change);coffeeCleanup();root.querySelector('.headwear').style.visibility='';};
-      }else if(!['sip','yawn','enter'].includes(nova.dataset.daily)){cancelAnimationFrame(coffeeFrame);coffeeCleanup();}
+        spin.onfinish=()=>{clearTimeout(change);coffeeCleanup();if(nova.dataset.daily==='magic'){cup.style.visibility='hidden';root.querySelector('.headwear').style.visibility='hidden';}};
+      }else if(!['sip','yawn','enter'].includes(nova.dataset.daily)){cancelAnimationFrame(coffeeFrame);coffeeCleanup();cup.style.visibility='';root.querySelector('.headwear').style.visibility='';root.querySelector('.body').getAnimations().forEach(animation=>animation.cancel());whirl.getAnimations().forEach(animation=>animation.cancel());}
     });coffeePhaseObserver.observe(nova,{attributes:true,attributeFilter:['data-daily']});
     const viewControl={value:'auto'},faceControl={value:'auto'};
     const drawings=new Map();
