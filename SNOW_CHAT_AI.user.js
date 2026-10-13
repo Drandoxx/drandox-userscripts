@@ -24608,7 +24608,7 @@ function installNovaCutEffects(host, avatar) {
   };
   const redirect=oldTarget=>{
     const next=[document.getElementById('sn-ai-chats-today')?.shadowRoot?.querySelector('.panel'),...(host.novaCutTargets?.()||[]).filter(e=>e.matches?.(selector))].filter(e=>e!==oldTarget&&eligible(e)&&!presented.has(e)).sort((a,b)=>a.getBoundingClientRect().width*a.getBoundingClientRect().height-b.getBoundingClientRect().width*b.getBoundingClientRect().height)[0];
-    const carry=current&&{pose:current.pose,colour:current.colour};
+    const carry=current?.pose?{pose:current.pose,colour:current.colour}:null;
     if(next){presented.add(next);open(next,carry).catch(()=>close());}
     else{retainCut();current.panel=document.createElement('div');close();}
   };
