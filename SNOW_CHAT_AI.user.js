@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.601
+// @version      2.36.602
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -94,6 +94,7 @@
 ,{"version":"2.36.599","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"The portal is slimmer and uses a smooth glow without the animated dashed border."}]}
 ,{"version":"2.36.600","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"The portal contains rotating purple spiral bands and a glowing center."}]}
 ,{"version":"2.36.601","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"Solid buttons emerge and return sequentially without fading, with softly pulsing purple borders."}]}
+,{"version":"2.36.602","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"The slower portal vortex has irregular drifting wisps, layered depth and a recessed glowing center."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -23973,10 +23974,12 @@ function installNovaWelcome(host) {
     .nova-menu-portal i{position:absolute;left:var(--spark-x);top:var(--spark-y);width:3px;height:3px;border-radius:50%;background:#eed2ff;box-shadow:0 0 5px #bf75ff;animation:nova-portal-spark 1.4s linear infinite;animation-delay:var(--spark-delay)}
     .nova-portal-interior{position:absolute;inset:7px 5px;border-radius:48%;overflow:hidden;z-index:1;background:radial-gradient(ellipse,#dfb3ff 0%,#a044f7 5%,#441777 17%,#10091e 48%,#080611 85%)}
     .nova-portal-interior svg{position:absolute;inset:0;width:100%;height:100%;overflow:hidden}
-    .nova-portal-interior .vortex-turn{transform-origin:50px 50px;animation:nova-vortex-turn 4s linear infinite}
-    .nova-portal-interior .vortex-turn.reverse{animation-direction:reverse;animation-duration:6s;opacity:.45}
+    .nova-portal-interior{background:radial-gradient(ellipse at 43% 47%,#bc77ec 0%,#542082 7%,#120a25 22%,#080611 54%,#29133e 83%);box-shadow:inset 8px 0 15px #000b,inset -5px 0 12px #b36cea33}
+    .nova-portal-interior .vortex-turn{transform-origin:47px 49px;animation:nova-vortex-turn var(--turn-time,11s) linear infinite;animation-delay:var(--turn-delay,0s)}
+    .nova-portal-interior .vortex-drift{transform-origin:47px 49px;animation:nova-vortex-drift var(--drift-time,7s) ease-in-out infinite alternate}
     @keyframes nova-vortex-turn{to{transform:rotate(360deg)}}
-    @media(prefers-reduced-motion:reduce){.nova-portal-interior .vortex-turn,.nova-menu-portal i{animation:none}}
+    @keyframes nova-vortex-drift{0%{transform:translate(-2px,1px) skewX(-4deg) scale(.96,1.04)}37%{transform:translate(2px,-3px) skewX(3deg) scale(1.05,.97)}71%{transform:translate(-1px,2px) skewY(-3deg) scale(.98,1.02)}100%{transform:translate(3px,1px) skewX(-2deg) scale(1.03,.95)}}
+    @media(prefers-reduced-motion:reduce){.nova-portal-interior .vortex-turn,.nova-portal-interior .vortex-drift,.nova-menu-portal i{animation:none}}
     @keyframes nova-portal-spark{from{opacity:0;transform:translate(0,0) scale(.5)}20%{opacity:1}to{opacity:0;transform:translate(var(--spark-dx),-22px) scale(.1)}}
     @keyframes nova-portal-open{from{transform:scale(.08,.03) skewY(-8deg);opacity:0}to{transform:scale(1) skewY(-8deg);opacity:1}}
     @keyframes nova-portal-pulse{50%{filter:brightness(1.22);border-color:#d2b4fa}}
@@ -23990,7 +23993,14 @@ function installNovaWelcome(host) {
   const portalMenu=document.createElement('nav'),menuPortal=document.createElement('span');portalMenu.className='nova-portal-menu';portalMenu.setAttribute('aria-label','Nova actions');menuPortal.className='nova-menu-portal';menuPortal.setAttribute('aria-hidden','true');portalMenu.hidden=menuPortal.hidden=true;avatarRoot.append(menuPortal,portalMenu);
   let portalFrame=0,portalClosing=false;
   for(let index=0;index<30;index++){const spark=document.createElement('i'),angle=index/30*Math.PI*2;spark.style.cssText=`--spark-x:${50+Math.cos(angle)*49}%;--spark-y:${50+Math.sin(angle)*49}%;--spark-dx:${Math.cos(angle)*24}px;--spark-delay:${-index*.13}s`;menuPortal.append(spark);}
-  const portalInterior=document.createElement('span');portalInterior.className='nova-portal-interior';const spiralBands=Array.from({length:5},(_,index)=>`<path d="M50 50 C${64+index*2} 32,92 42,94 68 C96 90,65 104,31 91" transform="rotate(${index*72} 50 50)" fill="none" stroke="${index%2?'#ae50f0':'#6330b6'}" stroke-width="${index%2?2:5}" opacity=".7"/>`).join('');portalInterior.innerHTML=`<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><g class="vortex-turn">${spiralBands}</g><g class="vortex-turn reverse">${spiralBands}</g><circle cx="50" cy="50" r="4" fill="#efd6ff"/></svg>`;menuPortal.prepend(portalInterior);
+  const portalInterior=document.createElement('span');portalInterior.className='nova-portal-interior';
+  const vortexRandom=(min,max)=>min+Math.random()*(max-min);
+  const depthLayers=Array.from({length:4},(_,depth)=>{
+    const scale=.36+depth*.21,opacity=.2+depth*.14;
+    const wisps=Array.from({length:3+depth},()=>`<path d="M${vortexRandom(42,58)} ${vortexRandom(40,58)} C${vortexRandom(55,80)} ${vortexRandom(8,36)},${vortexRandom(78,110)} ${vortexRandom(35,65)},${vortexRandom(76,104)} ${vortexRandom(66,93)} Q${vortexRandom(42,72)} ${vortexRandom(90,112)} ${vortexRandom(12,40)} ${vortexRandom(70,98)}" transform="rotate(${vortexRandom(0,360)} 47 49)" fill="none" stroke="${depth>1?'#a45bd9':'#633491'}" stroke-width="${vortexRandom(.7,2.8)}" stroke-linecap="round"/>`).join('');
+    return `<g transform="translate(${47*(1-scale)} ${49*(1-scale)}) scale(${scale})" opacity="${opacity}"><g class="vortex-drift" style="--drift-time:${vortexRandom(6,10)}s"><g class="vortex-turn" style="--turn-time:${vortexRandom(9,17)}s;--turn-delay:${-vortexRandom(0,15)}s;animation-direction:${depth%2?'reverse':'normal'}">${wisps}</g></g></g>`;
+  }).join('');
+  portalInterior.innerHTML=`<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><defs><radialGradient id="nova-vortex-depth"><stop stop-color="#e8baff" stop-opacity=".85"/><stop offset=".3" stop-color="#923cce" stop-opacity=".4"/><stop offset="1" stop-color="#160a29" stop-opacity="0"/></radialGradient></defs><ellipse cx="43" cy="47" rx="13" ry="11" fill="url(#nova-vortex-depth)"/>${depthLayers}<ellipse cx="43" cy="47" rx="1.8" ry="2.5" fill="#ddb1f5" opacity=".75"/></svg>`;menuPortal.prepend(portalInterior);
   const closePortalMenu=async()=>{
     if(portalMenu.hidden||portalClosing)return;
     portalClosing=true;portalMenu.style.pointerEvents='none';
