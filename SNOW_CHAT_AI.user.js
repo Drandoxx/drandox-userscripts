@@ -24417,6 +24417,10 @@ function installNovaWelcome(host) {
   host.novaCutCanStart=()=>!ticketBusy()&&!dailyStartPending&&!transitionTimer;
   host.novaCutHold=active=>{const wasActive=host.novaCutActive;host.novaCutActive=active;if(active){clearIdle();card.hidden=true;tail.hidden=true;clearTimeout(typingTimer);typingTimer=0;}else{if(wasActive&&message&&typingQueue.length)typeNext();armIdle();schedule();}};
   installNovaCutEffects(host,avatar);
+  // The character's scaled transform would make fixed menu coordinates local
+  // to her body. A sibling shadow layer retains theme + shared z-order while
+  // keeping portal coordinates in viewport pixels.
+  const portalLayer=document.createElement('div');portalLayer.dataset.novaPortalLayer='true';portalLayer.style.cssText='position:fixed;left:0;top:0;width:0;height:0;overflow:visible;pointer-events:none;z-index:2147483647';const portalRoot=portalLayer.attachShadow({mode:'open'});portalRoot.append(portalStyle,menuPortal,portalMenu);(avatar.parentElement||document.body).append(portalLayer);
   const observer=new MutationObserver(schedule);observer.observe(host,{subtree:true,attributes:true,attributeFilter:['class','hidden','aria-expanded','style']});
   window.addEventListener('resize',schedule);window.addEventListener('pointerup',schedule);
 window.addEventListener('pagehide',()=>{clearTimeout(messageTimer);clearTimeout(transitionTimer);messageQueue.length=0;observer.disconnect();cancelAnimationFrame(frame);clearTimeout(entranceTimer);clearTimeout(readyTimer);clearTimeout(pageReadyTimer);clearTimeout(motionTimer);clearTimeout(dailyTimer);clearTimeout(updateWaitTimer);clearIdle();stopTyping();card.remove();tail.remove();avatar.remove();style.remove();window.removeEventListener('resize',schedule);window.removeEventListener('pointerup',schedule);},{once:true});
