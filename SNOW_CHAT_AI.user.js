@@ -24270,6 +24270,7 @@ function installNovaWelcome(host) {
       }
     }
     const rigObserver=new MutationObserver(syncRig);rigObserver.observe(nova,{subtree:true,attributes:true,attributeFilter:['data-motion','data-daily','data-idle','data-expression','data-phase']});rigObserver.observe(root,{subtree:true,attributes:true,attributeFilter:['data-expression']});
+    host.novaRigPreview=(view,face)=>{viewControl.value=view;faceControl.value=face;syncRig();};
     syncRig();
     // FLIP-style pose blending: snapshot the visible pose, then interpolate to
     // the real destination geometry. Interrupted blends start where they are.
