@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.577
+// @version      2.36.578
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -70,6 +70,7 @@
 ,{"version":"2.36.575","fixes":true,"changes":[]}
 ,{"version":"2.36.576","fixes":true,"changes":[]}
 ,{"version":"2.36.577","fixes":true,"changes":[]}
+,{"version":"2.36.578","fixes":true,"changes":[{"key":"nova-popup-cut","meaningful":false,"text":"Immediate reusable cut visibility, translucent notifications and connected random sword dances."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -1488,7 +1489,7 @@ const snAIChatDisplayNames=(()=>{
       outline:2px solid var(--sn-theme-ac94ec);outline-offset:2px;
     }
     .sn-toast {
-      background:var(--sn-theme-251f31)!important;color:var(--sn-theme-e6edf9)!important;
+      background:color-mix(in srgb,var(--sn-theme-251f31) 72%,transparent)!important;color:var(--sn-theme-e6edf9)!important;
       border-color:var(--sn-theme-423750)!important;
     }
     .sn-toast.is-unread { background:color-mix(in srgb,var(--sn-theme-ac94ec) 18%,var(--sn-theme-251f31))!important; }
@@ -24349,7 +24350,7 @@ function installNovaCutEffects(host, avatar) {
     close();host.novaCutHold?.(true);
     const openingToken=token;
     // Finish the shared stand transition before measuring the visible character.
-    await new Promise(resolve=>setTimeout(resolve,950));if(openingToken!==token)return;
+    if(!savedCuts.has(target))await new Promise(resolve=>setTimeout(resolve,950));if(openingToken!==token)return;
     if(!target.isConnected||!target.getBoundingClientRect().width){host.novaCutHold?.(false);return;}
     const mine=token,panel=document.createElement('div');panel.className='cut-demo-panel';panel.dataset.novaCutOverlay='true';
     const box=target.getBoundingClientRect(),w=box.width,h=box.height,key=target;
@@ -24378,7 +24379,7 @@ function installNovaCutEffects(host, avatar) {
     const flap=svgNode('path',{d:door+' Z',fill:'#241c33','fill-opacity':'.64',stroke:'none',opacity:0});svg.append(heat,flap);panel.append(svg);
     svg.querySelector('g[mask]').remove();
     const slot=svg.querySelector('.cut-slot'),hole=svg.querySelector('.cut-hole'),length=track.getTotalLength();
-    for(const p of [track,edge,core,slot]){p.style.strokeDasharray=length;p.style.strokeDashoffset=length;}
+    for(const p of [track,edge,core,slot]){p.style.strokeDasharray=length;p.style.strokeDashoffset=wasCut?0:length;}
     const saber=svgNode('svg',{class:'cut-demo-saber'});saber.innerHTML='<defs><filter id="nova-blade-glow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="3"/></filter></defs><g class="blade"><path d="M0 0V52" stroke="#ac8aff" stroke-width="12" filter="url(#nova-blade-glow)"/><path d="M0 0V52" stroke="#fff5ff" stroke-width="4" stroke-linecap="round"/><rect x="-5" y="51" width="10" height="20" rx="3" fill="#5e596c" stroke="#d2d0df"/><ellipse cx="0" cy="65" rx="10" ry="12" fill="#baa0ec"/></g><g class="sparks"></g>';document.body.append(saber);
     const dismiss=document.createElement('span');current={panel,saber,close:dismiss,target,previousMask,previousWebkitMask,complete:false,animations:[]};
     // Track only this panel, not the whole page: remove effects before the next
@@ -24472,8 +24473,10 @@ function installNovaCutEffects(host, avatar) {
       await new Promise(resolve=>setTimeout(resolve,350));if(mine!==token)return;
       const igniteStart=performance.now();
       await new Promise(resolve=>{const ignite=now=>{if(mine!==token){resolve();return;}const t=Math.min(1,(now-igniteStart)/450);grip(holdX,holdY,28,cuteBlade*t);if(t<1)frame=requestAnimationFrame(ignite);else resolve();};frame=requestAnimationFrame(ignite);});if(mine!==token)return;
-      const flourishKinds=['spin','figure-eight','diagonal waves','side-to-side waves','quick salute'];
+      const flourishKinds=['spin','figure-eight','diagonal waves','side-to-side waves','quick salute','sword dance'];
       const flourishKind=flourishKinds[Math.floor(Math.random()*flourishKinds.length)];
+      const danceTurns=(1+Math.floor(Math.random()*3)*.5)*360,danceReturn=(1+Math.floor(Math.random()*3)*.5)*360,danceSign=Math.random()<.5?-1:1;
+      let lastFlourishAngle=28;
       status.textContent=`A quick ${flourishKind} flourish, then NOVA puts it away.`;
       root.querySelector('.nova').style.setProperty('animation','none','important');
       const spinStart=performance.now();
@@ -24484,13 +24487,16 @@ function installNovaCutEffects(host, avatar) {
           else if(flourishKind==='figure-eight'){angle+=Math.sin(t*Math.PI*4)*85*envelope;x+=Math.sin(t*Math.PI*2)*7*envelope;y+=Math.sin(t*Math.PI*4)*4*envelope;}
           else if(flourishKind==='diagonal waves'){angle+=Math.sin(t*Math.PI*4)*65*envelope;x+=Math.sin(t*Math.PI*4)*5*envelope;y-=Math.sin(t*Math.PI*4)*4*envelope;}
           else if(flourishKind==='side-to-side waves'){angle+=Math.sin(t*Math.PI*6)*55*envelope;x+=Math.sin(t*Math.PI*6)*4*envelope;}
+          else if(flourishKind==='sword dance'){const first=t<.5,u=first?t*2:(t-.5)*2,s=u*u*(3-2*u);angle+=danceSign*(first?danceTurns*s:danceTurns-danceReturn*s);x+=Math.sin(t*Math.PI*4)*5*envelope;y-=envelope*4;}
           else{angle-=Math.sin(Math.PI*t)*70;x-=envelope*3;y-=envelope*7;}
+          lastFlourishAngle=angle;
           grip(x,y,angle,cuteBlade);
           frame=requestAnimationFrame(spin);if(t===1){cancelAnimationFrame(frame);resolve();}
         };frame=requestAnimationFrame(spin);
       });if(mine!==token)return;
       const retractStart=performance.now();
-      await new Promise(resolve=>{const retract=now=>{if(mine!==token){resolve();return;}const t=Math.min(1,(now-retractStart)/500);grip(holdX,holdY+t*9,28,cuteBlade*(1-t));saber.style.opacity=String(1-t);if(t<1)frame=requestAnimationFrame(retract);else resolve();};frame=requestAnimationFrame(retract);});
+      const settleAngle=lastFlourishAngle+((28-lastFlourishAngle+180)%360+360)%360-180;
+      await new Promise(resolve=>{const retract=now=>{if(mine!==token){resolve();return;}const t=Math.min(1,(now-retractStart)/500),s=t*t*(3-2*t);grip(holdX,holdY+t*9,lastFlourishAngle+(settleAngle-lastFlourishAngle)*s,cuteBlade*(1-t));saber.style.opacity=String(1-t);if(t<1)frame=requestAnimationFrame(retract);else resolve();};frame=requestAnimationFrame(retract);});
       if(mine!==token)return;
       for(const a of [arm,otherArm]){a.style.removeProperty('transform');a.style.removeProperty('animation');a.style.removeProperty('z-index');}root.querySelector('.nova').style.removeProperty('animation');
       for(const glow of [track,edge,core])animate(glow,[{opacity:.22},{opacity:.62},{opacity:.22}],{duration:3600,iterations:Infinity,easing:'ease-in-out'});
@@ -24569,7 +24575,17 @@ function installNovaCutEffects(host, avatar) {
     if(target){presented.add(target);open(target).catch(error=>{presented.delete(target);host.novaCutLog?.({message:error.message});close();});}
   };
   const pollTimer=setInterval(poll,1200);
-  window.addEventListener('pagehide',()=>{clearInterval(pollTimer);close();liveStyle.remove();},{once:true});
+  // Chats Today opens and closes inside a shadow root: react to its actual
+  // visibility changes rather than waiting for the general notification scan.
+  const chatsRoot=document.getElementById('sn-ai-chats-today')?.shadowRoot;
+  const chatsObserver=chatsRoot&&new MutationObserver(()=>{
+    const panel=chatsRoot.querySelector('.panel');
+    if(current?.target===panel&&!eligible(panel))close();
+    if(!eligible(panel))presented.delete(panel);
+    else if(savedCuts.has(panel)&&!current&&!host.novaCutActive)poll();
+  });
+  chatsObserver?.observe(chatsRoot,{subtree:true,attributes:true,attributeFilter:['hidden','style','class']});
+  window.addEventListener('pagehide',()=>{chatsObserver?.disconnect();clearInterval(pollTimer);close();liveStyle.remove();},{once:true});
 }
 
 function startSNAIForCurrentTab() {
