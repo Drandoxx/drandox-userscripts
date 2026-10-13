@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.574
+// @version      2.36.575
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -67,6 +67,7 @@
 ,{"version":"2.36.572","fixes":true,"changes":[]}
 ,{"version":"2.36.573","fixes":true,"changes":[]}
 ,{"version":"2.36.574","fixes":true,"changes":[{"key":"nova-popup-cut","text":"NOVA can cut a glowing doorway through overlapping notifications and Chats Today.","meaningful":true},{"key":"chats-today-glass","text":"Chats Today has a lighter translucent background.","meaningful":true}]}
+,{"version":"2.36.575","fixes":true,"changes":[]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
