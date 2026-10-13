@@ -21302,6 +21302,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     });
 
     document.documentElement.append(host);
+    host.novaCutTargets=allPageElements;
+    host.novaCutLog=detail=>addLog('warn','nova-cut-failed',detail);
     installNovaWelcome(host);
     host.addEventListener('input', (event) => {
       if (event.target instanceof Element && event.target.closest('.local-sn-cpc-dialog[data-ticket-window]')) persistOpenTicketWindows();
@@ -24512,7 +24514,8 @@ function installNovaCutEffects(host, avatar) {
 
   // Native popup/notification discovery includes open shadow-root components.
   // Ignore small, non-overlapping, and ordinary in-page status/control elements.
-  const selector='.sn-toast,sn-workspace-notification-item,[role="dialog"],[aria-modal],[id^="local-sn-ai-"][id*="notification"]';
+  const presented=new Set();
+  const selector='.sn-toast,sn-workspace-notification-item,[role="dialog"],[aria-modal],[data-sn-ai-notification],[id^="local-sn-ai-"][id*="notification"]';
   const eligible=element=>{
     if(!element?.isConnected||element.hidden||element.closest?.('[data-nova-cut-overlay]'))return false;
     const r=element.getBoundingClientRect(),b=avatar.shadowRoot.querySelector('.body').getBoundingClientRect();
@@ -24524,13 +24527,14 @@ function installNovaCutEffects(host, avatar) {
     if(document.hidden)return;
     if(!host.isConnected||!avatar.isConnected){clearInterval(pollTimer);close();liveStyle.remove();return;}
     if(host.novaTicketBusy?.()||host.querySelector('[data-pinned-ims].is-running')||document.querySelector('[data-sn-automation-frozen]')){if(current)close();return;}
-    if(current){const r=current.target.getBoundingClientRect();if(!eligible(current.target)||Math.abs(r.left-parseFloat(current.panel.style.left))>2||Math.abs(r.top-parseFloat(current.panel.style.top))>2||Math.abs(r.width-current.panel.getBoundingClientRect().width)>2)close();else return;}
+    for(const target of presented)if(!eligible(target))presented.delete(target);
+    if(current){const r=current.target.getBoundingClientRect();if(!eligible(current.target)||Math.abs(r.left-parseFloat(current.panel.style.left))>2||Math.abs(r.top-parseFloat(current.panel.style.top))>2||Math.abs(r.width-current.panel.getBoundingClientRect().width)>2)close();else if(!current.finished)return;}
     if(host.novaCutActive||avatar.hidden||avatar.dataset.phase!=='ready'||avatar.dataset.motion||avatar.dataset.daily||avatar.dataset.idle||!host.novaCutCanStart?.())return;
     const chats=document.getElementById('sn-ai-chats-today')?.shadowRoot?.querySelector('.panel');
-    const candidates=[chats,...(host.novaCutTargets?.()||allPageElements()).filter(e=>e.matches?.(selector))].filter(eligible);
+    const candidates=[chats,...(host.novaCutTargets?.()||[]).filter(e=>e.matches?.(selector))].filter(e=>eligible(e)&&!presented.has(e));
     // Inner visible notification surface wins over its component wrapper.
     const target=candidates.sort((a,b)=>{const x=a.getBoundingClientRect(),y=b.getBoundingClientRect();return x.width*x.height-y.width*y.height;})[0];
-    if(target)open(target).catch(error=>{addLog('warn','nova-cut-failed',{message:error.message});close();});
+    if(target){presented.add(target);open(target).catch(error=>{presented.delete(target);host.novaCutLog?.({message:error.message});close();});}
   };
   const pollTimer=setInterval(poll,1200);
   window.addEventListener('pagehide',()=>{clearInterval(pollTimer);close();liveStyle.remove();},{once:true});
