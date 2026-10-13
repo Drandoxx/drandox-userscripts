@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.583
+// @version      2.36.584
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -76,6 +76,7 @@
 ,{"version":"2.36.581","fixes":true,"changes":[{"key":"nova-popup-cut","meaningful":false,"text":"Cut heat is attached to its popup so the hole and glow show, hide and move together."}]}
 ,{"version":"2.36.582","fixes":true,"changes":[{"key":"nova-popup-cut","meaningful":false,"text":"Separate animation layers and bounded mask, spark and trail updates reduce ticket-logging contention."}]}
 ,{"version":"2.36.583","fixes":true,"changes":[{"key":"nova-sword-idle","meaningful":true,"text":"NOVA can draw her saber and perform a longer random swordplay idle."},{"key":"nova-popup-cut","meaningful":false,"text":"Saved openings stay anchored to the right and bottom edges when panels resize, including their glow and border removal."}]}
+,{"version":"2.36.584","fixes":true,"changes":[{"key":"nova-popup-cut","meaningful":true,"text":"NOVA looks angry, focused and satisfied during cuts, and stays in front after climbing through."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -24238,6 +24239,9 @@ function installNovaWelcome(host) {
       const xs=view==='front'?[35,71]:view==='left'?[23]:[83];
       const eyes=xs.map(x=>expression==='sleeping'?'<path d="M'+(x-6)+' 39 q6 5 12 0"/>':expression==='happy'?'<path d="M'+(x-6)+' 41 q6 -9 12 0"/>':expression==='sleepy'?'<path d="M'+(x-6)+' 39 h12"/><ellipse cx="'+x+'" cy="43" rx="4" ry="3" fill="#392748"/>':'<ellipse cx="'+x+'" cy="40" rx="5" ry="'+(expression==='surprised'?10:8)+'" fill="#392748"/><circle cx="'+(x-1)+'" cy="37" r="2" fill="#f9efff" stroke="none"/>').join('');
       const mx=view==='front'?53:view==='left'?20:86;
+      let eyeArt=eyes;
+      if(expression==='angry'||expression==='focused')eyeArt+=xs.map((x,i)=>'<path d="M'+(x-7)+' '+(expression==='angry'?(i===0?27:31):30)+' Q'+x+' '+(expression==='angry'?29:27)+' '+(x+7)+' '+(expression==='angry'?(i===0?31:27):30)+'"/>').join('');
+      if(expression==='satisfied')eyeArt=xs.map(x=>'<path d="M'+(x-6)+' 41 q6 -7 12 0"/>').join('');
       let mouth;
       if(view!=='front'){
         // A short profile mark follows the cheek contour, not a frontal U.
@@ -24245,10 +24249,13 @@ function installNovaWelcome(host) {
         mouth=expression==='sleeping'?'<path d="M'+edge+' 60 l'+(-direction*4)+' 1" stroke-width="2"/>':expression==='surprised'||expression==='happy'?'<ellipse cx="'+edge+'" cy="62" rx="2.5" ry="'+(expression==='happy'?3.5:5)+'" fill="#51315c" stroke="none"/>':'<path d="M'+edge+' 60 q'+(-direction*3)+' 3 '+(-direction*6)+' 2" stroke-width="2.3"/>';
       }else mouth=expression==='sleeping'?'<ellipse cx="'+(mx-3)+'" cy="56" rx="2.5" ry="4" fill="#51315c" stroke="none"/>':expression==='surprised'?'<ellipse cx="'+mx+'" cy="62" rx="4" ry="5" fill="#51315c"/>':expression==='happy'?'<path d="M'+(mx-6)+' 59 Q'+mx+' 57 '+(mx+6)+' 59 Q'+(mx+5)+' 68 '+mx+' 68 Q'+(mx-5)+' 68 '+(mx-6)+' 59 Z" fill="#51315c" stroke="none"/>':'<path d="M'+(mx-6)+' 60 C'+(mx-5)+' 68 '+(mx+5)+' 68 '+(mx+6)+' 60" stroke-width="2.8"/>';
       if(expression==='sad')mouth='<path d="M'+(mx-5)+' 65 q5 -5 10 0" stroke-width="2.3"/>';
-      return '<svg viewBox="0 0 106 101" aria-hidden="true"><g fill="none" stroke="#51315c" stroke-width="2.5" stroke-linecap="round"><g class="nova-eye-drawing">'+eyes+'</g><g class="nova-mouth-drawing">'+mouth+'</g><ellipse class="nova-bite-mouth" cx="'+mx+'" cy="62" rx="5" ry="4" fill="#51315c" stroke="none"/></g><ellipse cx="'+(view==='right'?65:view==='left'?37:28)+'" cy="58" rx="8" ry="3.5" fill="#ec94c6" opacity=".65"/></svg>';
+      if(expression==='angry')mouth='<path d="M'+(mx-5)+' 65 q5 -5 10 0"/>';
+      if(expression==='focused')mouth='<path d="M'+(mx-4)+' 63 q4 -1 8 0"/>';
+      if(expression==='satisfied')mouth='<path d="M'+(mx-5)+' 61 q5 7 10 0"/>';
+      return '<svg viewBox="0 0 106 101" data-face="'+expression+'" aria-hidden="true"><g fill="none" stroke="#51315c" stroke-width="2.5" stroke-linecap="round"><g class="nova-eye-drawing">'+eyeArt+'</g><g class="nova-mouth-drawing">'+mouth+'</g><ellipse class="nova-bite-mouth" cx="'+mx+'" cy="62" rx="5" ry="4" fill="#51315c" stroke="none"/></g><ellipse cx="'+(view==='right'?65:view==='left'?37:28)+'" cy="58" rx="8" ry="3.5" fill="#ec94c6" opacity=".65"/></svg>';
     }
     // Front and both side drawings exist for every expression and hand variant.
-    for(const view of ['front','left','right'])for(const face of ['friendly','happy','sleepy','sleeping','surprised','sad'])drawings.set(view+':'+face,faceDrawing(view,face));
+    for(const view of ['front','left','right'])for(const face of ['friendly','happy','sleepy','sleeping','surprised','sad','angry','focused','satisfied'])drawings.set(view+':'+face,faceDrawing(view,face));
     let lastFace='',lastHands='';
     function syncRig(){
       const inferred=['walk-right','fly-right'].includes(nova.dataset.motion)?'right':['walk-left','fly-left'].includes(nova.dataset.motion)||nova.dataset.daily==='enter'?'left':'front';
@@ -24332,7 +24339,7 @@ function installNovaCutEffects(host, avatar) {
   // Preview-only stage. No real ServiceNow popup or notification is modified.
   const liveStyle=document.createElement('style');liveStyle.textContent='.cut-demo-panel{position:fixed;pointer-events:none}.cut-demo-panel svg{width:100%;height:100%;overflow:visible}.cut-demo-saber{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}';document.body.append(liveStyle);
   const NS='http://www.w3.org/2000/svg',savedCuts=new WeakMap(),retainedCuts=new Map();let current=null,frame=0,token=0,visibilityFrame=0,retainedFrame=0;
-  const ownedGlows=new WeakMap();let glowId=0;
+  const ownedGlows=new WeakMap();let glowId=0,frontTarget=null;
   const mountGlow=(target,svg,w,h)=>{
     const previous=ownedGlows.get(target);previous?.observer.disconnect();previous?.resize?.disconnect();previous?.svg.remove();
     const glow=svg.cloneNode(true),prefix='nova-owned-glow-'+(++glowId)+'-';
@@ -24385,7 +24392,7 @@ function installNovaCutEffects(host, avatar) {
   const animate=(element,frames,options)=>{const a=element.animate(frames,options);current?.animations.push(a);return a;};
   const resetNova=()=>{
     const nova=document.getElementById('sn-ai-nova-companion');if(!nova)return;
-    nova.style.zIndex='100';delete nova.dataset.motion;const root=nova.shadowRoot;
+    nova.style.zIndex=frontTarget?.isConnected&&!frontTarget.hidden&&frontTarget.getBoundingClientRect().width?'2147483647':'100';delete nova.dataset.motion;const root=nova.shadowRoot;
     root.querySelector('.nova-cut-grumpy')?.remove();root.querySelector('.nova-mouth-drawing')?.style.removeProperty('visibility');
     const figure=root.querySelector('.nova');if(figure)figure.dataset.expression='friendly';
     for(const selector of ['.arm.left','.arm.right','.nova-eye-drawing','.nova']){const e=root.querySelector(selector);e?.style.removeProperty('transform');e?.style.removeProperty('translate');e?.style.removeProperty('animation');e?.style.removeProperty('visibility');e?.style.removeProperty('z-index');e?.style.removeProperty('will-change');}
@@ -24401,6 +24408,7 @@ function installNovaCutEffects(host, avatar) {
     if(current){retainCut();current.panel=document.createElement('div');}
     if(carry){cancelAnimationFrame(visibilityFrame);++token;cancelAnimationFrame(frame);current?.saber.remove();current=null;}
     else close();
+    if(!idleOnly){frontTarget=null;resetNova();}
     retainedCuts.get(target)?.panel.remove();retainedCuts.delete(target);
     host.novaCutHold?.(true);
     const openingToken=token;
@@ -24517,7 +24525,7 @@ function installNovaCutEffects(host, avatar) {
     };
     const finish=async()=>{
       if(!idleOnly){
-      root.querySelector('.nova-cut-grumpy')?.remove();root.querySelector('.nova-mouth-drawing')?.style.removeProperty('visibility');root.querySelector('.nova').dataset.expression='happy';
+      root.querySelector('.nova').dataset.expression='satisfied';
       savedCuts.set(key,{d:door,w,h});current.complete=true;nativeMask(true);hole.setAttribute('opacity','1');flap.setAttribute('opacity',wasCut?'0':'1');
       track.style.strokeDashoffset='0';edge.style.strokeDashoffset='0';core.style.strokeDashoffset='0';saber.style.opacity=wasCut?'0':'1';
       for(const path of gluedPaths)path.style.strokeDashoffset='0';
@@ -24547,7 +24555,7 @@ function installNovaCutEffects(host, avatar) {
       root.querySelector('.nova').style.removeProperty('animation');nova.dataset.motion='walk-'+direction;
       status.textContent=`NOVA turns ${direction}, walks through, then faces you.`;
       const walk=animate(nova,[{transform:'scale(.72)'},{transform:`translateX(${step}px) scale(.72)`,offset:.5},{transform:'scale(.72)'}],{duration:1800,easing:'linear'});
-      setTimeout(()=>{if(mine===token){nova.style.zIndex='2147483647';document.body.append(nova);saber.style.zIndex='2147483647';document.body.append(saber);}},900);
+      setTimeout(()=>{if(mine===token){frontTarget=target;nova.style.zIndex='2147483647';document.body.append(nova);saber.style.zIndex='2147483647';document.body.append(saber);}},900);
       await walk.finished.catch(()=>{});if(mine!==token)return;delete nova.dataset.motion;
       }
       const holdX=bodyBox.left+bodyBox.width*.55,holdY=bodyBox.top+bodyBox.height*.66,cuteBlade=40;
@@ -24577,7 +24585,7 @@ function installNovaCutEffects(host, avatar) {
           else{angle-=Math.sin(Math.PI*t)*70;x-=envelope*3;y-=envelope*7;}
           lastFlourishAngle=angle;
           grip(x,y,angle,cuteBlade);
-          eyes.style.translate=`${Math.sin(angle*Math.PI/180)*3}px ${-Math.cos(angle*Math.PI/180)*2}px`;
+          root.querySelector('.nova-eye-drawing').style.translate=`${Math.sin(angle*Math.PI/180)*3}px ${-Math.cos(angle*Math.PI/180)*2}px`;
           frame=requestAnimationFrame(spin);if(progress===1){cancelAnimationFrame(frame);resolve();}
         };frame=requestAnimationFrame(spin);
       });if(mine!==token)return;
@@ -24621,16 +24629,12 @@ function installNovaCutEffects(host, avatar) {
       blade.querySelector('path').setAttribute('stroke-width','13');
       arm.style.setProperty('transform',`translate(${(handX-armBox.left-armBox.width/2)/.72}px,${(handY-armBox.top-armBox.height/2)/.72}px)`,'important');
       otherArm.style.setProperty('transform',`translate(${(otherX-otherArmBox.left-otherArmBox.width/2)/.72}px,${(otherY-otherArmBox.top-otherArmBox.height/2)/.72}px)`,'important');
-      eyes.style.setProperty('translate',`${Math.max(-4,Math.min(4,(px-bodyBox.left-bodyBox.width/2)/18))}px ${Math.max(-3,Math.min(3,(py-bodyBox.top-bodyBox.height/2)/18))}px`,'important');
+      root.querySelector('.nova-eye-drawing').style.setProperty('translate',`${Math.max(-4,Math.min(4,(px-bodyBox.left-bodyBox.width/2)/18))}px ${Math.max(-3,Math.min(3,(py-bodyBox.top-bodyBox.height/2)/18))}px`,'important');
       if(now-lastSparkAt>=100){lastSparkAt=now;sparks.innerHTML=Array.from({length:5},()=>`<circle cx="${px+random(-10,10)}" cy="${py+random(-9,9)}" r="${random(1,2.8)}" fill="#ffcb52"/>`).join('');}
       if(progress<1)frame=requestAnimationFrame(tick);else finish();
     };
     // A small grumpy reaction, then visibly draw and ignite in the real grip.
-    const face=root.querySelector('.eyes svg'),mouth=root.querySelector('.nova-mouth-drawing');
-    root.querySelector('.nova-cut-grumpy')?.remove();
-    const grumpy=svgNode('g',{'class':'nova-cut-grumpy',fill:'none',stroke:'#51315c','stroke-width':2.5,'stroke-linecap':'round'});
-    grumpy.innerHTML='<path d="M29 27 L40 31 M66 31 L77 27 M48 65 Q53 60 58 65"/>';
-    face?.append(grumpy);mouth?.style.setProperty('visibility','hidden');
+    root.querySelector('.nova').dataset.expression='angry';
     if(carry?.pose){saber.style.opacity='1';grip(carry.pose.x,carry.pose.y,carry.pose.angle,carry.pose.size);}
     status.textContent='NOVA looks a little grumpy, draws the handle, then ignites her saber.';
     await new Promise(resolve=>setTimeout(resolve,450));if(mine!==token)return;
@@ -24641,8 +24645,7 @@ function installNovaCutEffects(host, avatar) {
     await new Promise(resolve=>{const ignite=now=>{if(mine!==token){resolve();return;}const t=Math.min(1,(now-ignitionStart)/450);grip(drawX,drawY,28,40*t);if(t<1)frame=requestAnimationFrame(ignite);else resolve();};frame=requestAnimationFrame(ignite);});if(mine!==token)return;}
     // Concentrating brows and a small determined mouth remain for the full cut.
     // Keep the eye drawing separate so gaze can still follow the contact point.
-    grumpy.innerHTML='<path d="M29 29 Q34 27 40 29 M66 29 Q72 27 77 29 M49 65 Q53 64 57 65"/>';
-    grumpy.dataset.expression='focused';
+    root.querySelector('.nova').dataset.expression='focused';
     const first=track.getPointAtLength(0),tx=box.left+first.x,ty=box.top+first.y;
     const cx=bodyBox.left+bodyBox.width/2,cy=bodyBox.top+bodyBox.height*.63,dx=tx-cx,dy=ty-cy,norm=Math.max(1,Math.hypot(dx,dy));
     const destination={x:tx-dx/norm*59,y:ty-dy/norm*59,angle:Math.atan2(dy,dx)*180/Math.PI+90};
