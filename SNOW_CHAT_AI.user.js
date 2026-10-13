@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.573
+// @version      2.36.574
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -66,6 +66,7 @@
 ,{"version":"2.36.571","fixes":true,"changes":[]}
 ,{"version":"2.36.572","fixes":true,"changes":[]}
 ,{"version":"2.36.573","fixes":true,"changes":[]}
+,{"version":"2.36.574","fixes":true,"changes":[{"key":"nova-popup-cut","text":"NOVA can cut a glowing doorway through overlapping notifications and Chats Today.","meaningful":true},{"key":"chats-today-glass","text":"Chats Today has a lighter translucent background.","meaningful":true}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -23341,6 +23342,7 @@ function installChatsTodayPanel() {
     @media(max-width:800px){header{flex-wrap:wrap;padding:8px}h2{font-size:14px}.status{font-size:10px}.panel{top:70px}}
   </style><button type="button" class="launcher" aria-expanded="false" aria-controls="chats-today-panel">Chats Today</button><section class="panel" id="chats-today-panel" role="dialog" aria-label="Chats Today" hidden><header><h2>Chats Today</h2><div class="actions"><button type="button" class="refresh" aria-label="Refresh Chats Today">Refresh</button><button type="button" class="icon close" aria-label="Close Chats Today"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m18 6-12 12M6 6l12 12"/></svg></button></div></header><p class="status" role="status">Not loaded yet</p><div class="groups"></div></section>`;
   const launcher=root.querySelector('.launcher'),panel=root.querySelector('.panel'),status=root.querySelector('.status'),groups=root.querySelector('.groups'),refresh=root.querySelector('.refresh');
+  const glassStyle=document.createElement('style');glassStyle.textContent='.panel{background:color-mix(in srgb,var(--sn-theme-191621,#191621) 72%,transparent)}header,summary,th{background:color-mix(in srgb,var(--sn-theme-251f31,#241c33) 68%,transparent)}details{background:transparent}';root.append(glassStyle);
   const reset=document.createElement('button');reset.type='button';reset.className='reset';reset.textContent='Reset';reset.title='Restore automatic ordering for all agents';refresh.before(reset);
   let dayOffset=0;
   const dayTitle=root.querySelector('header h2'),dayNav=document.createElement('div');dayNav.className='day-navigation';
@@ -23955,6 +23957,7 @@ function installNovaWelcome(host) {
   }
   function position(){
     frame=0;
+    if(host.novaCutActive)return;
     if(message?.novaUpdate&&ticketBusy()){deferredUpdate=message.novaUpdate;announcedUpdates.delete(deferredUpdate.version);stopTyping();message=null;unfrozenSince=0;waitForUpdate();}
     if(!message||dismissed){card.hidden=true;tail.hidden=true;if(dismissed||!entranceStarted)avatar.hidden=true;return;}
     const chatsButton=document.getElementById('sn-ai-chats-today')?.shadowRoot?.querySelector('.launcher')||host.novaAnchorButton;
@@ -24287,6 +24290,9 @@ function installNovaWelcome(host) {
     };
     window.addEventListener('pagehide',()=>{rigObserver.disconnect();++restToken;restAnimations.forEach(animation=>animation.cancel());restOverlays.forEach(element=>element.remove());},{once:true});
   })();
+  host.novaCutCanStart=()=>!ticketBusy()&&!message&&!dailyStartPending&&!transitionTimer;
+  host.novaCutHold=active=>{host.novaCutActive=active;if(active)clearIdle();else{armIdle();schedule();}};
+  installNovaCutEffects(host,avatar);
   const observer=new MutationObserver(schedule);observer.observe(host,{subtree:true,attributes:true,attributeFilter:['class','hidden','aria-expanded','style']});
   window.addEventListener('resize',schedule);window.addEventListener('pointerup',schedule);
 window.addEventListener('pagehide',()=>{clearTimeout(messageTimer);clearTimeout(transitionTimer);messageQueue.length=0;observer.disconnect();cancelAnimationFrame(frame);clearTimeout(entranceTimer);clearTimeout(readyTimer);clearTimeout(pageReadyTimer);clearTimeout(motionTimer);clearTimeout(dailyTimer);clearTimeout(updateWaitTimer);clearIdle();stopTyping();card.remove();tail.remove();avatar.remove();style.remove();window.removeEventListener('resize',schedule);window.removeEventListener('pointerup',schedule);},{once:true});
@@ -24308,6 +24314,7 @@ window.addEventListener('pagehide',()=>{clearTimeout(messageTimer);clearTimeout(
 }
 
 function installNovaCutEffects(host, avatar) {
+  if(host.novaCutPreview||!document.body||!avatar.shadowRoot)return;
   // Preview-only stage. No real ServiceNow popup or notification is modified.
   const liveStyle=document.createElement('style');liveStyle.textContent='.cut-demo-panel{position:fixed;pointer-events:none}.cut-demo-panel svg{width:100%;height:100%;overflow:visible}.cut-demo-saber{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}';document.body.append(liveStyle);
   const NS='http://www.w3.org/2000/svg',savedCuts=new WeakMap();let current=null,frame=0,token=0;
@@ -24341,11 +24348,11 @@ function installNovaCutEffects(host, avatar) {
     const mine=token,panel=document.createElement('div');panel.className='cut-demo-panel';panel.dataset.novaCutOverlay='true';
     const box=target.getBoundingClientRect(),w=box.width,h=box.height,key=target;
     const baseZ=Math.min(2147483646,Math.max(150,Number(getComputedStyle(target).zIndex)||150));
-    panel.style.cssText=`position:fixed;left:${box.left}px;top:${box.top}px;width:${w}px;height:${h}px;z-index:${baseZ};pointer-events:none`;
+    panel.style.cssText=`position:fixed;left:${box.left}px;top:${box.top}px;width:${w}px;height:${h}px;z-index:2147483647;pointer-events:none`;
     document.body.append(panel);
     const previousMask=target.style.maskImage,previousWebkitMask=target.style.webkitMaskImage;
     const nativeMask=(complete,distance=0)=>{
-      const mask=`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><rect width="100%" height="100%" fill="white"/><path d="${door}" fill="${complete?'black':'none'}" stroke="black" stroke-width="4" stroke-dasharray="${complete?'none':length}" stroke-dashoffset="${complete?0:length-distance}"/></svg>`;
+      const mask=`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><defs><mask id="cut" maskUnits="userSpaceOnUse"><rect width="100%" height="100%" fill="white"/><path d="${door}" fill="${complete?'black':'none'}" stroke="black" stroke-width="4" stroke-dasharray="${complete?'none':length}" stroke-dashoffset="${complete?0:length-distance}"/></mask></defs><rect width="100%" height="100%" fill="white" mask="url(#cut)"/></svg>`;
       target.style.maskImage=target.style.webkitMaskImage='url("data:image/svg+xml,'+encodeURIComponent(mask)+'")';
     };
     const bodyBounds=document.getElementById('sn-ai-nova-companion').shadowRoot.querySelector('.body').getBoundingClientRect();
@@ -24505,7 +24512,7 @@ function installNovaCutEffects(host, avatar) {
 
   // Native popup/notification discovery includes open shadow-root components.
   // Ignore small, non-overlapping, and ordinary in-page status/control elements.
-  const selector='.sn-toast,sn-workspace-notification-item,[role="dialog"],[aria-modal="true"],[id^="local-sn-ai-"][id*="notification"]';
+  const selector='.sn-toast,sn-workspace-notification-item,[role="dialog"],[aria-modal],[id^="local-sn-ai-"][id*="notification"]';
   const eligible=element=>{
     if(!element?.isConnected||element.hidden||element.closest?.('[data-nova-cut-overlay]'))return false;
     const r=element.getBoundingClientRect(),b=avatar.shadowRoot.querySelector('.body').getBoundingClientRect();
@@ -24515,12 +24522,14 @@ function installNovaCutEffects(host, avatar) {
   };
   const poll=()=>{
     if(document.hidden)return;
+    if(!host.isConnected||!avatar.isConnected){clearInterval(pollTimer);close();liveStyle.remove();return;}
+    if(host.novaTicketBusy?.()||host.querySelector('[data-pinned-ims].is-running')||document.querySelector('[data-sn-automation-frozen]')){if(current)close();return;}
     if(current){const r=current.target.getBoundingClientRect();if(!eligible(current.target)||Math.abs(r.left-parseFloat(current.panel.style.left))>2||Math.abs(r.top-parseFloat(current.panel.style.top))>2||Math.abs(r.width-current.panel.getBoundingClientRect().width)>2)close();else return;}
     if(host.novaCutActive||avatar.hidden||avatar.dataset.phase!=='ready'||avatar.dataset.motion||avatar.dataset.daily||avatar.dataset.idle||!host.novaCutCanStart?.())return;
     const chats=document.getElementById('sn-ai-chats-today')?.shadowRoot?.querySelector('.panel');
-    const candidates=[chats,...allPageElements().filter(e=>e.matches?.(selector))].filter(eligible);
+    const candidates=[chats,...(host.novaCutTargets?.()||allPageElements()).filter(e=>e.matches?.(selector))].filter(eligible);
     // Inner visible notification surface wins over its component wrapper.
-    const target=candidates.find(e=>!candidates.some(other=>other!==e&&e.contains(other)))||candidates[0];
+    const target=candidates.sort((a,b)=>{const x=a.getBoundingClientRect(),y=b.getBoundingClientRect();return x.width*x.height-y.width*y.height;})[0];
     if(target)open(target).catch(error=>{addLog('warn','nova-cut-failed',{message:error.message});close();});
   };
   const pollTimer=setInterval(poll,1200);
