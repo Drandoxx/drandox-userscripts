@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.578
+// @version      2.36.579
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -71,6 +71,7 @@
 ,{"version":"2.36.576","fixes":true,"changes":[]}
 ,{"version":"2.36.577","fixes":true,"changes":[]}
 ,{"version":"2.36.578","fixes":true,"changes":[{"key":"nova-popup-cut","meaningful":false,"text":"Immediate reusable cut visibility, translucent notifications and connected random sword dances."}]}
+,{"version":"2.36.579","fixes":true,"changes":[{"key":"nova-popup-cut","meaningful":true,"text":"Each popup keeps its own cut; NOVA smoothly switches targets and leaves unfinished glowing marks when notifications move."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -24324,7 +24325,24 @@ function installNovaCutEffects(host, avatar) {
   if(host.novaCutPreview||!document.body||!avatar.shadowRoot)return;
   // Preview-only stage. No real ServiceNow popup or notification is modified.
   const liveStyle=document.createElement('style');liveStyle.textContent='.cut-demo-panel{position:fixed;pointer-events:none}.cut-demo-panel svg{width:100%;height:100%;overflow:visible}.cut-demo-saber{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}';document.body.append(liveStyle);
-  const NS='http://www.w3.org/2000/svg',savedCuts=new WeakMap();let current=null,frame=0,token=0,visibilityFrame=0;
+  const NS='http://www.w3.org/2000/svg',savedCuts=new WeakMap(),retainedCuts=new Map();let current=null,frame=0,token=0,visibilityFrame=0,retainedFrame=0;
+  const retainCut=()=>{
+    if(!current)return;
+    const record=current;
+    record.animations.forEach(a=>a.cancel());record.animations=[];
+    if(!record.complete){record.target.style.maskImage=record.previousMask;record.target.style.webkitMaskImage=record.previousWebkitMask;}
+    record.saber.querySelector('.sparks').innerHTML='';
+    record.panel.querySelectorAll('svg > g path').forEach(glow=>glow.animate([{opacity:.3},{opacity:.7},{opacity:.3}],{duration:3200,iterations:Infinity,easing:'ease-in-out'}));
+    retainedCuts.get(record.target)?.panel.remove();retainedCuts.set(record.target,record);
+    if(!retainedFrame){const follow=()=>{
+      for(const [target,r]of retainedCuts){const b=target.getBoundingClientRect(),s=getComputedStyle(target);
+        if(!target.isConnected||target.hidden||!b.width||!b.height||s.display==='none'||s.visibility==='hidden'||Number(s.opacity)===0){r.panel.remove();retainedCuts.delete(target);continue;}
+        r.panel.style.left=b.left+'px';r.panel.style.top=b.top+'px';
+      }
+      retainedFrame=retainedCuts.size?requestAnimationFrame(follow):0;
+    };retainedFrame=requestAnimationFrame(follow);}
+    return record;
+  };
   const random=(a,b)=>a+Math.random()*(b-a);
   const svgNode=(name,attributes={})=>{const e=document.createElementNS(NS,name);for(const [k,v]of Object.entries(attributes))e.setAttribute(k,v);return e;};
   const status=document.createElement('div');status.hidden=true;
@@ -24346,12 +24364,16 @@ function installNovaCutEffects(host, avatar) {
     for(const selector of ['.arm.left','.arm.right','.nova-eye-drawing','.nova']){const e=root.querySelector(selector);e?.style.removeProperty('transform');e?.style.removeProperty('translate');e?.style.removeProperty('animation');e?.style.removeProperty('visibility');e?.style.removeProperty('z-index');}
   };
   const close=()=>{cancelAnimationFrame(visibilityFrame);visibilityFrame=0;if(current){if(!current.complete){current.target.style.maskImage=current.previousMask;current.target.style.webkitMaskImage=current.previousWebkitMask;}current.animations.forEach(a=>a.cancel());}host.novaCutHold?.(false);++token;cancelAnimationFrame(frame);current?.panel.remove();current?.saber.remove();current?.close.remove();current=null;resetNova();status.textContent='';};
-  async function open(target){
+  async function open(target,carry=null){
     const kind='panel';
-    close();host.novaCutHold?.(true);
+    if(current){retainCut();current.panel=document.createElement('div');}
+    if(carry){cancelAnimationFrame(visibilityFrame);++token;cancelAnimationFrame(frame);current?.saber.remove();current=null;}
+    else close();
+    retainedCuts.get(target)?.panel.remove();retainedCuts.delete(target);
+    host.novaCutHold?.(true);
     const openingToken=token;
     // Finish the shared stand transition before measuring the visible character.
-    if(!savedCuts.has(target))await new Promise(resolve=>setTimeout(resolve,950));if(openingToken!==token)return;
+    if(!carry&&!savedCuts.has(target))await new Promise(resolve=>setTimeout(resolve,950));if(openingToken!==token)return;
     if(!target.isConnected||!target.getBoundingClientRect().width){host.novaCutHold?.(false);return;}
     const mine=token,panel=document.createElement('div');panel.className='cut-demo-panel';panel.dataset.novaCutOverlay='true';
     const box=target.getBoundingClientRect(),w=box.width,h=box.height,key=target;
@@ -24389,9 +24411,11 @@ function installNovaCutEffects(host, avatar) {
       if(!current||current.target!==target)return;
       const bounds=target.getBoundingClientRect(),computed=getComputedStyle(target);
       if(!target.isConnected||target.hidden||!bounds.width||!bounds.height||computed.display==='none'||computed.visibility==='hidden'||Number(computed.opacity)===0){close();return;}
+      if(!current.complete&&(Math.abs(bounds.left-box.left)>2||Math.abs(bounds.top-box.top)>2)){redirect(target);return;}
       visibilityFrame=requestAnimationFrame(watchVisibility);
     };visibilityFrame=requestAnimationFrame(watchVisibility);
     const nova=document.getElementById('sn-ai-nova-companion'),root=nova.shadowRoot,arm=root.querySelector('.arm.right'),otherArm=root.querySelector('.arm.left'),eyes=root.querySelector('.nova-eye-drawing');
+    if(carry){arm.style.removeProperty('transform');otherArm.style.removeProperty('transform');}
     const otherArmBox=otherArm.querySelector('.hand').getBoundingClientRect();
     // Keep the real oval hands on the rig behind the notification, never draw
     // substitute floating hands over it. Both grip points still follow the hilt.
@@ -24411,7 +24435,8 @@ function installNovaCutEffects(host, avatar) {
     const hiltLayer=svgNode('g',{'mask':'url(#nova-hilt-occlusion)'});hiltLayer.append(hilt);saber.append(hiltLayer);
     hiltLayer.removeAttribute('mask'); // The translucent panel occludes both naturally.
     const saberColours=[['blue','#398bff'],['green','#42ff72'],['purple','#bd66ff'],['yellow','#ffdc38'],['red','#ff364c']];
-    const [colourName,colour]=saberColours[Math.floor(Math.random()*saberColours.length)];
+    const [colourName,colour]=carry?.colour||saberColours[Math.floor(Math.random()*saberColours.length)];
+    current.colour=[colourName,colour];
     saber.querySelector('.blade path').setAttribute('stroke',colour);colourBody.setAttribute('stroke',colour);saber.dataset.colour=colourName;
     const trail=svgNode('g',{'class':'saber-motion-trail','pointer-events':'none'});saber.insertBefore(trail,blade);
     let lastTip=null;
@@ -24423,6 +24448,7 @@ function installNovaCutEffects(host, avatar) {
     let heldPose=null;
     const grip=(x,y,angle,size)=>{
       heldPose={x,y,angle,size};
+      if(current?.target===target)current.pose=heldPose;
       const radians=angle*Math.PI/180,ux=Math.sin(radians),uy=-Math.cos(radians);
       const tip={x:x+ux*(19+size),y:y+uy*(19+size)};
       if(lastTip&&size>5){
@@ -24520,6 +24546,7 @@ function installNovaCutEffects(host, avatar) {
       const angle=Math.atan2(py-handY,px-handX)*180/Math.PI+90;
       const bladeLength=40;
       heldPose={x:handX,y:handY,angle,size:bladeLength};
+      current.pose=heldPose;current.distance=distance;
       blade.setAttribute('transform',`translate(${handX} ${handY}) rotate(${angle})`);hilt.setAttribute('transform',`translate(${handX} ${handY}) rotate(${angle})`);
       for(const path of blade.querySelectorAll('path'))path.setAttribute('d',`M0 -19 V${-19-bladeLength}`);
       // White core + coloured inner blade + broad bloom, like the references.
@@ -24535,19 +24562,20 @@ function installNovaCutEffects(host, avatar) {
     const grumpy=svgNode('g',{'class':'nova-cut-grumpy',fill:'none',stroke:'#51315c','stroke-width':2.5,'stroke-linecap':'round'});
     grumpy.innerHTML='<path d="M29 27 L40 31 M66 31 L77 27 M48 65 Q53 60 58 65"/>';
     face?.append(grumpy);mouth?.style.setProperty('visibility','hidden');
+    if(carry?.pose){saber.style.opacity='1';grip(carry.pose.x,carry.pose.y,carry.pose.angle,carry.pose.size);}
     status.textContent='NOVA looks a little grumpy, draws the handle, then ignites her saber.';
     await new Promise(resolve=>setTimeout(resolve,450));if(mine!==token)return;
     const drawX=bodyBox.left+bodyBox.width*.55,drawY=bodyBox.top+bodyBox.height*.66;
-    saber.style.opacity='1';grip(drawX,drawY,28,0);
+    if(!carry){saber.style.opacity='1';grip(drawX,drawY,28,0);
     await new Promise(resolve=>setTimeout(resolve,300));if(mine!==token)return;
     const ignitionStart=performance.now();
-    await new Promise(resolve=>{const ignite=now=>{if(mine!==token){resolve();return;}const t=Math.min(1,(now-ignitionStart)/450);grip(drawX,drawY,28,40*t);if(t<1)frame=requestAnimationFrame(ignite);else resolve();};frame=requestAnimationFrame(ignite);});if(mine!==token)return;
+    await new Promise(resolve=>{const ignite=now=>{if(mine!==token){resolve();return;}const t=Math.min(1,(now-ignitionStart)/450);grip(drawX,drawY,28,40*t);if(t<1)frame=requestAnimationFrame(ignite);else resolve();};frame=requestAnimationFrame(ignite);});if(mine!==token)return;}
     grumpy.remove();mouth?.style.removeProperty('visibility');
     const first=track.getPointAtLength(0),tx=box.left+first.x,ty=box.top+first.y;
     const cx=bodyBox.left+bodyBox.width/2,cy=bodyBox.top+bodyBox.height*.63,dx=tx-cx,dy=ty-cy,norm=Math.max(1,Math.hypot(dx,dy));
     const destination={x:tx-dx/norm*59,y:ty-dy/norm*59,angle:Math.atan2(dy,dx)*180/Math.PI+90};
-    const turn=((destination.angle-28+540)%360)-180,aimStart=performance.now();
-    await new Promise(resolve=>{const aim=now=>{if(mine!==token){resolve();return;}const t=Math.min(1,(now-aimStart)/400),ease=t*t*(3-2*t);grip(drawX+(destination.x-drawX)*ease,drawY+(destination.y-drawY)*ease,28+turn*ease,40);if(t<1)frame=requestAnimationFrame(aim);else resolve();};frame=requestAnimationFrame(aim);});if(mine!==token)return;
+    const from=carry?.pose||{x:drawX,y:drawY,angle:28},turn=((destination.angle-from.angle+540)%360)-180,aimStart=performance.now();
+    await new Promise(resolve=>{const aim=now=>{if(mine!==token){resolve();return;}const t=Math.min(1,(now-aimStart)/400),ease=t*t*(3-2*t);grip(from.x+(destination.x-from.x)*ease,from.y+(destination.y-from.y)*ease,from.angle+turn*ease,40);if(t<1)frame=requestAnimationFrame(aim);else resolve();};frame=requestAnimationFrame(aim);});if(mine!==token)return;
     start=performance.now();frame=requestAnimationFrame(tick);
   }
 
@@ -24567,7 +24595,9 @@ function installNovaCutEffects(host, avatar) {
     if(!host.isConnected||!avatar.isConnected){clearInterval(pollTimer);close();liveStyle.remove();return;}
     if(host.novaTicketBusy?.()||host.querySelector('[data-pinned-ims].is-running')||document.querySelector('[data-sn-automation-frozen]')){if(current)close();return;}
     for(const target of presented)if(!eligible(target))presented.delete(target);
-    if(current){const r=current.target.getBoundingClientRect();if(!eligible(current.target)||Math.abs(r.left-parseFloat(current.panel.style.left))>2||Math.abs(r.top-parseFloat(current.panel.style.top))>2||Math.abs(r.width-current.panel.getBoundingClientRect().width)>2)close();else if(!current.finished)return;}
+    if(current){const r=current.target.getBoundingClientRect(),moved=Math.abs(r.left-parseFloat(current.panel.style.left))>2||Math.abs(r.top-parseFloat(current.panel.style.top))>2;
+      if(!current.complete&&current.target.isConnected&&!current.target.hidden&&r.width&&moved){redirect(current.target);return;}
+      if(!eligible(current.target)||moved||Math.abs(r.width-current.panel.getBoundingClientRect().width)>2)close();else if(!current.finished)return;}
     if(host.novaCutActive||avatar.hidden||avatar.dataset.phase!=='ready'||avatar.dataset.motion||avatar.dataset.daily||avatar.dataset.idle||!host.novaCutCanStart?.())return;
     const chats=document.getElementById('sn-ai-chats-today')?.shadowRoot?.querySelector('.panel');
     const candidates=[chats,...(host.novaCutTargets?.()||[]).filter(e=>e.matches?.(selector))].filter(e=>eligible(e)&&!presented.has(e));
@@ -24575,13 +24605,19 @@ function installNovaCutEffects(host, avatar) {
     const target=candidates.sort((a,b)=>{const x=a.getBoundingClientRect(),y=b.getBoundingClientRect();return x.width*x.height-y.width*y.height;})[0];
     if(target){presented.add(target);open(target).catch(error=>{presented.delete(target);host.novaCutLog?.({message:error.message});close();});}
   };
+  const redirect=oldTarget=>{
+    const next=[document.getElementById('sn-ai-chats-today')?.shadowRoot?.querySelector('.panel'),...(host.novaCutTargets?.()||[]).filter(e=>e.matches?.(selector))].filter(e=>e!==oldTarget&&eligible(e)&&!presented.has(e)).sort((a,b)=>a.getBoundingClientRect().width*a.getBoundingClientRect().height-b.getBoundingClientRect().width*b.getBoundingClientRect().height)[0];
+    const carry=current&&{pose:current.pose,colour:current.colour};
+    if(next){presented.add(next);open(next,carry).catch(()=>close());}
+    else{retainCut();current.panel=document.createElement('div');close();}
+  };
   const pollTimer=setInterval(poll,1200);
   // Chats Today opens and closes inside a shadow root: react to its actual
   // visibility changes rather than waiting for the general notification scan.
   const chatsRoot=document.getElementById('sn-ai-chats-today')?.shadowRoot;
   const chatsPanel=chatsRoot?.querySelector('.panel');
   let chatsClosing=false;
-  const onChatsClose=()=>{chatsClosing=true;if(current?.target===chatsPanel)close();presented.delete(chatsPanel);};
+  const onChatsClose=()=>{chatsClosing=true;if(current?.target===chatsPanel)close();retainedCuts.get(chatsPanel)?.panel.remove();retainedCuts.delete(chatsPanel);presented.delete(chatsPanel);};
   chatsPanel?.addEventListener('nova-panel-close',onChatsClose);
   const chatsObserver=chatsRoot&&new MutationObserver(()=>{
     const panel=chatsRoot.querySelector('.panel');
@@ -24592,7 +24628,7 @@ function installNovaCutEffects(host, avatar) {
     else if(savedCuts.has(panel)&&!current&&!host.novaCutActive)poll();
   });
   chatsObserver?.observe(chatsRoot,{subtree:true,attributes:true,attributeFilter:['hidden','style','class']});
-  window.addEventListener('pagehide',()=>{chatsPanel?.removeEventListener('nova-panel-close',onChatsClose);chatsObserver?.disconnect();clearInterval(pollTimer);close();liveStyle.remove();},{once:true});
+  window.addEventListener('pagehide',()=>{cancelAnimationFrame(retainedFrame);for(const r of retainedCuts.values())r.panel.remove();retainedCuts.clear();chatsPanel?.removeEventListener('nova-panel-close',onChatsClose);chatsObserver?.disconnect();clearInterval(pollTimer);close();liveStyle.remove();},{once:true});
 }
 
 function startSNAIForCurrentTab() {
