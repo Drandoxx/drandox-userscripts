@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.587
+// @version      2.36.588
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -80,6 +80,7 @@
 ,{"version":"2.36.585","fixes":true,"changes":[{"key":"nova-layering","meaningful":true,"text":"NOVA and every idle prop move together in front of popups, keeping their internal drawing order."},{"key":"nova-profile-face","meaningful":true,"text":"Side-view cute faces have a softer smiling eye and a small profile smile."}]}
 ,{"version":"2.36.586","fixes":false,"changes":[{"key":"nova-morning-coffee","meaningful":true,"text":"NOVA brings her cup to her mouth, tips it with both hands and smiles with cute eyes while drinking."}]}
 ,{"version":"2.36.587","fixes":true,"changes":[{"key":"nova-morning-coffee","meaningful":true,"text":"Coffee sipping follows the actual cup rim and handle with continuous two-hand movement."},{"key":"nova-profile-face","meaningful":true,"text":"Cute profile faces have one clearly defined, expressive eye and one small smile."}]}
+,{"version":"2.36.588","fixes":true,"changes":[{"key":"nova-morning-coffee","meaningful":true,"text":"Nova lifts an upright cup with a thinning coffee surface, then changes back in a small magic whirlwind without tossing the cup."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -23781,7 +23782,7 @@ function installNovaWelcome(host) {
     const data=deferredUpdate;deferredUpdate=null;host.novaUpdateMessage(data);
   }
   function runDaily(){
-    dailyStartPending=false;clearIdle();const steps=[['enter',2500],['yawn',1500],['sip',2000],['cheer',900]];let index=0;
+    dailyStartPending=false;clearIdle();const steps=[['enter',2500],['yawn',1500],['sip',2000],[avatar.dataset.dailyKind==='morning'?'magic':'cheer',1600]];let index=0;
     const next=()=>{if(dismissed||ticketBusy()){delete avatar.dataset.daily;delete avatar.dataset.dailyKind;message=null;schedule();if(!dismissed)dailyTimer=setTimeout(greetDaily,1000);return;}if(index===steps.length){delete avatar.dataset.daily;delete avatar.dataset.dailyKind;setExpression('happy');const greetedDay=dailyGreetingDay;show({paragraphs:[dailySpeech],actions:[{label:dailyReply,run:()=>{try{localStorage.setItem(key+':daily-seen',greetedDay);}catch{}setExpression('happy');show({paragraphs:['A little smile to start us off. Hope your day goes smoothly. 💜']});}}]});waveNova();return;}const [phase,delay]=steps[index++];if(phase==='sip')host.novaCoffeeSip?.();avatar.dataset.daily=phase;if(phase==='cheer')setExpression('happy');dailyTimer=setTimeout(next,delay);};next();
   }
   let novaPresence='',dailyAvailabilityPending=false;
@@ -24238,6 +24239,10 @@ function installNovaWelcome(host) {
     const cup=root.querySelector('.daily-cup');root.querySelector('.arm.left .hand').append(cup);
     const drinkingStyle=document.createElement('style');drinkingStyle.textContent=`
       .daily-cup{transform-origin:50% 0}
+      :host([data-daily="magic"]) .daily-cup,:host([data-daily="magic"]) .headwear{animation:none!important}
+      .coffee-whirl{position:absolute;inset:-10px -12px;pointer-events:none;z-index:20;opacity:0}
+      .coffee-whirl i{position:absolute;left:5%;width:90%;height:26px;border:3px solid #d5baff;border-left-color:transparent;border-right-color:#fff2bd;border-radius:50%;box-shadow:0 0 9px #b58aff;transform:rotate(-14deg)}
+      .coffee-whirl i:nth-child(1){top:18%;width:70%;left:15%}.coffee-whirl i:nth-child(2){top:40%}.coffee-whirl i:nth-child(3){top:65%;width:65%;left:17%}
       :host([data-daily="sip"]) .nova-mouth-drawing{transform-origin:53px 62px;animation:nova-coffee-mouth 2s ease-in-out both}
       @keyframes nova-coffee-drink{0%{transform:translate(-21px,-15px) rotate(-55deg)}25%{transform:translate(0,0) rotate(0deg)}45%,70%{transform:translate(0,0) rotate(-28deg)}85%{transform:translate(0,0) rotate(0deg)}100%{transform:translate(-21px,-15px) rotate(-55deg)}}
       @keyframes nova-cup-support{0%,100%{translate:-21px -15px}25%,85%{translate:0 0}45%,70%{translate:4px 2px}}
@@ -24251,23 +24256,33 @@ function installNovaWelcome(host) {
       rim.style.cssText='position:absolute;left:50%;top:0;width:0;height:0;pointer-events:none';handle.style.cssText='position:absolute;right:-5px;top:9px;width:0;height:0;pointer-events:none';cup.append(rim,handle);
       const frozen=[left,right,cup].map(node=>({node,style:node.getAttribute('style')}));
       for(const arm of [left,right]){const s=getComputedStyle(arm);for(const p of ['left','right','top','transform'])arm.style.setProperty(p,s[p],'important');arm.style.setProperty('animation','none','important');arm.style.setProperty('transition','none','important');arm.style.setProperty('translate','0px 0px','important');}
-      const matrix=new DOMMatrix(getComputedStyle(cup).transform),initialAngle=Math.atan2(matrix.b,matrix.a)*180/Math.PI;
+      const matrix=new DOMMatrix(getComputedStyle(left).transform),initialAngle=-Math.atan2(matrix.b,matrix.a)*180/Math.PI;
       cup.style.setProperty('animation','none','important');cup.style.setProperty('transform',`rotate(${initialAngle}deg)`,'important');left.style.zIndex='6';right.style.zIndex='7';
+      cup.style.setProperty('box-shadow','none','important');const surface=document.createElement('span');surface.className='coffee-surface';surface.style.cssText='position:absolute;left:2px;right:2px;top:0;height:4px;background:#704637;border-radius:50%;transform-origin:center top';cup.append(surface);
       const initialRim=rim.getBoundingClientRect(),bodyStart=root.querySelector('.body').getBoundingClientRect(),rightBox=right.querySelector('.hand').getBoundingClientRect(),rightX=rightBox.left+rightBox.width/2,rightY=rightBox.top+rightBox.height/2;
-      coffeeCleanup=()=>{rim.remove();handle.remove();for(const {node,style}of frozen){if(style===null)node.removeAttribute('style');else node.setAttribute('style',style);}coffeeCleanup=()=>{};};
+      coffeeCleanup=()=>{rim.remove();handle.remove();surface.remove();for(const {node,style}of frozen){if(style===null)node.removeAttribute('style');else node.setAttribute('style',style);}coffeeCleanup=()=>{};};
       const started=performance.now(),smooth=t=>t*t*(3-2*t);
       const tick=now=>{
         if(nova.dataset.daily!=='sip'||!nova.isConnected){coffeeCleanup();return;}
-        const t=Math.min(1,(now-started)/duration),lift=t<.25?smooth(t/.25):t>.8?1-smooth((t-.8)/.2):1;
-        const tilt=t<.3?0:t<.5?smooth((t-.3)/.2):t>.7?1-smooth((t-.7)/.3):1;
+        const t=Math.min(1,(now-started)/duration),gather=smooth(Math.min(1,t/.18)),lift=t<.18?0:t<.42?smooth((t-.18)/.24):t>.75?1-smooth((t-.75)/.25):1;
         const mouth=root.querySelector('.nova-mouth-drawing').getBoundingClientRect(),mx=mouth.left+mouth.width/2,my=mouth.top+mouth.height/2;
         const bodyNow=root.querySelector('.body').getBoundingClientRect(),shiftX=bodyNow.left-bodyStart.left,shiftY=bodyNow.top-bodyStart.top;
-        left.style.setProperty('translate',`${(mx-initialRim.left-shiftX)*lift/.72}px ${(my-initialRim.top-shiftY)*lift/.72}px`,'important');
-        cup.style.setProperty('transform',`rotate(${initialAngle+(10*lift)-25*tilt}deg)`,'important');
-        const contact=handle.getBoundingClientRect();right.style.setProperty('translate',`${(contact.left-rightX-shiftX)*lift/.72}px ${(contact.top-rightY-shiftY)*lift/.72}px`,'important');
-        if(t<1)coffeeFrame=requestAnimationFrame(tick);else coffeeCleanup();
+        left.style.setProperty('translate',`${(mx-initialRim.left-shiftX)*gather/.72}px ${(my-initialRim.top-shiftY)*lift/.72}px`,'important');
+        surface.style.transform=`scaleY(${1-lift})`;cup.dataset.coffeeLift=lift>.99?'raised':'moving';
+        const contact=handle.getBoundingClientRect();right.style.setProperty('translate',`${(contact.left-rightX-shiftX)*gather/.72}px ${(contact.top-rightY-shiftY)*gather/.72}px`,'important');
+        if(t<1)coffeeFrame=requestAnimationFrame(tick);else if(nova.dataset.dailyKind!=='morning')coffeeCleanup();
       };coffeeFrame=requestAnimationFrame(tick);
     };
+    const whirl=document.createElement('span');whirl.className='coffee-whirl';whirl.innerHTML='<i></i><i></i><i></i>';root.querySelector('.body').append(whirl);
+    const coffeePhaseObserver=new MutationObserver(()=>{
+      if(nova.dataset.daily==='magic'){
+        const body=root.querySelector('.body');
+        const spin=body.animate([{transform:'scale(.72) rotateY(0deg)'},{transform:'scale(.72) rotateY(1080deg)'}],{duration:1500,easing:'ease-in-out'});
+        whirl.animate([{opacity:0,transform:'rotate(0deg) scale(.6)'},{opacity:1,offset:.25},{opacity:1,offset:.65},{opacity:0,transform:'rotate(720deg) scale(1.15)'}],{duration:1500});
+        const change=setTimeout(()=>{cup.style.setProperty('visibility','hidden','important');root.querySelector('.headwear').style.visibility='hidden';},750);
+        spin.onfinish=()=>{clearTimeout(change);coffeeCleanup();root.querySelector('.headwear').style.visibility='';};
+      }else if(!['sip','yawn','enter'].includes(nova.dataset.daily)){cancelAnimationFrame(coffeeFrame);coffeeCleanup();}
+    });coffeePhaseObserver.observe(nova,{attributes:true,attributeFilter:['data-daily']});
     const viewControl={value:'auto'},faceControl={value:'auto'};
     const drawings=new Map();
     function faceDrawing(view,expression){
