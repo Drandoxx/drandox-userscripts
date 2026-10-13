@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.580
+// @version      2.36.581
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -73,6 +73,7 @@
 ,{"version":"2.36.578","fixes":true,"changes":[{"key":"nova-popup-cut","meaningful":false,"text":"Immediate reusable cut visibility, translucent notifications and connected random sword dances."}]}
 ,{"version":"2.36.579","fixes":true,"changes":[{"key":"nova-popup-cut","meaningful":true,"text":"Each popup keeps its own cut; NOVA smoothly switches targets and leaves unfinished glowing marks when notifications move."}]}
 ,{"version":"2.36.580","fixes":true,"changes":[{"key":"nova-popup-cut","meaningful":false,"text":"NOVA can cut through the read-only SN AI TV while an AI request is running."}]}
+,{"version":"2.36.581","fixes":true,"changes":[{"key":"nova-popup-cut","meaningful":false,"text":"Cut heat is attached to its popup so the hole and glow show, hide and move together."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -24328,6 +24329,26 @@ function installNovaCutEffects(host, avatar) {
   // Preview-only stage. No real ServiceNow popup or notification is modified.
   const liveStyle=document.createElement('style');liveStyle.textContent='.cut-demo-panel{position:fixed;pointer-events:none}.cut-demo-panel svg{width:100%;height:100%;overflow:visible}.cut-demo-saber{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}';document.body.append(liveStyle);
   const NS='http://www.w3.org/2000/svg',savedCuts=new WeakMap(),retainedCuts=new Map();let current=null,frame=0,token=0,visibilityFrame=0,retainedFrame=0;
+  const ownedGlows=new WeakMap();let glowId=0;
+  const mountGlow=(target,svg,w,h)=>{
+    const previous=ownedGlows.get(target);previous?.observer.disconnect();previous?.svg.remove();
+    const glow=svg.cloneNode(true),prefix='nova-owned-glow-'+(++glowId)+'-';
+    glow.querySelectorAll('svg > path').forEach(e=>e.remove());
+    // Unique SVG definitions avoid one notification borrowing another's clip.
+    const ids=new Map();glow.querySelectorAll('[id]').forEach(e=>{const id=e.id;ids.set(id,prefix+id);e.id=prefix+id;});
+    for(const e of glow.querySelectorAll('*'))for(const a of Array.from(e.attributes))if(a.value.includes('url(#')){let value=a.value;for(const [id,next]of ids)value=value.replaceAll('url(#'+id+')','url(#'+next+')');e.setAttribute(a.name,value);}
+    const style=getComputedStyle(target);
+    if(style.position==='static')target.style.position='relative';
+    glow.dataset.novaOwnedGlow='true';glow.setAttribute('aria-hidden','true');
+    glow.style.cssText=`position:absolute;left:${-(parseFloat(style.borderLeftWidth)||0)}px;top:${-(parseFloat(style.borderTopWidth)||0)}px;width:${w}px;height:${h}px;pointer-events:none;overflow:hidden;z-index:1`;
+    target.append(glow);
+    // Some popup renderers replace their children. Reattach in the same
+    // mutation microtask, before paint, rather than on a polling timer.
+    const observer=new MutationObserver(()=>{if(!glow.isConnected&&target.isConnected)target.append(glow);});observer.observe(target,{childList:true});
+    ownedGlows.set(target,{svg:glow,observer});
+    for(const path of glow.querySelectorAll('svg > g path'))path.animate([{opacity:.3},{opacity:.7},{opacity:.3}],{duration:3600,iterations:Infinity,easing:'ease-in-out'});
+    return glow;
+  };
   const retainCut=()=>{
     if(!current)return;
     const record={...current,animations:[...current.animations]};
@@ -24384,7 +24405,7 @@ function installNovaCutEffects(host, avatar) {
     document.body.append(panel);
     const previousMask=target.style.maskImage,previousWebkitMask=target.style.webkitMaskImage;
     const nativeMask=(complete,distance=0)=>{
-      const mask=`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><defs><mask id="cut" maskUnits="userSpaceOnUse"><rect width="100%" height="100%" fill="white"/><path d="${door}" fill="${complete?'black':'none'}" stroke="black" stroke-width="4" stroke-dasharray="${complete?'none':length}" stroke-dashoffset="${complete?0:length-distance}"/></mask></defs><rect width="100%" height="100%" fill="white" mask="url(#cut)"/></svg>`;
+      const mask=`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><defs><mask id="cut" maskUnits="userSpaceOnUse"><rect width="100%" height="100%" fill="white"/><path d="${door}" fill="${complete?'black':'none'}" stroke="black" stroke-width="${complete?0:1}" stroke-dasharray="${complete?'none':length}" stroke-dashoffset="${complete?0:length-distance}"/></mask></defs><rect width="100%" height="100%" fill="white" mask="url(#cut)"/></svg>`;
       target.style.maskImage=target.style.webkitMaskImage='url("data:image/svg+xml,'+encodeURIComponent(mask)+'")';
     };
     const bodyBounds=document.getElementById('sn-ai-nova-companion').shadowRoot.querySelector('.body').getBoundingClientRect();
@@ -24405,6 +24426,8 @@ function installNovaCutEffects(host, avatar) {
     svg.querySelector('g[mask]').remove();
     const slot=svg.querySelector('.cut-slot'),hole=svg.querySelector('.cut-hole'),length=track.getTotalLength();
     for(const p of [track,edge,core,slot]){p.style.strokeDasharray=length;p.style.strokeDashoffset=wasCut?0:length;}
+    const gluedGlow=mountGlow(target,svg,w,h),gluedPaths=Array.from(gluedGlow.querySelectorAll('svg > g path'));
+    heat.remove(); // Burn marks belong to the actual popup, not a body overlay.
     const saber=svgNode('svg',{class:'cut-demo-saber'});saber.innerHTML='<defs><filter id="nova-blade-glow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="3"/></filter></defs><g class="blade"><path d="M0 0V52" stroke="#ac8aff" stroke-width="12" filter="url(#nova-blade-glow)"/><path d="M0 0V52" stroke="#fff5ff" stroke-width="4" stroke-linecap="round"/><rect x="-5" y="51" width="10" height="20" rx="3" fill="#5e596c" stroke="#d2d0df"/><ellipse cx="0" cy="65" rx="10" ry="12" fill="#baa0ec"/></g><g class="sparks"></g>';document.body.append(saber);
     const dismiss=document.createElement('span');current={panel,saber,close:dismiss,target,previousMask,previousWebkitMask,complete:false,animations:[]};
     // Track only this panel, not the whole page: remove effects before the next
@@ -24469,6 +24492,7 @@ function installNovaCutEffects(host, avatar) {
     const finish=async()=>{
       savedCuts.set(key,{d:door,w,h});current.complete=true;nativeMask(true);hole.setAttribute('opacity','1');flap.setAttribute('opacity',wasCut?'0':'1');
       track.style.strokeDashoffset='0';edge.style.strokeDashoffset='0';core.style.strokeDashoffset='0';saber.style.opacity=wasCut?'0':'1';
+      for(const path of gluedPaths)path.style.strokeDashoffset='0';
       eyes.style.removeProperty('translate');saber.querySelector('.sparks').innerHTML='';
       status.textContent=wasCut?'The doorway is still here. NOVA climbs through.':'Cut complete. The loose piece falls away, then NOVA climbs through.';
       if(!wasCut)await animate(flap,[{transform:'translateY(0) rotate(0deg)',opacity:1},{transform:`translate(25px,${h+100}px) rotate(28deg)`,opacity:0}],{duration:900,easing:'cubic-bezier(.5,0,.9,.4)',fill:'forwards'}).finished.catch(()=>{});
@@ -24536,6 +24560,7 @@ function installNovaCutEffects(host, avatar) {
     const tick=now=>{
       if(mine!==token)return;const progress=Math.min(1,(now-start)/duration),distance=length*progress;
       for(const p of [track,edge,core,slot])p.style.strokeDashoffset=length-distance;
+      for(const path of gluedPaths)path.style.strokeDashoffset=length-distance;
       nativeMask(false,distance);
       const point=track.getPointAtLength(distance),px=box.left+point.x,py=box.top+point.y;
       // Body-relative two-hand grip: hands stay inside the central/lower face
