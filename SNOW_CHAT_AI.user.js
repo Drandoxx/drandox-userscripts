@@ -23435,6 +23435,7 @@ function installChatsTodayPanel() {
   function close(focus=true){
     if(panel.hidden||closing)return;
     const epoch=++openEpoch;closing=true;launcher.setAttribute('aria-expanded','false');stop();request?.abort();request=null;
+    panel.dispatchEvent(new Event('nova-panel-close'));
     closeDataBubble(panel).then(()=>{if(openEpoch===epoch){panel.hidden=true;closing=false;}if(focus)launcher.focus();});
   }
   function render(records) {
@@ -24555,7 +24556,7 @@ function installNovaCutEffects(host, avatar) {
   const presented=new Set();
   const selector='.sn-toast,sn-workspace-notification-item,[role="dialog"],[aria-modal],[data-sn-ai-notification],[id^="local-sn-ai-"][id*="notification"]';
   const eligible=element=>{
-    if(!element?.isConnected||element.hidden||element.closest?.('[data-nova-cut-overlay]'))return false;
+    if(!element?.isConnected||element.hidden||element.closest?.('[data-nova-cut-overlay]')||(element===chatsPanel&&chatsClosing))return false;
     const r=element.getBoundingClientRect(),b=avatar.shadowRoot.querySelector('.body').getBoundingClientRect();
     const style=getComputedStyle(element);
     return r.width>=150&&r.height>=30&&style.display!=='none'&&style.visibility!=='hidden'&&Number(style.opacity)>.1
@@ -24578,14 +24579,20 @@ function installNovaCutEffects(host, avatar) {
   // Chats Today opens and closes inside a shadow root: react to its actual
   // visibility changes rather than waiting for the general notification scan.
   const chatsRoot=document.getElementById('sn-ai-chats-today')?.shadowRoot;
+  const chatsPanel=chatsRoot?.querySelector('.panel');
+  let chatsClosing=false;
+  const onChatsClose=()=>{chatsClosing=true;if(current?.target===chatsPanel)close();presented.delete(chatsPanel);};
+  chatsPanel?.addEventListener('nova-panel-close',onChatsClose);
   const chatsObserver=chatsRoot&&new MutationObserver(()=>{
     const panel=chatsRoot.querySelector('.panel');
+    if(panel?.hidden)chatsClosing=false;
+    if(chatsClosing)return;
     if(current?.target===panel&&!eligible(panel))close();
     if(!eligible(panel))presented.delete(panel);
     else if(savedCuts.has(panel)&&!current&&!host.novaCutActive)poll();
   });
   chatsObserver?.observe(chatsRoot,{subtree:true,attributes:true,attributeFilter:['hidden','style','class']});
-  window.addEventListener('pagehide',()=>{chatsObserver?.disconnect();clearInterval(pollTimer);close();liveStyle.remove();},{once:true});
+  window.addEventListener('pagehide',()=>{chatsPanel?.removeEventListener('nova-panel-close',onChatsClose);chatsObserver?.disconnect();clearInterval(pollTimer);close();liveStyle.remove();},{once:true});
 }
 
 function startSNAIForCurrentTab() {
