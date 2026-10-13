@@ -24578,7 +24578,12 @@ function installNovaCutEffects(host, avatar) {
       const settleAngle=lastFlourishAngle+((28-lastFlourishAngle+180)%360+360)%360-180;
       await new Promise(resolve=>{const retract=now=>{if(mine!==token){resolve();return;}const t=Math.min(1,(now-retractStart)/(idleOnly?900:500)),s=t*t*(3-2*t);grip(holdX,holdY+t*9,lastFlourishAngle+(settleAngle-lastFlourishAngle)*s,cuteBlade*Math.max(0,1-t/.7));saber.style.opacity=String(1-Math.max(0,(t-.7)/.3));if(t<1)frame=requestAnimationFrame(retract);else resolve();};frame=requestAnimationFrame(retract);});
       if(mine!==token)return;
-      if(idleOnly){target.remove();close();return;}
+      if(idleOnly){
+        const poses=[arm,otherArm,eyes].map(node=>({node,transform:getComputedStyle(node).transform,translate:getComputedStyle(node).translate}));
+        target.remove();close();
+        for(const {node,transform,translate}of poses)node.animate([{transform,translate},{transform:getComputedStyle(node).transform,translate:getComputedStyle(node).translate}],{duration:350,easing:'ease-out'});
+        return;
+      }
       for(const a of [arm,otherArm]){a.style.removeProperty('transform');a.style.removeProperty('animation');a.style.removeProperty('z-index');}root.querySelector('.nova').style.removeProperty('animation');
       for(const glow of [track,edge,core])animate(glow,[{opacity:.22},{opacity:.62},{opacity:.22}],{duration:3600,iterations:Infinity,easing:'ease-in-out'});
       host.novaCutHold?.(false);current.finished=true;
