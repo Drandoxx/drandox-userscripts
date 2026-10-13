@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.605
+// @version      2.36.606
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -98,6 +98,7 @@
 ,{"version":"2.36.603","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"Opaque buttons pass through a fixed portal boundary with stronger border glow. Receding tunnel rings and near-rim shading add depth."}]}
 ,{"version":"2.36.604","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"Buttons pass in front of the portal center and right side, behind its curved left edge."}]}
 ,{"version":"2.36.605","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"Buttons enter with per-row timing, gentler slower glow and independent bounded antigravity drift."}]}
+,{"version":"2.36.606","fixes":true,"changes":[{"key":"event-related-tabs","meaningful":true,"text":"EVNT forms hide the Incident/Request, Problem and Catalog Request navigation tabs."},{"key":"nova-portal-menu","meaningful":false,"text":"Button clipping follows the curved portal boundary."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -21628,6 +21629,11 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   // target so native upload handling continues to receive the original File.
   const chatDropWindows = new WeakSet();
   function suppressChatDropOverlay() {
+    for(const tab of activeEventElements(allPageElements())){
+      if(tab.getAttribute?.('role')!=='tab')continue;
+      const label=String(tab.getAttribute('aria-label')||tab.textContent||'').replace(/\s+/g,' ').trim();
+      if(/^(?:Incident\(s\)\s*\/\s*Request\(s\)|Problem\(s\)|Catalog Request\(s\))(?:\s*\(\d+\))?$/i.test(label))tab.style.setProperty('display','none','important');
+    }
     for (const overlay of allPageElements()) {
       if (!overlay.classList?.contains('now-message')
         || !overlay.classList.contains('-vertical')
