@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.591
+// @version      2.36.594
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -84,6 +84,9 @@
 ,{"version":"2.36.589","fixes":true,"changes":[{"key":"nova-profile-face","meaningful":true,"text":"Satisfied side faces use a clear eye and profile smile. Eye and mouth variants can now be combined independently."}]}
 ,{"version":"2.36.590","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":true,"text":"Nova hides her message before cutting an overlapping notification. Automatic chat acceptance notices use a translucent background."},{"key":"nova-profile-face","meaningful":true,"text":"Satisfied side expressions have a relaxed half-closed eye and lifted smile."}]}
 ,{"version":"2.36.591","fixes":true,"changes":[{"key":"ai-response-completion","meaningful":true,"text":"Companion 0.4.36 delivers finished replies to validation and reports stalled partial replies without sending duplicate prompts."},{"key":"nova-profile-face","meaningful":true,"text":"Nova has a separate mischievous evil expression in front and side views, with a warmer satisfied expression."}]}
+,{"version":"2.36.592","fixes":true,"changes":[{"key":"nova-profile-face","meaningful":true,"text":"Evil side faces match the front expression with mirrored inward brows and an asymmetric smirk."}]}
+,{"version":"2.36.593","fixes":true,"changes":[{"key":"nova-idle-swordplay","meaningful":true,"text":"Idle swordplay reserves room for the blade and neon trail so full swings stay inside the screen."}]}
+,{"version":"2.36.594","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"Right-click Nova to open a purple portal with floating themed buttons and an Idle Animations submenu."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -23947,6 +23950,34 @@ function installNovaWelcome(host) {
     return true;
   }
   host.novaIdlePreview=kind=>{clearIdle();return playAmbientIdle(kind);};
+  // Portal controls live inside Nova's stacking group, not a page-wide overlay.
+  const portalStyle=document.createElement('style');portalStyle.textContent=`
+    .nova-portal-menu{position:fixed;z-index:30;display:grid;gap:8px;pointer-events:auto;max-height:calc(100vh - 32px);overflow:auto;padding:12px;background:none;border:0;scrollbar-width:thin}
+    .nova-portal-menu[hidden],.nova-menu-portal[hidden]{display:none!important}
+    .nova-portal-menu.submenu{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .nova-portal-menu .back{grid-column:1/-1}
+    .nova-menu-choice{animation:nova-menu-swim .45s cubic-bezier(.18,.8,.2,1) both;animation-delay:var(--delay,0ms)}
+    .nova-menu-choice button{width:100%;border:1px solid var(--sn-theme-806493,#806493);border-radius:14px;padding:10px 12px;color:var(--sn-theme-e6edf9,#eee6ff);background:linear-gradient(135deg,var(--sn-theme-49365a,#49365a),var(--sn-theme-251f31,#251f31));box-shadow:0 4px 12px #0005,0 0 8px #ad83ff22;cursor:pointer;font:600 13px system-ui;animation:nova-menu-float 3.8s ease-in-out infinite;animation-delay:var(--delay,0ms);transition:filter .15s,box-shadow .15s}
+    .nova-menu-choice button:hover,.nova-menu-choice button:focus-visible{filter:brightness(1.25);box-shadow:0 0 15px #bba0ec77;outline:2px solid var(--sn-theme-ac94ec,#ac94ec);outline-offset:2px}
+    .nova-menu-portal{position:fixed;z-index:29;width:42px;pointer-events:none;transform-origin:center;animation:nova-portal-open .3s ease-out both;filter:drop-shadow(0 0 9px #8055c7)}
+    .nova-menu-portal::before,.nova-menu-portal::after{content:'';position:absolute;inset:0;border-radius:50%;border:3px solid #b797ed;background:radial-gradient(ellipse,#181025 20%,#432561 55%,#8c5bbc 78%,#cfb5ff 90%,transparent);box-shadow:inset 0 0 14px #d8baff,0 0 12px #9062ca;animation:nova-portal-pulse 2.4s ease-in-out infinite}
+    .nova-menu-portal::after{inset:7px;border:2px dashed #bd91ed;background:repeating-radial-gradient(ellipse at 45% 50%,transparent 0 8px,#b586dd44 9px 11px,transparent 12px 18px);animation:nova-portal-vortex 2s linear infinite}
+    @keyframes nova-portal-open{from{transform:scale(.08,.03) skewY(-8deg);opacity:0}to{transform:scale(1) skewY(-8deg);opacity:1}}
+    @keyframes nova-portal-pulse{50%{filter:brightness(1.22);border-color:#d2b4fa}}
+    @keyframes nova-portal-vortex{50%{transform:scaleX(.8) skewY(8deg)}to{transform:scaleX(1) skewY(0)}}
+    @keyframes nova-menu-swim{from{opacity:0;transform:translateX(-55px) scale(.65)}to{opacity:1;transform:translateX(0) scale(1)}}
+    @keyframes nova-menu-float{50%{transform:translateY(-2px) rotate(.3deg)}}
+    @media(prefers-reduced-motion:reduce){.nova-menu-choice,.nova-menu-choice button,.nova-menu-portal,.nova-menu-portal::before,.nova-menu-portal::after{animation:none}}
+  `;avatarRoot.append(portalStyle);
+  const portalMenu=document.createElement('nav'),menuPortal=document.createElement('span');portalMenu.className='nova-portal-menu';portalMenu.setAttribute('aria-label','Nova actions');menuPortal.className='nova-menu-portal';menuPortal.setAttribute('aria-hidden','true');portalMenu.hidden=menuPortal.hidden=true;avatarRoot.append(menuPortal,portalMenu);
+  let portalFrame=0;
+  const closePortalMenu=()=>{portalMenu.hidden=menuPortal.hidden=true;cancelAnimationFrame(portalFrame);};
+  const placePortalMenu=()=>{if(portalMenu.hidden)return;const b=avatarRoot.querySelector('.body').getBoundingClientRect(),width=portalMenu.classList.contains('submenu')?240:180;portalMenu.style.width=width+'px';const height=Math.min(portalMenu.scrollHeight,innerHeight-32),left=Math.max(64,b.left-width-36),top=Math.max(16,Math.min(innerHeight-height-16,b.bottom-height));portalMenu.style.left=left+'px';portalMenu.style.top=top+'px';menuPortal.style.left=(left-46)+'px';menuPortal.style.top=top+'px';menuPortal.style.height=height+'px';portalFrame=requestAnimationFrame(placePortalMenu);};
+  const renderPortalMenu=submenu=>{portalMenu.replaceChildren();portalMenu.classList.toggle('submenu',submenu);const entries=submenu?[['← Back',null],...novaIdleKinds.map(kind=>[kind==='swordplay'?'Sword dance':kind[0].toUpperCase()+kind.slice(1),kind])]:[['Idle Animations','submenu']];entries.forEach(([label,kind],index)=>{const wrapper=document.createElement('span');wrapper.className='nova-menu-choice'+(kind===null?' back':'');wrapper.style.setProperty('--delay',(index*25+180)+'ms');const button=document.createElement('button');button.type='button';button.textContent=label;button.addEventListener('click',event=>{event.stopPropagation();if(kind==='submenu'){renderPortalMenu(true);return;}if(kind===null){renderPortalMenu(false);return;}closePortalMenu();if(message){finishMessage();setTimeout(()=>host.novaIdlePreview(kind),200);}else host.novaIdlePreview(kind);});wrapper.append(button);portalMenu.append(wrapper);});};
+  avatarRoot.querySelector('.nova')?.addEventListener('contextmenu',event=>{event.preventDefault();event.stopPropagation();if(!portalMenu.hidden){closePortalMenu();return;}clearIdle();renderPortalMenu(false);portalMenu.hidden=menuPortal.hidden=false;placePortalMenu();});
+  portalMenu.addEventListener('contextmenu',event=>{event.preventDefault();event.stopPropagation();});
+  document.addEventListener('pointerdown',event=>{if(!portalMenu.hidden&&!event.composedPath().includes(portalMenu)&&!event.composedPath().includes(avatar))closePortalMenu();},true);
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!portalMenu.hidden){closePortalMenu();event.preventDefault();}});
   function startSilentEntrance(){if(entranceStarted||message)return;message={silent:true};dismissed=false;schedule();}
   function clearIdle(){host.novaSwordIdleCancel?.();stopAmbientIdle();clearTimeout(sleepTimer);clearTimeout(wakeTimer);clearTimeout(waveEndTimer);delete avatar.dataset.idle;delete avatar.dataset.reaction;}
   function armIdle(){clearIdle();if(dismissed||avatar.hidden||avatar.dataset.motion||typingQueue.length||message?.actions?.length)return;queueAmbientIdle();sleepTimer=setTimeout(()=>{if(dismissed||avatar.hidden)return;stopAmbientIdle();if(host.novaRestTransition)host.novaRestTransition('sleep');else{avatar.dataset.idle='sleep';setExpression('friendly');avatar.setAttribute('aria-label','NOVA sleeping. Click to wake her.');schedule();}},900000);}
@@ -24298,7 +24329,7 @@ function installNovaWelcome(host) {
       if(view!=='front'&&expression==='happy')eyeArt='<ellipse cx="'+xs[0]+'" cy="39" rx="5.5" ry="8" fill="#392748" stroke="none"/><ellipse cx="'+(xs[0]-1.5)+'" cy="36" rx="2" ry="2" fill="#f9efff" stroke="none"/>';
       if(expression==='angry'||expression==='focused')eyeArt+=xs.map((x,i)=>'<path d="M'+(x-7)+' '+(expression==='angry'?(i===0?27:31):30)+' Q'+x+' '+(expression==='angry'?29:27)+' '+(x+7)+' '+(expression==='angry'?(i===0?31:27):30)+'"/>').join('');
       if(expression==='satisfied')eyeArt=view==='front'?xs.map(x=>'<path d="M'+(x-6)+' 41 q6 -7 12 0"/>').join(''):'<ellipse cx="'+xs[0]+'" cy="40" rx="5.5" ry="7" fill="#392748" stroke="none"/><ellipse cx="'+(xs[0]-1.5)+'" cy="37" rx="2" ry="2" fill="#f9efff" stroke="none"/>';
-      if(expression==='evil')eyeArt=xs.map((x,i)=>'<ellipse cx="'+x+'" cy="42" rx="5.5" ry="3.5" fill="#392748" stroke="none"/><circle cx="'+(x-1)+'" cy="41" r="1.2" fill="#f9efff" stroke="none"/><path d="M'+(x-6)+' '+(view==='front'&&i===1?40:38)+' l12 '+(view==='front'&&i===1?-2:2)+'" stroke-width="2"/>').join('');
+      if(expression==='evil')eyeArt=xs.map((x,i)=>{const mirrored=view==='left'||(view==='front'&&i===1);return '<ellipse cx="'+x+'" cy="42" rx="5.5" ry="3.5" fill="#392748" stroke="none"/><circle cx="'+(x-1)+'" cy="41" r="1.2" fill="#f9efff" stroke="none"/><path d="M'+(x-6)+' '+(mirrored?40:38)+' l12 '+(mirrored?-2:2)+'" stroke-width="2"/>';}).join('');
       if(expression==='satisfied'&&view!=='front')eyeArt='<ellipse cx="'+xs[0]+'" cy="40" rx="5.5" ry="5.5" fill="#392748" stroke="none"/><circle cx="'+(xs[0]-1.5)+'" cy="38" r="2" fill="#f9efff" stroke="none"/>';
       return eyeArt;
     }
@@ -24315,7 +24346,7 @@ function installNovaWelcome(host) {
       if(expression==='angry')mouth='<path d="M'+(mx-5)+' 65 q5 -5 10 0"/>';
       if(expression==='focused')mouth='<path d="M'+(mx-4)+' 63 q4 -1 8 0"/>';
       if(expression==='satisfied')mouth=view==='front'?'<path d="M'+(mx-5)+' 61 q5 7 10 0"/>':'<path d="M'+(mx+(view==='left'?-7:7))+' 60 q'+(view==='left'?3:-3)+' 3 '+(view==='left'?6:-6)+' 2" stroke-width="2.3"/>';
-      if(expression==='evil')mouth=view==='front'?'<path d="M47 61 Q54 69 61 58" stroke-width="2.3"/>':'<path d="M'+(mx+(view==='left'?-7:7))+' 59 q'+(view==='left'?3:-3)+' 6 '+(view==='left'?7:-7)+' 3" stroke-width="2.3"/>';
+      if(expression==='evil')mouth=view==='front'?'<path d="M47 61 Q54 69 61 58" stroke-width="2.3"/>':'<path d="M'+(mx+(view==='left'?-5:5))+' 61 q'+(view==='left'?5:-5)+' 7 '+(view==='left'?10:-10)+' -3" stroke-width="2.3"/>';
       if(expression==='satisfied'&&view!=='front')mouth='<path d="M'+(mx+(view==='left'?-6:6))+' 59 q'+(view==='left'?4:-4)+' 7 '+(view==='left'?8:-8)+' 1" stroke-width="2.3"/>';
       return mouth;
     }
@@ -24639,7 +24670,11 @@ function installNovaCutEffects(host, avatar) {
       setTimeout(()=>{if(mine===token){frontTarget=target;nova.style.zIndex='2147483647';syncAnimationLayer();document.body.append(animationLayer);saber.style.zIndex='2147483647';animationLayer.append(saber);}},900);
       await walk.finished.catch(()=>{});if(mine!==token)return;delete nova.dataset.motion;
       }
-      const holdX=bodyBox.left+bodyBox.width*.55,holdY=bodyBox.top+bodyBox.height*.66,cuteBlade=40;
+      const cuteBlade=40,saberSweepMargin=19+cuteBlade+20;
+      // Idle flourishes sweep in every direction. Reserve the blade, glow and
+      // hand travel inside the viewport instead of clipping at its edges.
+      const holdX=idleOnly?Math.max(saberSweepMargin,Math.min(innerWidth-saberSweepMargin,bodyBox.left+bodyBox.width*.55)):bodyBox.left+bodyBox.width*.55;
+      const holdY=idleOnly?Math.max(saberSweepMargin,Math.min(innerHeight-saberSweepMargin,bodyBox.top+bodyBox.height*.66)):bodyBox.top+bodyBox.height*.66;
       // Draw the same hilt first; only then extend the same short neon blade.
       saber.style.opacity='1';grip(holdX,holdY,28,0);
       await new Promise(resolve=>setTimeout(resolve,350));if(mine!==token)return;
