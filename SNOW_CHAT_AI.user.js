@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.568
+// @version      2.36.569
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -61,6 +61,7 @@
 ,{"version":"2.36.566","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA follows moving props with her eyes, reacts with matching faces, eats with coordinated bites, resists the kite's tug and keeps the yo-yo string attached."},{"key":"nova-updates","meaningful":false,"text":"Update and reload messages type 1.6 times faster."},{"key":"nova-wave","meaningful":false,"text":"NOVA returns to her normal expression after waving, with expression changes observed inside her character."}]}
 ,{"version":"2.36.567","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA settles smoothly back to standing after her idle stories, and her kite has one wavy rope that pulls taut before slipping away."}]}
 ,{"version":"2.36.568","fixes":true,"changes":[{"key":"nova-daily","meaningful":true,"text":"NOVA greets you after your first switch to Available each day."}]}
+,{"version":"2.36.569","fixes":true,"changes":[]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -13859,6 +13860,15 @@ const payload={schema:2,version:'2.36.558',day:log.day,chatCount:log.chats.size,
     if(!selected)throw new Error(`NATIVE_CHOICE_OPTION_MISSING: ${fieldLabel} — ${optionValue}`);
     // Exact action consumed by sn-record-choice-connected's native handler.
     // Its onValueChange dispatch updates the form and invokes client scripts.
+    let result;
+    const attempts=Math.max(1,Math.min(3,Number(options.maxAttempts)||3));
+    for(let attempt=0;attempt<attempts;attempt++){
+    if(attempt){
+      addLog('warn','native-choice-commit-retry',{field:fieldLabel,optionValue,attempt:attempt+1});
+      await sleep(600);await waitForAutomationResume();assertAutomationNotStopped();
+      selected=await ready(3000);
+      if(!selected)break;
+    }
     const owner=ownerOf(host),props=owner?.getProperties?.();
     // Use the actual form callback, not the dropdown's local selected-item
     // state. Connected choice handlers take table, field, value, display.
@@ -13869,8 +13879,17 @@ const payload={schema:2,version:'2.36.558',day:log.day,chatCount:log.chats.size,
       const currentProps=currentOwner?.getProperties?.(),model=currentProps?.formData?.fields?.[currentProps.name];
       return model&&String(model.value)===String(selected.id)&&fieldMatchesExpected(model.displayValue,optionValue,fieldLabel)?model:null;
     },8000,60):null;
-    const result=props?.name?{stable:Boolean(committed),actual:committed?.displayValue||''}:await waitStableValue(fieldLabel,optionValue,'exact',8000,0);
-    if(!result.stable)automationFailure(code||'NATIVE_CHOICE_COMMIT_FAILED',`${fieldLabel} did not retain ${optionValue}.`);
+    result=props?.name?{stable:Boolean(committed),actual:committed?.displayValue||''}:await waitStableValue(fieldLabel,optionValue,'exact',8000,450);
+    if(result.stable){
+      // Client scripts can replace or reset a choice after its callback returns.
+      await sleep(Math.max(450,Number(options.postSelectDelayMs)||0));
+      const latestProps=ownerOf(findControlByLabel(fieldLabel,currentFormElements()))?.getProperties?.();
+      const model=latestProps?.formData?.fields?.[latestProps.name];
+      result.stable=props?.name?Boolean(model&&String(model.value)===String(selected.id)&&fieldMatchesExpected(model.displayValue,optionValue,fieldLabel)):fieldMatchesExpected(readableControlValue(fieldLabel),optionValue,fieldLabel);
+      if(result.stable)break;
+    }
+    }
+    if(!result?.stable)automationFailure(code||'NATIVE_CHOICE_COMMIT_FAILED',`${fieldLabel} did not retain ${optionValue}.`);
     if(comparableLabel(fieldLabel)==='event type')await waitForClassificationDependencyAfterEventType();
     return result.actual;
   }
