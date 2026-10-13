@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.599
+// @version      2.36.600
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -92,6 +92,7 @@
 ,{"version":"2.36.597","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"Portal buttons travel continuously at their final size, without a pause-and-stretch step."}]}
 ,{"version":"2.36.598","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"The animation menu stays open after selection. The portal has a wider dark vortex and glowing rings."}]}
 ,{"version":"2.36.599","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"The portal is slimmer and uses a smooth glow without the animated dashed border."}]}
+,{"version":"2.36.600","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"The portal contains rotating purple spiral bands and a glowing center."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -23969,6 +23970,12 @@ function installNovaWelcome(host) {
     .nova-menu-portal::before,.nova-menu-portal::after{content:'';position:absolute;inset:0;border-radius:48% 43% 47% 45%;border:3px solid #dbb8ff;background:#0b0715;box-shadow:inset 0 0 9px #9952e0,0 0 5px #f0d6ff,0 0 13px #a461e9;animation:nova-portal-pulse 1.3s ease-in-out infinite}
     .nova-menu-portal::after{inset:-2px;border:1px solid #c68cf466;background:transparent;box-shadow:0 0 8px #bd71f4;animation:nova-portal-pulse 1.7s ease-in-out infinite}
     .nova-menu-portal i{position:absolute;left:var(--spark-x);top:var(--spark-y);width:3px;height:3px;border-radius:50%;background:#eed2ff;box-shadow:0 0 5px #bf75ff;animation:nova-portal-spark 1.4s linear infinite;animation-delay:var(--spark-delay)}
+    .nova-portal-interior{position:absolute;inset:7px 5px;border-radius:48%;overflow:hidden;z-index:1;background:radial-gradient(ellipse,#dfb3ff 0%,#a044f7 5%,#441777 17%,#10091e 48%,#080611 85%)}
+    .nova-portal-interior svg{position:absolute;inset:0;width:100%;height:100%;overflow:hidden}
+    .nova-portal-interior .vortex-turn{transform-origin:50px 50px;animation:nova-vortex-turn 4s linear infinite}
+    .nova-portal-interior .vortex-turn.reverse{animation-direction:reverse;animation-duration:6s;opacity:.45}
+    @keyframes nova-vortex-turn{to{transform:rotate(360deg)}}
+    @media(prefers-reduced-motion:reduce){.nova-portal-interior .vortex-turn,.nova-menu-portal i{animation:none}}
     @keyframes nova-portal-spark{from{opacity:0;transform:translate(0,0) scale(.5)}20%{opacity:1}to{opacity:0;transform:translate(var(--spark-dx),-22px) scale(.1)}}
     @keyframes nova-portal-open{from{transform:scale(.08,.03) skewY(-8deg);opacity:0}to{transform:scale(1) skewY(-8deg);opacity:1}}
     @keyframes nova-portal-pulse{50%{filter:brightness(1.22);border-color:#d2b4fa}}
@@ -23980,6 +23987,7 @@ function installNovaWelcome(host) {
   const portalMenu=document.createElement('nav'),menuPortal=document.createElement('span');portalMenu.className='nova-portal-menu';portalMenu.setAttribute('aria-label','Nova actions');menuPortal.className='nova-menu-portal';menuPortal.setAttribute('aria-hidden','true');portalMenu.hidden=menuPortal.hidden=true;avatarRoot.append(menuPortal,portalMenu);
   let portalFrame=0,portalClosing=false;
   for(let index=0;index<30;index++){const spark=document.createElement('i'),angle=index/30*Math.PI*2;spark.style.cssText=`--spark-x:${50+Math.cos(angle)*49}%;--spark-y:${50+Math.sin(angle)*49}%;--spark-dx:${Math.cos(angle)*24}px;--spark-delay:${-index*.13}s`;menuPortal.append(spark);}
+  const portalInterior=document.createElement('span');portalInterior.className='nova-portal-interior';const spiralBands=Array.from({length:5},(_,index)=>`<path d="M50 50 C${64+index*2} 32,92 42,94 68 C96 90,65 104,31 91" transform="rotate(${index*72} 50 50)" fill="none" stroke="${index%2?'#ae50f0':'#6330b6'}" stroke-width="${index%2?2:5}" opacity=".7"/>`).join('');portalInterior.innerHTML=`<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><g class="vortex-turn">${spiralBands}</g><g class="vortex-turn reverse">${spiralBands}</g><circle cx="50" cy="50" r="4" fill="#efd6ff"/></svg>`;menuPortal.prepend(portalInterior);
   const closePortalMenu=async()=>{
     if(portalMenu.hidden||portalClosing)return;
     portalClosing=true;portalMenu.style.pointerEvents='none';
