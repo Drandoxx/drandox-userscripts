@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.567
+// @version      2.36.568
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -60,6 +60,7 @@
 ,{"version":"2.36.565","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA's eighteen idle activities now have little stories, including two snack bites, an escaping kite, page turns and playful reactions."}]}
 ,{"version":"2.36.566","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA follows moving props with her eyes, reacts with matching faces, eats with coordinated bites, resists the kite's tug and keeps the yo-yo string attached."},{"key":"nova-updates","meaningful":false,"text":"Update and reload messages type 1.6 times faster."},{"key":"nova-wave","meaningful":false,"text":"NOVA returns to her normal expression after waving, with expression changes observed inside her character."}]}
 ,{"version":"2.36.567","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA settles smoothly back to standing after her idle stories, and her kite has one wavy rope that pulls taut before slipping away."}]}
+,{"version":"2.36.568","fixes":true,"changes":[{"key":"nova-daily","meaningful":true,"text":"NOVA greets you after your first switch to Available each day."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -21859,7 +21860,7 @@ const payload={schema:2,version:'2.36.558',day:log.day,chatCount:log.chats.size,
       if (presencePreference.busy || !presencePreference.desired || !native.isConnected) return;
       presencePreference.busy = true; presencePreference.lastAttempt = Date.now();
       try {
-        const desired = presencePreference.desired;
+        const desired = presencePreference.desired, previousPresence = actual();
         inboxLog('presence-preference-apply', { desired, actual: actual() });
         native.click();
         const option = await waitUntil(() => allPageElements().find(element =>
@@ -21870,6 +21871,7 @@ const payload={schema:2,version:'2.36.558',day:log.day,chatCount:log.chats.size,
         if (!committed) throw new Error('ServiceNow did not confirm the requested presence');
         presencePreference.failures = 0;
         inboxLog('presence-preference-confirmed', { desired });
+        if(desired==='Available'&&previousPresence!=='Available')document.dispatchEvent(new CustomEvent('sn-ai-presence-became-available'));
       } catch (error) {
         presencePreference.failures += 1;
         inboxLog('presence-preference-failed', { desired: presencePreference.desired, actual: actual(), reason: error.message });
@@ -23712,6 +23714,26 @@ function installNovaWelcome(host) {
     dailyStartPending=false;clearIdle();const steps=[['enter',2500],['yawn',1500],['sip',2000],['cheer',900]];let index=0;
     const next=()=>{if(dismissed||ticketBusy()){delete avatar.dataset.daily;delete avatar.dataset.dailyKind;message=null;schedule();if(!dismissed)dailyTimer=setTimeout(greetDaily,1000);return;}if(index===steps.length){delete avatar.dataset.daily;delete avatar.dataset.dailyKind;setExpression('happy');const greetedDay=dailyGreetingDay;show({paragraphs:[dailySpeech],actions:[{label:dailyReply,run:()=>{try{localStorage.setItem(key+':daily-seen',greetedDay);}catch{}setExpression('happy');show({paragraphs:['A little smile to start us off. Hope your day goes smoothly. 💜']});}}]});waveNova();return;}const [phase,delay]=steps[index++];avatar.dataset.daily=phase;if(phase==='cheer')setExpression('happy');dailyTimer=setTimeout(next,delay);};next();
   }
+  let novaPresence='',dailyAvailabilityPending=false;
+  function dailyPresenceChanged(event){
+    const next=String(event.detail||'');
+    const switched=next==='Available'&&novaPresence&&novaPresence!=='Available';
+    novaPresence=next;
+    if(switched)dailyAvailabilityPending=true;
+    if(!nameReady||!key)return;
+    if(switched){try{localStorage.setItem(key+':daily-available',novaBudapestDay().day);}catch{}}
+    let eligible=dailyAvailabilityPending;
+    try{eligible=eligible||localStorage.getItem(key+':daily-available')===novaBudapestDay().day;}catch{}
+    if(next==='Available'&&eligible&&toggle.checked){
+      try{if(localStorage.getItem(key+':daily-seen')===novaBudapestDay().day)return;}catch{}
+      dailyAvailabilityPending=false;
+      if(message||transitionTimer)enqueueMessage(()=>greetDaily(),'daily-available');else greetDaily();
+    }
+  }
+  document.addEventListener('sn-ai-presence-status',dailyPresenceChanged);
+  const confirmedAvailable=()=>{if(!novaPresence)novaPresence='Offline';dailyPresenceChanged({detail:'Available'});};
+  document.addEventListener('sn-ai-presence-became-available',confirmedAvailable);
+  window.addEventListener('pagehide',()=>{document.removeEventListener('sn-ai-presence-status',dailyPresenceChanged);document.removeEventListener('sn-ai-presence-became-available',confirmedAvailable);},{once:true});
   async function greetDaily(){
     const current=novaBudapestDay(),dayKey=key+':daily-seen';
     if(ticketBusy()){dailyTimer=setTimeout(greetDaily,1000);return;}
@@ -24005,7 +24027,8 @@ function installNovaWelcome(host) {
     @keyframes nova-idle-drops{from{translate:0 0;opacity:1}to{translate:0 13px;opacity:0}}
     @keyframes nova-idle-dance{0%,100%{rotate:0deg}25%{rotate:-5deg;translate:-2px -2px}75%{rotate:5deg;translate:2px -2px}}
     @keyframes nova-idle-stretch{0%,100%{transform:rotate(-15deg)}30%,65%{transform:translateY(-10px) rotate(-65deg)}}
-    .ambient-detail{position:absolute;left:112px;top:66px;width:36px;height:45px;opacity:0;transition:opacity .35s;pointer-events:none}.ambient-detail svg{width:100%;height:100%}
+    .ambient-detail{position:absolute;z-index:7;left:112px;top:66px;width:36px;height:45px;opacity:0;transition:opacity .35s;pointer-events:none}.ambient-detail svg{width:100%;height:100%}
+    :host([data-ambient]) .arm-right{z-index:6}
     .nova-bite-mouth{display:none}.snack-bite{opacity:0}.book-page{opacity:0;transform-origin:20px 20px}
     :host([data-ambient="snack"][data-ambient-phase="bite"]) .snack-bite,:host([data-ambient="snack"][data-ambient-phase="chew"]) .snack-bite,:host([data-ambient="snack"][data-ambient-phase="open"]) .snack-bite{opacity:var(--nova-bitten,0)}
     :host([data-ambient="snack"][data-ambient-phase="bite"]),:host([data-ambient="snack"][data-ambient-phase="chew"]){--nova-bitten:1}
@@ -24225,7 +24248,8 @@ window.addEventListener('pagehide',()=>{clearTimeout(messageTimer);clearTimeout(
     try{const response=await fetch('/api/now/table/sys_user/'+id+'?sysparm_fields=first_name',{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':page.g_ck},signal:controller.signal});if(response.ok){const data=await response.json();firstName=String(data.result?.first_name||'friend').trim().split(/\s+/)[0]||'friend';}}catch{}finally{clearTimeout(timer);}
     if(!host.isConnected)return;
     nameReady=true;if(pendingUpdate){const update=pendingUpdate;pendingUpdate=null;host.novaUpdateMessage(update);return;}
-    if(choice==='yes'){greetDaily();return;}if(choice==='no'){startSilentEntrance();return;}
+    if(dailyAvailabilityPending){try{localStorage.setItem(key+':daily-available',novaBudapestDay().day);}catch{}}
+    if(choice==='yes'||choice==='no'){startSilentEntrance();if(novaPresence==='Available')dailyPresenceChanged({detail:'Available'});return;}
     show({paragraphs:[`Hi ${firstName},`,`I’m Nova, your little chat-side friend. If the day gets tricky or you have a quiet moment, I can bring a little encouragement, a smile, or something fun.`,`Would you like friendly messages from me?`],actions:[{label:'Yes',run:()=>reply(true)},{label:'No',run:()=>reply(false)}]});
   })();
 }
