@@ -24307,6 +24307,226 @@ window.addEventListener('pagehide',()=>{clearTimeout(messageTimer);clearTimeout(
   })();
 }
 
+function installNovaCutEffects(host, avatar) {
+  // Preview-only stage. No real ServiceNow popup or notification is modified.
+  const liveStyle=document.createElement('style');liveStyle.textContent='.cut-demo-panel{position:fixed;pointer-events:none}.cut-demo-panel svg{width:100%;height:100%;overflow:visible}.cut-demo-saber{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}';document.body.append(liveStyle);
+  const NS='http://www.w3.org/2000/svg',savedCuts=new WeakMap();let current=null,frame=0,token=0;
+  const random=(a,b)=>a+Math.random()*(b-a);
+  const svgNode=(name,attributes={})=>{const e=document.createElementNS(NS,name);for(const [k,v]of Object.entries(attributes))e.setAttribute(k,v);return e;};
+  const status=document.createElement('div');status.hidden=true;
+  const makeDoor=(box,body)=>{
+    // Measure the hidden intersection, not a fixed doorway or the full avatar host.
+    const left=Math.max(0,body.left-box.left-4),right=Math.min(box.width,body.right-box.left+4);
+    const bottom=Math.min(box.height,body.bottom-box.top+4),top=body.top-box.top-8;
+    if(right<=left||bottom<=top)return null;
+    const mid=top+(bottom-top)*.55,span=right-left;
+    const a=left+span*.24,b=left+span*.62,c=right-span*.12;
+    // Several independently uneven shoulder/crown sections, no central peak.
+    return `M${left} ${bottom} C${left+random(-3,4)} ${bottom-12} ${left+random(-3,4)} ${mid+9} ${left+random(-2,4)} ${mid} C${left+random(-3,5)} ${top+random(15,30)} ${left+random(0,10)} ${top+random(-4,5)} ${a} ${top+random(-3,3)} Q${left+span*.4} ${top+random(-7,6)} ${b} ${top+random(-4,5)} Q${right-span*.22} ${top+random(-7,7)} ${c} ${top+random(1,10)} C${right+random(-4,3)} ${top+random(12,28)} ${right+random(-3,4)} ${mid-8} ${right+random(-4,2)} ${mid} C${right+random(-4,2)} ${mid+12} ${right+random(-3,3)} ${bottom-10} ${right} ${bottom}`;
+  };
+  const animate=(element,frames,options)=>{const a=element.animate(frames,options);current?.animations.push(a);return a;};
+  const resetNova=()=>{
+    const nova=document.getElementById('sn-ai-nova-companion');if(!nova)return;
+    nova.style.zIndex='100';delete nova.dataset.motion;const root=nova.shadowRoot;
+    for(const selector of ['.arm.left','.arm.right','.nova-eye-drawing','.nova']){const e=root.querySelector(selector);e?.style.removeProperty('transform');e?.style.removeProperty('translate');e?.style.removeProperty('animation');e?.style.removeProperty('visibility');e?.style.removeProperty('z-index');}
+  };
+  const close=()=>{if(current){if(!current.complete){current.target.style.maskImage=current.previousMask;current.target.style.webkitMaskImage=current.previousWebkitMask;}current.animations.forEach(a=>a.cancel());}host.novaCutHold?.(false);++token;cancelAnimationFrame(frame);current?.panel.remove();current?.saber.remove();current?.close.remove();current=null;resetNova();status.textContent='';};
+  async function open(target){
+    const kind='panel';
+    close();host.novaCutHold?.(true);
+    const openingToken=token;
+    // Finish the shared stand transition before measuring the visible character.
+    await new Promise(resolve=>setTimeout(resolve,950));if(openingToken!==token)return;
+    if(!target.isConnected||!target.getBoundingClientRect().width){host.novaCutHold?.(false);return;}
+    const mine=token,panel=document.createElement('div');panel.className='cut-demo-panel';panel.dataset.novaCutOverlay='true';
+    const box=target.getBoundingClientRect(),w=box.width,h=box.height,key=target;
+    const baseZ=Math.min(2147483646,Math.max(150,Number(getComputedStyle(target).zIndex)||150));
+    panel.style.cssText=`position:fixed;left:${box.left}px;top:${box.top}px;width:${w}px;height:${h}px;z-index:${baseZ};pointer-events:none`;
+    document.body.append(panel);
+    const previousMask=target.style.maskImage,previousWebkitMask=target.style.webkitMaskImage;
+    const nativeMask=(complete,distance=0)=>{
+      const mask=`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><rect width="100%" height="100%" fill="white"/><path d="${door}" fill="${complete?'black':'none'}" stroke="black" stroke-width="4" stroke-dasharray="${complete?'none':length}" stroke-dashoffset="${complete?0:length-distance}"/></svg>`;
+      target.style.maskImage=target.style.webkitMaskImage='url("data:image/svg+xml,'+encodeURIComponent(mask)+'")';
+    };
+    const bodyBounds=document.getElementById('sn-ai-nova-companion').shadowRoot.querySelector('.body').getBoundingClientRect();
+    const old=savedCuts.get(key),wasCut=!!old&&old.w===w&&old.h===h,door=wasCut?old.d:makeDoor(box,bodyBounds);
+    if(!door){panel.remove();host.novaCutHold?.(false);return;}
+    const svg=svgNode('svg',{viewBox:`0 0 ${w} ${h}`});
+    svg.innerHTML=`<defs><mask id="nova-door-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="${w}" height="${h}"><rect width="${w}" height="${h}" fill="white"/><path class="cut-slot" d="${door}" fill="none" stroke="black" stroke-width="5"/><path class="cut-hole" d="${door}" fill="black" opacity="0"/></mask><filter id="nova-cut-heat" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="3"/></filter></defs><g mask="url(#nova-door-mask)"><rect x="1" y="1" width="${w-2}" height="${h-2}" rx="18" fill="#241c33" stroke="#665180"/><text x="24" y="38" fill="#eee7ff" font-size="20" font-family="system-ui">${kind==='panel'?'Chats Today · reusable panel':'New notification'}</text><text x="24" y="66" fill="#bcacd7" font-size="13" font-family="system-ui">NOVA is behind this box.</text></g>`;
+    const track=svgNode('path',{d:door,fill:'none',stroke:'#ff6b18','stroke-width':9,filter:'url(#nova-cut-heat)'}),edge=svgNode('path',{d:door,fill:'none',stroke:'#ffdc79','stroke-width':2});
+    const core=svgNode('path',{d:door,fill:'none',stroke:'#fffbe9','stroke-width':1});
+    const clip=svgNode('clipPath',{id:'nova-panel-bounds'});clip.append(svgNode('rect',{width:w,height:h,rx:18}));svg.querySelector('defs').append(clip);
+    svg.querySelector('g[mask]').setAttribute('clip-path','url(#nova-panel-bounds)');
+    // A tinted translucent pane reveals the action behind it without moving
+    // the sword onto the foreground. Keep labels fully opaque and readable.
+    svg.querySelector('g[mask] > rect').setAttribute('fill-opacity','.64');
+    if(w<200||h<70){const labels=svg.querySelectorAll('text');labels[0].setAttribute('font-size','12');labels[0].setAttribute('x','10');labels[0].setAttribute('y','22');labels[0].textContent=w<80?'Alert':'New notification';labels[1].remove();}
+    const heat=svgNode('g',{'clip-path':'url(#nova-panel-bounds)'});heat.append(track,edge,core);
+    const flap=svgNode('path',{d:door+' Z',fill:'#241c33','fill-opacity':'.64',stroke:'none',opacity:0});svg.append(heat,flap);panel.append(svg);
+    svg.querySelector('g[mask]').remove();
+    const slot=svg.querySelector('.cut-slot'),hole=svg.querySelector('.cut-hole'),length=track.getTotalLength();
+    for(const p of [track,edge,core,slot]){p.style.strokeDasharray=length;p.style.strokeDashoffset=length;}
+    const saber=svgNode('svg',{class:'cut-demo-saber'});saber.innerHTML='<defs><filter id="nova-blade-glow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="3"/></filter></defs><g class="blade"><path d="M0 0V52" stroke="#ac8aff" stroke-width="12" filter="url(#nova-blade-glow)"/><path d="M0 0V52" stroke="#fff5ff" stroke-width="4" stroke-linecap="round"/><rect x="-5" y="51" width="10" height="20" rx="3" fill="#5e596c" stroke="#d2d0df"/><ellipse cx="0" cy="65" rx="10" ry="12" fill="#baa0ec"/></g><g class="sparks"></g>';document.body.append(saber);
+    const dismiss=document.createElement('span');current={panel,saber,close:dismiss,target,previousMask,previousWebkitMask,complete:false,animations:[]};
+    const nova=document.getElementById('sn-ai-nova-companion'),root=nova.shadowRoot,arm=root.querySelector('.arm.right'),otherArm=root.querySelector('.arm.left'),eyes=root.querySelector('.nova-eye-drawing');
+    const otherArmBox=otherArm.querySelector('.hand').getBoundingClientRect();
+    // Keep the real oval hands on the rig behind the notification, never draw
+    // substitute floating hands over it. Both grip points still follow the hilt.
+    saber.querySelector('.blade ellipse').remove();
+    const blade=saber.querySelector('.blade');
+    // Vertical SVG strokes have a zero-width object bounding box. A user-space
+    // filter region prevents their neon bloom from disappearing entirely.
+    const bloom=saber.querySelector('filter');for(const [k,v]of Object.entries({filterUnits:'userSpaceOnUse',x:-200,y:-240,width:400,height:480}))bloom.setAttribute(k,v);
+    blade.querySelector('rect').remove();
+    const colourBody=svgNode('path',{stroke:'#ac8aff','stroke-width':7,'stroke-linecap':'round'});blade.insertBefore(colourBody,blade.lastElementChild);
+    const hilt=svgNode('g',{'class':'hilt'});
+    hilt.innerHTML='<rect x="-4" y="-18" width="8" height="24" rx="2" fill="#303039" stroke="#d7dbe4" stroke-width="1.3"/><path d="M-3 -13H3 M-3 -9H3 M-3 -5H3" stroke="#999da8" stroke-width="2"/><rect x="-5" y="2" width="10" height="5" rx="1" fill="#d9dce5"/><circle cx="2" cy="-16" r="1.5" fill="#ff524c"/>';
+    saber.append(hilt);
+    // The hilt, like the real hands, is occluded by the notification surface.
+    const hiltMask=svgNode('mask',{id:'nova-hilt-occlusion',maskUnits:'userSpaceOnUse',x:0,y:0,width:innerWidth,height:innerHeight});
+    hiltMask.append(svgNode('rect',{width:innerWidth,height:innerHeight,fill:'white'}),svgNode('rect',{x:box.left,y:box.top,width:w,height:h,fill:'black',rx:18}));saber.querySelector('defs').append(hiltMask);
+    const hiltLayer=svgNode('g',{'mask':'url(#nova-hilt-occlusion)'});hiltLayer.append(hilt);saber.append(hiltLayer);
+    hiltLayer.removeAttribute('mask'); // The translucent panel occludes both naturally.
+    const saberColours=[['blue','#398bff'],['green','#42ff72'],['purple','#bd66ff'],['yellow','#ffdc38'],['red','#ff364c']];
+    const [colourName,colour]=saberColours[Math.floor(Math.random()*saberColours.length)];
+    saber.querySelector('.blade path').setAttribute('stroke',colour);colourBody.setAttribute('stroke',colour);saber.dataset.colour=colourName;
+    const trail=svgNode('g',{'class':'saber-motion-trail','pointer-events':'none'});saber.insertBefore(trail,blade);
+    let lastTip=null;
+    saber.style.zIndex=String(baseZ-1); // Held in front of her body, behind the panel (150).
+    const armBox=arm.querySelector('.hand').getBoundingClientRect(),bodyBox=root.querySelector('.body').getBoundingClientRect();
+    root.querySelector('.nova').style.setProperty('animation','none','important');for(const a of [arm,otherArm]){a.style.setProperty('animation','none','important');a.style.setProperty('z-index','4');}
+    const duration=matchMedia('(prefers-reduced-motion: reduce)').matches?1:4600,start=performance.now();
+    let heldPose=null;
+    const grip=(x,y,angle,size)=>{
+      heldPose={x,y,angle,size};
+      const radians=angle*Math.PI/180,ux=Math.sin(radians),uy=-Math.cos(radians);
+      const tip={x:x+ux*(19+size),y:y+uy*(19+size)};
+      if(lastTip&&size>5){
+        // Brief swept fan, like a camera catching the moving luminous blade.
+        const fan=svgNode('path',{d:`M${x+ux*19} ${y+uy*19} L${lastTip.x} ${lastTip.y} Q${tip.x+ux*5} ${tip.y+uy*5} ${tip.x} ${tip.y} Z`,fill:colour,opacity:.23});trail.append(fan);
+        animate(fan,[{opacity:.23},{opacity:0}],{duration:180,fill:'forwards'}).finished.then(()=>fan.remove()).catch(()=>fan.remove());
+      }
+      lastTip=size>5?tip:null;
+      blade.setAttribute('transform',`translate(${x} ${y}) rotate(${angle})`);hilt.setAttribute('transform',`translate(${x} ${y}) rotate(${angle})`);
+      for(const p of blade.querySelectorAll('path')){p.setAttribute('d',`M0 -19 V${-19-size}`);p.style.opacity=size>0?'1':'0';}
+      for(const [a,b,gx,gy]of [[arm,armBox,x,y],[otherArm,otherArmBox,x-ux*9,y-uy*9]]){
+        a.style.setProperty('animation','none','important');a.style.setProperty('z-index','4');
+        a.style.setProperty('transform',`translate(${(gx-b.left-b.width/2)/.72}px,${(gy-b.top-b.height/2)/.72}px)`,'important');
+      }
+    };
+    const finish=async()=>{
+      savedCuts.set(key,{d:door,w,h});current.complete=true;nativeMask(true);hole.setAttribute('opacity','1');flap.setAttribute('opacity',wasCut?'0':'1');
+      track.style.strokeDashoffset='0';edge.style.strokeDashoffset='0';core.style.strokeDashoffset='0';saber.style.opacity=wasCut?'0':'1';
+      eyes.style.removeProperty('translate');saber.querySelector('.sparks').innerHTML='';
+      status.textContent=wasCut?'The doorway is still here. NOVA climbs through.':'Cut complete. The loose piece falls away, then NOVA climbs through.';
+      if(!wasCut)await animate(flap,[{transform:'translateY(0) rotate(0deg)',opacity:1},{transform:`translate(25px,${h+100}px) rotate(28deg)`,opacity:0}],{duration:900,easing:'cubic-bezier(.5,0,.9,.4)',fill:'forwards'}).finished.catch(()=>{});
+      if(mine!==token)return;
+      // Retract and stow before turning or passing through the opening.
+      hiltLayer.removeAttribute('mask');
+      const holdX=bodyBox.left+bodyBox.width*.55,holdY=bodyBox.top+bodyBox.height*.66;
+      const cuteBlade=40;
+      if(!wasCut){
+      // Begin at the exact last cutting pose, not a new hard-coded position.
+      const from=heldPose||{x:holdX,y:holdY,angle:28,size:cuteBlade};
+      const rest={x:holdX+random(-7,7),y:holdY+random(-4,5),angle:random(-60,60)};
+      const delta=((rest.angle-from.angle+540)%360)-180,settleStart=performance.now();
+      status.textContent='Cut finished. NOVA settles the saber, retracts it, then puts it away.';
+      await new Promise(resolve=>{const settle=now=>{if(mine!==token){resolve();return;}const t=Math.min(1,(now-settleStart)/750),ease=t*t*(3-2*t);grip(from.x+(rest.x-from.x)*ease,from.y+(rest.y-from.y)*ease,from.angle+delta*ease,cuteBlade);if(t<1)frame=requestAnimationFrame(settle);else resolve();};frame=requestAnimationFrame(settle);});if(mine!==token)return;
+      await new Promise(resolve=>setTimeout(resolve,250));if(mine!==token)return;
+      const retractBeforeWalk=performance.now();
+      await new Promise(resolve=>{const retract=now=>{if(mine!==token){resolve();return;}const t=Math.min(1,(now-retractBeforeWalk)/650);grip(rest.x,rest.y,from.angle+delta,cuteBlade*(1-t));if(t<1)frame=requestAnimationFrame(retract);else resolve();};frame=requestAnimationFrame(retract);});if(mine!==token)return;
+      const stowStart=performance.now();
+      await new Promise(resolve=>{const stow=now=>{if(mine!==token){resolve();return;}const t=Math.min(1,(now-stowStart)/350);grip(rest.x,rest.y+t*14,from.angle+delta,0);saber.style.opacity=String(1-t);if(t<1)frame=requestAnimationFrame(stow);else resolve();};frame=requestAnimationFrame(stow);});if(mine!==token)return;
+      }
+      for(const a of [arm,otherArm]){a.style.removeProperty('transform');a.style.removeProperty('animation');a.style.removeProperty('z-index');}
+      const direction=Math.random()<.5?'left':'right',step=direction==='left'?-12:12;
+      root.querySelector('.nova').style.removeProperty('animation');nova.dataset.motion='walk-'+direction;
+      status.textContent=`NOVA turns ${direction}, walks through, then faces you.`;
+      const walk=animate(nova,[{transform:'scale(.72)'},{transform:`translateX(${step}px) scale(.72)`,offset:.5},{transform:'scale(.72)'}],{duration:1800,easing:'linear'});
+      setTimeout(()=>{if(mine===token){nova.style.zIndex='2147483647';document.body.append(nova);saber.style.zIndex='2147483647';document.body.append(saber);}},900);
+      await walk.finished.catch(()=>{});if(mine!==token)return;delete nova.dataset.motion;
+      // Draw the same hilt first; only then extend the same short neon blade.
+      saber.style.opacity='1';grip(holdX,holdY,28,0);
+      await new Promise(resolve=>setTimeout(resolve,350));if(mine!==token)return;
+      const igniteStart=performance.now();
+      await new Promise(resolve=>{const ignite=now=>{if(mine!==token){resolve();return;}const t=Math.min(1,(now-igniteStart)/450);grip(holdX,holdY,28,cuteBlade*t);if(t<1)frame=requestAnimationFrame(ignite);else resolve();};frame=requestAnimationFrame(ignite);});if(mine!==token)return;
+      const flourishKinds=['spin','figure-eight','diagonal waves','side-to-side waves','quick salute'];
+      const flourishKind=flourishKinds[Math.floor(Math.random()*flourishKinds.length)];
+      status.textContent=`A quick ${flourishKind} flourish, then NOVA puts it away.`;
+      root.querySelector('.nova').style.setProperty('animation','none','important');
+      const spinStart=performance.now();
+      await new Promise(resolve=>{
+        const spin=now=>{if(mine!==token){resolve();return;}const t=Math.min(1,(now-spinStart)/1000),ease=t*t*(3-2*t),envelope=Math.sin(Math.PI*t);
+          let angle=28,x=holdX,y=holdY;
+          if(flourishKind==='spin'){angle+=720*ease;x+=Math.sin(t*Math.PI*4)*3;y+=Math.cos(t*Math.PI*4)*2;}
+          else if(flourishKind==='figure-eight'){angle+=Math.sin(t*Math.PI*4)*85*envelope;x+=Math.sin(t*Math.PI*2)*7*envelope;y+=Math.sin(t*Math.PI*4)*4*envelope;}
+          else if(flourishKind==='diagonal waves'){angle+=Math.sin(t*Math.PI*4)*65*envelope;x+=Math.sin(t*Math.PI*4)*5*envelope;y-=Math.sin(t*Math.PI*4)*4*envelope;}
+          else if(flourishKind==='side-to-side waves'){angle+=Math.sin(t*Math.PI*6)*55*envelope;x+=Math.sin(t*Math.PI*6)*4*envelope;}
+          else{angle-=Math.sin(Math.PI*t)*70;x-=envelope*3;y-=envelope*7;}
+          grip(x,y,angle,cuteBlade);
+          frame=requestAnimationFrame(spin);if(t===1){cancelAnimationFrame(frame);resolve();}
+        };frame=requestAnimationFrame(spin);
+      });if(mine!==token)return;
+      const retractStart=performance.now();
+      await new Promise(resolve=>{const retract=now=>{if(mine!==token){resolve();return;}const t=Math.min(1,(now-retractStart)/500);grip(holdX,holdY+t*9,28,cuteBlade*(1-t));saber.style.opacity=String(1-t);if(t<1)frame=requestAnimationFrame(retract);else resolve();};frame=requestAnimationFrame(retract);});
+      if(mine!==token)return;
+      for(const a of [arm,otherArm]){a.style.removeProperty('transform');a.style.removeProperty('animation');a.style.removeProperty('z-index');}root.querySelector('.nova').style.removeProperty('animation');
+      for(const glow of [track,edge,core])animate(glow,[{opacity:.22},{opacity:.62},{opacity:.22}],{duration:3600,iterations:Infinity,easing:'ease-in-out'});
+      host.novaCutHold?.(false);current.finished=true;
+    };
+    if(wasCut){finish();return;}
+    status.textContent='Drawing a random, NOVA-sized doorway. Both hands grip the saber and her gaze follows the cut.';
+    const tick=now=>{
+      if(mine!==token)return;const progress=Math.min(1,(now-start)/duration),distance=length*progress;
+      for(const p of [track,edge,core,slot])p.style.strokeDashoffset=length-distance;
+      nativeMask(false,distance);
+      const point=track.getPointAtLength(distance),px=box.left+point.x,py=box.top+point.y;
+      // Body-relative two-hand grip: hands stay inside the central/lower face
+      // envelope. The blade points straight from this grip to the contact tip,
+      // rather than following a tangent that throws the hands into empty air.
+      const cx=bodyBox.left+bodyBox.width/2,cy=bodyBox.top+bodyBox.height*.63;
+      const dx=px-cx,dy=py-cy,norm=Math.max(1,Math.hypot(dx,dy)),ux=dx/norm,uy=dy/norm;
+      const handX=px-ux*59,handY=py-uy*59;
+      const otherX=handX-ux*9,otherY=handY-uy*9;
+      const angle=Math.atan2(py-handY,px-handX)*180/Math.PI+90;
+      const bladeLength=40;
+      heldPose={x:handX,y:handY,angle,size:bladeLength};
+      blade.setAttribute('transform',`translate(${handX} ${handY}) rotate(${angle})`);hilt.setAttribute('transform',`translate(${handX} ${handY}) rotate(${angle})`);
+      for(const path of blade.querySelectorAll('path'))path.setAttribute('d',`M0 -19 V${-19-bladeLength}`);
+      // White core + coloured inner blade + broad bloom, like the references.
+      blade.querySelector('path').setAttribute('stroke-width','13');
+      arm.style.setProperty('transform',`translate(${(handX-armBox.left-armBox.width/2)/.72}px,${(handY-armBox.top-armBox.height/2)/.72}px)`,'important');
+      otherArm.style.setProperty('transform',`translate(${(otherX-otherArmBox.left-otherArmBox.width/2)/.72}px,${(otherY-otherArmBox.top-otherArmBox.height/2)/.72}px)`,'important');
+      eyes.style.setProperty('translate',`${Math.max(-4,Math.min(4,(px-bodyBox.left-bodyBox.width/2)/18))}px ${Math.max(-3,Math.min(3,(py-bodyBox.top-bodyBox.height/2)/18))}px`,'important');
+      saber.querySelector('.sparks').innerHTML=Array.from({length:5},()=>`<circle cx="${px+random(-10,10)}" cy="${py+random(-9,9)}" r="${random(1,2.8)}" fill="#ffcb52"/>`).join('');
+      if(progress<1)frame=requestAnimationFrame(tick);else finish();
+    };frame=requestAnimationFrame(tick);
+  }
+
+  // Native popup/notification discovery includes open shadow-root components.
+  // Ignore small, non-overlapping, and ordinary in-page status/control elements.
+  const selector='.sn-toast,sn-workspace-notification-item,[role="dialog"],[aria-modal="true"],[id^="local-sn-ai-"][id*="notification"]';
+  const eligible=element=>{
+    if(!element?.isConnected||element.hidden||element.closest?.('[data-nova-cut-overlay]'))return false;
+    const r=element.getBoundingClientRect(),b=avatar.shadowRoot.querySelector('.body').getBoundingClientRect();
+    const style=getComputedStyle(element);
+    return r.width>=150&&r.height>=30&&style.display!=='none'&&style.visibility!=='hidden'&&Number(style.opacity)>.1
+      &&r.left<b.right&&r.right>b.left&&r.top<b.bottom&&r.bottom>b.top;
+  };
+  const poll=()=>{
+    if(document.hidden)return;
+    if(current){const r=current.target.getBoundingClientRect();if(!eligible(current.target)||Math.abs(r.left-parseFloat(current.panel.style.left))>2||Math.abs(r.top-parseFloat(current.panel.style.top))>2||Math.abs(r.width-current.panel.getBoundingClientRect().width)>2)close();else return;}
+    if(host.novaCutActive||avatar.hidden||avatar.dataset.phase!=='ready'||avatar.dataset.motion||avatar.dataset.daily||avatar.dataset.idle||!host.novaCutCanStart?.())return;
+    const chats=document.getElementById('sn-ai-chats-today')?.shadowRoot?.querySelector('.panel');
+    const candidates=[chats,...allPageElements().filter(e=>e.matches?.(selector))].filter(eligible);
+    // Inner visible notification surface wins over its component wrapper.
+    const target=candidates.find(e=>!candidates.some(other=>other!==e&&e.contains(other)))||candidates[0];
+    if(target)open(target).catch(error=>{addLog('warn','nova-cut-failed',{message:error.message});close();});
+  };
+  const pollTimer=setInterval(poll,1200);
+  window.addEventListener('pagehide',()=>{clearInterval(pollTimer);close();liveStyle.remove();},{once:true});
+}
+
 function startSNAIForCurrentTab() {
   const launch = tab => {
     if (!tab.snAiPositionIdentity) {
