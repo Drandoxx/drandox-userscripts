@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.570
+// @version      2.36.571
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -63,6 +63,7 @@
 ,{"version":"2.36.568","fixes":true,"changes":[{"key":"nova-daily","meaningful":true,"text":"NOVA greets you after your first switch to Available each day."}]}
 ,{"version":"2.36.569","fixes":true,"changes":[]}
 ,{"version":"2.36.570","fixes":true,"changes":[]}
+,{"version":"2.36.571","fixes":true,"changes":[]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -23301,13 +23302,14 @@ function installChatsTodayPanel() {
   const host=document.createElement('div');host.id='sn-ai-chats-today';document.body.append(host);
   // Only these two rectangles intercept input. There is no backdrop, inert
   // workspace, focus trap, composer alteration, or change to auto-accept.
-  host.style.cssText='position:fixed;inset:0;z-index:2147483000;pointer-events:none;';
+  // Separate stacking layers: NOVA covers her bed, but not the opened panel.
+  host.style.cssText='display:contents;pointer-events:none;';
   const root=host.attachShadow({mode:'open'});
   root.innerHTML=`<style>
     :host{font:13px/1.4 system-ui;color:var(--sn-theme-e6edf9,#eee6ff)}*{box-sizing:border-box}[hidden]{display:none!important}
     button{font:inherit;color:inherit;border:1px solid var(--sn-theme-655573,#74618b);border-radius:7px;background:var(--sn-theme-302951,#302951);padding:6px 10px;cursor:pointer}button:hover{background:var(--sn-theme-49365a,#49365a)}button:focus-visible,summary:focus-visible{outline:2px solid var(--sn-theme-ac94ec,#ac94ec);outline-offset:2px}button:disabled{cursor:wait;opacity:.65}
-    .launcher{position:fixed;right:16px;bottom:14px;pointer-events:auto;box-shadow:0 4px 16px #0005}
-    .panel{position:fixed;top:78px;right:12px;bottom:60px;left:300px;pointer-events:auto;display:flex;flex-direction:column;min-width:0;background:var(--sn-theme-191621,#191621);border:1px solid var(--sn-theme-655573,#74618b);border-radius:12px;box-shadow:0 8px 32px #0006;overflow:hidden}
+    .launcher{position:fixed;z-index:99;right:16px;bottom:14px;pointer-events:auto;box-shadow:0 4px 16px #0005}
+    .panel{position:fixed;z-index:2147483000;top:78px;right:12px;bottom:60px;left:300px;pointer-events:auto;display:flex;flex-direction:column;min-width:0;background:var(--sn-theme-191621,#191621);border:1px solid var(--sn-theme-655573,#74618b);border-radius:12px;box-shadow:0 8px 32px #0006;overflow:hidden}
     header{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--sn-theme-251f31,#241c33);border-bottom:1px solid var(--sn-theme-423750,#423750)}h2{font-size:17px;margin:0}header .actions{margin-left:auto;display:flex;gap:6px}.icon{display:grid;place-items:center;width:30px;height:30px;padding:0;border:0;background:transparent}.icon svg{width:18px;height:18px}
     .status{font-size:11px;color:var(--sn-theme-a8b8d1,#beb0d1);padding:7px 14px;margin:0}.error{color:var(--now-color_alert--critical-3,#ed7d86)}.groups{overflow:auto;flex:1;min-height:0;padding:0 12px 12px}.empty{padding:12px;color:var(--sn-theme-a8b8d1,#beb0d1)}
     details{border:1px solid var(--sn-theme-423750,#423750);border-radius:8px;margin:6px 0;overflow:hidden}summary{cursor:pointer;padding:10px 12px;background:var(--sn-theme-251f31,#241c33);font-weight:600}summary .count{font-weight:400;color:var(--sn-theme-a8b8d1,#beb0d1);margin-left:8px}.table-wrap{overflow:auto}table{width:100%;table-layout:fixed;border-collapse:collapse;min-width:920px;font-size:12px}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--sn-theme-423750,#423750);vertical-align:top}th{color:var(--sn-theme-a8b8d1,#beb0d1);font-weight:500;background:var(--sn-theme-251f31,#241c33)}tbody tr:last-child td{border-bottom:0}.number{white-space:nowrap;color:var(--sn-theme-ac94ec,#ac94ec);background:transparent;border:0;padding:0;font-weight:600}.number:hover{background:transparent;text-decoration:underline}.description{overflow-wrap:anywhere}.nowrap{white-space:nowrap}.state{white-space:nowrap;color:var(--sn-theme-a8b8d1,#beb0d1)}tr[data-active="true"] .state{color:var(--agent-available,#91d6b2)}
