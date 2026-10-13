@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.581
+// @version      2.36.582
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -74,6 +74,7 @@
 ,{"version":"2.36.579","fixes":true,"changes":[{"key":"nova-popup-cut","meaningful":true,"text":"Each popup keeps its own cut; NOVA smoothly switches targets and leaves unfinished glowing marks when notifications move."}]}
 ,{"version":"2.36.580","fixes":true,"changes":[{"key":"nova-popup-cut","meaningful":false,"text":"NOVA can cut through the read-only SN AI TV while an AI request is running."}]}
 ,{"version":"2.36.581","fixes":true,"changes":[{"key":"nova-popup-cut","meaningful":false,"text":"Cut heat is attached to its popup so the hole and glow show, hide and move together."}]}
+,{"version":"2.36.582","fixes":true,"changes":[{"key":"nova-popup-cut","meaningful":false,"text":"Separate animation layers and bounded mask, spark and trail updates reduce ticket-logging contention."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -24384,7 +24385,7 @@ function installNovaCutEffects(host, avatar) {
     const nova=document.getElementById('sn-ai-nova-companion');if(!nova)return;
     nova.style.zIndex='100';delete nova.dataset.motion;const root=nova.shadowRoot;
     root.querySelector('.nova-cut-grumpy')?.remove();root.querySelector('.nova-mouth-drawing')?.style.removeProperty('visibility');
-    for(const selector of ['.arm.left','.arm.right','.nova-eye-drawing','.nova']){const e=root.querySelector(selector);e?.style.removeProperty('transform');e?.style.removeProperty('translate');e?.style.removeProperty('animation');e?.style.removeProperty('visibility');e?.style.removeProperty('z-index');}
+    for(const selector of ['.arm.left','.arm.right','.nova-eye-drawing','.nova']){const e=root.querySelector(selector);e?.style.removeProperty('transform');e?.style.removeProperty('translate');e?.style.removeProperty('animation');e?.style.removeProperty('visibility');e?.style.removeProperty('z-index');e?.style.removeProperty('will-change');}
   };
   const close=()=>{cancelAnimationFrame(visibilityFrame);visibilityFrame=0;if(current){if(!current.complete){current.target.style.maskImage=current.previousMask;current.target.style.webkitMaskImage=current.previousWebkitMask;}current.animations.forEach(a=>a.cancel());}host.novaCutHold?.(false);++token;cancelAnimationFrame(frame);current?.panel.remove();current?.saber.remove();current?.close.remove();current=null;resetNova();status.textContent='';};
   async function open(target,carry=null){
@@ -24464,10 +24465,18 @@ function installNovaCutEffects(host, avatar) {
     current.colour=[colourName,colour];
     saber.querySelector('.blade path').setAttribute('stroke',colour);colourBody.setAttribute('stroke',colour);saber.dataset.colour=colourName;
     const trail=svgNode('g',{'class':'saber-motion-trail','pointer-events':'none'});saber.insertBefore(trail,blade);
-    let lastTip=null;
+    let lastTip=null,lastTrailAt=0,lastMaskAt=0,lastSparkAt=0,lastBladeSize=null;
     saber.style.zIndex=String(baseZ-1); // Held in front of her body, behind the panel (150).
     const armBox=arm.querySelector('.hand').getBoundingClientRect(),bodyBox=root.querySelector('.body').getBoundingClientRect();
     root.querySelector('.nova').style.setProperty('animation','none','important');for(const a of [arm,otherArm]){a.style.setProperty('animation','none','important');a.style.setProperty('z-index','4');}
+    // Promote just the small moving rig parts, not the full TV or viewport.
+    for(const part of [arm,otherArm,eyes])part.style.willChange='transform,translate';
+    for(const part of [blade,hilt]){part.style.willChange='transform';part.style.transformOrigin='0 0';}
+    const bladePaths=Array.from(blade.querySelectorAll('path')),sparks=saber.querySelector('.sparks');
+    const setSaberPose=(x,y,angle,size)=>{
+      const transform=`translate(${x}px,${y}px) rotate(${angle}deg)`;blade.style.transform=transform;hilt.style.transform=transform;
+      if(size!==lastBladeSize){lastBladeSize=size;for(const p of bladePaths){p.setAttribute('d',`M0 -19 V${-19-size}`);p.style.opacity=size>0?'1':'0';}}
+    };
     const duration=matchMedia('(prefers-reduced-motion: reduce)').matches?1:4600;let start=0;
     saber.style.opacity='0';
     let heldPose=null;
@@ -24476,14 +24485,14 @@ function installNovaCutEffects(host, avatar) {
       if(current?.target===target)current.pose=heldPose;
       const radians=angle*Math.PI/180,ux=Math.sin(radians),uy=-Math.cos(radians);
       const tip={x:x+ux*(19+size),y:y+uy*(19+size)};
-      if(lastTip&&size>5){
+      const trailNow=performance.now();
+      if(lastTip&&size>5&&trailNow-lastTrailAt>=45&&Math.hypot(tip.x-lastTip.x,tip.y-lastTip.y)>2){lastTrailAt=trailNow;
         // Brief swept fan, like a camera catching the moving luminous blade.
         const fan=svgNode('path',{d:`M${x+ux*19} ${y+uy*19} L${lastTip.x} ${lastTip.y} Q${tip.x+ux*5} ${tip.y+uy*5} ${tip.x} ${tip.y} Z`,fill:colour,opacity:.23});trail.append(fan);
         animate(fan,[{opacity:.23},{opacity:0}],{duration:180,fill:'forwards'}).finished.then(()=>fan.remove()).catch(()=>fan.remove());
       }
       lastTip=size>5?tip:null;
-      blade.setAttribute('transform',`translate(${x} ${y}) rotate(${angle})`);hilt.setAttribute('transform',`translate(${x} ${y}) rotate(${angle})`);
-      for(const p of blade.querySelectorAll('path')){p.setAttribute('d',`M0 -19 V${-19-size}`);p.style.opacity=size>0?'1':'0';}
+      setSaberPose(x,y,angle,size);
       for(const [a,b,gx,gy]of [[arm,armBox,x,y],[otherArm,otherArmBox,x-ux*9,y-uy*9]]){
         a.style.setProperty('animation','none','important');a.style.setProperty('z-index','4');
         a.style.setProperty('transform',`translate(${(gx-b.left-b.width/2)/.72}px,${(gy-b.top-b.height/2)/.72}px)`,'important');
@@ -24561,7 +24570,9 @@ function installNovaCutEffects(host, avatar) {
       if(mine!==token)return;const progress=Math.min(1,(now-start)/duration),distance=length*progress;
       for(const p of [track,edge,core,slot])p.style.strokeDashoffset=length-distance;
       for(const path of gluedPaths)path.style.strokeDashoffset=length-distance;
-      nativeMask(false,distance);
+      // SVG data-URL mask rebuilds force the large TV to repaint. Limit that
+      // work to 20 Hz; hands, gaze and saber still follow every display frame.
+      if(now-lastMaskAt>=50||progress===1){lastMaskAt=now;nativeMask(false,distance);}
       const point=track.getPointAtLength(distance),px=box.left+point.x,py=box.top+point.y;
       // Body-relative two-hand grip: hands stay inside the central/lower face
       // envelope. The blade points straight from this grip to the contact tip,
@@ -24574,14 +24585,13 @@ function installNovaCutEffects(host, avatar) {
       const bladeLength=40;
       heldPose={x:handX,y:handY,angle,size:bladeLength};
       current.pose=heldPose;current.distance=distance;
-      blade.setAttribute('transform',`translate(${handX} ${handY}) rotate(${angle})`);hilt.setAttribute('transform',`translate(${handX} ${handY}) rotate(${angle})`);
-      for(const path of blade.querySelectorAll('path'))path.setAttribute('d',`M0 -19 V${-19-bladeLength}`);
+      setSaberPose(handX,handY,angle,bladeLength);
       // White core + coloured inner blade + broad bloom, like the references.
       blade.querySelector('path').setAttribute('stroke-width','13');
       arm.style.setProperty('transform',`translate(${(handX-armBox.left-armBox.width/2)/.72}px,${(handY-armBox.top-armBox.height/2)/.72}px)`,'important');
       otherArm.style.setProperty('transform',`translate(${(otherX-otherArmBox.left-otherArmBox.width/2)/.72}px,${(otherY-otherArmBox.top-otherArmBox.height/2)/.72}px)`,'important');
       eyes.style.setProperty('translate',`${Math.max(-4,Math.min(4,(px-bodyBox.left-bodyBox.width/2)/18))}px ${Math.max(-3,Math.min(3,(py-bodyBox.top-bodyBox.height/2)/18))}px`,'important');
-      saber.querySelector('.sparks').innerHTML=Array.from({length:5},()=>`<circle cx="${px+random(-10,10)}" cy="${py+random(-9,9)}" r="${random(1,2.8)}" fill="#ffcb52"/>`).join('');
+      if(now-lastSparkAt>=100){lastSparkAt=now;sparks.innerHTML=Array.from({length:5},()=>`<circle cx="${px+random(-10,10)}" cy="${py+random(-9,9)}" r="${random(1,2.8)}" fill="#ffcb52"/>`).join('');}
       if(progress<1)frame=requestAnimationFrame(tick);else finish();
     };
     // A small grumpy reaction, then visibly draw and ignite in the real grip.
