@@ -23725,6 +23725,7 @@ function installNovaWelcome(host) {
     let eligible=dailyAvailabilityPending;
     try{eligible=eligible||localStorage.getItem(key+':daily-available')===novaBudapestDay().day;}catch{}
     if(next==='Available'&&eligible&&toggle.checked){
+      if(dailyGreetingDay===novaBudapestDay().day)return;
       try{if(localStorage.getItem(key+':daily-seen')===novaBudapestDay().day)return;}catch{}
       dailyAvailabilityPending=false;
       if(message||transitionTimer)enqueueMessage(()=>greetDaily(),'daily-available');else greetDaily();
