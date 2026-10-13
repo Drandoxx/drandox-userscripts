@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.600
+// @version      2.36.601
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -93,6 +93,7 @@
 ,{"version":"2.36.598","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"The animation menu stays open after selection. The portal has a wider dark vortex and glowing rings."}]}
 ,{"version":"2.36.599","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"The portal is slimmer and uses a smooth glow without the animated dashed border."}]}
 ,{"version":"2.36.600","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"The portal contains rotating purple spiral bands and a glowing center."}]}
+,{"version":"2.36.601","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"Solid buttons emerge and return sequentially without fading, with softly pulsing purple borders."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -23962,7 +23963,7 @@ function installNovaWelcome(host) {
     .nova-portal-menu[hidden],.nova-menu-portal[hidden]{display:none!important}
     .nova-portal-menu.submenu{grid-template-columns:repeat(2,minmax(0,1fr))}
     .nova-portal-menu .back{grid-column:1/-1}
-    .nova-menu-choice{transform-origin:left center;animation:nova-menu-swim .65s cubic-bezier(.18,.8,.2,1) both;animation-delay:calc(var(--delay,0ms) + 260ms)}
+    .nova-menu-choice{transform-origin:left center;animation:nova-menu-swim .24s linear both;animation-delay:calc(var(--delay,0ms) + 260ms)}
     .nova-menu-choice button{width:100%;border:1px solid var(--sn-theme-806493,#806493);border-radius:14px;padding:10px 12px;color:var(--sn-theme-e6edf9,#eee6ff);background:linear-gradient(135deg,var(--sn-theme-49365a,#49365a),var(--sn-theme-251f31,#251f31));box-shadow:0 4px 12px #0005,0 0 8px #ad83ff22;cursor:pointer;font:600 13px system-ui;animation:nova-menu-float 3.8s ease-in-out infinite;animation-delay:var(--delay,0ms);transition:filter .15s,box-shadow .15s}
     .nova-menu-choice button:hover,.nova-menu-choice button:focus-visible{filter:brightness(1.25);box-shadow:0 0 15px #bba0ec77;outline:2px solid var(--sn-theme-ac94ec,#ac94ec);outline-offset:2px}
     .nova-menu-portal{position:fixed;z-index:29;width:42px;pointer-events:none;transform-origin:center;animation:nova-portal-open .3s ease-out both;transition:left .42s cubic-bezier(.2,.75,.25,1),top .42s cubic-bezier(.2,.75,.25,1),height .42s cubic-bezier(.2,.75,.25,1);filter:drop-shadow(0 0 9px #8055c7)}
@@ -23980,7 +23981,9 @@ function installNovaWelcome(host) {
     @keyframes nova-portal-open{from{transform:scale(.08,.03) skewY(-8deg);opacity:0}to{transform:scale(1) skewY(-8deg);opacity:1}}
     @keyframes nova-portal-pulse{50%{filter:brightness(1.22);border-color:#d2b4fa}}
     @keyframes nova-portal-vortex{50%{transform:scaleX(.8) skewY(8deg)}to{transform:scaleX(1) skewY(0)}}
-    @keyframes nova-menu-swim{from{opacity:0;transform:translateX(var(--portal-entry-x,-40px))}to{opacity:1;transform:translateX(0)}}
+    @keyframes nova-menu-swim{from{opacity:1;clip-path:inset(0 100% 0 0);transform:translateX(var(--portal-entry-x,-40px))}to{opacity:1;clip-path:inset(0 0 0 0);transform:translateX(0)}}
+    .nova-menu-choice button{border-color:#b785e1;animation:nova-menu-float 3.8s ease-in-out infinite,nova-button-glow 1.3s ease-in-out infinite;animation-delay:0ms,0ms}
+    @keyframes nova-button-glow{0%,100%{box-shadow:0 4px 12px #0005,0 0 4px #a461e944; border-color:#9870d7}50%{box-shadow:0 4px 12px #0005,0 0 8px #bd71f477; border-color:#d0a5ee}}
     @keyframes nova-menu-float{50%{transform:translateY(-2px) rotate(.3deg)}}
     @media(prefers-reduced-motion:reduce){.nova-menu-choice,.nova-menu-choice button,.nova-menu-portal,.nova-menu-portal::before,.nova-menu-portal::after{animation:none;transition:none}}
   `;avatarRoot.append(portalStyle);
@@ -23994,17 +23997,17 @@ function installNovaWelcome(host) {
     const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
     const choices=Array.from(portalMenu.children);
     await Promise.all(choices.map((choice,index)=>{
-      const style=getComputedStyle(choice),from={opacity:style.opacity,transform:style.transform},entry=style.getPropertyValue('--portal-entry-x')||'-40px';
+      const style=getComputedStyle(choice),from={opacity:1,clipPath:style.clipPath,transform:style.transform},entry=style.getPropertyValue('--portal-entry-x')||'-40px';
       choice.getAnimations().forEach(animation=>animation.cancel());
       choice.querySelector('button').getAnimations().forEach(animation=>animation.cancel());
-      return choice.animate([from,{opacity:0,transform:`translateX(${entry})`}],{duration:reduced?1:360,delay:reduced?0:index*65,easing:'cubic-bezier(.4,0,.8,.2)',fill:'forwards'}).finished.catch(()=>{});
+      return choice.animate([from,{opacity:1,clipPath:'inset(0 100% 0 0)',transform:`translateX(${entry})`}],{duration:reduced?1:240,delay:reduced?0:index*260,easing:'linear',fill:'forwards'}).finished.catch(()=>{});
     }));
     await menuPortal.animate([{transform:'scale(1) skewY(-8deg)',opacity:1},{transform:'scale(.04,.015) skewY(-8deg)',opacity:0}],{duration:reduced?1:280,easing:'ease-in',fill:'forwards'}).finished.catch(()=>{});
     portalMenu.hidden=menuPortal.hidden=true;cancelAnimationFrame(portalFrame);
     menuPortal.getAnimations().forEach(animation=>animation.cancel());portalMenu.style.pointerEvents='';portalClosing=false;
   };
   const placePortalMenu=()=>{if(portalMenu.hidden)return;const b=avatarRoot.querySelector('.body').getBoundingClientRect(),width=portalMenu.classList.contains('submenu')?240:180;portalMenu.style.width=width+'px';const height=Math.min(portalMenu.scrollHeight,innerHeight-32),left=Math.max(64,b.left-width-36),top=Math.max(16,Math.min(innerHeight-height-16,b.bottom-height));portalMenu.style.left=left+'px';portalMenu.style.top=top+'px';menuPortal.style.left=(left-46)+'px';menuPortal.style.top=top+'px';menuPortal.style.height=height+'px';for(const choice of portalMenu.children)choice.style.setProperty('--portal-entry-x',(-25-choice.offsetLeft)+'px');portalFrame=requestAnimationFrame(placePortalMenu);};
-const renderPortalMenu=submenu=>{portalMenu.replaceChildren();portalMenu.classList.toggle('submenu',submenu);const entries=submenu?[['← Back',null],...novaIdleKinds.map(kind=>[kind==='swordplay'?'Sword dance':kind[0].toUpperCase()+kind.slice(1),kind])]:[['Idle Animations','submenu']];entries.forEach(([label,kind],index)=>{const wrapper=document.createElement('span');wrapper.className='nova-menu-choice'+(kind===null?' back':'');wrapper.style.setProperty('--delay',(index*25+180)+'ms');const button=document.createElement('button');button.type='button';button.textContent=label;button.addEventListener('click',event=>{event.stopPropagation();if(kind==='submenu'){renderPortalMenu(true);return;}if(kind===null){renderPortalMenu(false);return;}if(message){finishMessage();setTimeout(()=>host.novaIdlePreview(kind),200);}else host.novaIdlePreview(kind);});wrapper.append(button);portalMenu.append(wrapper);});};
+const renderPortalMenu=submenu=>{portalMenu.replaceChildren();portalMenu.classList.toggle('submenu',submenu);const entries=submenu?[['← Back',null],...novaIdleKinds.map(kind=>[kind==='swordplay'?'Sword dance':kind[0].toUpperCase()+kind.slice(1),kind])]:[['Idle Animations','submenu']];entries.forEach(([label,kind],index)=>{const wrapper=document.createElement('span');wrapper.className='nova-menu-choice'+(kind===null?' back':'');wrapper.style.setProperty('--delay',(index*260+180)+'ms');const button=document.createElement('button');button.type='button';button.textContent=label;button.addEventListener('click',event=>{event.stopPropagation();if(kind==='submenu'){renderPortalMenu(true);return;}if(kind===null){renderPortalMenu(false);return;}if(message){finishMessage();setTimeout(()=>host.novaIdlePreview(kind),200);}else host.novaIdlePreview(kind);});wrapper.append(button);portalMenu.append(wrapper);});};
   avatarRoot.querySelector('.nova')?.addEventListener('contextmenu',event=>{event.preventDefault();event.stopPropagation();if(!portalMenu.hidden){closePortalMenu();return;}clearIdle();renderPortalMenu(false);portalMenu.hidden=menuPortal.hidden=false;placePortalMenu();});
   portalMenu.addEventListener('contextmenu',event=>{event.preventDefault();event.stopPropagation();});
   document.addEventListener('pointerdown',event=>{if(!portalMenu.hidden&&!event.composedPath().includes(portalMenu)&&!event.composedPath().includes(avatar))closePortalMenu();},true);
