@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.604
+// @version      2.36.605
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -97,6 +97,7 @@
 ,{"version":"2.36.602","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"The slower portal vortex has irregular drifting wisps, layered depth and a recessed glowing center."}]}
 ,{"version":"2.36.603","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"Opaque buttons pass through a fixed portal boundary with stronger border glow. Receding tunnel rings and near-rim shading add depth."}]}
 ,{"version":"2.36.604","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"Buttons pass in front of the portal center and right side, behind its curved left edge."}]}
+,{"version":"2.36.605","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"Buttons enter with per-row timing, gentler slower glow and independent bounded antigravity drift."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -23967,7 +23968,7 @@ function installNovaWelcome(host) {
     .nova-portal-menu.submenu{grid-template-columns:repeat(2,minmax(0,1fr))}
     .nova-portal-menu .back{grid-column:1/-1}
     .nova-menu-choice{position:relative;overflow:visible;clip-path:inset(-24px -24px -24px var(--portal-boundary,-40px))}
-    .nova-menu-traveler{display:block;animation:nova-menu-swim .85s cubic-bezier(.3,.4,.4,1) both;animation-delay:460ms}
+    .nova-menu-traveler{display:block;animation:nova-menu-swim .85s cubic-bezier(.3,.4,.4,1) both;animation-delay:var(--entry-delay,460ms)}
     .nova-menu-choice button{width:100%;border:1px solid var(--sn-theme-806493,#806493);border-radius:14px;padding:10px 12px;color:var(--sn-theme-e6edf9,#eee6ff);background:linear-gradient(135deg,var(--sn-theme-49365a,#49365a),var(--sn-theme-251f31,#251f31));box-shadow:0 4px 12px #0005,0 0 8px #ad83ff22;cursor:pointer;font:600 13px system-ui;animation:nova-menu-float 3.8s ease-in-out infinite;animation-delay:var(--delay,0ms);transition:filter .15s,box-shadow .15s}
     .nova-menu-choice button:hover,.nova-menu-choice button:focus-visible{filter:brightness(1.25);box-shadow:0 0 15px #bba0ec77;outline:2px solid var(--sn-theme-ac94ec,#ac94ec);outline-offset:2px}
     .nova-menu-portal{position:fixed;z-index:31;width:42px;pointer-events:none;transform-origin:center;animation:nova-portal-open .3s ease-out both;transition:left .42s cubic-bezier(.2,.75,.25,1),top .42s cubic-bezier(.2,.75,.25,1),height .42s cubic-bezier(.2,.75,.25,1);filter:drop-shadow(0 0 9px #8055c7)}
@@ -23992,9 +23993,10 @@ function installNovaWelcome(host) {
     @keyframes nova-portal-pulse{50%{filter:brightness(1.22);border-color:#d2b4fa}}
     @keyframes nova-portal-vortex{50%{transform:scaleX(.8) skewY(8deg)}to{transform:scaleX(1) skewY(0)}}
     @keyframes nova-menu-swim{from{transform:translateX(var(--portal-entry-x,-220px))}to{transform:translateX(0)}}
-    .nova-menu-choice button{border-color:#b785e1;animation:nova-menu-float 3.8s ease-in-out infinite,nova-button-glow 1.3s ease-in-out infinite;animation-delay:0ms,0ms}
-    @keyframes nova-button-glow{0%,100%{box-shadow:0 4px 12px #0005,0 0 6px #b57aef99,inset 0 0 3px #b57aef55; border-color:#bb92ed}50%{box-shadow:0 4px 12px #0005,0 0 13px #c58cffbb,inset 0 0 6px #d0a5ee66; border-color:#e6caff}}
-    @keyframes nova-menu-float{50%{transform:translateY(-2px) rotate(.3deg)}}
+    .nova-portal-menu{gap:26px 28px}
+    .nova-menu-choice button{border-color:#b785e1;animation:nova-menu-float var(--float-time,12s) ease-in-out infinite,nova-button-glow 4.8s ease-in-out infinite;animation-delay:var(--float-phase,0s),var(--glow-phase,0s)}
+    @keyframes nova-button-glow{0%,100%{box-shadow:0 4px 12px #0005,0 0 5px #b57aef66,inset 0 0 2px #b57aef33;border-color:#b58bda}50%{box-shadow:0 4px 12px #0005,0 0 7px #c58cff88,inset 0 0 3px #d0a5ee44;border-color:#cba9e7}}
+    @keyframes nova-menu-float{0%,100%{transform:translate(-3px,1px)}27%{transform:translate(1px,-3px)}63%{transform:translate(3px,2px)}84%{transform:translate(-1px,3px)}}
     @media(prefers-reduced-motion:reduce){.nova-menu-choice,.nova-menu-choice button,.nova-menu-portal,.nova-menu-portal::before,.nova-menu-portal::after{animation:none;transition:none}}
   `;avatarRoot.append(portalStyle);
   const portalMenu=document.createElement('nav'),menuPortal=document.createElement('span');portalMenu.className='nova-portal-menu';portalMenu.setAttribute('aria-label','Nova actions');menuPortal.className='nova-menu-portal';menuPortal.setAttribute('aria-hidden','true');portalMenu.hidden=menuPortal.hidden=true;avatarRoot.append(menuPortal,portalMenu);
@@ -24028,7 +24030,7 @@ function installNovaWelcome(host) {
     menuPortal.getAnimations().forEach(animation=>animation.cancel());portalMenu.style.pointerEvents='';portalClosing=false;
   };
 const placePortalMenu=()=>{if(portalMenu.hidden)return;const b=avatarRoot.querySelector('.body').getBoundingClientRect(),width=portalMenu.classList.contains('submenu')?240:180;portalMenu.style.width=width+'px';const height=Math.min(portalMenu.scrollHeight,innerHeight-32),left=Math.max(64,b.left-width-36),top=Math.max(16,Math.min(innerHeight-height-16,b.bottom-height));portalMenu.style.left=left+'px';portalMenu.style.top=top+'px';menuPortal.style.left=(left-46)+'px';menuPortal.style.top=top+'px';menuPortal.style.height=height+'px';for(const choice of portalMenu.children){const boundary=-25-choice.offsetLeft;choice.style.setProperty('--portal-boundary',boundary+'px');choice.style.setProperty('--portal-entry-x',(boundary-choice.offsetWidth-24)+'px');}portalFrame=requestAnimationFrame(placePortalMenu);};
-const renderPortalMenu=submenu=>{portalMenu.replaceChildren();portalMenu.classList.toggle('submenu',submenu);const entries=submenu?[['← Back',null],...novaIdleKinds.map(kind=>[kind==='swordplay'?'Sword dance':kind[0].toUpperCase()+kind.slice(1),kind])]:[['Idle Animations','submenu']];entries.forEach(([label,kind],index)=>{const wrapper=document.createElement('span');wrapper.className='nova-menu-choice'+(kind===null?' back':'');wrapper.style.setProperty('--delay',(index*260+180)+'ms');const button=document.createElement('button');button.type='button';button.textContent=label;button.addEventListener('click',event=>{event.stopPropagation();if(kind==='submenu'){renderPortalMenu(true);return;}if(kind===null){renderPortalMenu(false);return;}if(message){finishMessage();setTimeout(()=>host.novaIdlePreview(kind),200);}else host.novaIdlePreview(kind);});const traveler=document.createElement('span');traveler.className='nova-menu-traveler';traveler.append(button);wrapper.append(traveler);portalMenu.append(wrapper);});};
+const renderPortalMenu=submenu=>{portalMenu.replaceChildren();portalMenu.classList.toggle('submenu',submenu);const entries=submenu?[['← Back',null],...novaIdleKinds.map(kind=>[kind==='swordplay'?'Sword dance':kind[0].toUpperCase()+kind.slice(1),kind])]:[['Idle Animations','submenu']];entries.forEach(([label,kind],index)=>{const wrapper=document.createElement('span');wrapper.className='nova-menu-choice'+(kind===null?' back':'');wrapper.style.setProperty('--delay',(index*260+180)+'ms');const button=document.createElement('button');wrapper.style.setProperty('--entry-delay',(460+(submenu&&index>0?(index-1)%2*1100:0))+'ms');wrapper.style.setProperty('--float-time',(10+Math.random()*8)+'s');wrapper.style.setProperty('--float-phase',(-Math.random()*15)+'s');wrapper.style.setProperty('--glow-phase',(-Math.random()*4.8)+'s');button.type='button';button.textContent=label;button.addEventListener('click',event=>{event.stopPropagation();if(kind==='submenu'){renderPortalMenu(true);return;}if(kind===null){renderPortalMenu(false);return;}if(message){finishMessage();setTimeout(()=>host.novaIdlePreview(kind),200);}else host.novaIdlePreview(kind);});const traveler=document.createElement('span');traveler.className='nova-menu-traveler';traveler.append(button);wrapper.append(traveler);portalMenu.append(wrapper);});};
   avatarRoot.querySelector('.nova')?.addEventListener('contextmenu',event=>{event.preventDefault();event.stopPropagation();if(!portalMenu.hidden){closePortalMenu();return;}clearIdle();renderPortalMenu(false);portalMenu.hidden=menuPortal.hidden=false;placePortalMenu();});
   portalMenu.addEventListener('contextmenu',event=>{event.preventDefault();event.stopPropagation();});
   document.addEventListener('pointerdown',event=>{if(!portalMenu.hidden&&!event.composedPath().includes(portalMenu)&&!event.composedPath().includes(avatar))closePortalMenu();},true);
