@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.585
+// @version      2.36.587
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -78,6 +78,8 @@
 ,{"version":"2.36.583","fixes":true,"changes":[{"key":"nova-sword-idle","meaningful":true,"text":"NOVA can draw her saber and perform a longer random swordplay idle."},{"key":"nova-popup-cut","meaningful":false,"text":"Saved openings stay anchored to the right and bottom edges when panels resize, including their glow and border removal."}]}
 ,{"version":"2.36.584","fixes":true,"changes":[{"key":"nova-popup-cut","meaningful":true,"text":"NOVA looks angry, focused and satisfied during cuts, and stays in front after climbing through."}]}
 ,{"version":"2.36.585","fixes":true,"changes":[{"key":"nova-layering","meaningful":true,"text":"NOVA and every idle prop move together in front of popups, keeping their internal drawing order."},{"key":"nova-profile-face","meaningful":true,"text":"Side-view cute faces have a softer smiling eye and a small profile smile."}]}
+,{"version":"2.36.586","fixes":false,"changes":[{"key":"nova-morning-coffee","meaningful":true,"text":"NOVA brings her cup to her mouth, tips it with both hands and smiles with cute eyes while drinking."}]}
+,{"version":"2.36.587","fixes":true,"changes":[{"key":"nova-morning-coffee","meaningful":true,"text":"Coffee sipping follows the actual cup rim and handle with continuous two-hand movement."},{"key":"nova-profile-face","meaningful":true,"text":"Cute profile faces have one clearly defined, expressive eye and one small smile."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -23780,7 +23782,7 @@ function installNovaWelcome(host) {
   }
   function runDaily(){
     dailyStartPending=false;clearIdle();const steps=[['enter',2500],['yawn',1500],['sip',2000],['cheer',900]];let index=0;
-    const next=()=>{if(dismissed||ticketBusy()){delete avatar.dataset.daily;delete avatar.dataset.dailyKind;message=null;schedule();if(!dismissed)dailyTimer=setTimeout(greetDaily,1000);return;}if(index===steps.length){delete avatar.dataset.daily;delete avatar.dataset.dailyKind;setExpression('happy');const greetedDay=dailyGreetingDay;show({paragraphs:[dailySpeech],actions:[{label:dailyReply,run:()=>{try{localStorage.setItem(key+':daily-seen',greetedDay);}catch{}setExpression('happy');show({paragraphs:['A little smile to start us off. Hope your day goes smoothly. 💜']});}}]});waveNova();return;}const [phase,delay]=steps[index++];avatar.dataset.daily=phase;if(phase==='cheer')setExpression('happy');dailyTimer=setTimeout(next,delay);};next();
+    const next=()=>{if(dismissed||ticketBusy()){delete avatar.dataset.daily;delete avatar.dataset.dailyKind;message=null;schedule();if(!dismissed)dailyTimer=setTimeout(greetDaily,1000);return;}if(index===steps.length){delete avatar.dataset.daily;delete avatar.dataset.dailyKind;setExpression('happy');const greetedDay=dailyGreetingDay;show({paragraphs:[dailySpeech],actions:[{label:dailyReply,run:()=>{try{localStorage.setItem(key+':daily-seen',greetedDay);}catch{}setExpression('happy');show({paragraphs:['A little smile to start us off. Hope your day goes smoothly. 💜']});}}]});waveNova();return;}const [phase,delay]=steps[index++];if(phase==='sip')host.novaCoffeeSip?.();avatar.dataset.daily=phase;if(phase==='cheer')setExpression('happy');dailyTimer=setTimeout(next,delay);};next();
   }
   let novaPresence='',dailyAvailabilityPending=false;
   function dailyPresenceChanged(event){
@@ -24234,6 +24236,38 @@ function installNovaWelcome(host) {
   `;root.append(rigStyle);
     // Props live under the carrying hand, so they inherit its shoulder pivot.
     const cup=root.querySelector('.daily-cup');root.querySelector('.arm.left .hand').append(cup);
+    const drinkingStyle=document.createElement('style');drinkingStyle.textContent=`
+      .daily-cup{transform-origin:50% 0}
+      :host([data-daily="sip"]) .nova-mouth-drawing{transform-origin:53px 62px;animation:nova-coffee-mouth 2s ease-in-out both}
+      @keyframes nova-coffee-drink{0%{transform:translate(-21px,-15px) rotate(-55deg)}25%{transform:translate(0,0) rotate(0deg)}45%,70%{transform:translate(0,0) rotate(-28deg)}85%{transform:translate(0,0) rotate(0deg)}100%{transform:translate(-21px,-15px) rotate(-55deg)}}
+      @keyframes nova-cup-support{0%,100%{translate:-21px -15px}25%,85%{translate:0 0}45%,70%{translate:4px 2px}}
+      @keyframes nova-cup-handle{0%,100%{translate:12px 2px;opacity:.7}25%,85%{translate:0 0;opacity:1}45%,70%{translate:2px -8px;opacity:1}}
+      @keyframes nova-coffee-mouth{0%,100%{scale:1 1}35%,55%,75%{scale:.7 .6}45%,65%{scale:.9 1.1}}
+    `;root.append(drinkingStyle);
+    let coffeeFrame=0,coffeeCleanup=()=>{};
+    host.novaCoffeeSip=(duration=2000)=>{
+      cancelAnimationFrame(coffeeFrame);coffeeCleanup();
+      const left=root.querySelector('.arm.left'),right=root.querySelector('.arm.right'),rim=document.createElement('span'),handle=document.createElement('span');
+      rim.style.cssText='position:absolute;left:50%;top:0;width:0;height:0;pointer-events:none';handle.style.cssText='position:absolute;right:-5px;top:9px;width:0;height:0;pointer-events:none';cup.append(rim,handle);
+      const frozen=[left,right,cup].map(node=>({node,style:node.getAttribute('style')}));
+      for(const arm of [left,right]){const s=getComputedStyle(arm);for(const p of ['left','right','top','transform'])arm.style.setProperty(p,s[p],'important');arm.style.setProperty('animation','none','important');arm.style.setProperty('transition','none','important');arm.style.setProperty('translate','0px 0px','important');}
+      const matrix=new DOMMatrix(getComputedStyle(cup).transform),initialAngle=Math.atan2(matrix.b,matrix.a)*180/Math.PI;
+      cup.style.setProperty('animation','none','important');cup.style.setProperty('transform',`rotate(${initialAngle}deg)`,'important');left.style.zIndex='6';right.style.zIndex='7';
+      const initialRim=rim.getBoundingClientRect(),bodyStart=root.querySelector('.body').getBoundingClientRect(),rightBox=right.querySelector('.hand').getBoundingClientRect(),rightX=rightBox.left+rightBox.width/2,rightY=rightBox.top+rightBox.height/2;
+      coffeeCleanup=()=>{rim.remove();handle.remove();for(const {node,style}of frozen){if(style===null)node.removeAttribute('style');else node.setAttribute('style',style);}coffeeCleanup=()=>{};};
+      const started=performance.now(),smooth=t=>t*t*(3-2*t);
+      const tick=now=>{
+        if(nova.dataset.daily!=='sip'||!nova.isConnected){coffeeCleanup();return;}
+        const t=Math.min(1,(now-started)/duration),lift=t<.25?smooth(t/.25):t>.8?1-smooth((t-.8)/.2):1;
+        const tilt=t<.3?0:t<.5?smooth((t-.3)/.2):t>.7?1-smooth((t-.7)/.3):1;
+        const mouth=root.querySelector('.nova-mouth-drawing').getBoundingClientRect(),mx=mouth.left+mouth.width/2,my=mouth.top+mouth.height/2;
+        const bodyNow=root.querySelector('.body').getBoundingClientRect(),shiftX=bodyNow.left-bodyStart.left,shiftY=bodyNow.top-bodyStart.top;
+        left.style.setProperty('translate',`${(mx-initialRim.left-shiftX)*lift/.72}px ${(my-initialRim.top-shiftY)*lift/.72}px`,'important');
+        cup.style.setProperty('transform',`rotate(${initialAngle+(10*lift)-25*tilt}deg)`,'important');
+        const contact=handle.getBoundingClientRect();right.style.setProperty('translate',`${(contact.left-rightX-shiftX)*lift/.72}px ${(contact.top-rightY-shiftY)*lift/.72}px`,'important');
+        if(t<1)coffeeFrame=requestAnimationFrame(tick);else coffeeCleanup();
+      };coffeeFrame=requestAnimationFrame(tick);
+    };
     const viewControl={value:'auto'},faceControl={value:'auto'};
     const drawings=new Map();
     function faceDrawing(view,expression){
@@ -24241,7 +24275,7 @@ function installNovaWelcome(host) {
       const eyes=xs.map(x=>expression==='sleeping'?'<path d="M'+(x-6)+' 39 q6 5 12 0"/>':expression==='happy'?'<path d="M'+(x-6)+' 41 q6 -9 12 0"/>':expression==='sleepy'?'<path d="M'+(x-6)+' 39 h12"/><ellipse cx="'+x+'" cy="43" rx="4" ry="3" fill="#392748"/>':'<ellipse cx="'+x+'" cy="40" rx="5" ry="'+(expression==='surprised'?10:8)+'" fill="#392748"/><circle cx="'+(x-1)+'" cy="37" r="2" fill="#f9efff" stroke="none"/>').join('');
       const mx=view==='front'?53:view==='left'?20:86;
       let eyeArt=eyes;
-      if(view!=='front'&&expression==='happy')eyeArt='<path d="M'+(xs[0]-4)+' 41 q4 -5 8 0"/>';
+      if(view!=='front'&&expression==='happy')eyeArt='<ellipse cx="'+xs[0]+'" cy="39" rx="5.5" ry="8" fill="#392748" stroke="none"/><ellipse cx="'+(xs[0]-1.5)+'" cy="36" rx="2" ry="2" fill="#f9efff" stroke="none"/>';
       if(expression==='angry'||expression==='focused')eyeArt+=xs.map((x,i)=>'<path d="M'+(x-7)+' '+(expression==='angry'?(i===0?27:31):30)+' Q'+x+' '+(expression==='angry'?29:27)+' '+(x+7)+' '+(expression==='angry'?(i===0?31:27):30)+'"/>').join('');
       if(expression==='satisfied')eyeArt=xs.map(x=>'<path d="M'+(x-6)+' 41 q6 -7 12 0"/>').join('');
       let mouth;
@@ -24263,7 +24297,7 @@ function installNovaWelcome(host) {
     function syncRig(){
       const inferred=['walk-right','fly-right'].includes(nova.dataset.motion)?'right':['walk-left','fly-left'].includes(nova.dataset.motion)||nova.dataset.daily==='enter'?'left':'front';
       const view=viewControl.value==='auto'?inferred:viewControl.value;
-      const inferredFace=nova.dataset.idle==='sleep'?'sleeping':['enter','yawn'].includes(nova.dataset.daily)?'sleepy':root.querySelector('.nova').dataset.expression||'friendly';
+      const inferredFace=nova.dataset.idle==='sleep'?'sleeping':nova.dataset.daily==='sip'?'happy':['enter','yawn'].includes(nova.dataset.daily)?'sleepy':root.querySelector('.nova').dataset.expression||'friendly';
       const face=faceControl.value==='auto'?inferredFace:faceControl.value;
       if(nova.dataset.rigView!==view)nova.dataset.rigView=view;
       const faceKey=view+':'+face;if(faceKey!==lastFace){root.querySelector('.eyes').innerHTML=drawings.get(faceKey)||drawings.get(view+':friendly');lastFace=faceKey;}
@@ -24348,6 +24382,7 @@ function installNovaCutEffects(host, avatar) {
   document.body.append(animationLayer);animationLayer.append(avatar);
   const syncAnimationLayer=()=>{animationLayer.style.zIndex=avatar.style.zIndex||'100';};
   const layerObserver=new MutationObserver(syncAnimationLayer);layerObserver.observe(avatar,{attributes:true,attributeFilter:['style']});syncAnimationLayer();
+  const groupedStyle=document.createElement('style');groupedStyle.textContent='[data-nova-animation-layer] > #sn-ai-nova-companion{z-index:0!important}';animationLayer.append(groupedStyle);
   // Preview-only stage. No real ServiceNow popup or notification is modified.
   const liveStyle=document.createElement('style');liveStyle.textContent='.cut-demo-panel{position:fixed;pointer-events:none}.cut-demo-panel svg{width:100%;height:100%;overflow:visible}.cut-demo-saber{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}';document.body.append(liveStyle);
   const NS='http://www.w3.org/2000/svg',savedCuts=new WeakMap(),retainedCuts=new Map();let current=null,frame=0,token=0,visibilityFrame=0,retainedFrame=0;
