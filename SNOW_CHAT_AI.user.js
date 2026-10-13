@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.572
+// @version      2.36.573
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -65,6 +65,7 @@
 ,{"version":"2.36.570","fixes":true,"changes":[]}
 ,{"version":"2.36.571","fixes":true,"changes":[]}
 ,{"version":"2.36.572","fixes":true,"changes":[]}
+,{"version":"2.36.573","fixes":true,"changes":[]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -11989,7 +11990,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const activeEvent = checkCurrentEvent();
     const startedOnNewEvent = newEventMatchesIMS(activeEvent, requestedIMS);
     const capturedNewEventPath = startedOnNewEvent ? location.pathname : '';
-    let preloadedSchema = startedOnNewEvent ? await waitForGenericDescriptionSchema(2800, 450) : null;
+    let preloadedSchema = options.preloadedSchema || (startedOnNewEvent ? await waitForGenericDescriptionSchema(2800, 450) : null);
 
     // Prefer the normal live-chat surface while it is still available. It is
     // rendered alongside the interaction/New Event and can be read without
@@ -12585,21 +12586,38 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     return match ? String(match[1] ?? '').trim() : '';
   }
 
-  function validateAndNormaliseWizardData(profile, rawData) {
+  function materialiseDescriptionCommand(command, schema) {
+    const raw = command?.TEXT || command?.DESCRIPTION;
+    if (!raw || typeof raw !== 'object') throw new Error('The Description command is invalid.');
+    const complete = validateAndNormaliseWizardData('TEXT', raw, schema);
+    // Cache the complete replacement, not Values that could be rebuilt against
+    // a subsequently edited live Description/template on Continue.
+    return { TEXT: {
+      IMS: raw.IMS || raw.ims,
+      'Short Description': complete.shortDescription,
+      Description: complete.description,
+      'Fields Under Description': complete.fieldsUnderDescription,
+      'Use Data As Provided': true,
+      'Skip Optional Fields': complete.skipOptionalFields,
+    } };
+  }
+
+  function validateAndNormaliseWizardData(profile, rawData, capturedSchema) {
     const data = rawData && typeof rawData === 'object' && !Array.isArray(rawData) ? rawData : {};
     if (profile === 'TEXT') {
       const useDataAsProvided = data['Use Data As Provided'] === true
         || /^(?:true|yes|1)$/i.test(String(data['Use Data As Provided'] ?? '').trim());
       const skipOptionalFields = data['Skip Optional Fields'] === true
         || /^(?:true|yes|1)$/i.test(String(data['Skip Optional Fields'] ?? '').trim());
-      const specification = descriptionValueSpecification(state.wizard?.genericSchema);
+      const schema = capturedSchema || state.wizard?.genericSchema;
+      const specification = descriptionValueSpecification(schema);
       const rawValues = data.Values && typeof data.Values === 'object' && !Array.isArray(data.Values) ? data.Values : null;
       const values = rawValues ? reconcileDescriptionValueKeys(Object.fromEntries(Object.entries(rawValues)
         .map(([key, value]) => [canonicalDescriptionValueKey(key), value])), specification) : null;
       const shortDescription = values ? normalise(values['short-description']) : wizardDataValue(data, 'Short Description');
       const rawDescriptionEntry = Object.entries(data).find(([name]) => comparableLabel(name) === 'description');
       const rawDescription = useDataAsProvided ? String(rawDescriptionEntry?.[1] ?? '') : wizardRawValue(data, 'Description');
-      const description = values ? buildDescriptionFromValues(specification, values) : (useDataAsProvided ? rawDescription : formatDescriptionTemplateInline(rawDescription, state.wizard?.genericSchema?.descriptionTemplate));
+      const description = values ? buildDescriptionFromValues(specification, values) : (useDataAsProvided ? rawDescription : formatDescriptionTemplateInline(rawDescription, schema?.descriptionTemplate));
       const nestedEntry = Object.entries(data).find(([name]) => comparableLabel(name) === 'fields under description');
       const nested = nestedEntry && nestedEntry[1] && typeof nestedEntry[1] === 'object' ? nestedEntry[1] : {};
       // The explicit override means "use every returned value". Missing
@@ -20940,6 +20958,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       retainAIChatCache(pinnedIMS);
       let chatCacheReleased = false;
       let reusableAICommand = await readCachedAICommand('DESCRIPTION', pinnedIMS);
+      let capturedDescriptionSchema = null;
       descriptionWindowSequence += 1;
       const suffix = `${Date.now()}-${descriptionWindowSequence}`;
       const descriptionShell = createTicketWindowShell({
@@ -21037,7 +21056,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         }
         descriptionShell.showAIRecovery(returned, async (providedCommand) => {
           try {
-            reusableAICommand = await writeCachedAICommand('DESCRIPTION', pinnedIMS, JSON.stringify(providedCommand));
+            reusableAICommand = await writeCachedAICommand('DESCRIPTION', pinnedIMS, JSON.stringify(materialiseDescriptionCommand(providedCommand, capturedDescriptionSchema)));
             lastAIResponse = providedCommand;
             modelLine.textContent = 'Provided data cached · retry uses no AI tokens';
             descriptionShell.hideAIReturned();
@@ -21119,18 +21138,23 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           let cacheEntry = null;
           const preparation = await prepareDescriptionAcrossWorkspaceTabs(pinnedIMS, {
             forceChat: !reusableAICommand && !chatLoadedForWindow,
+            preloadedSchema: capturedDescriptionSchema,
           });
           if (stoppedFromWindow) throw Object.assign(new Error('Description request stopped.'), { code: 'AI_STOPPED' });
           if (!preparation) throw new Error('The Description transcript and template could not be prepared.');
+          if (!capturedDescriptionSchema) {
+            capturedDescriptionSchema = JSON.parse(JSON.stringify(state.autoSession?.genericSchema || state.wizard?.genericSchema || null));
+          }
           cacheEntry = getCachedChat(pinnedIMS);
           chatLoadedForWindow = Boolean(cacheEntry?.complete);
           if (!reusableAICommand && !cacheEntry?.complete) throw new Error(`No complete transcript details were found for ${pinnedIMS}.`);
           if (reusableAICommand) {
+            reusableAICommand = await writeCachedAICommand('DESCRIPTION', pinnedIMS, JSON.stringify(materialiseDescriptionCommand(JSON.parse(reusableAICommand), capturedDescriptionSchema)));
             setProgress(58);
             titleMain.textContent = `${pinnedIMS} - Retrying cached Description…`;
             collapsedCommandInput.value = reusableAICommand;
           } else {
-          const genericSchema = state.autoSession?.profile === 'TEXT' && normaliseIMS(state.autoSession.ims) === pinnedIMS ? state.autoSession.genericSchema : null;
+          const genericSchema = capturedDescriptionSchema;
           if (!genericSchema) throw new Error('The Description template and fields beneath it could not be discovered.');
           const requestSchema = skipOptionalFields
             ? { ...genericSchema, fieldsUnderDescription: [] }
@@ -21156,7 +21180,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           if (skipOptionalFields) descriptionCommand.TEXT['Skip Optional Fields'] = true;
           setProgress(58);
           titleMain.textContent = `${pinnedIMS} - Running Description…`;
-          reusableAICommand = await writeCachedAICommand('DESCRIPTION', pinnedIMS, JSON.stringify(descriptionCommand));
+          reusableAICommand = await writeCachedAICommand('DESCRIPTION', pinnedIMS, JSON.stringify(materialiseDescriptionCommand(descriptionCommand, capturedDescriptionSchema)));
           collapsedCommandInput.value = reusableAICommand;
           }
           const finalStatus = await runCommandInput(collapsedCommandInput);
@@ -21174,7 +21198,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             && fieldMatchesExpected(persistedEvent.fields.description, expectedText.Description, 'Description')
           );
           if (!persisted) {
-          throw new Error('ServiceNow replaced or reset the Description fields after they were filled. The generated command is cached; reload the page and use Continue.');
+          throw new Error('The completed Description or Short Description did not pass verification. The full replacement is cached; use Continue to retry without reading the Description again.');
           }
           setProgress(100);
           descriptionDialog.classList.remove('is-running', 'is-error');
