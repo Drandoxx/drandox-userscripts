@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.594
+// @version      2.36.595
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -87,6 +87,7 @@
 ,{"version":"2.36.592","fixes":true,"changes":[{"key":"nova-profile-face","meaningful":true,"text":"Evil side faces match the front expression with mirrored inward brows and an asymmetric smirk."}]}
 ,{"version":"2.36.593","fixes":true,"changes":[{"key":"nova-idle-swordplay","meaningful":true,"text":"Idle swordplay reserves room for the blade and neon trail so full swings stay inside the screen."}]}
 ,{"version":"2.36.594","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"Right-click Nova to open a purple portal with floating themed buttons and an Idle Animations submenu."}]}
+,{"version":"2.36.595","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"The portal smoothly moves and resizes, and buttons emerge from its opening before floating into place."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -23952,27 +23953,27 @@ function installNovaWelcome(host) {
   host.novaIdlePreview=kind=>{clearIdle();return playAmbientIdle(kind);};
   // Portal controls live inside Nova's stacking group, not a page-wide overlay.
   const portalStyle=document.createElement('style');portalStyle.textContent=`
-    .nova-portal-menu{position:fixed;z-index:30;display:grid;gap:8px;pointer-events:auto;max-height:calc(100vh - 32px);overflow:auto;padding:12px;background:none;border:0;scrollbar-width:thin}
+    .nova-portal-menu{position:fixed;z-index:30;display:grid;gap:8px;pointer-events:auto;max-height:calc(100vh - 32px);overflow:visible;padding:12px;background:none;border:0;scrollbar-width:thin}
     .nova-portal-menu[hidden],.nova-menu-portal[hidden]{display:none!important}
     .nova-portal-menu.submenu{grid-template-columns:repeat(2,minmax(0,1fr))}
     .nova-portal-menu .back{grid-column:1/-1}
-    .nova-menu-choice{animation:nova-menu-swim .45s cubic-bezier(.18,.8,.2,1) both;animation-delay:var(--delay,0ms)}
+    .nova-menu-choice{transform-origin:left center;animation:nova-menu-swim .65s cubic-bezier(.18,.8,.2,1) both;animation-delay:var(--delay,0ms)}
     .nova-menu-choice button{width:100%;border:1px solid var(--sn-theme-806493,#806493);border-radius:14px;padding:10px 12px;color:var(--sn-theme-e6edf9,#eee6ff);background:linear-gradient(135deg,var(--sn-theme-49365a,#49365a),var(--sn-theme-251f31,#251f31));box-shadow:0 4px 12px #0005,0 0 8px #ad83ff22;cursor:pointer;font:600 13px system-ui;animation:nova-menu-float 3.8s ease-in-out infinite;animation-delay:var(--delay,0ms);transition:filter .15s,box-shadow .15s}
     .nova-menu-choice button:hover,.nova-menu-choice button:focus-visible{filter:brightness(1.25);box-shadow:0 0 15px #bba0ec77;outline:2px solid var(--sn-theme-ac94ec,#ac94ec);outline-offset:2px}
-    .nova-menu-portal{position:fixed;z-index:29;width:42px;pointer-events:none;transform-origin:center;animation:nova-portal-open .3s ease-out both;filter:drop-shadow(0 0 9px #8055c7)}
+    .nova-menu-portal{position:fixed;z-index:29;width:42px;pointer-events:none;transform-origin:center;animation:nova-portal-open .3s ease-out both;transition:left .42s cubic-bezier(.2,.75,.25,1),top .42s cubic-bezier(.2,.75,.25,1),height .42s cubic-bezier(.2,.75,.25,1);filter:drop-shadow(0 0 9px #8055c7)}
     .nova-menu-portal::before,.nova-menu-portal::after{content:'';position:absolute;inset:0;border-radius:50%;border:3px solid #b797ed;background:radial-gradient(ellipse,#181025 20%,#432561 55%,#8c5bbc 78%,#cfb5ff 90%,transparent);box-shadow:inset 0 0 14px #d8baff,0 0 12px #9062ca;animation:nova-portal-pulse 2.4s ease-in-out infinite}
     .nova-menu-portal::after{inset:7px;border:2px dashed #bd91ed;background:repeating-radial-gradient(ellipse at 45% 50%,transparent 0 8px,#b586dd44 9px 11px,transparent 12px 18px);animation:nova-portal-vortex 2s linear infinite}
     @keyframes nova-portal-open{from{transform:scale(.08,.03) skewY(-8deg);opacity:0}to{transform:scale(1) skewY(-8deg);opacity:1}}
     @keyframes nova-portal-pulse{50%{filter:brightness(1.22);border-color:#d2b4fa}}
     @keyframes nova-portal-vortex{50%{transform:scaleX(.8) skewY(8deg)}to{transform:scaleX(1) skewY(0)}}
-    @keyframes nova-menu-swim{from{opacity:0;transform:translateX(-55px) scale(.65)}to{opacity:1;transform:translateX(0) scale(1)}}
+    @keyframes nova-menu-swim{0%{opacity:0;transform:translateX(var(--portal-entry-x,-40px)) scaleX(.04) scaleY(.65)}15%{opacity:1}55%{opacity:1;transform:translateX(calc(var(--portal-entry-x,-40px) * .35)) translateY(-3px) scaleX(.8) scaleY(.94)}100%{opacity:1;transform:translateX(0) translateY(0) scale(1)}}
     @keyframes nova-menu-float{50%{transform:translateY(-2px) rotate(.3deg)}}
-    @media(prefers-reduced-motion:reduce){.nova-menu-choice,.nova-menu-choice button,.nova-menu-portal,.nova-menu-portal::before,.nova-menu-portal::after{animation:none}}
+    @media(prefers-reduced-motion:reduce){.nova-menu-choice,.nova-menu-choice button,.nova-menu-portal,.nova-menu-portal::before,.nova-menu-portal::after{animation:none;transition:none}}
   `;avatarRoot.append(portalStyle);
   const portalMenu=document.createElement('nav'),menuPortal=document.createElement('span');portalMenu.className='nova-portal-menu';portalMenu.setAttribute('aria-label','Nova actions');menuPortal.className='nova-menu-portal';menuPortal.setAttribute('aria-hidden','true');portalMenu.hidden=menuPortal.hidden=true;avatarRoot.append(menuPortal,portalMenu);
   let portalFrame=0;
   const closePortalMenu=()=>{portalMenu.hidden=menuPortal.hidden=true;cancelAnimationFrame(portalFrame);};
-  const placePortalMenu=()=>{if(portalMenu.hidden)return;const b=avatarRoot.querySelector('.body').getBoundingClientRect(),width=portalMenu.classList.contains('submenu')?240:180;portalMenu.style.width=width+'px';const height=Math.min(portalMenu.scrollHeight,innerHeight-32),left=Math.max(64,b.left-width-36),top=Math.max(16,Math.min(innerHeight-height-16,b.bottom-height));portalMenu.style.left=left+'px';portalMenu.style.top=top+'px';menuPortal.style.left=(left-46)+'px';menuPortal.style.top=top+'px';menuPortal.style.height=height+'px';portalFrame=requestAnimationFrame(placePortalMenu);};
+  const placePortalMenu=()=>{if(portalMenu.hidden)return;const b=avatarRoot.querySelector('.body').getBoundingClientRect(),width=portalMenu.classList.contains('submenu')?240:180;portalMenu.style.width=width+'px';const height=Math.min(portalMenu.scrollHeight,innerHeight-32),left=Math.max(64,b.left-width-36),top=Math.max(16,Math.min(innerHeight-height-16,b.bottom-height));portalMenu.style.left=left+'px';portalMenu.style.top=top+'px';menuPortal.style.left=(left-46)+'px';menuPortal.style.top=top+'px';menuPortal.style.height=height+'px';for(const choice of portalMenu.children)choice.style.setProperty('--portal-entry-x',(-25-choice.offsetLeft)+'px');portalFrame=requestAnimationFrame(placePortalMenu);};
   const renderPortalMenu=submenu=>{portalMenu.replaceChildren();portalMenu.classList.toggle('submenu',submenu);const entries=submenu?[['← Back',null],...novaIdleKinds.map(kind=>[kind==='swordplay'?'Sword dance':kind[0].toUpperCase()+kind.slice(1),kind])]:[['Idle Animations','submenu']];entries.forEach(([label,kind],index)=>{const wrapper=document.createElement('span');wrapper.className='nova-menu-choice'+(kind===null?' back':'');wrapper.style.setProperty('--delay',(index*25+180)+'ms');const button=document.createElement('button');button.type='button';button.textContent=label;button.addEventListener('click',event=>{event.stopPropagation();if(kind==='submenu'){renderPortalMenu(true);return;}if(kind===null){renderPortalMenu(false);return;}closePortalMenu();if(message){finishMessage();setTimeout(()=>host.novaIdlePreview(kind),200);}else host.novaIdlePreview(kind);});wrapper.append(button);portalMenu.append(wrapper);});};
   avatarRoot.querySelector('.nova')?.addEventListener('contextmenu',event=>{event.preventDefault();event.stopPropagation();if(!portalMenu.hidden){closePortalMenu();return;}clearIdle();renderPortalMenu(false);portalMenu.hidden=menuPortal.hidden=false;placePortalMenu();});
   portalMenu.addEventListener('contextmenu',event=>{event.preventDefault();event.stopPropagation();});
