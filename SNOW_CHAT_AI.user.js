@@ -23939,7 +23939,7 @@ function installNovaWelcome(host) {
   }
   host.novaIdlePreview=kind=>{clearIdle();return playAmbientIdle(kind);};
   function startSilentEntrance(){if(entranceStarted||message)return;message={silent:true};dismissed=false;schedule();}
-  function clearIdle(){stopAmbientIdle();clearTimeout(sleepTimer);clearTimeout(wakeTimer);clearTimeout(waveEndTimer);delete avatar.dataset.idle;delete avatar.dataset.reaction;}
+  function clearIdle(){host.novaSwordIdleCancel?.();stopAmbientIdle();clearTimeout(sleepTimer);clearTimeout(wakeTimer);clearTimeout(waveEndTimer);delete avatar.dataset.idle;delete avatar.dataset.reaction;}
   function armIdle(){clearIdle();if(dismissed||avatar.hidden||avatar.dataset.motion||typingQueue.length||message?.actions?.length)return;queueAmbientIdle();sleepTimer=setTimeout(()=>{if(dismissed||avatar.hidden)return;stopAmbientIdle();if(host.novaRestTransition)host.novaRestTransition('sleep');else{avatar.dataset.idle='sleep';setExpression('friendly');avatar.setAttribute('aria-label','NOVA sleeping. Click to wake her.');schedule();}},900000);}
   avatar.setAttribute('tabindex','0');avatar.setAttribute('aria-label','NOVA. Click to wake her.');
   function waveNova(){clearIdle();clearTimeout(waveEndTimer);avatar.dataset.reaction='wave';setExpression('happy');waveEndTimer=setTimeout(()=>{delete avatar.dataset.reaction;setExpression('friendly');armIdle();},2400);}
@@ -24390,7 +24390,12 @@ function installNovaCutEffects(host, avatar) {
     const figure=root.querySelector('.nova');if(figure)figure.dataset.expression='friendly';
     for(const selector of ['.arm.left','.arm.right','.nova-eye-drawing','.nova']){const e=root.querySelector(selector);e?.style.removeProperty('transform');e?.style.removeProperty('translate');e?.style.removeProperty('animation');e?.style.removeProperty('visibility');e?.style.removeProperty('z-index');e?.style.removeProperty('will-change');}
   };
-  const close=()=>{cancelAnimationFrame(visibilityFrame);visibilityFrame=0;if(current){if(!current.complete){current.target.style.maskImage=current.previousMask;current.target.style.webkitMaskImage=current.previousWebkitMask;}current.animations.forEach(a=>a.cancel());}host.novaCutHold?.(false);++token;cancelAnimationFrame(frame);current?.panel.remove();current?.saber.remove();current?.close.remove();current=null;resetNova();status.textContent='';};
+  const close=()=>{
+    cancelAnimationFrame(visibilityFrame);visibilityFrame=0;const ending=current;current=null;
+    if(ending){if(!ending.complete){ending.target.style.maskImage=ending.previousMask;ending.target.style.webkitMaskImage=ending.previousWebkitMask;}ending.animations.forEach(a=>a.cancel());if(ending.idleOnly)ending.target.remove();}
+    ++token;cancelAnimationFrame(frame);ending?.panel.remove();ending?.saber.remove();ending?.close.remove();resetNova();status.textContent='';host.novaCutHold?.(false);
+  };
+  host.novaSwordIdleCancel=()=>{if(current?.idleOnly)close();};
   async function open(target,carry=null,idleOnly=false){
     const kind='panel';
     if(current){retainCut();current.panel=document.createElement('div');}
