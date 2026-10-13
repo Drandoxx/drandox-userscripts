@@ -24328,7 +24328,7 @@ function installNovaCutEffects(host, avatar) {
   const NS='http://www.w3.org/2000/svg',savedCuts=new WeakMap(),retainedCuts=new Map();let current=null,frame=0,token=0,visibilityFrame=0,retainedFrame=0;
   const retainCut=()=>{
     if(!current)return;
-    const record=current;
+    const record={...current,animations:[...current.animations]};
     record.animations.forEach(a=>a.cancel());record.animations=[];
     if(!record.complete){record.target.style.maskImage=record.previousMask;record.target.style.webkitMaskImage=record.previousWebkitMask;}
     record.saber.querySelector('.sparks').innerHTML='';
