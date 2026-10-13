@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.569
+// @version      2.36.570
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -62,6 +62,7 @@
 ,{"version":"2.36.567","fixes":true,"changes":[{"key":"nova-idle","meaningful":true,"text":"NOVA settles smoothly back to standing after her idle stories, and her kite has one wavy rope that pulls taut before slipping away."}]}
 ,{"version":"2.36.568","fixes":true,"changes":[{"key":"nova-daily","meaningful":true,"text":"NOVA greets you after your first switch to Available each day."}]}
 ,{"version":"2.36.569","fixes":true,"changes":[]}
+,{"version":"2.36.570","fixes":true,"changes":[]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -22564,7 +22565,11 @@ const payload={schema:2,version:'2.36.558',day:log.day,chatCount:log.chats.size,
       existing?.remove();
       const notes=await readNovaReleaseNotes(release);
       if(officialUpdateClickedVersion===version||dismissedUpdateVersion===version)return;
-      nova.novaUpdateMessage({version,currentVersion,notes,update:()=>{const link=document.querySelector('#local-sn-ai-settings-template [data-official-update]');if(link)link.click();},later:()=>{dismissedUpdateVersion=version;}});
+      nova.novaUpdateMessage({version,currentVersion,notes,update:()=>{
+        let link=document.querySelector('#local-sn-ai-settings-template [data-official-update]');
+        if(!link){link=document.createElement('a');link.href=release.downloadUrl;link.target='_blank';link.rel='noopener noreferrer';link.dataset.updateVersion=version;wireOfficialUpdateLink(link);document.body.append(link);setTimeout(()=>link.remove(),0);}
+        link.click();
+      },later:()=>{dismissedUpdateVersion=version;}});
       return;
     }
     if (existing?.dataset.version === version) return;
@@ -23909,7 +23914,7 @@ function installNovaWelcome(host) {
     if(data.version&&avatar.hidden){clearTimeout(entranceTimer);clearTimeout(readyTimer);entranceStarted=false;delete avatar.dataset.phase;}
     setExpression('happy');
     if(data.reload){show({updateSpeech:true,paragraphs:['The update page is open. Once the update is installed, reload this page to use the new version.'],actions:[{label:'Reload page',run:()=>location.reload()},{label:'Later',run:finishMessage}]});return;}
-    show({novaUpdate:data,paragraphs:[`Hi ${firstName},`,`I have a new update for you, version ${data.version}.`,`Here’s what’s new:`],bullets:summarizeNovaReleaseNotes(data.notes,data.currentVersion,data.version),actions:[{label:'Update now',run:()=>{data.update?.();if(message?.novaUpdate===data)finishMessage();}},{label:'Later',run:()=>{data.later?.();finishMessage();}}]});
+    show({novaUpdate:data,paragraphs:[`Hi ${firstName},`,`I have a new update for you, version ${data.version}.`,`Here’s what’s new:`],bullets:summarizeNovaReleaseNotes(data.notes,data.currentVersion,data.version),actions:[{label:'Update now',run:()=>{data.update?.();enqueueMessage(()=>host.novaUpdateMessage({reload:true}),'reload');if(message?.novaUpdate===data)finishMessage();}},{label:'Later',run:()=>{data.later?.();finishMessage();}}]});
   };
   function stopTyping(){clearTimeout(typingTimer);typingTimer=0;typingQueue=[];typingDone=null;card.removeAttribute('aria-busy');}
   function typeNext(){
@@ -23925,7 +23930,7 @@ function installNovaWelcome(host) {
     frame=0;
     if(message?.novaUpdate&&ticketBusy()){deferredUpdate=message.novaUpdate;announcedUpdates.delete(deferredUpdate.version);stopTyping();message=null;unfrozenSince=0;waitForUpdate();}
     if(!message||dismissed){card.hidden=true;tail.hidden=true;if(dismissed||!entranceStarted)avatar.hidden=true;return;}
-    const chatsButton=document.getElementById('sn-ai-chats-today')?.shadowRoot?.querySelector('.launcher');
+    const chatsButton=document.getElementById('sn-ai-chats-today')?.shadowRoot?.querySelector('.launcher')||host.novaAnchorButton;
     const chatsRect=chatsButton?.getBoundingClientRect();
     if(!pageReady){
       const launcherRect=launcher.getBoundingClientRect();
@@ -23938,7 +23943,8 @@ function installNovaWelcome(host) {
       pageReady=true;clearTimeout(pageReadyTimer);pageReadyTimer=0;
     }
     // Feet end 30 CSS pixels above the host bottom, scaled to 21.6px.
-    const bottom=chatsRect?.width?innerHeight-chatsRect.top-21.6:26.4;
+    // Seat the pads 4px into the rounded button edge, identically in preview/live.
+    const bottom=chatsRect?.width?innerHeight-chatsRect.top-25.6:26.4;
     const right=Number.isFinite(chatsRect?.left)?innerWidth-chatsRect.left-chatsRect.width/2-64.8:16;
     avatar.style.right=(right-offsetX)+'px';avatar.style.bottom=(bottom-offsetY)+'px';avatar.hidden=false;
     // Daily routines own their entrance: walk in directly, never peek/jump first.
@@ -24004,10 +24010,10 @@ function installNovaWelcome(host) {
     if(!root.querySelector('.nova'))return;
     const rigStyle=document.createElement('style');rigStyle.textContent=`
     /* Small eye movements stay independent of the larger idle routines. */
-    .nova-eye-drawing{transform-box:fill-box;transform-origin:center;animation:nova-soft-blink 4.8s linear infinite,nova-soft-glance 19s ease-in-out infinite}
+    .nova-eye-drawing{transform-box:fill-box;transform-origin:center;animation:nova-soft-blink 21s linear infinite,nova-soft-glance 19s ease-in-out infinite}
     [data-expression="happy"] .nova-eye-drawing{animation:none}
     :host([data-idle]) .nova-eye-drawing{animation:none}
-    @keyframes nova-soft-blink{0%,31%,35%,72%,76%,100%{scale:1 1}33%,74%{scale:1 .08}}
+    @keyframes nova-soft-blink{0%,17.6%,18.4%,43.6%,44.4%,69.6%,70.4%,93.6%,94.4%,100%{scale:1 1}18%,44%,70%,94%{scale:1 .08}}
     @keyframes nova-soft-glance{0%,20%,42%,70%,100%{translate:0 0}25%,35%{translate:3px -1px}76%,87%{translate:-3px 0}}
     .ambient-scene{position:absolute;left:17px;top:-35px;width:145px;height:145px;pointer-events:none;z-index:5;animation:nova-idle-fade 8s ease both}.ambient-scene svg{width:100%;height:100%;overflow:visible}
     .ambient-tool{position:absolute;left:-3px;bottom:14px;width:30px;height:50px;transform-origin:50% 100%;animation:nova-net-scoop 8s ease-in-out both;pointer-events:none}.ambient-tool svg{width:100%;height:100%}
@@ -24033,8 +24039,8 @@ function installNovaWelcome(host) {
     :host([data-ambient="dance"]) .arm,:host([data-ambient="juggle"]) .arm{animation:pad-swing 1s ease-in-out 8!important}
     :host([data-ambient="stretch"]) .arm{animation:nova-idle-stretch 8s ease-in-out both!important;z-index:3}
     :host([data-ambient="flower"]) .arm.right,:host([data-ambient="heart"]) .arm.right{animation:nova-idle-stretch 8s ease-in-out both!important}
-    :host([data-ambient="butterfly"]) .nova-eye-drawing{animation:nova-soft-blink 4.8s linear infinite,nova-soft-glance 8s ease-in-out 1}
-    :host([data-ambient="look"]) .nova-eye-drawing{animation:nova-soft-blink 4.8s linear infinite,nova-idle-look 8s ease-in-out 1}
+    :host([data-ambient="butterfly"]) .nova-eye-drawing{animation:nova-soft-blink 21s linear infinite,nova-soft-glance 8s ease-in-out 1}
+    :host([data-ambient="look"]) .nova-eye-drawing{animation:nova-soft-blink 21s linear infinite,nova-idle-look 8s ease-in-out 1}
     @keyframes nova-idle-look{0%,100%{translate:0 0}16%,35%{translate:-5px 0}55%,78%{translate:5px -1px}90%{translate:0 0}}
     @keyframes nova-idle-fade{0%,100%{opacity:0}8%,90%{opacity:1}}
     @keyframes nova-idle-flier{0%{transform:translate(72px,25px) rotate(-15deg)}25%{transform:translate(-15px,-10px) rotate(15deg)}50%{transform:translate(30px,-22px) rotate(-15deg)}70%{transform:translate(60px,30px) rotate(15deg)}100%{transform:translate(110px,-40px)}}
@@ -24103,8 +24109,8 @@ function installNovaWelcome(host) {
     :host([data-ambient-phase="flourish"]) .body{animation:nova-sneeze .8s ease-in-out 1!important}
     :host([data-ambient-phase="shake"]) .body{animation:nova-sneeze .6s ease-in-out 1!important}
     :host([data-ambient-phase="settle"]) .arm{animation:none!important;transform:rotate(-15deg);transition:transform .5s}
-    :host([data-ambient]) .nova-eye-drawing{translate:var(--nova-gaze-x,0px) var(--nova-gaze-y,0px);animation:nova-soft-blink 4.8s linear infinite!important;transition:translate .1s linear}
-    :host([data-ambient="look"]) .nova-eye-drawing{animation:nova-soft-blink 4.8s linear infinite,nova-idle-look 8s ease-in-out 1!important}
+    :host([data-ambient]) .nova-eye-drawing{translate:var(--nova-gaze-x,0px) var(--nova-gaze-y,0px);animation:nova-soft-blink 21s linear infinite!important;transition:translate .1s linear}
+    :host([data-ambient="look"]) .nova-eye-drawing{animation:nova-soft-blink 21s linear infinite,nova-idle-look 8s ease-in-out 1!important}
     /* Story poses extend the same attached-pad rig rather than floating hands. */
     :host([data-ambient="book"][data-ambient-phase="closed"]) .arm.right{transform:translate(-25px,12px) rotate(-10deg);transition:transform .6s}
     :host([data-ambient="brush"]) .ambient-detail{background:#fff3e5;border:2px solid #c0a88e;border-radius:3px;box-sizing:border-box;transform-origin:bottom;}
