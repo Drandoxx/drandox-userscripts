@@ -24549,26 +24549,29 @@ function installNovaCutEffects(host, avatar) {
       await new Promise(resolve=>setTimeout(resolve,350));if(mine!==token)return;
       const igniteStart=performance.now();
       await new Promise(resolve=>{const ignite=now=>{if(mine!==token){resolve();return;}const t=Math.min(1,(now-igniteStart)/450);grip(holdX,holdY,28,cuteBlade*t);if(t<1)frame=requestAnimationFrame(ignite);else resolve();};frame=requestAnimationFrame(ignite);});if(mine!==token)return;
-      const flourishKinds=['spin','figure-eight','diagonal waves','side-to-side waves','quick salute','sword dance'];
+      const flourishKinds=['spin','figure-eight','diagonal waves','side-to-side waves','quick salute','sword dance','Jedi flow'];
       const flourishKind=flourishKinds[Math.floor(Math.random()*flourishKinds.length)];
       const danceTurns=(1+Math.floor(Math.random()*3)*.5)*360,danceReturn=(1+Math.floor(Math.random()*3)*.5)*360,danceSign=Math.random()<.5?-1:1;
+      const routines=idleOnly?Array.from({length:4},()=>flourishKinds[Math.floor(Math.random()*flourishKinds.length)]):[flourishKind];
       let lastFlourishAngle=28;
       status.textContent=`A quick ${flourishKind} flourish, then NOVA puts it away.`;
       root.querySelector('.nova').style.setProperty('animation','none','important');
       const spinStart=performance.now();
       await new Promise(resolve=>{
-        const spin=now=>{if(mine!==token){resolve();return;}const t=Math.min(1,(now-spinStart)/(idleOnly?4500:1000)),ease=t*t*(3-2*t),envelope=Math.sin(Math.PI*t);
-          let angle=28,x=holdX,y=holdY;
-          if(flourishKind==='spin'){angle+=720*ease;x+=Math.sin(t*Math.PI*4)*3;y+=Math.cos(t*Math.PI*4)*2;}
+        const spin=now=>{if(mine!==token){resolve();return;}const progress=Math.min(1,(now-spinStart)/(idleOnly?4500:1000)),cycle=Math.min(routines.length-1,Math.floor(progress*routines.length)),t=progress===1?1:progress*routines.length-cycle,ease=t*t*(3-2*t),envelope=Math.sin(Math.PI*t),flourishKind=routines[cycle];
+          const carriedAngle=routines.slice(0,cycle).reduce((sum,kind)=>sum+(kind==='spin'?720:kind==='sword dance'?danceSign*(danceTurns-danceReturn):0),0);
+          let angle=28+carriedAngle,x=holdX,y=holdY;
+          if(flourishKind==='spin'){angle+=720*ease;x+=Math.sin(t*Math.PI*4)*3;y+=(Math.cos(t*Math.PI*4)-1)*2;}
           else if(flourishKind==='figure-eight'){angle+=Math.sin(t*Math.PI*4)*85*envelope;x+=Math.sin(t*Math.PI*2)*7*envelope;y+=Math.sin(t*Math.PI*4)*4*envelope;}
           else if(flourishKind==='diagonal waves'){angle+=Math.sin(t*Math.PI*4)*65*envelope;x+=Math.sin(t*Math.PI*4)*5*envelope;y-=Math.sin(t*Math.PI*4)*4*envelope;}
           else if(flourishKind==='side-to-side waves'){angle+=Math.sin(t*Math.PI*6)*55*envelope;x+=Math.sin(t*Math.PI*6)*4*envelope;}
           else if(flourishKind==='sword dance'){const first=t<.5,u=first?t*2:(t-.5)*2,s=u*u*(3-2*u);angle+=danceSign*(first?danceTurns*s:danceTurns-danceReturn*s);x+=Math.sin(t*Math.PI*4)*5*envelope;y-=envelope*4;}
+          else if(flourishKind==='Jedi flow'){const phase=t*Math.PI*4;angle+=Math.sin(phase)*145*envelope;x+=Math.sin(phase)*8*envelope;y-=Math.sin(phase*2)*5*envelope;}
           else{angle-=Math.sin(Math.PI*t)*70;x-=envelope*3;y-=envelope*7;}
           lastFlourishAngle=angle;
           grip(x,y,angle,cuteBlade);
           eyes.style.translate=`${Math.sin(angle*Math.PI/180)*3}px ${-Math.cos(angle*Math.PI/180)*2}px`;
-          frame=requestAnimationFrame(spin);if(t===1){cancelAnimationFrame(frame);resolve();}
+          frame=requestAnimationFrame(spin);if(progress===1){cancelAnimationFrame(frame);resolve();}
         };frame=requestAnimationFrame(spin);
       });if(mine!==token)return;
       const retractStart=performance.now();
