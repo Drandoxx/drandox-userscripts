@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.598
+// @version      2.36.599
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -91,6 +91,7 @@
 ,{"version":"2.36.596","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"Closing sends the menu buttons back into the portal one by one, then shrinks the portal away."}]}
 ,{"version":"2.36.597","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"Portal buttons travel continuously at their final size, without a pause-and-stretch step."}]}
 ,{"version":"2.36.598","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"The animation menu stays open after selection. The portal has a wider dark vortex and glowing rings."}]}
+,{"version":"2.36.599","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"The portal is slimmer and uses a smooth glow without the animated dashed border."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -23964,9 +23965,9 @@ function installNovaWelcome(host) {
     .nova-menu-choice button{width:100%;border:1px solid var(--sn-theme-806493,#806493);border-radius:14px;padding:10px 12px;color:var(--sn-theme-e6edf9,#eee6ff);background:linear-gradient(135deg,var(--sn-theme-49365a,#49365a),var(--sn-theme-251f31,#251f31));box-shadow:0 4px 12px #0005,0 0 8px #ad83ff22;cursor:pointer;font:600 13px system-ui;animation:nova-menu-float 3.8s ease-in-out infinite;animation-delay:var(--delay,0ms);transition:filter .15s,box-shadow .15s}
     .nova-menu-choice button:hover,.nova-menu-choice button:focus-visible{filter:brightness(1.25);box-shadow:0 0 15px #bba0ec77;outline:2px solid var(--sn-theme-ac94ec,#ac94ec);outline-offset:2px}
     .nova-menu-portal{position:fixed;z-index:29;width:42px;pointer-events:none;transform-origin:center;animation:nova-portal-open .3s ease-out both;transition:left .42s cubic-bezier(.2,.75,.25,1),top .42s cubic-bezier(.2,.75,.25,1),height .42s cubic-bezier(.2,.75,.25,1);filter:drop-shadow(0 0 9px #8055c7)}
-    .nova-menu-portal{width:76px;margin-left:-24px}
+    .nova-menu-portal{width:60px;margin-left:-16px}
     .nova-menu-portal::before,.nova-menu-portal::after{content:'';position:absolute;inset:0;border-radius:48% 43% 47% 45%;border:3px solid #dbb8ff;background:#0b0715;box-shadow:inset 0 0 9px #9952e0,0 0 5px #f0d6ff,0 0 13px #a461e9;animation:nova-portal-pulse 1.3s ease-in-out infinite}
-    .nova-menu-portal::after{inset:-3px;border:3px dashed #c68cf4;background:transparent;box-shadow:0 0 8px #bd71f4;animation:nova-portal-vortex 1.7s linear infinite}
+    .nova-menu-portal::after{inset:-2px;border:1px solid #c68cf466;background:transparent;box-shadow:0 0 8px #bd71f4;animation:nova-portal-pulse 1.7s ease-in-out infinite}
     .nova-menu-portal i{position:absolute;left:var(--spark-x);top:var(--spark-y);width:3px;height:3px;border-radius:50%;background:#eed2ff;box-shadow:0 0 5px #bf75ff;animation:nova-portal-spark 1.4s linear infinite;animation-delay:var(--spark-delay)}
     @keyframes nova-portal-spark{from{opacity:0;transform:translate(0,0) scale(.5)}20%{opacity:1}to{opacity:0;transform:translate(var(--spark-dx),-22px) scale(.1)}}
     @keyframes nova-portal-open{from{transform:scale(.08,.03) skewY(-8deg);opacity:0}to{transform:scale(1) skewY(-8deg);opacity:1}}
