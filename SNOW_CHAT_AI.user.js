@@ -23965,8 +23965,10 @@ function installNovaWelcome(host) {
     .nova-menu-choice button:hover,.nova-menu-choice button:focus-visible{filter:brightness(1.25);box-shadow:0 0 15px #bba0ec77;outline:2px solid var(--sn-theme-ac94ec,#ac94ec);outline-offset:2px}
     .nova-menu-portal{position:fixed;z-index:29;width:42px;pointer-events:none;transform-origin:center;animation:nova-portal-open .3s ease-out both;transition:left .42s cubic-bezier(.2,.75,.25,1),top .42s cubic-bezier(.2,.75,.25,1),height .42s cubic-bezier(.2,.75,.25,1);filter:drop-shadow(0 0 9px #8055c7)}
     .nova-menu-portal{width:76px;margin-left:-24px}
-    .nova-menu-portal::before,.nova-menu-portal::after{content:'';position:absolute;inset:0;border-radius:44%;border:3px solid #9870d7;background:radial-gradient(ellipse,#090713 35%,#201235 65%,#633e98 85%,#ae84e7 97%);box-shadow:inset 0 0 12px #7047aa,0 0 8px #9062ca;animation:nova-portal-pulse 2.4s ease-in-out infinite}
-    .nova-menu-portal::after{inset:10px 7px;border:2px dashed #ac87dc;background:repeating-radial-gradient(ellipse at 47% 50%,#080611 0 10px,#633e9866 11px 13px,#120d22 14px 24px);box-shadow:inset 0 0 16px #0a0712;animation:nova-portal-vortex 2s linear infinite}
+    .nova-menu-portal::before,.nova-menu-portal::after{content:'';position:absolute;inset:0;border-radius:48% 43% 47% 45%;border:3px solid #dbb8ff;background:#0b0715;box-shadow:inset 0 0 9px #9952e0,0 0 5px #f0d6ff,0 0 13px #a461e9;animation:nova-portal-pulse 1.3s ease-in-out infinite}
+    .nova-menu-portal::after{inset:-3px;border:3px dashed #c68cf4;background:transparent;box-shadow:0 0 8px #bd71f4;animation:nova-portal-vortex 1.7s linear infinite}
+    .nova-menu-portal i{position:absolute;left:var(--spark-x);top:var(--spark-y);width:3px;height:3px;border-radius:50%;background:#eed2ff;box-shadow:0 0 5px #bf75ff;animation:nova-portal-spark 1.4s linear infinite;animation-delay:var(--spark-delay)}
+    @keyframes nova-portal-spark{from{opacity:0;transform:translate(0,0) scale(.5)}20%{opacity:1}to{opacity:0;transform:translate(var(--spark-dx),-22px) scale(.1)}}
     @keyframes nova-portal-open{from{transform:scale(.08,.03) skewY(-8deg);opacity:0}to{transform:scale(1) skewY(-8deg);opacity:1}}
     @keyframes nova-portal-pulse{50%{filter:brightness(1.22);border-color:#d2b4fa}}
     @keyframes nova-portal-vortex{50%{transform:scaleX(.8) skewY(8deg)}to{transform:scaleX(1) skewY(0)}}
@@ -23976,6 +23978,7 @@ function installNovaWelcome(host) {
   `;avatarRoot.append(portalStyle);
   const portalMenu=document.createElement('nav'),menuPortal=document.createElement('span');portalMenu.className='nova-portal-menu';portalMenu.setAttribute('aria-label','Nova actions');menuPortal.className='nova-menu-portal';menuPortal.setAttribute('aria-hidden','true');portalMenu.hidden=menuPortal.hidden=true;avatarRoot.append(menuPortal,portalMenu);
   let portalFrame=0,portalClosing=false;
+  for(let index=0;index<30;index++){const spark=document.createElement('i'),angle=index/30*Math.PI*2;spark.style.cssText=`--spark-x:${50+Math.cos(angle)*49}%;--spark-y:${50+Math.sin(angle)*49}%;--spark-dx:${Math.cos(angle)*24}px;--spark-delay:${-index*.13}s`;menuPortal.append(spark);}
   const closePortalMenu=async()=>{
     if(portalMenu.hidden||portalClosing)return;
     portalClosing=true;portalMenu.style.pointerEvents='none';
