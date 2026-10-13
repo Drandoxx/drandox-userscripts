@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.582
+// @version      2.36.583
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -75,6 +75,7 @@
 ,{"version":"2.36.580","fixes":true,"changes":[{"key":"nova-popup-cut","meaningful":false,"text":"NOVA can cut through the read-only SN AI TV while an AI request is running."}]}
 ,{"version":"2.36.581","fixes":true,"changes":[{"key":"nova-popup-cut","meaningful":false,"text":"Cut heat is attached to its popup so the hole and glow show, hide and move together."}]}
 ,{"version":"2.36.582","fixes":true,"changes":[{"key":"nova-popup-cut","meaningful":false,"text":"Separate animation layers and bounded mask, spark and trail updates reduce ticket-logging contention."}]}
+,{"version":"2.36.583","fixes":true,"changes":[{"key":"nova-sword-idle","meaningful":true,"text":"NOVA can draw her saber and perform a longer random swordplay idle."},{"key":"nova-popup-cut","meaningful":false,"text":"Saved openings stay anchored to the right and bottom edges when panels resize, including their glow and border removal."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
