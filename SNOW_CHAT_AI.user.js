@@ -24333,7 +24333,7 @@ function installNovaCutEffects(host, avatar) {
   const NS='http://www.w3.org/2000/svg',savedCuts=new WeakMap(),retainedCuts=new Map();let current=null,frame=0,token=0,visibilityFrame=0,retainedFrame=0;
   const ownedGlows=new WeakMap();let glowId=0;
   const mountGlow=(target,svg,w,h)=>{
-    const previous=ownedGlows.get(target);previous?.observer.disconnect();previous?.svg.remove();
+    const previous=ownedGlows.get(target);previous?.observer.disconnect();previous?.resize?.disconnect();previous?.svg.remove();
     const glow=svg.cloneNode(true),prefix='nova-owned-glow-'+(++glowId)+'-';
     glow.querySelectorAll('svg > path').forEach(e=>e.remove());
     // Unique SVG definitions avoid one notification borrowing another's clip.
@@ -24413,7 +24413,9 @@ function installNovaCutEffects(host, avatar) {
       target.style.maskImage=target.style.webkitMaskImage='url("data:image/svg+xml,'+encodeURIComponent(mask)+'")';
     };
     const bodyBounds=document.getElementById('sn-ai-nova-companion').shadowRoot.querySelector('.body').getBoundingClientRect();
-    const old=savedCuts.get(key),wasCut=!!old&&old.w===w&&old.h===h,door=wasCut?old.d:makeDoor(box,bodyBounds);
+    const old=savedCuts.get(key),wasCut=!!old;
+    let coordinate=0;
+    const door=wasCut?old.d.replace(/-?\d+(?:\.\d+)?/g,value=>String(Number(value)+(coordinate++%2===0?w-old.w:h-old.h))):makeDoor(box,bodyBounds);
     if(!door){panel.remove();host.novaCutHold?.(false);return;}
     const svg=svgNode('svg',{viewBox:`0 0 ${w} ${h}`});
     svg.innerHTML=`<defs><mask id="nova-door-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="${w}" height="${h}"><rect width="${w}" height="${h}" fill="white"/><path class="cut-slot" d="${door}" fill="none" stroke="black" stroke-width="5"/><path class="cut-hole" d="${door}" fill="black" opacity="0"/></mask><filter id="nova-cut-heat" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="3"/></filter></defs><g mask="url(#nova-door-mask)"><rect x="1" y="1" width="${w-2}" height="${h-2}" rx="18" fill="#241c33" stroke="#665180"/><text x="24" y="38" fill="#eee7ff" font-size="20" font-family="system-ui">${kind==='panel'?'Chats Today · reusable panel':'New notification'}</text><text x="24" y="66" fill="#bcacd7" font-size="13" font-family="system-ui">NOVA is behind this box.</text></g>`;
@@ -24438,7 +24440,7 @@ function installNovaCutEffects(host, avatar) {
     });resize.observe(target);ownedGlows.get(target).resize=resize;}
     heat.remove(); // Burn marks belong to the actual popup, not a body overlay.
     const saber=svgNode('svg',{class:'cut-demo-saber'});saber.innerHTML='<defs><filter id="nova-blade-glow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="3"/></filter></defs><g class="blade"><path d="M0 0V52" stroke="#ac8aff" stroke-width="12" filter="url(#nova-blade-glow)"/><path d="M0 0V52" stroke="#fff5ff" stroke-width="4" stroke-linecap="round"/><rect x="-5" y="51" width="10" height="20" rx="3" fill="#5e596c" stroke="#d2d0df"/><ellipse cx="0" cy="65" rx="10" ry="12" fill="#baa0ec"/></g><g class="sparks"></g>';document.body.append(saber);
-    const dismiss=document.createElement('span');current={panel,saber,close:dismiss,target,previousMask,previousWebkitMask,complete:false,animations:[]};
+    const dismiss=document.createElement('span');current={panel,saber,close:dismiss,target,previousMask,previousWebkitMask,complete:false,idleOnly,animations:[]};
     // Track only this panel, not the whole page: remove effects before the next
     // paint when it is detached, hidden, or its parent/component is closed.
     const watchVisibility=()=>{
@@ -24641,8 +24643,15 @@ function installNovaCutEffects(host, avatar) {
     return r.width>=150&&r.height>=30&&style.display!=='none'&&style.visibility!=='hidden'&&Number(style.opacity)>.1
       &&r.left<b.right&&r.right>b.left&&r.top<b.bottom&&r.bottom>b.top;
   };
+  host.novaSwordIdle=()=>{
+    if(host.novaCutActive||avatar.hidden||host.novaTicketBusy?.())return false;
+    const b=avatar.shadowRoot.querySelector('.body').getBoundingClientRect(),target=document.createElement('section');
+    target.dataset.novaCutOverlay='true';target.dataset.novaSwordIdle='true';
+    target.style.cssText=`position:fixed;left:${b.left-10}px;top:${b.top-10}px;width:${b.width+20}px;height:${b.height+20}px;pointer-events:none`;
+    document.body.append(target);open(target,null,true).catch(()=>{target.remove();close();});return true;
+  };
   const poll=()=>{
-    if(document.hidden)return;
+    if(document.hidden||host.novaCutPreview||current?.idleOnly)return;
     if(!host.isConnected||!avatar.isConnected){clearInterval(pollTimer);close();liveStyle.remove();return;}
     const busy=host.novaTicketBusy?.()||host.querySelector('[data-pinned-ims].is-running')||document.querySelector('[data-sn-automation-frozen]');
     const tv=document.querySelector('[data-nova-cut-tv]'),tvVisible=eligible(tv);
