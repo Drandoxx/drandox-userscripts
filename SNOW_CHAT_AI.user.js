@@ -24559,6 +24559,7 @@ function installNovaCutEffects(host, avatar) {
     };
     // A small grumpy reaction, then visibly draw and ignite in the real grip.
     const face=root.querySelector('.eyes svg'),mouth=root.querySelector('.nova-mouth-drawing');
+    root.querySelector('.nova-cut-grumpy')?.remove();
     const grumpy=svgNode('g',{'class':'nova-cut-grumpy',fill:'none',stroke:'#51315c','stroke-width':2.5,'stroke-linecap':'round'});
     grumpy.innerHTML='<path d="M29 27 L40 31 M66 31 L77 27 M48 65 Q53 60 58 65"/>';
     face?.append(grumpy);mouth?.style.setProperty('visibility','hidden');
