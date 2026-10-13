@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.579
+// @version      2.36.580
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -72,6 +72,7 @@
 ,{"version":"2.36.577","fixes":true,"changes":[]}
 ,{"version":"2.36.578","fixes":true,"changes":[{"key":"nova-popup-cut","meaningful":false,"text":"Immediate reusable cut visibility, translucent notifications and connected random sword dances."}]}
 ,{"version":"2.36.579","fixes":true,"changes":[{"key":"nova-popup-cut","meaningful":true,"text":"Each popup keeps its own cut; NOVA smoothly switches targets and leaves unfinished glowing marks when notifications move."}]}
+,{"version":"2.36.580","fixes":true,"changes":[{"key":"nova-popup-cut","meaningful":false,"text":"NOVA can cut through the read-only SN AI TV while an AI request is running."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -9604,6 +9605,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     for(const key of aiResponsePreviews.keys())clearAIResponsePreview(key);
     if(!state.aiResponsePreview||provider!=='chatgpt')return;
     const panel=document.createElement('aside');panel.inert=true;
+    panel.dataset.novaCutTv='true';
     panel.setAttribute('aria-label','Read-only ChatGPT response preview');
     panel.style.cssText='position:fixed;right:16px;bottom:64px;width:min(380px,calc(100vw - 32px));max-height:min(300px,calc(100vh - 90px));box-sizing:border-box;z-index:2147483647;pointer-events:none;user-select:none;display:flex;flex-direction:column;overflow:hidden;background:var(--sn-theme-1c1827,#1c1827);color:var(--sn-theme-e6edf9,#e6edf9);border:4px solid var(--sn-theme-65538f,#65538f);border-radius:22px;padding:12px;box-shadow:inset 0 0 0 2px #ffffff15,0 8px 28px #0006;font:13px/1.45 system-ui';
     const heading=document.createElement('div');heading.style.cssText='font-weight:600;margin-bottom:8px';heading.textContent=`ChatGPT · ${ims} · Preparing message…`;
@@ -24583,7 +24585,7 @@ function installNovaCutEffects(host, avatar) {
   // Native popup/notification discovery includes open shadow-root components.
   // Ignore small, non-overlapping, and ordinary in-page status/control elements.
   const presented=new Set();
-  const selector='.sn-toast,sn-workspace-notification-item,[role="dialog"],[aria-modal],[data-sn-ai-notification],[id^="local-sn-ai-"][id*="notification"]';
+  const selector='.sn-toast,sn-workspace-notification-item,[role="dialog"],[aria-modal],[data-sn-ai-notification],[data-nova-cut-tv],[id^="local-sn-ai-"][id*="notification"]';
   const eligible=element=>{
     if(!element?.isConnected||element.hidden||element.closest?.('[data-nova-cut-overlay]')||(element===chatsPanel&&chatsClosing))return false;
     const r=element.getBoundingClientRect(),b=avatar.shadowRoot.querySelector('.body').getBoundingClientRect();
@@ -24594,14 +24596,18 @@ function installNovaCutEffects(host, avatar) {
   const poll=()=>{
     if(document.hidden)return;
     if(!host.isConnected||!avatar.isConnected){clearInterval(pollTimer);close();liveStyle.remove();return;}
-    if(host.novaTicketBusy?.()||host.querySelector('[data-pinned-ims].is-running')||document.querySelector('[data-sn-automation-frozen]')){if(current)close();return;}
+    const busy=host.novaTicketBusy?.()||host.querySelector('[data-pinned-ims].is-running')||document.querySelector('[data-sn-automation-frozen]');
+    const tv=document.querySelector('[data-nova-cut-tv]'),tvVisible=eligible(tv);
+    // The read-only response TV can be cut during a request; ticket dialogs
+    // and form controls still retain their existing automation safety guard.
+    if(busy&&!tvVisible){if(current)close();return;}
     for(const target of presented)if(!eligible(target))presented.delete(target);
     if(current){const r=current.target.getBoundingClientRect(),moved=Math.abs(r.left-parseFloat(current.panel.style.left))>2||Math.abs(r.top-parseFloat(current.panel.style.top))>2;
       if(!current.complete&&current.target.isConnected&&!current.target.hidden&&r.width&&moved){redirect(current.target);return;}
       if(!eligible(current.target)||moved||Math.abs(r.width-current.panel.getBoundingClientRect().width)>2)close();else if(!current.finished)return;}
-    if(host.novaCutActive||avatar.hidden||avatar.dataset.phase!=='ready'||avatar.dataset.motion||avatar.dataset.daily||avatar.dataset.idle||!host.novaCutCanStart?.())return;
+    if(host.novaCutActive||avatar.hidden||avatar.dataset.phase!=='ready'||avatar.dataset.motion||avatar.dataset.daily||avatar.dataset.idle||(!tvVisible&&!host.novaCutCanStart?.()))return;
     const chats=document.getElementById('sn-ai-chats-today')?.shadowRoot?.querySelector('.panel');
-    const candidates=[chats,...(host.novaCutTargets?.()||[]).filter(e=>e.matches?.(selector))].filter(e=>eligible(e)&&!presented.has(e));
+    const candidates=[tv,chats,...(host.novaCutTargets?.()||[]).filter(e=>e.matches?.(selector))].filter(e=>(!busy||e===tv)&&eligible(e)&&!presented.has(e));
     // Inner visible notification surface wins over its component wrapper.
     const target=candidates.sort((a,b)=>{const x=a.getBoundingClientRect(),y=b.getBoundingClientRect();return x.width*x.height-y.width*y.height;})[0];
     if(target){presented.add(target);open(target).catch(error=>{presented.delete(target);host.novaCutLog?.({message:error.message});close();});}
