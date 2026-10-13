@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.596
+// @version      2.36.597
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -89,6 +89,7 @@
 ,{"version":"2.36.594","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"Right-click Nova to open a purple portal with floating themed buttons and an Idle Animations submenu."}]}
 ,{"version":"2.36.595","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"The portal smoothly moves and resizes, and buttons emerge from its opening before floating into place."}]}
 ,{"version":"2.36.596","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"Closing sends the menu buttons back into the portal one by one, then shrinks the portal away."}]}
+,{"version":"2.36.597","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"Portal buttons travel continuously at their final size, without a pause-and-stretch step."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -23967,7 +23968,7 @@ function installNovaWelcome(host) {
     @keyframes nova-portal-open{from{transform:scale(.08,.03) skewY(-8deg);opacity:0}to{transform:scale(1) skewY(-8deg);opacity:1}}
     @keyframes nova-portal-pulse{50%{filter:brightness(1.22);border-color:#d2b4fa}}
     @keyframes nova-portal-vortex{50%{transform:scaleX(.8) skewY(8deg)}to{transform:scaleX(1) skewY(0)}}
-    @keyframes nova-menu-swim{0%{opacity:0;transform:translateX(var(--portal-entry-x,-40px)) scaleX(.04) scaleY(.65)}15%{opacity:1}55%{opacity:1;transform:translateX(calc(var(--portal-entry-x,-40px) * .35)) translateY(-3px) scaleX(.8) scaleY(.94)}100%{opacity:1;transform:translateX(0) translateY(0) scale(1)}}
+    @keyframes nova-menu-swim{from{opacity:0;transform:translateX(var(--portal-entry-x,-40px))}to{opacity:1;transform:translateX(0)}}
     @keyframes nova-menu-float{50%{transform:translateY(-2px) rotate(.3deg)}}
     @media(prefers-reduced-motion:reduce){.nova-menu-choice,.nova-menu-choice button,.nova-menu-portal,.nova-menu-portal::before,.nova-menu-portal::after{animation:none;transition:none}}
   `;avatarRoot.append(portalStyle);
@@ -23982,7 +23983,7 @@ function installNovaWelcome(host) {
       const style=getComputedStyle(choice),from={opacity:style.opacity,transform:style.transform},entry=style.getPropertyValue('--portal-entry-x')||'-40px';
       choice.getAnimations().forEach(animation=>animation.cancel());
       choice.querySelector('button').getAnimations().forEach(animation=>animation.cancel());
-      return choice.animate([from,{opacity:1,transform:`translateX(calc(${entry} * .45)) scaleX(.75) scaleY(.9)`,offset:.55},{opacity:0,transform:`translateX(${entry}) scaleX(.03) scaleY(.6)`}],{duration:reduced?1:360,delay:reduced?0:index*65,easing:'cubic-bezier(.4,0,.8,.2)',fill:'forwards'}).finished.catch(()=>{});
+      return choice.animate([from,{opacity:0,transform:`translateX(${entry})`}],{duration:reduced?1:360,delay:reduced?0:index*65,easing:'cubic-bezier(.4,0,.8,.2)',fill:'forwards'}).finished.catch(()=>{});
     }));
     await menuPortal.animate([{transform:'scale(1) skewY(-8deg)',opacity:1},{transform:'scale(.04,.015) skewY(-8deg)',opacity:0}],{duration:reduced?1:280,easing:'ease-in',fill:'forwards'}).finished.catch(()=>{});
     portalMenu.hidden=menuPortal.hidden=true;cancelAnimationFrame(portalFrame);
