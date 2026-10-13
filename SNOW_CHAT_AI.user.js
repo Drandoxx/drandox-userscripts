@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.613
+// @version      2.36.614
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -106,6 +106,7 @@
 ,{"version":"2.36.611","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"Buttons become visible at the portal center along a shallow oval emergence boundary."}]}
 ,{"version":"2.36.612","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":true,"text":"Rows have varied speeds and small random start delays, averaging 20% faster while preserving their following gaps."}]}
 ,{"version":"2.36.613","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":false,"text":"Emergence curvature strengthens for small portals and softens for tall portals."}]}
+,{"version":"2.36.614","fixes":true,"changes":[{"key":"nova-games","meaningful":true,"text":"Games includes Tic-tac-toe with dice-selected starters, three-round series, saved scores and playful Nova reactions."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -24526,7 +24527,7 @@ window.addEventListener('pagehide',()=>{clearTimeout(messageTimer);clearTimeout(
     // Persist the introduction answer; update announcements are independent.
     toggle.checked=choice==='yes';toggle.disabled=false;
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
-    try{const response=await fetch('/api/now/table/sys_user/'+id+'?sysparm_fields=first_name',{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':page.g_ck},signal:controller.signal});if(response.ok){const data=await response.json();firstName=String(data.result?.first_name||'friend').trim().split(/\s+/)[0]||'friend';}}catch{}finally{clearTimeout(timer);}
+try{const response=await fetch('/api/now/table/sys_user/'+id+'?sysparm_fields=first_name,name',{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':page.g_ck},signal:controller.signal});if(response.ok){const data=await response.json();host.novaDisplayName=String(data.result?.name||data.result?.first_name||'User').trim();firstName=String(data.result?.first_name||'friend').trim().split(/\s+/)[0]||'friend';}}catch{}finally{clearTimeout(timer);}
     if(!host.isConnected)return;
     nameReady=true;if(pendingUpdate){const update=pendingUpdate;pendingUpdate=null;host.novaUpdateMessage(update);return;}
     if(dailyAvailabilityPending){try{localStorage.setItem(key+':daily-available',novaBudapestDay().day);}catch{}}
