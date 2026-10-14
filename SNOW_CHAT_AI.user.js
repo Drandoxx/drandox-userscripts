@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.679
+// @version      2.36.680
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.680","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":false,"text":"Nova's portal menu scrolls vertically on short screens with an invisible scrollbar."}]},
 {"version":"2.36.679","fixes":true,"changes":[{"key":"workspace-scrolling","meaningful":false,"text":"Scrollable Workspace navigation with hidden scrollbar and a compact contained snippet scrollbar."}]},
 {"version":"2.36.678","fixes":true,"changes":[{"key":"nova-message-gating","meaningful":false,"text":"Hide and defer Nova speech while Chats Today is open, without blocking her animations."}]},
 {"version":"2.36.677","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Move Nova in front at thirty percent of the approach walk."}]},
@@ -24263,7 +24264,8 @@ if(document.hidden||host.novaGameDrawing||message||avatar.dataset.motion||avatar
   host.novaIdlePreview=kind=>{clearIdle();return playAmbientIdle(kind);};
   // Portal controls live inside Nova's stacking group, not a page-wide overlay.
   const portalStyle=document.createElement('style');portalStyle.textContent=`
-    .nova-portal-menu{position:fixed;z-index:30;display:grid;gap:8px;pointer-events:auto;max-height:calc(100vh - 32px);overflow:visible;padding:12px;background:none;border:0;scrollbar-width:thin}
+    .nova-portal-menu{position:fixed;z-index:30;display:grid;grid-auto-rows:max-content;align-content:start;gap:8px;pointer-events:auto;max-height:calc(100vh - 32px);box-sizing:border-box;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;padding:12px;background:none;border:0;scrollbar-width:none;-ms-overflow-style:none}
+    .nova-portal-menu::-webkit-scrollbar{display:none;width:0;height:0}
     .nova-portal-menu[hidden],.nova-menu-portal[hidden]{display:none!important}
     .nova-portal-menu.submenu{grid-template-columns:repeat(2,minmax(0,1fr))}
     .nova-portal-menu .back{grid-column:1/-1}
