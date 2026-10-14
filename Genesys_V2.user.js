@@ -1001,6 +1001,17 @@
   let themeTransitionUntil = 0;
 
   const CSS = `
+    /* Export panel theme: scoped so other forms retain their native semantics. */
+    .ember-engine-queues-export-panel { background:#242a30!important;color:#e5e7eb!important;color-scheme:dark; }
+    .ember-engine-queues-export-panel .export-panel,
+    .ember-engine-queues-export-panel .panel-footer { background:#242a30!important;color:#e5e7eb!important;border-color:#46515f!important; }
+    .ember-engine-queues-export-panel :is(label,h1,h2,h3,.panel-title,.title,.button-text,[slot="header"],[slot="label"]) { color:#e5e7eb!important;background:transparent!important; }
+    .ember-engine-queues-export-panel :is(input:not([type="checkbox"]):not([type="radio"]),textarea,select) { background:#181d23!important;color:#f1f5f9!important;border-color:#536171!important;caret-color:#f1f5f9!important; }
+    .ember-engine-queues-export-panel :is(input,textarea)::placeholder { color:#a6b3c3!important;opacity:1!important; }
+    .ember-engine-queues-export-panel :is(input[type="checkbox"],input[type="radio"]) { accent-color:#22d3ee;color-scheme:dark; }
+    .ember-engine-queues-export-panel a { color:#7dd3fc!important; }
+    .ember-engine-queues-export-panel [slot="error"] { color:#fda4af!important; }
+    .ember-engine-queues-export-panel .panel-footer { border-top:1px solid #46515f!important; }
     /* Central status palette — update these variables to change every
        matching board marker, hover card, badge, and profile treatment. */
     :root {
@@ -4169,6 +4180,15 @@
   `;
 
   const SHADOW_CSS = `
+    /* Export controls include nested time-zone dropdowns and slotted labels. */
+    :host-context(.ember-engine-queues-export-panel) { color:#e5e7eb!important;color-scheme:dark; }
+    :host-context(.ember-engine-queues-export-panel) ::slotted(label),
+    :host-context(.ember-engine-queues-export-panel) ::slotted([slot="header"]),
+    :host-context(.ember-engine-queues-export-panel) :is(label,.gux-label,.gux-label-beside,.gux-form-field-label,.gux-accordion-section-header,.gux-accordion-section-header-button,.gux-default-zone) { color:#e5e7eb!important;background:transparent!important; }
+    :host-context(.ember-engine-queues-export-panel) :is(.gux-input-container,.gux-dropdown-button,.gux-dropdown-display,.gux-selected-option,.gux-accordion-section-content) { background:#242a30!important;color:#e5e7eb!important;border-color:#536171!important; }
+    :host-context(.ember-engine-queues-export-panel) :is(input,textarea,button,[role="combobox"]) { color:#f1f5f9!important; }
+    :host-context(.ember-engine-queues-export-panel) :is(.gux-form-field-help,.gux-message) { color:#a6b3c3!important; }
+    :host-context(.ember-engine-queues-export-panel) .gux-form-field-error .gux-message { color:#fda4af!important; }
     /* Components inherit the surrounding dark surface. A host-level fill here
        creates a visible extra tile for icons, truncates, and other nested UI. */
     :host { color-scheme: dark !important; color: #e5e7eb !important; background: transparent !important; background-color: transparent !important; border-color: #4b596a !important; }
