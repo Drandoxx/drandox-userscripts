@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.653
+// @version      2.36.654
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.654","fixes":true,"changes":[{"key":"nova-game-minimize","meaningful":false,"text":"Minimizing Tic tac toe releases the held expression and resumes Nova idle behavior."}]},
 {"version":"2.36.653","fixes":true,"changes":[{"key":"nova-game-expansion","meaningful":false,"text":"Game panel size changes use smooth transitions."}]},
 {"version":"2.36.652","fixes":true,"changes":[{"key":"nova-game-expansion","meaningful":true,"text":"Expanded Tic tac toe boards grow the panel, preserving tile size until screen space requires smaller tiles."}]},
 {"version":"2.36.651","fixes":true,"changes":[{"key":"auto-greet","meaningful":true,"text":"Pending greetings retry every second when the chat becomes available."},{"key":"nova-notification-cut","meaningful":false,"text":"Acceptance notifications retain their translucent background under theme rules."}]},
@@ -24743,8 +24744,8 @@ const title=document.createElement('h3'),status=document.createElement('p'),grid
       const progressKey=scoreKey+':progress';let checkpointTimer=0,roundOver=false;
       const persistGame=()=>{if(ended)return;try{localStorage.setItem(progressKey,JSON.stringify({schema:1,round,userWins,novaWins,size,board,userMark,novaMark,turn,roundOver}));}catch{}};
       const discardProgress=()=>{clearInterval(checkpointTimer);try{localStorage.removeItem(progressKey);}catch{}host.novaResumeGame=null;host.novaMinimizedGameBubble?.remove();host.novaMinimizedGameBubble=null;};
-      const minimize=()=>{persistGame();panel.hidden=true;host.novaGameOpen=false;const bubble=ensureGameBubble();bubble.onclick=()=>{panel.hidden=false;bubble.hidden=true;host.novaGameOpen=true;card.hidden=true;tail.hidden=true;};bubble.hidden=false;};
-      host.novaResumeGame=()=>{panel.hidden=false;host.novaMinimizedGameBubble&&(host.novaMinimizedGameBubble.hidden=true);host.novaGameOpen=true;card.hidden=true;tail.hidden=true;};
+      const minimize=()=>{persistGame();panel.hidden=true;host.novaGameOpen=false;setExpression('friendly');armIdle();schedule();host.novaReleaseModalMessages();const bubble=ensureGameBubble();bubble.onclick=()=>{clearIdle();panel.hidden=false;bubble.hidden=true;host.novaGameOpen=true;card.hidden=true;tail.hidden=true;};bubble.hidden=false;};
+      host.novaResumeGame=()=>{clearIdle();panel.hidden=false;host.novaMinimizedGameBubble&&(host.novaMinimizedGameBubble.hidden=true);host.novaGameOpen=true;card.hidden=true;tail.hidden=true;};
 const minimizeButton=document.createElement('button');minimizeButton.textContent='−';minimizeButton.setAttribute('aria-label','Minimize Tic Tac Toe');minimizeButton.style.cssText='position:absolute;right:40px;top:10px;border:0;background:transparent;color:#e6caff;font:24px/28px system-ui;width:28px;height:28px;padding:0;display:grid;place-items:center;cursor:pointer';minimizeButton.onclick=minimize;panel.append(minimizeButton);
       checkpointTimer=setInterval(persistGame,250);window.addEventListener('pagehide',persistGame);
       const rootLayer=avatar.parentElement||document.body;rootLayer.append(panel);
@@ -24773,6 +24774,23 @@ const gameRules=document.createElement('div');gameRules.style.cssText='text-alig
         panel.style.bottom='75px';
         grid.style.width=boardWidth+'px';
       }
+      // Auto-height changes (dice, notices, board) cannot use CSS height
+      // transitions. Animate measured old/new heights without fixing layout.
+      let previousGameHeight=0,gameSizeAnimation=null;
+      const gameSizeObserver=new ResizeObserver(()=>{
+        if(!panel.isConnected){gameSizeObserver.disconnect();return;}
+        const height=panel.offsetHeight;
+        if(previousGameHeight && Math.abs(height-previousGameHeight)>2
+          && !matchMedia('(prefers-reduced-motion: reduce)').matches){
+          gameSizeAnimation?.cancel();
+          gameSizeAnimation=panel.animate([{height:previousGameHeight+'px'},{height:height+'px'}],{duration:300,easing:'ease-out'});
+        }
+        previousGameHeight=height;
+      });
+      gameSizeObserver.observe(grid);
+      gameSizeObserver.observe(status);
+      gameSizeObserver.observe(actions);
+      gameSizeObserver.observe(bowl);
       window.addEventListener('resize',function resizeGamePanel(){
         if(!panel.isConnected){window.removeEventListener('resize',resizeGamePanel);return;}
         sizeGamePanel();
