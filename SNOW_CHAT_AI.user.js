@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.666
+// @version      2.36.667
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.667","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Preserve Nova's bottom-right host anchor during cut cleanup, fixing the measured 25-pixel position shift."}]},
 {"version":"2.36.666","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Animate the initial foot-anchored shrink quickly, without translation corrections."}]},
 {"version":"2.36.665","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Preserve the foot contact position across cut setup and disable competing figure transform transitions."}]},
 {"version":"2.36.664","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Anchor depth scaling to measured foot positions without live translation and measure the cut after shrinking."}]},
@@ -24976,7 +24977,7 @@ function installNovaCutEffects(host, avatar) {
     nova.style.zIndex=frontTarget?.isConnected&&!frontTarget.hidden&&frontTarget.getBoundingClientRect().width?'2147483647':'100';delete nova.dataset.motion;const root=nova.shadowRoot;
     root.querySelector('.nova-cut-grumpy')?.remove();root.querySelector('.nova-mouth-drawing')?.style.removeProperty('visibility');
     const figure=root.querySelector('.nova');if(figure){figure.dataset.expression='friendly';figure.style.removeProperty('scale');figure.style.removeProperty('transform-origin');}
-    nova.style.removeProperty('scale');nova.style.removeProperty('transform-origin');
+    nova.style.removeProperty('scale');nova.style.transformOrigin='bottom right';
     for(const selector of ['.arm.left','.arm.right','.foot.left','.foot.right','.nova-eye-drawing','.nova']){const e=root.querySelector(selector);e?.style.removeProperty('transform');e?.style.removeProperty('translate');e?.style.removeProperty('animation');e?.style.removeProperty('visibility');e?.style.removeProperty('z-index');e?.style.removeProperty('will-change');}
   };
   const close=()=>{
