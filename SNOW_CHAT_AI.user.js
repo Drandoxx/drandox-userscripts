@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.667
+// @version      2.36.668
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.668","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Reopening an already-cut panel starts an angry sword dance in front, without shrinking or walking through again."}]},
 {"version":"2.36.667","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Preserve Nova's bottom-right host anchor during cut cleanup, fixing the measured 25-pixel position shift."}]},
 {"version":"2.36.666","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Animate the initial foot-anchored shrink quickly, without translation corrections."}]},
 {"version":"2.36.665","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Preserve the foot contact position across cut setup and disable competing figure transform transitions."}]},
@@ -25013,7 +25014,7 @@ function installNovaCutEffects(host, avatar) {
     };
     const depthAvatar=document.getElementById('sn-ai-nova-companion');
     const depthRoot=depthAvatar.shadowRoot,depthShape=depthRoot.querySelector('.nova');
-    if(!idleOnly){
+    if(!idleOnly&&!savedCuts.has(target)){
       depthShape.style.removeProperty('translate');
       depthShape.style.removeProperty('scale');
       depthShape.style.setProperty('transition','none','important');
@@ -25037,6 +25038,7 @@ function installNovaCutEffects(host, avatar) {
     }
     const bodyBounds=depthRoot.querySelector('.body').getBoundingClientRect();
     const old=savedCuts.get(key),wasCut=!!old;
+    if(wasCut&&!idleOnly){frontTarget=target;depthAvatar.style.zIndex='2147483647';}
     let coordinate=0;
     const door=wasCut?old.d.replace(/-?\d+(?:\.\d+)?/g,value=>String(Number(value)+(coordinate++%2===0?w-old.w:h-old.h))):makeDoor(box,bodyBounds);
     if(!door){panel.remove();host.novaCutHold?.(false);return;}
@@ -25134,7 +25136,7 @@ function installNovaCutEffects(host, avatar) {
     };
     const finish=async()=>{
       if(!idleOnly){
-      root.querySelector('.nova').dataset.expression='satisfied';
+      root.querySelector('.nova').dataset.expression=wasCut?'angry':'satisfied';
       savedCuts.set(key,{d:door,w,h});current.complete=true;nativeMask(true);hole.setAttribute('opacity','1');flap.setAttribute('opacity',wasCut?'0':'1');
       track.style.strokeDashoffset='0';edge.style.strokeDashoffset='0';core.style.strokeDashoffset='0';saber.style.opacity=wasCut?'0':'1';
       for(const path of gluedPaths)path.style.strokeDashoffset='0';
@@ -25159,6 +25161,7 @@ function installNovaCutEffects(host, avatar) {
       const stowStart=performance.now();
       await new Promise(resolve=>{const stow=now=>{if(mine!==token){resolve();return;}const t=Math.min(1,(now-stowStart)/350);grip(rest.x,rest.y+t*14,from.angle+delta,0);saber.style.opacity=String(1-t);if(t<1)frame=requestAnimationFrame(stow);else resolve();};frame=requestAnimationFrame(stow);});if(mine!==token)return;
       }
+      if(!wasCut){
       nova.dataset.motion='approach';
       root.querySelector('.nova').dataset.expression='satisfied';
       const feet=[root.querySelector('.foot.left'),root.querySelector('.foot.right')];
@@ -25179,6 +25182,7 @@ function installNovaCutEffects(host, avatar) {
       feet.forEach(foot=>{foot?.style.removeProperty('translate');foot?.style.removeProperty('animation');});
       root.querySelector('.nova').style.removeProperty('scale');delete nova.dataset.motion;
       }
+      }
       const cuteBlade=40,saberSweepMargin=19+cuteBlade+20;
       // Idle flourishes sweep in every direction. Reserve the blade, glow and
       // hand travel inside the viewport instead of clipping at its edges.
@@ -25190,7 +25194,7 @@ function installNovaCutEffects(host, avatar) {
       const igniteStart=performance.now();
       if(idleOnly)await new Promise(resolve=>{const ignite=now=>{if(mine!==token){resolve();return;}const t=Math.min(1,(now-igniteStart)/450);grip(holdX,holdY,28,cuteBlade*t);if(t<1)frame=requestAnimationFrame(ignite);else resolve();};frame=requestAnimationFrame(ignite);});if(mine!==token)return;
       const flourishKinds=['spin','figure-eight','diagonal waves','side-to-side waves','quick salute','sword dance','Jedi flow'];
-      const flourishKind=flourishKinds[Math.floor(Math.random()*flourishKinds.length)];
+      const flourishKind=wasCut&&!idleOnly?'sword dance':flourishKinds[Math.floor(Math.random()*flourishKinds.length)];
       const danceTurns=(1+Math.floor(Math.random()*3)*.5)*360,danceReturn=(1+Math.floor(Math.random()*3)*.5)*360,danceSign=Math.random()<.5?-1:1;
       const routines=idleOnly?Array.from({length:4},()=>flourishKinds[Math.floor(Math.random()*flourishKinds.length)]):[flourishKind];
       let lastFlourishAngle=28;
