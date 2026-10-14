@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.674
+// @version      2.36.675
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.675","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Begin the animated shrink without the setup pause and move Nova in front at sixty percent of the approach."}]},
 {"version":"2.36.674","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Reduce new cut openings by a further five percent."}]},
 {"version":"2.36.673","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Reduce new cut openings by about five percent while retaining the bottom-edge opening."}]},
 {"version":"2.36.672","fixes":true,"changes":[{"key":"chats-today-layout","meaningful":false,"text":"Center text inside paired description rows as well as the table cell."}]},
