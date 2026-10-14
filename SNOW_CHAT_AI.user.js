@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.650
+// @version      2.36.651
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.651","fixes":true,"changes":[{"key":"auto-greet","meaningful":true,"text":"Pending greetings retry every second when the chat becomes available."},{"key":"nova-notification-cut","meaningful":false,"text":"Acceptance notifications retain their translucent background under theme rules."}]},
 {"version":"2.36.650","fixes":false,"changes":[{"key":"kb-known-error-filter","meaningful":true,"text":"Chat knowledge search displays up to 20 locally ranked articles per page."}]},
 {"version":"2.36.649","fixes":true,"changes":[{"key":"kb-known-error-filter","meaningful":true,"text":"Knowledge search fills pages from a larger filtered result pool and locally prioritizes relevant support articles over continuity plans."}]},
 {"version":"2.36.648","fixes":false,"changes":[{"key":"kb-known-error-filter","meaningful":true,"text":"Chat knowledge search excludes verified Known Error articles."}]},
@@ -687,6 +688,12 @@ const snAIChatDisplayNames=(()=>{
   // An accepted incoming offer is required: opening an old IMS never greets it.
   const autoGreetOffers=new Map();
   const pendingGreetingIds=new Set();
+  // Retain accepted offers until an actual send attempt or manual reply.
+  // Only retry discoverable composers; never focus tabs or overwrite drafts.
+  setInterval(() => {
+    if (!autoGreetEnabled || !autoGreetOffers.size) return;
+    scanGreetingHosts();
+  }, 1000);
   function rememberGreetingAttempt(id){
     greetAttempted.add(id);pendingGreetingIds.delete(id);
     try{sessionStorage.setItem('sn-ai-greet-attempts-v1',JSON.stringify([...greetAttempted].slice(-500)));}catch{}
@@ -717,10 +724,10 @@ const snAIChatDisplayNames=(()=>{
     let record;
     try{record=imsPreviewRecords.get(id)||await fetchIMSRecord('sys_id='+id);}catch(error){greetTrace('ims-lookup-failed',{error:String(error.message||error)});pendingGreetingIds.delete(id);greetSeenHosts.delete(host);return;}
     const acceptedAt=autoGreetOffers.get(id)||autoGreetOffers.get(record?.number?.value);
-    if(!record?.number?.value||!acceptedAt||Date.now()-acceptedAt>180000){greetTrace('offer-not-matched',{reason:!record?.number?.value?'ims-number-unavailable':'no-recent-accepted-offer'});pendingGreetingIds.delete(id);greetSeenHosts.delete(host);return;}
+    if(!record?.number?.value||!acceptedAt){greetTrace('offer-not-matched',{reason:!record?.number?.value?'ims-number-unavailable':'no-accepted-offer'});pendingGreetingIds.delete(id);greetSeenHosts.delete(host);return;}
     greetTrace('offer-matched',{ims:record.number.value});
     const started=Date.now();
-    const outcome=(stage,reason,ok=false)=>{pendingGreetingIds.delete(id);greetTrace(stage,{ims:record.number.value,reason,ok,elapsedMs:Date.now()-started,...(!ok&&/composer|command|quick-action/.test(reason)?{composerSnapshot:composerSnapshot()}: {})});};
+    const outcome=(stage,reason,ok=false)=>{pendingGreetingIds.delete(id);if(!greetAttempted.has(id))greetSeenHosts.delete(host);greetTrace(stage,{ims:record.number.value,reason,ok,elapsedMs:Date.now()-started,...(!ok&&/composer|command|quick-action/.test(reason)?{composerSnapshot:composerSnapshot()}: {})});};
     const greetDelayMs=0;
     const ownElements=()=>{const list=[];const visit=root=>{for(const node of root.querySelectorAll('*')){list.push(node);if(node.shadowRoot)visit(node.shadowRoot);}};if(host.shadowRoot)visit(host.shadowRoot);return list;};
     const input=()=>ownElements().find(node=>node.matches('textarea[name="CHAT_INPUT#CHAT_TEXTAREA"]'));
@@ -758,7 +765,7 @@ const snAIChatDisplayNames=(()=>{
           loaded=true;break;
         }
         if(!readinessLogged){readinessLogged=true;greetTrace('waiting-for-editable-composer',{ims:record.number.value,reason:field?.readOnly?'composer-readonly':field?.disabled?'composer-disabled':'native-controls-not-ready',composerSnapshot:composerSnapshot()});}
-        await new Promise(resolve=>setTimeout(resolve,250));
+        await new Promise(resolve=>setTimeout(resolve,1000));
       }
       if(!loaded||!safe()||Date.now()-started<greetDelayMs||!input()||input().value.trim()){outcome('not-sent',!loaded?'native-controls-readiness-timeout':!safe()?'chat-no-longer-safe':'composer-unavailable-or-edited');return;}
       // Select the greeting from the latest human message in this new offer.
@@ -777,7 +784,7 @@ const snAIChatDisplayNames=(()=>{
       };
       const agentMessages=chatMessages();
       if (agentMessages.some(message=>{const info=messageInfo(message);return info.right&&!info.system;})) {
-        greetTrace('skipped-agent-already-replied',{ims:record.number.value});return;
+        rememberGreetingAttempt(id);greetTrace('skipped-agent-already-replied',{ims:record.number.value});return;
       }
       let composerEditedByUser=false;
       const observeComposerEdit=event=>{if(event.isTrusted){composerEditedByUser=true;greetTrace('manual-composer-edit',{ims:record.number.value,composerSnapshot:composerSnapshot()});}};
@@ -797,6 +804,11 @@ const snAIChatDisplayNames=(()=>{
           if(matches.length!==1){outcome('not-sent','quick-action-not-unique');return;}snippet=matches[0];
         }finally{clearTimeout(lookupTimer);}
         const decoder=document.createElement('span');decoder.innerHTML=snippet.displayValue||'';const expected=decoder.textContent.trim();
+        const latestHumanMessages=chatMessages().filter(message=>!messageInfo(message).system);
+        if(latestHumanMessages.some(message=>messageInfo(message).right)){rememberGreetingAttempt(id);outcome('skipped','agent-already-replied');return;}
+        const latestHuman=latestHumanMessages.at(-1);
+        const latestQuery=latestHuman&&!messageInfo(latestHuman).right?'q':'w';
+        if(latestQuery!==query){outcome('not-sent','latest-message-changed-retry');return;}
         if(composerEditedByUser){outcome('skipped','composer-edited-by-user');return;}
         if(!expected||!safe()||input().value.trim()){outcome('not-sent',!expected?'quick-action-empty':!safe()?'chat-no-longer-safe':'composer-edited');return;}
         greetTrace('shortcut-selected',{ims:record.number.value,code:query,nativeAction:'CHAT_INPUT#SNIPPET_SELECTED',expected});
@@ -2171,6 +2183,8 @@ const snAIChatDisplayNames=(()=>{
     }
     #local-sn-ai-update-notification,#local-sn-ai-update-reload-notification,
     [data-sn-ai-notification="accepted"] { border-left:3px solid var(--sn-theme-ac94ec)!important; }
+    [data-sn-ai-notification="accepted"] { background:color-mix(in srgb,var(--sn-theme-251f31) 68%,transparent)!important; }
+    [data-sn-ai-notification="accepted"] { min-width:0!important;overflow-wrap:anywhere!important; }
     #local-sn-ai-notification-settings-error,#local-sn-chatgpt-web-iframe-status {
       border-left:3px solid var(--sn-theme-fa99aa)!important;
     }
@@ -22508,7 +22522,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       let stack=document.getElementById('sn-ai-accepted-notifications');
       if (!stack) {
         stack=document.createElement('div');stack.id='sn-ai-accepted-notifications';
-        stack.style.cssText='position:fixed;right:20px;bottom:100px;z-index:2147483647;display:flex;flex-direction:column;gap:10px;max-height:calc(100vh - 140px);overflow:auto;width:440px;max-width:calc(100vw - 40px)';
+        stack.style.cssText='position:fixed;right:20px;bottom:100px;z-index:2147483647;display:flex;flex-direction:column;gap:10px;max-height:calc(100vh - 140px);overflow-y:auto;overflow-x:hidden;width:440px;max-width:calc(100vw - 40px);box-sizing:border-box';
         document.body.append(stack);
       }
       if (ims && [...stack.children].some(box=>box.dataset.ims===ims)) return;
