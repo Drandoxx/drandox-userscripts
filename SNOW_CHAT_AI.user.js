@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.649
+// @version      2.36.650
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.650","fixes":false,"changes":[{"key":"kb-known-error-filter","meaningful":true,"text":"Chat knowledge search displays up to 20 locally ranked articles per page."}]},
 {"version":"2.36.649","fixes":true,"changes":[{"key":"kb-known-error-filter","meaningful":true,"text":"Knowledge search fills pages from a larger filtered result pool and locally prioritizes relevant support articles over continuity plans."}]},
 {"version":"2.36.648","fixes":false,"changes":[{"key":"kb-known-error-filter","meaningful":true,"text":"Chat knowledge search excludes verified Known Error articles."}]},
 {"version":"2.36.647","fixes":true,"changes":[{"key":"description-filling","meaningful":false,"text":"Reduce repeated field discovery and redundant model writes beneath Description."}]},
@@ -3961,7 +3962,9 @@ const snAIChatDisplayNames=(()=>{
       if (!Number.isInteger(limit) || limit < 1 || limit > 100 || !Number.isInteger(offset) || offset < 0) return null;
       const poolLimit = Math.min(100, Number(vars.maxLimit) || 100);
       operation.variables = {...vars,limit:poolLimit,offset:0};
-      return {body:JSON.stringify(operation),limit,offset,poolLimit,query:vars.query};
+      // Native Agent Assist still advances its configured (usually ten-row)
+      // offset. Translate that page index to our twenty-row local pages.
+      return {body:JSON.stringify(operation),limit:20,offset:Math.floor(offset/limit)*20,poolLimit,query:vars.query};
     } catch { return null; }
   }
   async function filterKnownErrorSearchResults(payload, search = null) {
