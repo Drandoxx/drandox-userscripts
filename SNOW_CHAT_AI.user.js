@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.622
+// @version      2.36.623
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -115,6 +115,7 @@
 ,{"version":"2.36.620","fixes":true,"changes":[{"key":"nova-games","meaningful":true,"text":"Dice sums appear in center cards, then move to player-left and Nova-right positions with a centered rolling status."}]}
 ,{"version":"2.36.621","fixes":true,"changes":[{"key":"nova-games","meaningful":true,"text":"Marked tiles stay square. Expanding boards require 3, 4, 5 and progressively more consecutive marks to win."}]}
 ,{"version":"2.36.622","fixes":true,"changes":[{"key":"nova-modal-messages","meaningful":true,"text":"Unrelated Nova messages wait while the portal menu or games are open."}]}
+,{"version":"2.36.623","fixes":true,"changes":[{"key":"nova-games","meaningful":true,"text":"Tic-tac-toe uses a one-word first name and shows score lines without a Series scores heading."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -24507,9 +24508,9 @@ avatarRoot.querySelector('.nova')?.addEventListener('contextmenu',event=>{event.
   host.novaTicTacToe=()=>{
     host.novaGameOpen=true;card.hidden=true;tail.hidden=true;
     const scoreKey=key+':tic-tac-toe',readScores=()=>{try{const saved=JSON.parse(localStorage.getItem(scoreKey)||'{}');return {nova:Number(saved.nova)||0,user:Number(saved.user)||0,draws:Number(saved.draws)||0};}catch{return {nova:0,user:0,draws:0};}};
-    const scores=readScores(),player=host.novaDisplayName||firstName;
+    const scores=readScores(),player=String(firstName||'friend').trim().split(/\s+/)[0]||'friend';
     const pick=items=>items[Math.floor(Math.random()*items.length)];
-show({novaGame:true,paragraphs:[`Would you like to play Tic-tac-toe, ${player}? Best two out of three wins.`, `Series scores:`,`${player}: ${scores.user}`,`Nova: ${scores.nova}`],actions:[{label:'Play',run:startSeries},{label:'Later',run:()=>{host.novaGameOpen=false;finishMessage();setTimeout(()=>host.novaReleaseModalMessages(),200);}}]});
+show({novaGame:true,paragraphs:[`Would you like to play Tic-tac-toe, ${player}? Best two out of three wins.`, `${player}: ${scores.user}`,`Nova: ${scores.nova}`],actions:[{label:'Play',run:startSeries},{label:'Later',run:()=>{host.novaGameOpen=false;finishMessage();setTimeout(()=>host.novaReleaseModalMessages(),200);}}]});
     function startSeries(){
       finishMessage();clearIdle();let round=0,userWins=0,novaWins=0,board=[],size=3,userMark='',novaMark='',turn='',locked=false,ended=false;
       const panel=document.createElement('section');panel.setAttribute('role','dialog');panel.setAttribute('aria-label','Tic-tac-toe with Nova');panel.style.cssText='position:fixed;right:155px;bottom:75px;width:min(300px,calc(100vw - 40px));padding:16px;box-sizing:border-box;border:1px solid #ab83dd;border-radius:18px;background:var(--sn-theme-251f31,#251f31);color:var(--sn-theme-e6edf9,#eee6ff);box-shadow:0 0 18px #975ed744;font:14px system-ui;pointer-events:auto;z-index:40';
