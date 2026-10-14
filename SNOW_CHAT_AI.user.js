@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.634
+// @version      2.36.635
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -127,6 +127,7 @@
 ,{"version":"2.36.632","fixes":true,"changes":[{"key":"nova-games","meaningful":true,"text":"Winning lines draw over one second, pause two seconds, then celebrate with confetti and one larger neon result message."}]}
 ,{"version":"2.36.633","fixes":true,"changes":[{"key":"nova-games","meaningful":false,"text":"Removed the remaining Series result line from the game reaction bubble."}]}
 ,{"version":"2.36.634","fixes":true,"changes":[{"key":"nova-games","meaningful":true,"text":"Game drawing uses the sword-dance hilt and neon blade design, with a closer landing and two hands held near Nova's body."}]}
+,{"version":"2.36.635","fixes":true,"changes":[{"key":"nova-games","meaningful":true,"text":"Game and dance share hilt artwork. Idle swordplay is blocked during games, game sabers clean up explicitly, and dice hide until their tumbling pose is applied."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
