@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.651
+// @version      2.36.652
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.652","fixes":true,"changes":[{"key":"nova-game-expansion","meaningful":true,"text":"Expanded Tic tac toe boards grow the panel, preserving tile size until screen space requires smaller tiles."}]},
 {"version":"2.36.651","fixes":true,"changes":[{"key":"auto-greet","meaningful":true,"text":"Pending greetings retry every second when the chat becomes available."},{"key":"nova-notification-cut","meaningful":false,"text":"Acceptance notifications retain their translucent background under theme rules."}]},
 {"version":"2.36.650","fixes":false,"changes":[{"key":"kb-known-error-filter","meaningful":true,"text":"Chat knowledge search displays up to 20 locally ranked articles per page."}]},
 {"version":"2.36.649","fixes":true,"changes":[{"key":"kb-known-error-filter","meaningful":true,"text":"Knowledge search fills pages from a larger filtered result pool and locally prioritizes relevant support articles over continuity plans."}]},
@@ -24759,7 +24760,21 @@ const popup=document.createElement('div');popup.style.cssText='position:absolute
       let lines=[];const requiredRun=()=>3+Math.floor((size-3)/4);function updateLines(){lines=[];const count=requiredRun();for(let row=0;row<size;row++)for(let col=0;col<size;col++)for(const [dr,dc]of [[0,1],[1,0],[1,1],[1,-1]])if(row+dr*(count-1)<size&&col+dc*(count-1)>=0&&col+dc*(count-1)<size)lines.push(Array.from({length:count},(_,step)=>(row+dr*step)*size+col+dc*step));}
 const gameRules=document.createElement('div');gameRules.style.cssText='text-align:center;color:#d4b5ef;font:13px system-ui;margin:8px 0 0';status.before(gameRules);const updateGameRules=()=>{gameRules.hidden=size<7;gameRules.replaceChildren();const before=document.createElement('span'),mark=document.createElement('strong'),after=document.createElement('span');before.textContent=`${size}×${size} table · ${requiredRun()} `;mark.textContent=userMark||'';mark.style.cssText='color:#43dfff;text-shadow:0 0 5px #43dfff55';after.textContent=' in a row wins';gameRules.append(before,mark,after);};
       const winner=()=>lines.map(line=>line.every(i=>board[i]&&board[i]===board[line[0]])?board[line[0]]:'').find(Boolean)||'';
-let cells=[];function buildGrid(){grid.replaceChildren();grid.style.gridTemplateColumns=`repeat(${size},minmax(0,1fr))`;grid.style.width='100%';grid.style.maxWidth='min(100%,48vh)';grid.style.margin='0 auto';grid.style.overflow='visible';grid.style.gap=size>5?'3px':'6px';updateLines();updateGameRules();cells=Array.from({length:size*size},(_,index)=>{const cell=document.createElement('button');cell.setAttribute('aria-label',`Square ${index+1}`);cell.style.cssText='height:72px;position:relative;border:1px solid #806493;border-radius:10px;background:#191621;color:#e6caff;font:32px system-ui;cursor:pointer';cell.onclick=()=>{if(ended||locked||turn!==userMark||board[index])return;move(index,userMark);if(!checkRound()){turn=novaMark;novaMove();}};cell.style.height='auto';cell.style.width='100%';cell.style.minHeight='0';cell.style.boxSizing='border-box';cell.style.contain='size';cell.style.overflow='visible';cell.style.aspectRatio='1';cell.style.minWidth='0';cell.style.padding='0';cell.style.display='block';cell.style.placeItems='center';if(board[index])paintMark(cell,board[index]);grid.append(cell);return cell;});}
+      function sizeGamePanel(){
+        const gap=6, preferredTile=84, chromeWidth=34;
+        const availableWidth=Math.max(1,innerWidth-40-chromeWidth);
+        const availableHeight=Math.max(1,innerHeight-110-180);
+        const boardWidth=Math.max(1,Math.min(size*preferredTile+(size-1)*gap,availableWidth,availableHeight));
+        panel.style.width=(boardWidth+chromeWidth)+'px';
+        panel.style.right=Math.min(155,Math.max(20,innerWidth-boardWidth-chromeWidth-20))+'px';
+        panel.style.bottom='75px';
+        grid.style.width=boardWidth+'px';
+      }
+      window.addEventListener('resize',function resizeGamePanel(){
+        if(!panel.isConnected){window.removeEventListener('resize',resizeGamePanel);return;}
+        sizeGamePanel();
+      });
+let cells=[];function buildGrid(){grid.replaceChildren();grid.style.gridTemplateColumns=`repeat(${size},minmax(0,1fr))`;grid.style.width='100%';grid.style.maxWidth='none';grid.style.margin='0 auto';grid.style.overflow='visible';grid.style.gap='6px';sizeGamePanel();updateLines();updateGameRules();cells=Array.from({length:size*size},(_,index)=>{const cell=document.createElement('button');cell.setAttribute('aria-label',`Square ${index+1}`);cell.style.cssText='height:72px;position:relative;border:1px solid #806493;border-radius:10px;background:#191621;color:#e6caff;font:32px system-ui;cursor:pointer';cell.onclick=()=>{if(ended||locked||turn!==userMark||board[index])return;move(index,userMark);if(!checkRound()){turn=novaMark;novaMove();}};cell.style.height='auto';cell.style.width='100%';cell.style.minHeight='0';cell.style.boxSizing='border-box';cell.style.contain='size';cell.style.overflow='visible';cell.style.aspectRatio='1';cell.style.minWidth='0';cell.style.padding='0';cell.style.display='block';cell.style.placeItems='center';if(board[index])paintMark(cell,board[index]);grid.append(cell);return cell;});}
 const bowl=document.createElement('div');bowl.setAttribute('aria-label','Dice bowl');bowl.style.cssText='position:relative;height:110px;margin:12px 0;border-radius:50%;border:5px solid #806493;background:radial-gradient(ellipse,#100c19 35%,#49365a 85%);box-shadow:inset 0 10px 18px #000a,0 4px 8px #0005;overflow:visible;perspective:500px';grid.before(bowl);
 const rollCards=document.createElement('div');rollCards.style.cssText='position:relative;height:0;margin:0';status.before(rollCards);status.style.cssText='text-align:center;font:13px system-ui;min-height:18px';
       async function settleRollCard(owner,values){if(ended||!panel.isConnected)return;rollCards.style.height='68px';rollCards.style.margin='6px 0';const isUser=owner===player;rollCards.querySelector(`[data-roll-owner="${isUser?'user':'nova'}"]`)?.remove();const card=document.createElement('div');card.dataset.rollOwner=isUser?'user':'nova';card.style.cssText=`position:absolute;top:0;width:105px;box-sizing:border-box;padding:7px 9px;border-radius:12px;border:1px solid ${isUser?'#43dfff':'#bd7aff'};background:#30213f;color:#f4e9ff;box-shadow:0 0 8px ${isUser?'#43dfff44':'#bd7aff66'};text-align:center;z-index:4`;const name=document.createElement('div'),sum=document.createElement('strong');name.textContent=owner;name.style.cssText='font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';sum.textContent=String(values[0]+values[1]);sum.style.fontSize='25px';card.append(name,sum);rollCards.append(card);const width=rollCards.clientWidth,center=(width-105)/2,final=isUser?0:width-105;card.style.left=final+'px';const bowlRect=bowl.getBoundingClientRect(),targetRect=rollCards.getBoundingClientRect(),fromY=bowlRect.top+bowlRect.height/2-targetRect.top-30;await card.animate([{transform:`translate(${center-final}px,${fromY}px)`},{transform:`translate(${center-final}px,${fromY}px)`,offset:.3},{transform:'translate(0,0)'}],{duration:850,easing:'cubic-bezier(.2,.75,.25,1)'}).finished.catch(()=>{});}
