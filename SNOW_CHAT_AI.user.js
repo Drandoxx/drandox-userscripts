@@ -24096,7 +24096,7 @@ avatarRoot.querySelector('.nova')?.addEventListener('contextmenu',event=>{event.
     setExpression('happy');
     const muteUpdates=()=>{try{localStorage.setItem('sn-ai-update-muted-until',String(Date.now()+300000));}catch{}pendingUpdate=null;deferredUpdate=null;clearTimeout(updateWaitTimer);for(let i=deferredModalMessages.length-1;i>=0;i--)if(deferredModalMessages[i].novaUpdate||deferredModalMessages[i].updateSpeech)deferredModalMessages.splice(i,1);data.later?.();finishMessage();};
     if(data.reload){show({updateSpeech:true,paragraphs:['The update page is open. Once the update is installed, reload this page to use the new version.'],actions:[{label:'Reload page',run:()=>location.reload()},{label:'Later',run:muteUpdates}]});return;}
-    show({novaUpdate:data,paragraphs:[`Hi ${firstName},`,`I have a new update for you, version ${data.version}.`,`Here’s what’s new:`],bullets:summarizeNovaReleaseNotes(data.notes,data.currentVersion,data.version),actions:[{label:'Update now',run:()=>{data.update?.();enqueueMessage(()=>host.novaUpdateMessage({reload:true}),'reload');if(message?.novaUpdate===data)finishMessage();}},{label:'Later',run:muteUpdates}]});
+    show({novaUpdate:data,paragraphs:[`Hi ${firstName},`,`I have a new update for you, version ${data.version}.`,`Here’s what’s new:`],bullets:summarizeNovaReleaseNotes(data.notes,data.currentVersion,data.version),actions:[{label:'Update now',run:()=>{enqueueMessage(()=>host.novaUpdateMessage({reload:true,explicit:true}),'reload');data.update?.();if(message?.novaUpdate===data)finishMessage();}},{label:'Later',run:muteUpdates}]});
   };
   function stopTyping(){clearTimeout(typingTimer);typingTimer=0;typingQueue=[];typingDone=null;card.removeAttribute('aria-busy');}
   function typeNext(){
