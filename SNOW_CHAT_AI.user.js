@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.652
+// @version      2.36.653
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.653","fixes":true,"changes":[{"key":"nova-game-expansion","meaningful":false,"text":"Game panel size changes use smooth transitions."}]},
 {"version":"2.36.652","fixes":true,"changes":[{"key":"nova-game-expansion","meaningful":true,"text":"Expanded Tic tac toe boards grow the panel, preserving tile size until screen space requires smaller tiles."}]},
 {"version":"2.36.651","fixes":true,"changes":[{"key":"auto-greet","meaningful":true,"text":"Pending greetings retry every second when the chat becomes available."},{"key":"nova-notification-cut","meaningful":false,"text":"Acceptance notifications retain their translucent background under theme rules."}]},
 {"version":"2.36.650","fixes":false,"changes":[{"key":"kb-known-error-filter","meaningful":true,"text":"Chat knowledge search displays up to 20 locally ranked articles per page."}]},
@@ -24761,6 +24762,8 @@ const popup=document.createElement('div');popup.style.cssText='position:absolute
 const gameRules=document.createElement('div');gameRules.style.cssText='text-align:center;color:#d4b5ef;font:13px system-ui;margin:8px 0 0';status.before(gameRules);const updateGameRules=()=>{gameRules.hidden=size<7;gameRules.replaceChildren();const before=document.createElement('span'),mark=document.createElement('strong'),after=document.createElement('span');before.textContent=`${size}×${size} table · ${requiredRun()} `;mark.textContent=userMark||'';mark.style.cssText='color:#43dfff;text-shadow:0 0 5px #43dfff55';after.textContent=' in a row wins';gameRules.append(before,mark,after);};
       const winner=()=>lines.map(line=>line.every(i=>board[i]&&board[i]===board[line[0]])?board[line[0]]:'').find(Boolean)||'';
       function sizeGamePanel(){
+        panel.style.transition='width 300ms ease,height 300ms ease,right 300ms ease';
+        grid.style.transition='width 300ms ease';
         const gap=6, preferredTile=84, chromeWidth=34;
         const availableWidth=Math.max(1,innerWidth-40-chromeWidth);
         const availableHeight=Math.max(1,innerHeight-110-180);
