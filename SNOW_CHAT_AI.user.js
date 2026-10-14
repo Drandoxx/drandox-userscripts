@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.676
+// @version      2.36.677
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.677","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Move Nova in front at thirty percent of the approach walk."}]},
 {"version":"2.36.676","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Reuse saved cuts after the panel opening animation reaches its final geometry."}]},
 {"version":"2.36.675","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Begin the animated shrink without the setup pause and move Nova in front at sixty percent of the approach."}]},
 {"version":"2.36.674","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Reduce new cut openings by a further five percent."}]},
@@ -25192,7 +25193,7 @@ function installNovaCutEffects(host, avatar) {
           feet.forEach((foot,index)=>{if(foot){foot.style.setProperty('animation','none','important');foot.style.translate=`0px ${-Math.max(0,Math.sin(t*Math.PI*8+index*Math.PI))*5}px`;}});
           const body=root.querySelector('.body').getBoundingClientRect();
           grip(body.left+body.width*.55,body.top+body.height*.66,28,cuteBlade);
-          if(t>=.6&&!frontTarget){frontTarget=target;nova.style.zIndex='2147483647';syncAnimationLayer();document.body.append(animationLayer);saber.style.zIndex='2147483647';animationLayer.append(saber);}
+          if(t>=.3&&!frontTarget){frontTarget=target;nova.style.zIndex='2147483647';syncAnimationLayer();document.body.append(animationLayer);saber.style.zIndex='2147483647';animationLayer.append(saber);}
           if(t<1)frame=requestAnimationFrame(approach);else resolve();
         };frame=requestAnimationFrame(approach);
       });if(mine!==token)return;
