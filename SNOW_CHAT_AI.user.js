@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.648
+// @version      2.36.649
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.649","fixes":true,"changes":[{"key":"kb-known-error-filter","meaningful":true,"text":"Knowledge search fills pages from a larger filtered result pool and locally prioritizes relevant support articles over continuity plans."}]},
 {"version":"2.36.648","fixes":false,"changes":[{"key":"kb-known-error-filter","meaningful":true,"text":"Chat knowledge search excludes verified Known Error articles."}]},
 {"version":"2.36.647","fixes":true,"changes":[{"key":"description-filling","meaningful":false,"text":"Reduce repeated field discovery and redundant model writes beneath Description."}]},
 {"version":"2.36.646","fixes":true,"changes":[{"key":"field-diagnostics","meaningful":false,"text":"Targeted text-field phase, model commit and event-loop delay diagnostics."}]},
@@ -3930,7 +3931,40 @@ const snAIChatDisplayNames=(()=>{
   const knowledgePage=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
   const knowledgeOriginalFetch=knowledgePage.fetch;
   const kbBaseFilterCache = new Map();
-  async function filterKnownErrorSearchResults(payload) {
+  function rankLocalKBResults(results, query) {
+    const tokens = [...new Set(String(query || '').toLowerCase().match(/[a-z0-9]{3,}/g) || [])];
+    const score = item => {
+      const id = /^kb_knowledge:([a-f0-9]{32})$/i.exec(item?.id || '')?.[1];
+      const entry = kbBaseFilterCache.get(id);
+      const title = String(item.title || '').toLowerCase();
+      const content = String(entry?.content || item.snippet || '').toLowerCase();
+      const matches = tokens.filter(token => title.includes(token) || content.includes(token));
+      const relevance = tokens.reduce((sum, token) => sum + (title.includes(token) ? 12 : content.includes(token) ? 2 : 0), 0);
+      const continuity = /^service\s+continuity$/i.test(entry?.base || '') || /service continuity plan/i.test(title);
+      // Relevant continuity plans beat unrelated articles, but relevant normal
+      // support articles always precede continuity plans. Stable ties preserve
+      // ServiceNow's own ranking, without rewriting its score metadata.
+      const tier = matches.length ? (continuity ? 1 : 2) : 0;
+      return tier * 1000 + relevance + (matches.length && /support page|troubleshoot|resolution|how to/i.test(title) ? 6 : 0);
+    };
+    return results.map((item,index)=>({item,index,score:score(item)}))
+      .sort((a,b)=>b.score-a.score || a.index-b.index).map(entry=>entry.item);
+  }
+  function expandKBSearchRequest(body) {
+    try {
+      const operation = JSON.parse(body), vars = operation?.variables;
+      if (Array.isArray(operation) || operation?.operationName !== 'nowAgentAssist'
+        || !operation.query?.includes('GlideContextualSearch_Query') || vars?.uiType !== 'workspace'
+        || vars.recommendationOnly || !Array.isArray(vars.resources)
+        || vars.resources.length !== 1 || vars.resources[0] !== 'adba8d70c39102006f333b0ac3d3aefa') return null;
+      const limit = Number(vars.limit), offset = Number(vars.offset);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100 || !Number.isInteger(offset) || offset < 0) return null;
+      const poolLimit = Math.min(100, Number(vars.maxLimit) || 100);
+      operation.variables = {...vars,limit:poolLimit,offset:0};
+      return {body:JSON.stringify(operation),limit,offset,poolLimit,query:vars.query};
+    } catch { return null; }
+  }
+  async function filterKnownErrorSearchResults(payload, search = null) {
     const groups = (Array.isArray(payload) ? payload : [payload])
       .map(part => part?.data?.GlideContextualSearch_Query).filter(group => Array.isArray(group?.results));
     const ids = [...new Set(groups.flatMap(group => group.results)
@@ -3942,7 +3976,7 @@ const snAIChatDisplayNames=(()=>{
       try {
         for (let offset = 0; offset < missing.length; offset += 100) {
           const params = new URLSearchParams({sysparm_query:'sys_idIN'+missing.slice(offset,offset+100).join(','),
-            sysparm_fields:'sys_id,kb_knowledge_base',sysparm_display_value:'all',sysparm_exclude_reference_link:'true',sysparm_limit:'100'});
+            sysparm_fields:'sys_id,kb_knowledge_base,text',sysparm_display_value:'all',sysparm_exclude_reference_link:'true',sysparm_limit:'100'});
           const response = await kbMetadataFetch('/api/now/table/kb_knowledge?'+params, {
             credentials:'same-origin',signal:controller.signal,headers:{Accept:'application/json','X-UserToken':kbSessionToken()}});
           if (!response.ok) throw new Error('KB base lookup HTTP '+response.status);
@@ -3952,11 +3986,13 @@ const snAIChatDisplayNames=(()=>{
             const id = typeof record.sys_id === 'string' ? record.sys_id : record.sys_id?.value;
             const base = typeof record.kb_knowledge_base === 'string' ? record.kb_knowledge_base : record.kb_knowledge_base?.display_value;
             if (!/^[a-f0-9]{32}$/i.test(id || '') || !base) continue;
-            kbBaseFilterCache.set(id,{excluded:/^known\s+error$/i.test(base.trim()),expires:Date.now()+300000});
+            const raw = typeof record.text === 'string' ? record.text : record.text?.value || '';
+            kbBaseFilterCache.set(id,{base,content:normalizeKBSnippet(raw).slice(0,12000),excluded:/^known\s+error$/i.test(base.trim()),expires:Date.now()+300000});
           }
         }
-      } finally { clearTimeout(timer); }
-      while (kbBaseFilterCache.size > 1000) kbBaseFilterCache.delete(kbBaseFilterCache.keys().next().value);
+      } catch { /* Keep unverified articles; still preserve the requested page size. */ }
+      finally { clearTimeout(timer); }
+      while (kbBaseFilterCache.size > 300) kbBaseFilterCache.delete(kbBaseFilterCache.keys().next().value);
     }
     let changed = false;
     for (const group of groups) {
@@ -3965,6 +4001,13 @@ const snAIChatDisplayNames=(()=>{
         return !kbBaseFilterCache.get(id)?.excluded;
       });
       if (kept.length !== group.results.length) { group.results = kept; changed = true; }
+      if (search) {
+        const ordered = rankLocalKBResults(kept,search.query);
+        group.results = ordered.slice(search.offset,search.offset+search.limit);
+        if (group.meta) { group.meta.has_more_results = ordered.length > search.offset+search.limit; group.meta.returned_results = group.results.length; }
+        if (group.request?.meta?.window) { group.request.meta.window.start=search.offset; group.request.meta.window.end=search.offset+group.results.length; }
+        changed = true;
+      }
     }
     return changed;
   }
@@ -3991,17 +4034,20 @@ const snAIChatDisplayNames=(()=>{
   }
   const knowledgeWildcardFetch=async function(input,init) {
     let nativeGraphQL=false;
+    let kbSearch = null;
     try {
       const url=new URL(typeof input==='string'?input:(input.url || input.href),location.href);
       const method=String(init?.method || input?.method || 'GET').toUpperCase();
       if (url.origin===location.origin && url.pathname==='/api/now/graphql' && method==='POST') {
         nativeGraphQL=true;
         if (typeof init?.body==='string') {
-          const body=knowledgeWildcardBody(init.body);
+          kbSearch = expandKBSearchRequest(init.body);
+          const body=kbSearch?.body || knowledgeWildcardBody(init.body);
           if (body!==init.body) init={...init,body};
         } else if (!init?.body && typeof input?.clone==='function') {
           const originalBody=await input.clone().text();
-          const body=knowledgeWildcardBody(originalBody);
+          kbSearch = expandKBSearchRequest(originalBody);
+          const body=kbSearch?.body || knowledgeWildcardBody(originalBody);
           if (body!==originalBody) input=new knowledgePage.Request(input,{body});
         }
       }
@@ -4012,7 +4058,7 @@ const snAIChatDisplayNames=(()=>{
         const body=await response.clone().text();
         if(body.includes('GlideContextualSearch_Query') || [...emptyEventActionNames.keys()].some(id=>body.includes(id))) {
           const payload=JSON.parse(body);
-          const filtered = await filterKnownErrorSearchResults(payload);
+          const filtered = await filterKnownErrorSearchResults(payload,kbSearch);
           if(repairEmptyEventActions(payload) || filtered) {
             const headers=new knowledgePage.Headers(response.headers);
             headers.delete('content-length');
