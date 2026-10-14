@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.658
+// @version      2.36.659
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.659","fixes":true,"changes":[{"key":"nova-game-expansion","meaningful":false,"text":"Smaller tiles and a single panel-width transition keep expanded boards inside the panel throughout resizing."}]},
 {"version":"2.36.658","fixes":true,"changes":[{"key":"nova-game-expansion","meaningful":false,"text":"Resize animation measures natural height before retargeting."},{"key":"nova-game-activity","meaningful":true,"text":"Nova can idle and cut notifications while waiting in a game; drawing a mark takes priority."}]},
 {"version":"2.36.657","fixes":true,"changes":[{"key":"auto-greet","meaningful":false,"text":"Existing outgoing messages no longer cancel greetings; genuine manual composer edits cancel them. Log the outgoing-message evidence."}]},
 {"version":"2.36.656","fixes":true,"changes":[{"key":"nova-game-restore","meaningful":false,"text":"Fix game initialization order and restore expanded boards without overwriting saved progress during setup."}]},
@@ -24787,7 +24788,7 @@ const minimizeButton=document.createElement('button');minimizeButton.textContent
       actions.style.cssText='display:flex;justify-content:center;gap:6px';bowlActionsInit();
       function bowlActionsInit(){panel.style.position='fixed';}
       let gameNoticeUntil=0,gameNoticeTimer=0;
-      const setTurn=who=>{if(Date.now()<gameNoticeUntil)return;status.textContent=who===userMark?'Your turn':"Nova's turn";status.style.color=who===userMark?'#43dfff':'#bd7aff';};
+      const setTurn=who=>{if(who===userMark&&!host.novaGameDrawing)armIdle();if(Date.now()<gameNoticeUntil)return;status.textContent=who===userMark?'Your turn':"Nova's turn";status.style.color=who===userMark?'#43dfff':'#bd7aff';};
       const gameNotice=text=>{clearTimeout(gameNoticeTimer);gameNoticeUntil=Date.now()+2800;status.textContent=text;status.style.color='#d8b7ff';gameNoticeTimer=setTimeout(()=>{gameNoticeUntil=0;if(!ended&&panel.isConnected&&!locked)setTurn(turn);},2800);};
 const markBadge=document.createElement('span');markBadge.style.cssText='display:block;margin:0 0 8px;color:#43dfff;font:600 13px system-ui;text-shadow:0 0 5px #43dfff66';markBadge.hidden=true;title.after(markBadge);title.style.paddingRight='65px';
       const endButton=document.createElement('button');endButton.textContent='×';endButton.setAttribute('aria-label','End game');endButton.style.cssText='position:absolute;right:10px;top:10px;border:0;background:transparent;color:#e6caff;font:24px/28px system-ui;width:28px;height:28px;padding:0;display:grid;place-items:center;cursor:pointer';panel.append(endButton);endButton.onclick=()=>{if(panel.querySelector('[data-end-confirm]'))return;const prompt=document.createElement('div');prompt.dataset.endConfirm='true';prompt.style.cssText='position:absolute;inset:0;background:#191621ee;display:grid;place-content:center;text-align:center;gap:12px;border-radius:18px;z-index:20';const label=document.createElement('strong');label.textContent='End game?';prompt.append(label);for(const text of ['Yes','No']){const b=document.createElement('button');b.textContent=text;b.style.cssText='padding:9px 20px;border:1px solid #ab83dd;border-radius:9px;background:#49365a;color:#eee6ff;cursor:pointer';b.onclick=()=>{if(text==='No'){prompt.remove();return;}discardProgress();ended=true;clearTimeout(gameNoticeTimer);panel.remove();host.novaGameOpen=false;finishMessage();setTimeout(()=>host.novaReleaseModalMessages(),200);armIdle();};prompt.append(b);}panel.append(prompt);};
@@ -24798,24 +24799,31 @@ const gameRules=document.createElement('div');gameRules.style.cssText='text-alig
       const winner=()=>lines.map(line=>line.every(i=>board[i]&&board[i]===board[line[0]])?board[line[0]]:'').find(Boolean)||'';
       function sizeGamePanel(){
         panel.style.transition='width 300ms ease,right 300ms ease';
-        grid.style.transition='width 300ms ease';
-        const gap=6, preferredTile=84, chromeWidth=34;
+        grid.style.transition='none';
+        const gap=6, preferredTile=64, chromeWidth=34;
         const availableWidth=Math.max(1,innerWidth-40-chromeWidth);
         const availableHeight=Math.max(1,innerHeight-110-180);
         const boardWidth=Math.max(1,Math.min(size*preferredTile+(size-1)*gap,availableWidth,availableHeight));
         panel.style.width=(boardWidth+chromeWidth)+'px';
         panel.style.right=Math.min(155,Math.max(20,innerWidth-boardWidth-chromeWidth-20))+'px';
         panel.style.bottom='75px';
-        grid.style.width=boardWidth+'px';
+        grid.style.width='100%';
       }
       // Auto-height changes (dice, notices, board) cannot use CSS height
       // transitions. Animate measured old/new heights without fixing layout.
-      let previousGameHeight=0,gameSizeAnimation=null;
+      let previousGameHeight=0,previousGameWidth=0,gameSizeAnimation=null;
       const gameSizeObserver=new ResizeObserver(()=>{
         if(!panel.isConnected){gameSizeObserver.disconnect();return;}
         const visibleHeight=panel.getBoundingClientRect().height;
         gameSizeAnimation?.cancel();
         const height=panel.offsetHeight;
+        const width=panel.getBoundingClientRect().width;
+        // Board height follows the panel's animated width naturally. A
+        // second height animation would lag behind and expose tiles outside.
+        if(previousGameWidth && Math.abs(width-previousGameWidth)>.1){
+          previousGameWidth=width;previousGameHeight=height;return;
+        }
+        previousGameWidth=width;
         if(previousGameHeight && Math.abs(height-previousGameHeight)>2
           && !matchMedia('(prefers-reduced-motion: reduce)').matches){
           gameSizeAnimation=panel.animate([{height:visibleHeight+'px'},{height:height+'px'}],{duration:300,easing:'ease-out'});
