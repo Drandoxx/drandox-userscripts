@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.662
+// @version      2.36.663
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.663","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Keep Nova's feet seated on the Chats Today button while changing depth size."}]},
 {"version":"2.36.662","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Scale only Nova's figure around her feet, with subtler shrinking and no sideways host movement."}]},
 {"version":"2.36.661","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":true,"text":"After cutting, Nova walks forward facing you with her sword held, grows back to full size and continues her flourish."}]},
 {"version":"2.36.660","fixes":false,"changes":[{"key":"nova-game-difficulty","meaningful":true,"text":"Nova gradually improves blocking and strategic moves when trailing in the overall rankings, without changing game rules."}]},
@@ -25045,7 +25046,18 @@ function installNovaCutEffects(host, avatar) {
       visibilityFrame=requestAnimationFrame(watchVisibility);
     };visibilityFrame=requestAnimationFrame(watchVisibility);
     const nova=document.getElementById('sn-ai-nova-companion'),root=nova.shadowRoot,arm=root.querySelector('.arm.right'),otherArm=root.querySelector('.arm.left'),eyes=root.querySelector('.nova-eye-drawing');
-    if(!idleOnly){const figure=root.querySelector('.nova');figure.style.transformOrigin='50% calc(100% - 10px)';figure.style.scale='.85';}
+    const depthFigure=root.querySelector('.nova');
+    const seatDepthFeet=()=>{
+      if(idleOnly)return;
+      const launcher=document.getElementById('sn-ai-chats-today')?.shadowRoot?.querySelector('.launcher');
+      const button=launcher?.getBoundingClientRect();
+      const feet=[...root.querySelectorAll('.foot')].map(foot=>foot.getBoundingClientRect());
+      if(!button?.width||!feet.length)return;
+      depthFigure.style.translate='0px 0px';
+      const baseline=Math.max(...[...root.querySelectorAll('.foot')].map(foot=>foot.getBoundingClientRect().bottom));
+      depthFigure.style.translate=`0px ${(button.top+4-baseline)/.72}px`;
+    };
+    if(!idleOnly){depthFigure.style.transformOrigin='50% calc(100% - 10px)';depthFigure.style.scale='.85';seatDepthFeet();}
     if(carry){arm.style.removeProperty('transform');otherArm.style.removeProperty('transform');}
     const otherArmBox=otherArm.querySelector('.hand').getBoundingClientRect();
     // Keep the real oval hands on the rig behind the notification, never draw
@@ -25140,6 +25152,7 @@ function installNovaCutEffects(host, avatar) {
           if(mine!==token){resolve();return;}
           const t=Math.min(1,(now-approachStart)/1800),scale=.85+.15*t;
           root.querySelector('.nova').style.scale=String(scale);
+          seatDepthFeet();
           feet.forEach((foot,index)=>{if(foot){foot.style.setProperty('animation','none','important');foot.style.translate=`0px ${-Math.max(0,Math.sin(t*Math.PI*8+index*Math.PI))*5}px`;}});
           const body=root.querySelector('.body').getBoundingClientRect();
           grip(body.left+body.width*.55,body.top+body.height*.66,28,cuteBlade);
