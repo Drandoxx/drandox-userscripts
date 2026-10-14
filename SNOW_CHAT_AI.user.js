@@ -25005,8 +25005,9 @@ function installNovaCutEffects(host, avatar) {
     retainedCuts.get(target)?.panel.remove();retainedCuts.delete(target);
     host.novaCutHold?.(true);
     const openingToken=token;
-    // Finish the shared stand transition before measuring the visible character.
-    if(!carry&&!savedCuts.has(target))await new Promise(resolve=>setTimeout(resolve,950));if(openingToken!==token)return;
+    // React immediately when Chats Today or a notification appears. The
+    // foot-anchored shrink still animates below; only the idle pause is gone.
+    if(openingToken!==token)return;
     if(!target.isConnected||!target.getBoundingClientRect().width){host.novaCutHold?.(false);return;}
     const mine=token,panel=document.createElement('div');panel.className='cut-demo-panel';panel.dataset.novaCutOverlay='true';
     const box=target.getBoundingClientRect(),w=box.width,h=box.height,key=target;
@@ -25184,7 +25185,7 @@ function installNovaCutEffects(host, avatar) {
           feet.forEach((foot,index)=>{if(foot){foot.style.setProperty('animation','none','important');foot.style.translate=`0px ${-Math.max(0,Math.sin(t*Math.PI*8+index*Math.PI))*5}px`;}});
           const body=root.querySelector('.body').getBoundingClientRect();
           grip(body.left+body.width*.55,body.top+body.height*.66,28,cuteBlade);
-          if(t>=.8&&!frontTarget){frontTarget=target;nova.style.zIndex='2147483647';syncAnimationLayer();document.body.append(animationLayer);saber.style.zIndex='2147483647';animationLayer.append(saber);}
+          if(t>=.6&&!frontTarget){frontTarget=target;nova.style.zIndex='2147483647';syncAnimationLayer();document.body.append(animationLayer);saber.style.zIndex='2147483647';animationLayer.append(saber);}
           if(t<1)frame=requestAnimationFrame(approach);else resolve();
         };frame=requestAnimationFrame(approach);
       });if(mine!==token)return;
