@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.646
+// @version      2.36.647
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.647","fixes":true,"changes":[{"key":"description-filling","meaningful":false,"text":"Reduce repeated field discovery and redundant model writes beneath Description."}]},
 {"version":"2.36.646","fixes":true,"changes":[{"key":"field-diagnostics","meaningful":false,"text":"Targeted text-field phase, model commit and event-loop delay diagnostics."}]},
 {"version":"2.36.537","fixes":false,"changes":[{"key":"nova-movement","meaningful":true,"text":"NOVA can peek out, walk, climb and fly with her red N cape."},{"key":"nova-speech","meaningful":true,"text":"NOVA types her messages at a natural pace and works independently of SN AI."}]},
 {"version":"2.36.538","fixes":true,"changes":[{"key":"nova-appearance","meaningful":false,"text":"Smaller NOVA with a sideways entrance."}]},
@@ -13276,7 +13277,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     return null;
   }
 
-  async function waitStableValue(fieldLabel, expected, match = 'exact', timeoutMs = 3200, stableMs = 650, lockedControl = null) {
+  async function waitStableValue(fieldLabel, expected, match = 'exact', timeoutMs = 3200, stableMs = 650, lockedControl = null, resolveControl = null) {
     const wanted = normalisedFieldValue(expected);
     let stableSince = 0;
     let actual = '';
@@ -13287,7 +13288,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       // so waiting for isConnected=false reads stale/blank state and triggers
       // repeated dropdown reopen cycles. Keep the clicked element only as a
       // fallback during the short gap between replacement controls.
-      const currentControl = findControlByLabel(fieldLabel) || null;
+      const currentControl = (resolveControl ? resolveControl() : findControlByLabel(fieldLabel)) || null;
       if (currentControl && currentControl !== lockedControl) lockedControl = currentControl;
       else if (lockedControl && (!lockedControl.isConnected || !isVisible(lockedControl))) lockedControl = currentControl;
       actual = lockedControl ? readableElementValue(lockedControl) : readableControlValue(fieldLabel);
@@ -14243,6 +14244,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     if (binding) {
       const { owner, props, name } = binding;
       trace('model-binding-ready', { bindingName: name, callbackAvailable: typeof props.onValueChange === 'function' });
+      if (String(props.formData.fields[name]?.value ?? '') === text && String(field.value ?? '') === text
+          && field.getAttribute('aria-invalid') !== 'true') return true;
       if (typeof props.onValueChange !== 'function') return false;
       // Use the same bound callback as a native Workspace edit. DOM value and
       // synthetic input/change alone can leave GFORM's value empty. The first
@@ -14334,11 +14337,21 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       }
       trace('model-commit-start');
       const modelStarted = performance.now();
-      const modelCommitted = await commitTextToFormModel(field, text, () => findControlByLabel(fieldLabel), trace);
+      // Text inputs do not need a whole-form label scan on every 35ms poll.
+      // Refresh periodically and immediately after a disconnected rerender.
+      let currentTextControl = field, resolvedAt = performance.now();
+      const resolveTextControl = () => {
+        if (!currentTextControl || currentTextControl.isConnected === false || performance.now() - resolvedAt >= 250) {
+          currentTextControl = findControlByLabel(fieldLabel);
+          resolvedAt = performance.now();
+        }
+        return currentTextControl;
+      };
+      const modelCommitted = await commitTextToFormModel(field, text, resolveTextControl, trace);
       trace('model-commit-finished', { modelCommitted, durationMs: Math.round(performance.now() - modelStarted),
         controlReplaced: findControlByLabel(fieldLabel) !== field });
       trace('stability-check-start');
-      const committed = await waitStableValue(fieldLabel, text, 'exact', 2200, 450);
+      const committed = await waitStableValue(fieldLabel, text, 'exact', 2200, 450, field, resolveTextControl);
       addLog(committed.stable ? 'info' : 'warn', 'auto-text-attempt', { field: fieldLabel, attempt, expectedLength: text.length, actualLength: String(committed.actual ?? '').length, modelCommitted, stable: committed.stable });
       trace('stability-check-finished', { stable: committed.stable, modelCommitted });
       if (modelCommitted && committed.stable && findControlByLabel(fieldLabel)?.getAttribute('aria-invalid') !== 'true') { traceSucceeded = true; return committed.actual; }
@@ -14406,17 +14419,36 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     return readableElementValue(dynamicDescriptionControl(fieldMetadata));
   }
 
+  function descriptionControlResolver(fieldMetadata, initialControl) {
+    let current = initialControl, refreshedAt = 0;
+    return () => {
+      const now = performance.now();
+      if (!current || current.isConnected === false || now - refreshedAt >= 250) {
+        current = dynamicDescriptionControl(fieldMetadata);
+        refreshedAt = now;
+      }
+      return current;
+    };
+  }
+
   async function autoTextDescriptionField(fieldMetadata, value, code) {
     const text = String(value ?? '');
-    for (let attempt = 1; attempt <= 10; attempt += 1) {
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
       let field = dynamicDescriptionControl(fieldMetadata);
       if(!field){await waitForControlByLabel(fieldMetadata.label,3000);field=dynamicDescriptionControl(fieldMetadata);}
       if (!field) automationFailure(`${code}_FIELD_MISSING`, `${fieldMetadata.label} was not found.`, { attempt, name: fieldMetadata.name || '' });
       await scrollActiveEventTargetIntoView(field);
-      const modelCommitted = await commitTextToFormModel(field, text, () => dynamicDescriptionControl(fieldMetadata));
+      const resolveField = descriptionControlResolver(fieldMetadata, field);
+      const attemptStarted = performance.now();
+      const trace = (phase, extra = {}) => addLog('info', 'description-fill-phase', {
+        field: fieldMetadata.label, name: fieldMetadata.name || '', attempt, phase,
+        elapsedMs: Math.round(performance.now() - attemptStarted), expectedLength: text.length, ...extra });
+      trace('model-commit-start');
+      const modelCommitted = await commitTextToFormModel(field, text, resolveField, trace);
+      trace('model-commit-finished', { modelCommitted });
       let stableSince = 0;
       const committed = await waitUntil(() => {
-        const current = dynamicDescriptionControl(fieldMetadata);
+        const current = resolveField();
         const actual = readableElementValue(current);
         if (!current || current.getAttribute('aria-invalid') === 'true'
           || !subordinateFieldMatchesExpected(actual, text, fieldMetadata.label)) {
@@ -14425,12 +14457,12 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         }
         if (!stableSince) stableSince = Date.now();
         return Date.now() - stableSince >= 450 ? { actual } : null;
-      }, 2200, 45);
-      addLog(committed ? 'info' : 'warn', 'auto-description-field-attempt', { field: fieldMetadata.label, name: fieldMetadata.name || '', attempt, expected: text, actual: readableDescriptionFieldValue(fieldMetadata), stable: Boolean(committed) });
+      }, 2200, 150);
+      addLog(committed && modelCommitted ? 'info' : 'warn', 'auto-description-field-attempt', { field: fieldMetadata.label, name: fieldMetadata.name || '', attempt, expectedLength: text.length, actualLength: readableElementValue(resolveField()).length, modelCommitted, stable: Boolean(committed) });
       if (modelCommitted && committed) return committed.actual;
       await sleep(retryPause(attempt));
     }
-    automationFailure(code, `${fieldMetadata.label} did not retain its complete text after 10 attempts.`, { name: fieldMetadata.name || '', length: text.length });
+    automationFailure(code, `${fieldMetadata.label} did not retain its complete text after 3 attempts.`, { name: fieldMetadata.name || '', length: text.length });
   }
 
   async function copyReportingUserAuto() {
