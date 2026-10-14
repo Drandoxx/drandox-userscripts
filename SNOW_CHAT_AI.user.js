@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.656
+// @version      2.36.657
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.657","fixes":true,"changes":[{"key":"auto-greet","meaningful":false,"text":"Existing outgoing messages no longer cancel greetings; genuine manual composer edits cancel them. Log the outgoing-message evidence."}]},
 {"version":"2.36.656","fixes":true,"changes":[{"key":"nova-game-restore","meaningful":false,"text":"Fix game initialization order and restore expanded boards without overwriting saved progress during setup."}]},
 {"version":"2.36.655","fixes":true,"changes":[{"key":"nova-expression-reset","meaningful":false,"text":"Temporary Nova expressions return to friendly after active poses finish."}]},
 {"version":"2.36.654","fixes":true,"changes":[{"key":"nova-game-minimize","meaningful":false,"text":"Minimizing Tic tac toe releases the held expression and resumes Nova idle behavior."}]},
@@ -788,11 +789,15 @@ const snAIChatDisplayNames=(()=>{
           status:native?.delivery_status,key:native?.messageId||native?.sys_id||message};
       };
       const agentMessages=chatMessages();
-      if (agentMessages.some(message=>{const info=messageInfo(message);return info.right&&!info.system;})) {
-        rememberGreetingAttempt(id);greetTrace('skipped-agent-already-replied',{ims:record.number.value});return;
-      }
+      const logOutgoingEvidence=messages=>{
+        const outgoing=messages.map(messageInfo).filter(info=>info.right&&!info.system);
+        if(outgoing.length)greetTrace('outgoing-message-evidence',{ims:record.number.value,
+          reason:'existing-message-does-not-cancel-greeting',message: String(outgoing.at(-1).text||'').slice(0,1500),
+          messageCount:outgoing.length,status:outgoing.at(-1).status||'',source:'native-chat-message'});
+      };
+      logOutgoingEvidence(agentMessages);
       let composerEditedByUser=false;
-      const observeComposerEdit=event=>{if(event.isTrusted){composerEditedByUser=true;greetTrace('manual-composer-edit',{ims:record.number.value,composerSnapshot:composerSnapshot()});}};
+      const observeComposerEdit=event=>{if(event.isTrusted){composerEditedByUser=true;rememberGreetingAttempt(id);greetTrace('manual-composer-edit',{ims:record.number.value,composerSnapshot:composerSnapshot()});}};
       host.addEventListener('input',observeComposerEdit,true);
       try {
         const lastMessage=agentMessages.filter(message=>!messageInfo(message).system).at(-1);
@@ -810,7 +815,7 @@ const snAIChatDisplayNames=(()=>{
         }finally{clearTimeout(lookupTimer);}
         const decoder=document.createElement('span');decoder.innerHTML=snippet.displayValue||'';const expected=decoder.textContent.trim();
         const latestHumanMessages=chatMessages().filter(message=>!messageInfo(message).system);
-        if(latestHumanMessages.some(message=>messageInfo(message).right)){rememberGreetingAttempt(id);outcome('skipped','agent-already-replied');return;}
+        logOutgoingEvidence(latestHumanMessages);
         const latestHuman=latestHumanMessages.at(-1);
         const latestQuery=latestHuman&&!messageInfo(latestHuman).right?'q':'w';
         if(latestQuery!==query){outcome('not-sent','latest-message-changed-retry');return;}
