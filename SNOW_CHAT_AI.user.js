@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.660
+// @version      2.36.661
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.661","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":true,"text":"After cutting, Nova walks forward facing you with her sword held, grows back to full size and continues her flourish."}]},
 {"version":"2.36.660","fixes":false,"changes":[{"key":"nova-game-difficulty","meaningful":true,"text":"Nova gradually improves blocking and strategic moves when trailing in the overall rankings, without changing game rules."}]},
 {"version":"2.36.659","fixes":true,"changes":[{"key":"nova-game-expansion","meaningful":false,"text":"Smaller tiles and a single panel-width transition keep expanded boards inside the panel throughout resizing."}]},
 {"version":"2.36.658","fixes":true,"changes":[{"key":"nova-game-expansion","meaningful":false,"text":"Resize animation measures natural height before retargeting."},{"key":"nova-game-activity","meaningful":true,"text":"Nova can idle and cut notifications while waiting in a game; drawing a mark takes priority."}]},
@@ -24970,7 +24971,8 @@ function installNovaCutEffects(host, avatar) {
     nova.style.zIndex=frontTarget?.isConnected&&!frontTarget.hidden&&frontTarget.getBoundingClientRect().width?'2147483647':'100';delete nova.dataset.motion;const root=nova.shadowRoot;
     root.querySelector('.nova-cut-grumpy')?.remove();root.querySelector('.nova-mouth-drawing')?.style.removeProperty('visibility');
     const figure=root.querySelector('.nova');if(figure)figure.dataset.expression='friendly';
-    for(const selector of ['.arm.left','.arm.right','.nova-eye-drawing','.nova']){const e=root.querySelector(selector);e?.style.removeProperty('transform');e?.style.removeProperty('translate');e?.style.removeProperty('animation');e?.style.removeProperty('visibility');e?.style.removeProperty('z-index');e?.style.removeProperty('will-change');}
+    nova.style.removeProperty('scale');nova.style.removeProperty('transform-origin');
+    for(const selector of ['.arm.left','.arm.right','.foot.left','.foot.right','.nova-eye-drawing','.nova']){const e=root.querySelector(selector);e?.style.removeProperty('transform');e?.style.removeProperty('translate');e?.style.removeProperty('animation');e?.style.removeProperty('visibility');e?.style.removeProperty('z-index');e?.style.removeProperty('will-change');}
   };
   const close=()=>{
     cancelAnimationFrame(visibilityFrame);visibilityFrame=0;const ending=current;current=null;
@@ -25042,6 +25044,7 @@ function installNovaCutEffects(host, avatar) {
       visibilityFrame=requestAnimationFrame(watchVisibility);
     };visibilityFrame=requestAnimationFrame(watchVisibility);
     const nova=document.getElementById('sn-ai-nova-companion'),root=nova.shadowRoot,arm=root.querySelector('.arm.right'),otherArm=root.querySelector('.arm.left'),eyes=root.querySelector('.nova-eye-drawing');
+    if(!idleOnly){nova.style.transformOrigin='50% calc(100% - 10px)';nova.style.scale='.65';}
     if(carry){arm.style.removeProperty('transform');otherArm.style.removeProperty('transform');}
     const otherArmBox=otherArm.querySelector('.hand').getBoundingClientRect();
     // Keep the real oval hands on the rig behind the notification, never draw
@@ -25113,7 +25116,7 @@ function installNovaCutEffects(host, avatar) {
       hiltLayer.removeAttribute('mask');
       const holdX=bodyBox.left+bodyBox.width*.55,holdY=bodyBox.top+bodyBox.height*.66;
       const cuteBlade=40;
-      if(!wasCut){
+      if(false&&!wasCut){
       // Begin at the exact last cutting pose, not a new hard-coded position.
       const from=heldPose||{x:holdX,y:holdY,angle:28,size:cuteBlade};
       const rest={x:holdX+random(-7,7),y:holdY+random(-4,5),angle:random(-60,60)};
@@ -25126,13 +25129,25 @@ function installNovaCutEffects(host, avatar) {
       const stowStart=performance.now();
       await new Promise(resolve=>{const stow=now=>{if(mine!==token){resolve();return;}const t=Math.min(1,(now-stowStart)/350);grip(rest.x,rest.y+t*14,from.angle+delta,0);saber.style.opacity=String(1-t);if(t<1)frame=requestAnimationFrame(stow);else resolve();};frame=requestAnimationFrame(stow);});if(mine!==token)return;
       }
-      for(const a of [arm,otherArm]){a.style.removeProperty('transform');a.style.removeProperty('animation');a.style.removeProperty('z-index');}
-      const direction=Math.random()<.5?'left':'right',step=direction==='left'?-12:12;
-      root.querySelector('.nova').style.removeProperty('animation');nova.dataset.motion='walk-'+direction;
-      status.textContent=`NOVA turns ${direction}, walks through, then faces you.`;
-      const walk=animate(nova,[{transform:'scale(.72)'},{transform:`translateX(${step}px) scale(.72)`,offset:.5},{transform:'scale(.72)'}],{duration:1800,easing:'linear'});
-      setTimeout(()=>{if(mine===token){frontTarget=target;nova.style.zIndex='2147483647';syncAnimationLayer();document.body.append(animationLayer);saber.style.zIndex='2147483647';animationLayer.append(saber);}},900);
-      await walk.finished.catch(()=>{});if(mine!==token)return;delete nova.dataset.motion;
+      nova.dataset.motion='approach';
+      root.querySelector('.nova').dataset.expression='satisfied';
+      const feet=[root.querySelector('.foot.left'),root.querySelector('.foot.right')];
+      const approachStart=performance.now();
+      status.textContent='NOVA walks toward you, holding her sword.';
+      await new Promise(resolve=>{
+        const approach=now=>{
+          if(mine!==token){resolve();return;}
+          const t=Math.min(1,(now-approachStart)/1800),scale=.65+.35*t;
+          nova.style.scale=String(scale);
+          feet.forEach((foot,index)=>{if(foot){foot.style.setProperty('animation','none','important');foot.style.translate=`0px ${-Math.max(0,Math.sin(t*Math.PI*8+index*Math.PI))*5}px`;}});
+          const body=root.querySelector('.body').getBoundingClientRect();
+          grip(body.left+body.width*.55,body.top+body.height*.66,28,cuteBlade);
+          if(scale>=.8&&!frontTarget){frontTarget=target;nova.style.zIndex='2147483647';syncAnimationLayer();document.body.append(animationLayer);saber.style.zIndex='2147483647';animationLayer.append(saber);}
+          if(t<1)frame=requestAnimationFrame(approach);else resolve();
+        };frame=requestAnimationFrame(approach);
+      });if(mine!==token)return;
+      feet.forEach(foot=>{foot?.style.removeProperty('translate');foot?.style.removeProperty('animation');});
+      nova.style.removeProperty('scale');delete nova.dataset.motion;
       }
       const cuteBlade=40,saberSweepMargin=19+cuteBlade+20;
       // Idle flourishes sweep in every direction. Reserve the blade, glow and
@@ -25140,10 +25155,10 @@ function installNovaCutEffects(host, avatar) {
       const holdX=idleOnly?Math.max(saberSweepMargin,Math.min(innerWidth-saberSweepMargin,bodyBox.left+bodyBox.width*.55)):bodyBox.left+bodyBox.width*.55;
       const holdY=idleOnly?Math.max(saberSweepMargin,Math.min(innerHeight-saberSweepMargin,bodyBox.top+bodyBox.height*.66)):bodyBox.top+bodyBox.height*.66;
       // Draw the same hilt first; only then extend the same short neon blade.
-      saber.style.opacity='1';grip(holdX,holdY,28,0);
+      saber.style.opacity='1';grip(holdX,holdY,28,idleOnly?0:cuteBlade);
       await new Promise(resolve=>setTimeout(resolve,350));if(mine!==token)return;
       const igniteStart=performance.now();
-      await new Promise(resolve=>{const ignite=now=>{if(mine!==token){resolve();return;}const t=Math.min(1,(now-igniteStart)/450);grip(holdX,holdY,28,cuteBlade*t);if(t<1)frame=requestAnimationFrame(ignite);else resolve();};frame=requestAnimationFrame(ignite);});if(mine!==token)return;
+      if(idleOnly)await new Promise(resolve=>{const ignite=now=>{if(mine!==token){resolve();return;}const t=Math.min(1,(now-igniteStart)/450);grip(holdX,holdY,28,cuteBlade*t);if(t<1)frame=requestAnimationFrame(ignite);else resolve();};frame=requestAnimationFrame(ignite);});if(mine!==token)return;
       const flourishKinds=['spin','figure-eight','diagonal waves','side-to-side waves','quick salute','sword dance','Jedi flow'];
       const flourishKind=flourishKinds[Math.floor(Math.random()*flourishKinds.length)];
       const danceTurns=(1+Math.floor(Math.random()*3)*.5)*360,danceReturn=(1+Math.floor(Math.random()*3)*.5)*360,danceSign=Math.random()<.5?-1:1;
