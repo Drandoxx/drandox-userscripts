@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.626
+// @version      2.36.627
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -119,6 +119,7 @@
 ,{"version":"2.36.624","fixes":true,"changes":[{"key":"nova-games","meaningful":false,"text":"Empty dice-result space collapses until a roll result exists."}]}
 ,{"version":"2.36.625","fixes":true,"changes":[{"key":"nova-games","meaningful":true,"text":"Winning marks receive a colored line and centered round-result controls. Dice cards clear for play, with colored turn labels and centered roll controls."}]}
 ,{"version":"2.36.626","fixes":true,"changes":[{"key":"nova-games","meaningful":true,"text":"Best-of-three series end once either player wins two rounds, including a 2–0 result."}]}
+,{"version":"2.36.627","fixes":true,"changes":[{"key":"update-notification-mute","meaningful":true,"text":"Skipping or postponing an update mutes all update notifications for five minutes, including queued reminders."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -22640,6 +22641,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   }
 
   async function showOfficialUpdatePopup(release, currentVersion) {
+    try{if(Date.now()<Number(localStorage.getItem('sn-ai-update-muted-until')||0))return;}catch{}
     const version = String(release.version);
     const ignoredVersion = await gmGetValue(IGNORED_UPDATE_VERSION_KEY, '');
     if (officialUpdateClickedVersion && compareVersions(version, officialUpdateClickedVersion) <= 0) return;
@@ -22657,7 +22659,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         let link=document.querySelector('#local-sn-ai-settings-template [data-official-update]');
         if(!link){link=document.createElement('a');link.href=release.downloadUrl;link.target='_blank';link.rel='noopener noreferrer';link.dataset.updateVersion=version;wireOfficialUpdateLink(link);document.body.append(link);setTimeout(()=>link.remove(),0);}
         link.click();
-      },later:()=>{dismissedUpdateVersion=version;}});
+      },later:()=>{try{localStorage.setItem('sn-ai-update-muted-until',String(Date.now()+300000));}catch{}dismissedUpdateVersion=version;}});
       return;
     }
     if (existing?.dataset.version === version) return;
@@ -22676,6 +22678,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     close.addEventListener('click', (event) => {
       event.stopPropagation();
       dismissedUpdateVersion = version;
+      try{localStorage.setItem('sn-ai-update-muted-until',String(Date.now()+300000));}catch{}
       popup.remove();
       gmSetValue(IGNORED_UPDATE_VERSION_KEY, version).catch(error => console.warn('[SN AI update]', error.message));
     });
@@ -24072,6 +24075,7 @@ avatarRoot.querySelector('.nova')?.addEventListener('contextmenu',event=>{event.
   const wake=event=>{if(event.type==='keydown'&&!['Enter',' '].includes(event.key))return;event.preventDefault?.();event.stopPropagation?.();if(avatar.dataset.phase!=='ready'||avatar.dataset.idle==='wake')return;if(avatar.dataset.idle==='sleep'&&host.novaRestTransition){host.novaRestTransition('wake');return;}if(!avatar.dataset.idle){waveNova();return;}clearTimeout(messageTimer);stopTyping();clearIdle();avatar.dataset.idle='wake';setExpression('friendly');avatar.setAttribute('aria-label','NOVA waking up');schedule();wakeTimer=setTimeout(()=>{delete avatar.dataset.idle;avatar.setAttribute('aria-label','NOVA awake');const next=!message?messageQueue.shift():null;if(next)next.run();else if(message?.paragraphs){const latest=message;message=null;show(latest);}else armIdle();schedule();},750);};
   avatar.addEventListener('click',wake);avatar.addEventListener('keydown',wake);
   host.novaUpdateMessage=data=>{
+    try{if(Date.now()<Number(localStorage.getItem('sn-ai-update-muted-until')||0))return;}catch{}
     if(!nameReady){pendingUpdate=data;return;}
     if(['sleep','sit','wake'].includes(avatar.dataset.idle)){enqueueMessage(()=>host.novaUpdateMessage(data),data.reload?'reload':data.version);wake({});return;}
     if((message||dailyStartPending||avatar.dataset.daily||transitionTimer)&&!answering){enqueueMessage(()=>host.novaUpdateMessage(data),data.reload?'reload':data.version);return;}
@@ -24082,8 +24086,9 @@ avatarRoot.querySelector('.nova')?.addEventListener('contextmenu',event=>{event.
     dismissed=false;clearIdle();clearTimeout(dailyTimer);delete avatar.dataset.daily;delete avatar.dataset.dailyKind;dailyStartPending=false;
     if(data.version&&avatar.hidden){clearTimeout(entranceTimer);clearTimeout(readyTimer);entranceStarted=false;delete avatar.dataset.phase;}
     setExpression('happy');
-    if(data.reload){show({updateSpeech:true,paragraphs:['The update page is open. Once the update is installed, reload this page to use the new version.'],actions:[{label:'Reload page',run:()=>location.reload()},{label:'Later',run:finishMessage}]});return;}
-    show({novaUpdate:data,paragraphs:[`Hi ${firstName},`,`I have a new update for you, version ${data.version}.`,`Here’s what’s new:`],bullets:summarizeNovaReleaseNotes(data.notes,data.currentVersion,data.version),actions:[{label:'Update now',run:()=>{data.update?.();enqueueMessage(()=>host.novaUpdateMessage({reload:true}),'reload');if(message?.novaUpdate===data)finishMessage();}},{label:'Later',run:()=>{data.later?.();finishMessage();}}]});
+    const muteUpdates=()=>{try{localStorage.setItem('sn-ai-update-muted-until',String(Date.now()+300000));}catch{}pendingUpdate=null;deferredUpdate=null;clearTimeout(updateWaitTimer);for(let i=deferredModalMessages.length-1;i>=0;i--)if(deferredModalMessages[i].novaUpdate||deferredModalMessages[i].updateSpeech)deferredModalMessages.splice(i,1);data.later?.();finishMessage();};
+    if(data.reload){show({updateSpeech:true,paragraphs:['The update page is open. Once the update is installed, reload this page to use the new version.'],actions:[{label:'Reload page',run:()=>location.reload()},{label:'Later',run:muteUpdates}]});return;}
+    show({novaUpdate:data,paragraphs:[`Hi ${firstName},`,`I have a new update for you, version ${data.version}.`,`Here’s what’s new:`],bullets:summarizeNovaReleaseNotes(data.notes,data.currentVersion,data.version),actions:[{label:'Update now',run:()=>{data.update?.();enqueueMessage(()=>host.novaUpdateMessage({reload:true}),'reload');if(message?.novaUpdate===data)finishMessage();}},{label:'Later',run:muteUpdates}]});
   };
   function stopTyping(){clearTimeout(typingTimer);typingTimer=0;typingQueue=[];typingDone=null;card.removeAttribute('aria-busy');}
   function typeNext(){
