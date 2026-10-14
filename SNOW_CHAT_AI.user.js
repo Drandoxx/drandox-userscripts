@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.677
+// @version      2.36.678
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.678","fixes":true,"changes":[{"key":"nova-message-gating","meaningful":false,"text":"Hide and defer Nova speech while Chats Today is open, without blocking her animations."}]},
 {"version":"2.36.677","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Move Nova in front at thirty percent of the approach walk."}]},
 {"version":"2.36.676","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Reuse saved cuts after the panel opening animation reaches its final geometry."}]},
 {"version":"2.36.675","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Begin the animated shrink without the setup pause and move Nova in front at sixty percent of the approach."}]},
@@ -24365,6 +24366,7 @@ avatarRoot.querySelector('.nova')?.addEventListener('contextmenu',event=>{event.
   }
   function position(){
     frame=0;
+    if(novaChatsTodayOpen()){card.hidden=true;tail.hidden=true;return;}
     if((!portalMenu.hidden||host.novaGameOpen)&&!message?.novaGame){card.hidden=true;tail.hidden=true;return;}
     if(host.novaCutActive)return;
     if(message?.novaUpdate&&ticketBusy()){deferredUpdate=message.novaUpdate;announcedUpdates.delete(deferredUpdate.version);stopTyping();message=null;unfrozenSince=0;waitForUpdate();}
@@ -24406,9 +24408,15 @@ avatarRoot.querySelector('.nova')?.addEventListener('contextmenu',event=>{event.
   function schedule(){if(!frame)frame=requestAnimationFrame(position);}
   // Message blocks support readable text, branching actions and future GIFs.
   const deferredModalMessages=[];
-  const novaModalBusy=()=>!portalMenu.hidden||Boolean(host.novaGameOpen);
+  function novaChatsTodayOpen(){const panel=document.getElementById('sn-ai-chats-today')?.shadowRoot?.querySelector('.panel');return Boolean(panel&&!panel.hidden);}
+  const novaModalBusy=()=>!portalMenu.hidden||Boolean(host.novaGameOpen)||novaChatsTodayOpen();
+  const novaChatsRoot=document.getElementById('sn-ai-chats-today')?.shadowRoot;
+  const novaChatsObserver=new MutationObserver(()=>{if(novaChatsTodayOpen()){card.hidden=true;tail.hidden=true;}else host.novaReleaseModalMessages?.();});
+  if(novaChatsRoot)novaChatsObserver.observe(novaChatsRoot,{subtree:true,attributes:true,attributeFilter:['hidden']});
+  window.addEventListener('pagehide',()=>novaChatsObserver.disconnect(),{once:true});
   host.novaReleaseModalMessages=()=>{if(novaModalBusy())return;const next=deferredModalMessages.shift();if(next)show(next);else schedule();};
   function show(data){
+    if(novaChatsTodayOpen()){deferredModalMessages.push(data);return;}
     if(novaModalBusy()&&!data.novaGame){deferredModalMessages.push(data);return;}
     if(['sleep','sit','wake'].includes(avatar.dataset.idle)){enqueueMessage(()=>show(data));wake({});return;}
     if(message&&message!==data&&!dailyStartPending&&!avatar.dataset.daily&&message.paragraphs){
