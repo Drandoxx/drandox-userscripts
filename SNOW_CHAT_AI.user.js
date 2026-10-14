@@ -6945,6 +6945,7 @@ function startSNAI(tabIdentity) {
   if (location.hostname === 'kingfisher.service-now.com') {
     const receiveCompanionMessage = (message) => {
       if (message?.source !== 'sn-ai-companion') return;
+      document.documentElement.dataset.snAiCompanionSeen=String(Date.now());
       if (message.action === 'worker-heartbeat' && message.heartbeat) {
         const provider = message.heartbeat.provider === 'gemini' ? 'gemini' : 'chatgpt';
         gmGetValue(WEB_AI_HEARTBEATS_KEY, {}).then((heartbeats) => gmSetValue(WEB_AI_HEARTBEATS_KEY, {
@@ -17488,14 +17489,18 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     developerTab.setAttribute('role','tab');developerTab.setAttribute('aria-selected','false');
     developerTab.dataset.settingsTab='developer';developerTab.textContent='Developer';developerTab.hidden=true;
     tabList.append(developerTab);
+    const novaTab=document.createElement('button');novaTab.type='button';novaTab.className='local-sn-settings-tab';novaTab.setAttribute('role','tab');novaTab.setAttribute('aria-selected','false');novaTab.dataset.settingsTab='nova';novaTab.textContent='Nova';tabList.insertBefore(novaTab,developerTab);
+    const novaPanel=document.createElement('section');novaPanel.className='local-sn-settings-panel';novaPanel.dataset.settingsPanel='nova';novaPanel.hidden=true;tabList.after(novaPanel);
+    const aiSettingsTab=tabList.querySelector('[data-settings-tab="ai"]');aiSettingsTab.hidden=true;aiSettingsTab.style.display='none';
     const developerPanel=document.createElement('section');developerPanel.className='local-sn-settings-panel';
     developerPanel.dataset.settingsPanel='developer';developerPanel.hidden=true;tabList.after(developerPanel);
     let developerModeChanged=false;
     const showDeveloperSettings=enabled=>{
       developerTab.hidden=!enabled;developerTab.style.display=enabled?'':'none';
-      tabList.style.gridTemplateColumns=`repeat(${enabled?4:3},minmax(0,1fr))`;
-      tabList.style.setProperty('--sn-settings-count',enabled?'4':'3');
-      if(!enabled && developerTab.getAttribute('aria-selected')==='true')selectSettingsTab('general');
+      aiSettingsTab.hidden=!enabled;aiSettingsTab.style.display=enabled?'':'none';
+      tabList.style.gridTemplateColumns=`repeat(${enabled?5:3},minmax(0,1fr))`;
+      tabList.style.setProperty('--sn-settings-count',enabled?'5':'3');
+      if(!enabled && (developerTab.getAttribute('aria-selected')==='true'||aiSettingsTab.getAttribute('aria-selected')==='true'))selectSettingsTab('general');
     };
     document.addEventListener('sn-ai-developer-mode',event=>{developerModeChanged=true;showDeveloperSettings(event.detail===true);});
     gmGetValue('sn-ai-developer-mode-v1',false).then(value=>{if(!developerModeChanged)showDeveloperSettings(value===true);});
@@ -17662,6 +17667,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     developerPanel.append(...settingsDialog.querySelectorAll('.local-sn-test-setting-row'));
     const feedbackEnableSwitch = settingsDialog.querySelector('[aria-label="Provide feedback"]');
     const aiPowerSwitch = settingsDialog.querySelector('[aria-label="Turn on AI power"]');
+    const aiPowerRow=aiPowerSwitch.closest('.local-sn-cpc-row');generalPanel.prepend(aiPowerRow);aiPowerRow.hidden=true;aiPowerRow.style.display='none';const syncCompanionPower=()=>{const available=Date.now()-Number(document.documentElement.dataset.snAiCompanionSeen||0)<15000;aiPowerRow.hidden=!available;aiPowerRow.style.display=available?'':'none';};setInterval(syncCompanionPower,2500);syncCompanionPower();
     const aiToggleText = settingsDialog.querySelector('[data-ai-toggle-text]');
     const aiDetails = settingsDialog.querySelector('[data-ai-settings-details]');
     const aiProviderSelect = settingsDialog.querySelector('[aria-label="AI connection"]');
@@ -23691,7 +23697,7 @@ function installNovaWelcome(host) {
   if(!location.pathname.startsWith('/now/workspace/agent/')||host.dataset.novaInstalled)return;
   host.dataset.novaInstalled='true';
   const launcher=host.querySelector('[data-action="toggle-panel"]');
-  const settings=host.querySelector('[data-settings-panel="ai"]');
+  const settings=host.querySelector('[data-settings-panel="nova"]')||host.querySelector('[data-settings-panel="ai"]');
   if(!launcher||!settings)return;
   const card=document.createElement('aside');card.className='sn-ai-nova-message';card.hidden=true;
   const tail=document.createElement('div');tail.className='sn-ai-nova-tail';tail.hidden=true;tail.setAttribute('aria-hidden','true');
