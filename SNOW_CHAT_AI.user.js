@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.645
+// @version      2.36.646
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.646","fixes":true,"changes":[{"key":"field-diagnostics","meaningful":false,"text":"Targeted text-field phase, model commit and event-loop delay diagnostics."}]},
 {"version":"2.36.537","fixes":false,"changes":[{"key":"nova-movement","meaningful":true,"text":"NOVA can peek out, walk, climb and fly with her red N cape."},{"key":"nova-speech","meaningful":true,"text":"NOVA types her messages at a natural pace and works independently of SN AI."}]},
 {"version":"2.36.538","fixes":true,"changes":[{"key":"nova-appearance","meaningful":false,"text":"Smaller NOVA with a sideways entrance."}]},
 {"version":"2.36.539","fixes":true,"changes":[{"key":"nova-appearance","meaningful":false,"text":"Simplified NOVA message heading."}]},
@@ -14235,17 +14236,19 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     automationFailure(failureCode, message, { field: fieldLabel, optionValue, actual: lastActual, attempts: maxAttempts });
   }
 
-  async function commitTextToFormModel(field, text, resolveField) {
+  async function commitTextToFormModel(field, text, resolveField, trace = () => {}) {
     field = resolveField() || field;
     if (!field || field.isConnected === false) return false;
     const binding = workspaceTextBinding(field);
     if (binding) {
       const { owner, props, name } = binding;
+      trace('model-binding-ready', { bindingName: name, callbackAvailable: typeof props.onValueChange === 'function' });
       if (typeof props.onValueChange !== 'function') return false;
       // Use the same bound callback as a native Workspace edit. DOM value and
       // synthetic input/change alone can leave GFORM's value empty. The first
       // callback argument is unused; name (not fieldName) is the record key.
       props.onValueChange.call(owner, 'change', name, text, text);
+      trace('model-callback-returned');
       for (let attempt = 0; attempt < 20; attempt += 1) {
         await sleep(50);
         const current = resolveField();
@@ -14257,7 +14260,9 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       return false;
     }
     // Classic/native forms retain their normal input/change path.
+    trace('native-value-start');
     setNativeValue(field, text);
+    trace('native-value-returned');
     return String((resolveField() || field).value ?? '') === text;
   }
 
@@ -14276,8 +14281,30 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
 
   async function autoText(fieldLabel, value, code, maxLength) {
     const text = String(value ?? '');
+    const traceStarted = performance.now();
+    let tracePhase = 'start', traceAttempt = 0, traceField = null, traceSucceeded = false;
+    const trace = (phase, extra = {}) => {
+      tracePhase = phase;
+      addLog('info', 'text-fill-phase', { field: fieldLabel, attempt: traceAttempt, phase,
+        elapsedMs: Math.round(performance.now() - traceStarted), expectedLength: text.length,
+        controlTag: traceField?.localName || '', connected: Boolean(traceField?.isConnected),
+        disabled: Boolean(traceField?.disabled), readOnly: Boolean(traceField?.readOnly),
+        ariaInvalid: traceField?.getAttribute('aria-invalid') || '',
+        actualLength: String(traceField?.value ?? '').length, ...extra });
+    };
+    let lastTick = performance.now();
+    const traceTimer = setInterval(() => {
+      const now = performance.now(), delayMs = Math.round(now - lastTick - 500); lastTick = now;
+      if (delayMs >= 1000) addLog('warn', 'text-fill-event-loop-delay', {
+        field: fieldLabel, attempt: traceAttempt, phase: tracePhase, delayMs,
+        visibility: document.visibilityState, elapsedMs: Math.round(now - traceStarted) });
+    }, 500);
+    trace('start');
+    try {
     if (maxLength && text.length > maxLength) automationFailure(`${code}_TOO_LONG`, `${fieldLabel} exceeds ${maxLength} characters.`, { length: text.length, maxLength });
     for (let attempt = 1; attempt <= 10; attempt += 1) {
+      traceAttempt = attempt;
+      trace('resolving-control');
       let field = await waitForControlByLabel(fieldLabel, 2200);
       if (!field) {
         // Template selection can virtualize the text section for several
@@ -14287,6 +14314,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         field = await waitForControlByLabel(fieldLabel, 4200);
       }
       if (!field) automationFailure(`${code}_FIELD_MISSING`, `${fieldLabel} was not found.`, { attempt });
+      traceField = field;
+      trace('control-ready');
       // Description is narrative text. Workspace sometimes exposes an
       // inherited client-side maxlength even though the actual ticket field
       // supports the full text. Remove that UI-only limit before dispatching
@@ -14303,13 +14332,24 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           node = node.parentElement || (node.getRootNode?.() instanceof ShadowRoot ? node.getRootNode().host : null);
         }
       }
-      const modelCommitted = await commitTextToFormModel(field, text, () => findControlByLabel(fieldLabel));
+      trace('model-commit-start');
+      const modelStarted = performance.now();
+      const modelCommitted = await commitTextToFormModel(field, text, () => findControlByLabel(fieldLabel), trace);
+      trace('model-commit-finished', { modelCommitted, durationMs: Math.round(performance.now() - modelStarted),
+        controlReplaced: findControlByLabel(fieldLabel) !== field });
+      trace('stability-check-start');
       const committed = await waitStableValue(fieldLabel, text, 'exact', 2200, 450);
-      addLog(committed.stable ? 'info' : 'warn', 'auto-text-attempt', { field: fieldLabel, attempt, expected: text, actual: committed.actual, stable: committed.stable });
-      if (modelCommitted && committed.stable && findControlByLabel(fieldLabel)?.getAttribute('aria-invalid') !== 'true') return committed.actual;
+      addLog(committed.stable ? 'info' : 'warn', 'auto-text-attempt', { field: fieldLabel, attempt, expectedLength: text.length, actualLength: String(committed.actual ?? '').length, modelCommitted, stable: committed.stable });
+      trace('stability-check-finished', { stable: committed.stable, modelCommitted });
+      if (modelCommitted && committed.stable && findControlByLabel(fieldLabel)?.getAttribute('aria-invalid') !== 'true') { traceSucceeded = true; return committed.actual; }
+      trace('retry-wait');
       await sleep(retryPause(attempt));
     }
     automationFailure(code, `${fieldLabel} did not retain its text after 10 attempts.`, { attempts: 10 });
+    } finally {
+      clearInterval(traceTimer);
+      trace('finished', { succeeded: traceSucceeded });
+    }
   }
 
   async function autoTextBenchmarkCandidate(fieldLabel, value, method) {
