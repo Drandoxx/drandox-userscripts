@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.678
+// @version      2.36.679
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.679","fixes":true,"changes":[{"key":"workspace-scrolling","meaningful":false,"text":"Scrollable Workspace navigation with hidden scrollbar and a compact contained snippet scrollbar."}]},
 {"version":"2.36.678","fixes":true,"changes":[{"key":"nova-message-gating","meaningful":false,"text":"Hide and defer Nova speech while Chats Today is open, without blocking her animations."}]},
 {"version":"2.36.677","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Move Nova in front at thirty percent of the approach walk."}]},
 {"version":"2.36.676","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Reuse saved cuts after the panel opening animation reaches its final geometry."}]},
@@ -1739,6 +1740,12 @@ const snAIChatDisplayNames=(()=>{
       -webkit-text-fill-color:#14121c!important;text-shadow:none!important;
     }
     #tm-toolbar { background:transparent!important; }
+    .sn-workspace-toolbar-container{max-height:100%;min-height:0;overflow-y:auto!important;overflow-x:hidden!important;scrollbar-width:none!important;}
+    .sn-workspace-toolbar-container::-webkit-scrollbar{width:0!important;height:0!important;display:none!important;}
+    html:root #tm-snippet-container{scrollbar-width:thin!important;max-height:42px;box-sizing:border-box;}
+    html:root #tm-snippet-container::-webkit-scrollbar{height:5px!important;width:5px!important;}
+    html:root #tm-snippet-container::-webkit-scrollbar-thumb{border:0!important;border-radius:4px!important;}
+    html:root #tm-snippet-container::-webkit-scrollbar-button{display:none!important;width:0!important;height:0!important;}
     /* Higher specificity than the snippet's standalone light/dark defaults.
        Removing this theme stylesheet restores those defaults without JS repainting. */
     html:root:not(.tm-light-theme) {
