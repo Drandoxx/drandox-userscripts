@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.670
+// @version      2.36.671
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.671","fixes":true,"changes":[{"key":"chats-today-layout","meaningful":false,"text":"Vertically center short descriptions within report rows."}]},
 {"version":"2.36.670","fixes":true,"changes":[{"key":"chats-today-layout","meaningful":false,"text":"Short descriptions wrap to three lines without overlapping adjacent columns; narrow reports retain horizontal scrolling."}]},
 {"version":"2.36.669","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Use a subtler depth scale and a full-size doorway; safely restart cut choreography after viewport changes."}]},
 {"version":"2.36.668","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Reopening an already-cut panel starts an angry sword dance in front, without shrinking or walking through again."}]},
@@ -23696,7 +23697,7 @@ function installChatsTodayPanel() {
   const iconStyle=document.createElement('style');
   iconStyle.textContent='th .column-heading{display:flex;align-items:center;gap:5px;white-space:nowrap}th svg{width:13px;height:13px;flex:0 0 13px}td.time-open{position:relative;padding-right:26px}.time-arrow{position:absolute;right:6px;top:50%;transform:translateY(-50%);display:flex;color:var(--sn-theme-a8b8d1,#beb0d1);pointer-events:none}.time-arrow svg{width:14px;height:14px}';
   root.append(iconStyle);
-  iconStyle.textContent+='table .description{white-space:normal;overflow:hidden;overflow-wrap:anywhere;word-break:break-word}.description-pair-line,.description-text{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;max-height:calc(3 * 1.4em);overflow:hidden;white-space:normal;overflow-wrap:anywhere}.table-wrap{overflow-x:auto;scrollbar-width:auto;scrollbar-color:var(--sn-theme-9e83b2,#9e83b2) var(--sn-theme-251f31,#251f31)}.table-wrap::-webkit-scrollbar{height:10px}.table-wrap::-webkit-scrollbar-thumb{background:var(--sn-theme-9e83b2,#9e83b2);border-radius:6px}.table-wrap::-webkit-scrollbar-track{background:var(--sn-theme-251f31,#251f31)}';
+  iconStyle.textContent+='table .description{vertical-align:middle;white-space:normal;overflow:hidden;overflow-wrap:anywhere;word-break:break-word}.description-pair-line,.description-text{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;max-height:calc(3 * 1.4em);overflow:hidden;white-space:normal;overflow-wrap:anywhere}.table-wrap{overflow-x:auto;scrollbar-width:auto;scrollbar-color:var(--sn-theme-9e83b2,#9e83b2) var(--sn-theme-251f31,#251f31)}.table-wrap::-webkit-scrollbar{height:10px}.table-wrap::-webkit-scrollbar-thumb{background:var(--sn-theme-9e83b2,#9e83b2);border-radius:6px}.table-wrap::-webkit-scrollbar-track{background:var(--sn-theme-251f31,#251f31)}';
   iconStyle.textContent+='summary,thead{user-select:none}th:last-child,td:last-child{padding-right:20px}.number.ongoing{color:var(--agent-available,#91d6b2);background:color-mix(in srgb,currentColor 12%,transparent);border-radius:4px;box-shadow:0 0 0 3px color-mix(in srgb,currentColor 12%,transparent)}.sort-button{display:flex;align-items:center;gap:5px;border:0;border-radius:0;background:transparent;padding:0;color:inherit;text-align:left}.sort-button:hover{background:transparent}.sort-button .column-heading{gap:5px}';
   const expanded=new Set();
   const explicitlyCollapsed=new Set();
