@@ -24130,7 +24130,11 @@ const renderPortalMenu=submenu=>{portalMenu.replaceChildren();portalMenu.classLi
   }
   function schedule(){if(!frame)frame=requestAnimationFrame(position);}
   // Message blocks support readable text, branching actions and future GIFs.
+  const deferredModalMessages=[];
+  const novaModalBusy=()=>!portalMenu.hidden||Boolean(host.novaGameOpen);
+  host.novaReleaseModalMessages=()=>{if(novaModalBusy())return;const next=deferredModalMessages.shift();if(next)show(next);else schedule();};
   function show(data){
+    if(novaModalBusy()&&!data.novaGame){deferredModalMessages.push(data);return;}
     if(['sleep','sit','wake'].includes(avatar.dataset.idle)){enqueueMessage(()=>show(data));wake({});return;}
     if(message&&message!==data&&!dailyStartPending&&!avatar.dataset.daily&&message.paragraphs){
       if(!answering){enqueueMessage(()=>show(data));return;}
