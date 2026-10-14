@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.636
+// @version      2.36.637
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -129,6 +129,7 @@
 ,{"version":"2.36.634","fixes":true,"changes":[{"key":"nova-games","meaningful":true,"text":"Game drawing uses the sword-dance hilt and neon blade design, with a closer landing and two hands held near Nova's body."}]}
 ,{"version":"2.36.635","fixes":true,"changes":[{"key":"nova-games","meaningful":true,"text":"Game and dance share hilt artwork. Idle swordplay is blocked during games, game sabers clean up explicitly, and dice hide until their tumbling pose is applied."}]}
 ,{"version":"2.36.636","fixes":true,"changes":[{"key":"nova-games","meaningful":true,"text":"Tic-tac-toe can minimize to a reopenable bubble and restores saved unfinished boards after reload."},{"key":"update-reload-prompt","meaningful":true,"text":"Update clicks queue the reload prompt before opening the update link, and reload prompts bypass the update mute."}]}
+,{"version":"2.36.637","fixes":true,"changes":[{"key":"nova-speech-speed","meaningful":true,"text":"Nova settings includes a smooth saved 1×–5× speech-speed slider and replayable example. Game speech runs at twice the selected speed."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
 /*
@@ -23822,6 +23823,13 @@ function installNovaWelcome(host) {
   const label=document.createElement('span');label.textContent='Nova friendly messages';
   const toggle=document.createElement('input');toggle.type='checkbox';toggle.disabled=true;
   preference.append(label,toggle);settings.append(preference);
+  const speedKey='sn-ai-nova-speech-speed';let novaSpeechSpeed=1;try{novaSpeechSpeed=Math.max(1,Math.min(5,Number(localStorage.getItem(speedKey))||1));}catch{}
+  const novaSettings=document.createElement('fieldset');novaSettings.style.cssText='margin:14px 0;padding:14px;border:1px solid var(--sn-theme-655573,#74618b);border-radius:12px;color:inherit';const legend=document.createElement('legend');legend.textContent='Nova settings';novaSettings.append(legend);
+  const speedLabel=document.createElement('label');speedLabel.textContent='Speech speed ';const speedValue=document.createElement('output');speedValue.textContent=novaSpeechSpeed.toFixed(2)+'×';speedLabel.append(speedValue);
+  const speedSlider=document.createElement('input');speedSlider.type='range';speedSlider.min='1';speedSlider.max='5';speedSlider.step='0.01';speedSlider.value=String(novaSpeechSpeed);speedSlider.setAttribute('aria-label','Nova speech speed');speedSlider.style.cssText='display:block;width:100%;margin:12px 0;accent-color:var(--sn-theme-ac94ec,#ac94ec);cursor:pointer';
+  const speedExample=document.createElement('p');speedExample.setAttribute('aria-label','Speech speed example');speedExample.style.cssText='min-height:42px;padding:10px;border-radius:9px;background:var(--sn-theme-191621,#191621);margin:8px 0';const replaySpeed=document.createElement('button');replaySpeed.type='button';replaySpeed.textContent='Replay example';let exampleTimer=0;
+  const playSpeedExample=()=>{clearTimeout(exampleTimer);const sentence='Hi! I am Nova. This is how quickly my messages appear at your chosen speed.',letters=Array.from(sentence);speedExample.textContent='';const tick=()=>{const character=letters.shift();if(character===undefined)return;speedExample.textContent+=character;exampleTimer=setTimeout(tick,(/[.!?]/.test(character)?240:/[,;:]/.test(character)?130:55)/novaSpeechSpeed);};tick();};
+  speedSlider.addEventListener('input',()=>{novaSpeechSpeed=Math.max(1,Math.min(5,Number(speedSlider.value)||1));speedValue.textContent=novaSpeechSpeed.toFixed(2)+'×';try{localStorage.setItem(speedKey,String(novaSpeechSpeed));}catch{}playSpeedExample();});replaySpeed.addEventListener('click',playSpeedExample);novaSettings.append(speedLabel,speedSlider,speedExample,replaySpeed);settings.append(novaSettings);speedExample.textContent='Press Replay example, or move the slider to try the speed.';
   let key='',firstName='friend',message=null,dismissed=false,frame=0,entranceStarted=false,entranceTimer=0,readyTimer=0,typingTimer=0,typingStarted=false,typingQueue=[],typingDone=null;
   let nameReady=false,pendingUpdate=null,pageReady=false,pageReadyTimer=0;const announcedUpdates=new Set();
   let messageTimer=0,transitionTimer=0,answering=false;const messageQueue=[];
@@ -24107,7 +24115,7 @@ avatarRoot.querySelector('.nova')?.addEventListener('contextmenu',event=>{event.
     if(item.reveal){item.reveal();item.reveal=null;}
     const character=item.characters.shift();item.node.textContent+=character;
     if(!item.characters.length){typingQueue.shift();if(item.after)item.after();}
-    schedule();typingTimer=setTimeout(typeNext,(/[.!?]/.test(character)?240:/[,;:]/.test(character)?130:55)/(message?.novaUpdate||message?.updateSpeech?1.6:1));
+    schedule();typingTimer=setTimeout(typeNext,(/[.!?]/.test(character)?240:/[,;:]/.test(character)?130:55)/(novaSpeechSpeed*(message?.novaGame?2:message?.novaUpdate||message?.updateSpeech?1.6:1)));
   }
   function position(){
     frame=0;
