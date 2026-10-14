@@ -1012,6 +1012,8 @@
     .ember-engine-queues-export-panel a { color:#7dd3fc!important; }
     .ember-engine-queues-export-panel [slot="error"] { color:#fda4af!important; }
     .ember-engine-queues-export-panel .panel-footer { border-top:1px solid #46515f!important; }
+    .ember-engine-queues-export-panel .side-panel-header-section,
+    .ember-engine-queues-export-panel .side-panel-header { background:transparent!important;color:#f1f5f9!important; }
     /* Central status palette — update these variables to change every
        matching board marker, hover card, badge, and profile treatment. */
     :root {
@@ -4189,6 +4191,9 @@
     :host-context(.ember-engine-queues-export-panel) :is(input,textarea,button,[role="combobox"]) { color:#f1f5f9!important; }
     :host-context(.ember-engine-queues-export-panel) :is(.gux-form-field-help,.gux-message) { color:#a6b3c3!important; }
     :host-context(.ember-engine-queues-export-panel) .gux-form-field-error .gux-message { color:#fda4af!important; }
+    :host-context(.ember-engine-queues-export-panel) :is(.gux-target-container-filterable,.gux-field,.gux-input-field,.gux-field-content,.gux-filter,.gux-filter-display,.gux-selected-option,.gux-selected-option-container,.gux-dropdown-button,.gux-dropdown-display,.gux-filter-input) { background:transparent!important;color:#e5e7eb!important; }
+    :host-context(.ember-engine-queues-export-panel) .gux-popup-container { background:#242a30!important;color:#e5e7eb!important;border-color:#536171!important; }
+    :host-context(.ember-engine-queues-export-panel) :is(.gux-accordion-section,.gux-accordion-section-header,.gux-input-field) { border-color:#536171!important; }
     /* Components inherit the surrounding dark surface. A host-level fill here
        creates a visible extra tile for icons, truncates, and other nested UI. */
     :host { color-scheme: dark !important; color: #e5e7eb !important; background: transparent !important; background-color: transparent !important; border-color: #4b596a !important; }
