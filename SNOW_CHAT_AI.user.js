@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.668
+// @version      2.36.669
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.669","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Use a subtler depth scale and a full-size doorway; safely restart cut choreography after viewport changes."}]},
 {"version":"2.36.668","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Reopening an already-cut panel starts an angry sword dance in front, without shrinking or walking through again."}]},
 {"version":"2.36.667","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Preserve Nova's bottom-right host anchor during cut cleanup, fixing the measured 25-pixel position shift."}]},
 {"version":"2.36.666","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Animate the initial foot-anchored shrink quickly, without translation corrections."}]},
@@ -25014,6 +25015,7 @@ function installNovaCutEffects(host, avatar) {
     };
     const depthAvatar=document.getElementById('sn-ai-nova-companion');
     const depthRoot=depthAvatar.shadowRoot,depthShape=depthRoot.querySelector('.nova');
+    const fullSizeBodyBounds=depthRoot.querySelector('.body').getBoundingClientRect();
     if(!idleOnly&&!savedCuts.has(target)){
       depthShape.style.removeProperty('translate');
       depthShape.style.removeProperty('scale');
@@ -25030,13 +25032,13 @@ function installNovaCutEffects(host, avatar) {
         const shrink=now=>{
           if(mine!==token){resolve();return;}
           const t=Math.min(1,(now-shrinkStarted)/220),ease=t*t*(3-2*t);
-          depthShape.style.scale=String(1-.15*ease);
+          depthShape.style.scale=String(1-.08*ease);
           if(t<1)frame=requestAnimationFrame(shrink);else resolve();
         };frame=requestAnimationFrame(shrink);
       });
       if(mine!==token){panel.remove();return;}
     }
-    const bodyBounds=depthRoot.querySelector('.body').getBoundingClientRect();
+    const bodyBounds=fullSizeBodyBounds;
     const old=savedCuts.get(key),wasCut=!!old;
     if(wasCut&&!idleOnly){frontTarget=target;depthAvatar.style.zIndex='2147483647';}
     let coordinate=0;
@@ -25170,7 +25172,7 @@ function installNovaCutEffects(host, avatar) {
       await new Promise(resolve=>{
         const approach=now=>{
           if(mine!==token){resolve();return;}
-          const t=Math.min(1,(now-approachStart)/1800),scale=.85+.15*t;
+          const t=Math.min(1,(now-approachStart)/1800),scale=.92+.08*t;
           root.querySelector('.nova').style.scale=String(scale);
           feet.forEach((foot,index)=>{if(foot){foot.style.setProperty('animation','none','important');foot.style.translate=`0px ${-Math.max(0,Math.sin(t*Math.PI*8+index*Math.PI))*5}px`;}});
           const body=root.querySelector('.body').getBoundingClientRect();
@@ -25345,6 +25347,22 @@ function installNovaCutEffects(host, avatar) {
     else if(savedCuts.has(panel)&&!current&&!host.novaCutActive)poll();
   });
   chatsObserver?.observe(chatsRoot,{subtree:true,attributes:true,attributeFilter:['hidden','style','class']});
+  const onCutViewportResize=()=>{
+    // Cut paths, hands and blade poses share viewport coordinates captured
+    // at setup. Never continue playing those coordinates after a resize.
+    if(!current)return;
+    const target=current.target,complete=current.complete;
+    close();
+    if(!complete){
+      const glow=ownedGlows.get(target);
+      glow?.observer?.disconnect();glow?.resize?.disconnect();glow?.svg?.remove();ownedGlows.delete(target);
+    }
+    presented.delete(target);
+    requestAnimationFrame(()=>requestAnimationFrame(poll));
+  };
+  window.addEventListener('resize',onCutViewportResize);
+  window.visualViewport?.addEventListener('resize',onCutViewportResize);
+  window.addEventListener('pagehide',()=>{window.removeEventListener('resize',onCutViewportResize);window.visualViewport?.removeEventListener('resize',onCutViewportResize);},{once:true});
   window.addEventListener('pagehide',()=>{cancelAnimationFrame(retainedFrame);for(const r of retainedCuts.values())r.panel.remove();retainedCuts.clear();chatsPanel?.removeEventListener('nova-panel-close',onChatsClose);chatsObserver?.disconnect();layerObserver.disconnect();clearInterval(pollTimer);close();liveStyle.remove();},{once:true});
 }
 
