@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.675
+// @version      2.36.676
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.676","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Reuse saved cuts after the panel opening animation reaches its final geometry."}]},
 {"version":"2.36.675","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Begin the animated shrink without the setup pause and move Nova in front at sixty percent of the approach."}]},
 {"version":"2.36.674","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Reduce new cut openings by a further five percent."}]},
 {"version":"2.36.673","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Reduce new cut openings by about five percent while retaining the bottom-edge opening."}]},
@@ -25009,6 +25010,11 @@ function installNovaCutEffects(host, avatar) {
     // React immediately when Chats Today or a notification appears. The
     // foot-anchored shrink still animates below; only the idle pause is gone.
     if(openingToken!==token)return;
+    if(savedCuts.has(target)){
+      const openingAnimations=target.getAnimations().filter(animation=>animation.playState==='running');
+      if(openingAnimations.length)await Promise.all(openingAnimations.map(animation=>animation.finished.catch(()=>{})));
+      if(openingToken!==token)return;
+    }
     if(!target.isConnected||!target.getBoundingClientRect().width){host.novaCutHold?.(false);return;}
     const mine=token,panel=document.createElement('div');panel.className='cut-demo-panel';panel.dataset.novaCutOverlay='true';
     const box=target.getBoundingClientRect(),w=box.width,h=box.height,key=target;
@@ -25018,7 +25024,7 @@ function installNovaCutEffects(host, avatar) {
     const previousMask=target.style.maskImage,previousWebkitMask=target.style.webkitMaskImage;
     const nativeMask=(complete,distance=0)=>{
       if(idleOnly)return;
-      const bounds=target.getBoundingClientRect(),mw=bounds.width,mh=bounds.height;
+      const mw=target.offsetWidth,mh=target.offsetHeight;
       const mask=`<svg xmlns="http://www.w3.org/2000/svg" width="${mw}" height="${mh}" viewBox="0 0 ${mw} ${mh}"><defs><mask id="cut" maskUnits="userSpaceOnUse"><rect width="100%" height="100%" fill="white"/><path transform="translate(${mw-w} ${mh-h})" d="${door}${complete?' Z':''}" fill="${complete?'black':'none'}" stroke="black" stroke-width="${complete?3:1}" stroke-dasharray="${complete?'none':length}" stroke-dashoffset="${complete?0:length-distance}"/></mask></defs><rect width="100%" height="100%" fill="white" mask="url(#cut)"/></svg>`;
       target.style.maskImage=target.style.webkitMaskImage='url("data:image/svg+xml,'+encodeURIComponent(mask)+'")';
     };
@@ -25070,7 +25076,7 @@ function installNovaCutEffects(host, avatar) {
     for(const p of [track,edge,core,slot]){p.style.strokeDasharray=length;p.style.strokeDashoffset=wasCut?0:length;}
     const gluedGlow=idleOnly?null:mountGlow(target,svg,w,h),gluedPaths=gluedGlow?Array.from(gluedGlow.querySelectorAll('svg > g path')):[];
     if(gluedGlow){const resize=new ResizeObserver(()=>{
-      const b=target.getBoundingClientRect();gluedGlow.setAttribute('viewBox',`0 0 ${b.width} ${b.height}`);gluedGlow.style.width=b.width+'px';gluedGlow.style.height=b.height+'px';
+      const b={width:target.offsetWidth,height:target.offsetHeight};gluedGlow.setAttribute('viewBox',`0 0 ${b.width} ${b.height}`);gluedGlow.style.width=b.width+'px';gluedGlow.style.height=b.height+'px';
       gluedGlow.querySelectorAll('svg > g').forEach(g=>g.setAttribute('transform',`translate(${b.width-w} ${b.height-h})`));
       if(savedCuts.has(target))nativeMask(true);
     });resize.observe(target);ownedGlows.get(target).resize=resize;}
