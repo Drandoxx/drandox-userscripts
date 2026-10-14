@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.647
+// @version      2.36.648
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.648","fixes":false,"changes":[{"key":"kb-known-error-filter","meaningful":true,"text":"Chat knowledge search excludes verified Known Error articles."}]},
 {"version":"2.36.647","fixes":true,"changes":[{"key":"description-filling","meaningful":false,"text":"Reduce repeated field discovery and redundant model writes beneath Description."}]},
 {"version":"2.36.646","fixes":true,"changes":[{"key":"field-diagnostics","meaningful":false,"text":"Targeted text-field phase, model commit and event-loop delay diagnostics."}]},
 {"version":"2.36.537","fixes":false,"changes":[{"key":"nova-movement","meaningful":true,"text":"NOVA can peek out, walk, climb and fly with her red N cape."},{"key":"nova-speech","meaningful":true,"text":"NOVA types her messages at a natural pace and works independently of SN AI."}]},
@@ -3928,6 +3929,45 @@ const snAIChatDisplayNames=(()=>{
   // Workspace action metadata. No record write is made by this wrapper.
   const knowledgePage=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
   const knowledgeOriginalFetch=knowledgePage.fetch;
+  const kbBaseFilterCache = new Map();
+  async function filterKnownErrorSearchResults(payload) {
+    const groups = (Array.isArray(payload) ? payload : [payload])
+      .map(part => part?.data?.GlideContextualSearch_Query).filter(group => Array.isArray(group?.results));
+    const ids = [...new Set(groups.flatMap(group => group.results)
+      .map(item => /^kb_knowledge:([a-f0-9]{32})$/i.exec(item?.id || '')?.[1]).filter(Boolean))];
+    if (!ids.length) return false;
+    const missing = ids.filter(id => !kbBaseFilterCache.has(id) || kbBaseFilterCache.get(id).expires <= Date.now());
+    if (missing.length) {
+      const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 3000);
+      try {
+        for (let offset = 0; offset < missing.length; offset += 100) {
+          const params = new URLSearchParams({sysparm_query:'sys_idIN'+missing.slice(offset,offset+100).join(','),
+            sysparm_fields:'sys_id,kb_knowledge_base',sysparm_display_value:'all',sysparm_exclude_reference_link:'true',sysparm_limit:'100'});
+          const response = await kbMetadataFetch('/api/now/table/kb_knowledge?'+params, {
+            credentials:'same-origin',signal:controller.signal,headers:{Accept:'application/json','X-UserToken':kbSessionToken()}});
+          if (!response.ok) throw new Error('KB base lookup HTTP '+response.status);
+          const records = (await response.json()).result;
+          if (!Array.isArray(records)) throw new Error('KB base lookup incomplete');
+          for (const record of records) {
+            const id = typeof record.sys_id === 'string' ? record.sys_id : record.sys_id?.value;
+            const base = typeof record.kb_knowledge_base === 'string' ? record.kb_knowledge_base : record.kb_knowledge_base?.display_value;
+            if (!/^[a-f0-9]{32}$/i.test(id || '') || !base) continue;
+            kbBaseFilterCache.set(id,{excluded:/^known\s+error$/i.test(base.trim()),expires:Date.now()+300000});
+          }
+        }
+      } finally { clearTimeout(timer); }
+      while (kbBaseFilterCache.size > 1000) kbBaseFilterCache.delete(kbBaseFilterCache.keys().next().value);
+    }
+    let changed = false;
+    for (const group of groups) {
+      const kept = group.results.filter(item => {
+        const id = /^kb_knowledge:([a-f0-9]{32})$/i.exec(item?.id || '')?.[1];
+        return !kbBaseFilterCache.get(id)?.excluded;
+      });
+      if (kept.length !== group.results.length) { group.results = kept; changed = true; }
+    }
+    return changed;
+  }
   const emptyEventActionNames=new Map([
     ['3daa48146f339100470828112e3ee441','createEvent'],
     ['ccd80d5974a22900ca394784b0ec7f76','save_my_group'],
@@ -3970,9 +4010,10 @@ const snAIChatDisplayNames=(()=>{
     if(nativeGraphQL) {
       try {
         const body=await response.clone().text();
-        if([...emptyEventActionNames.keys()].some(id=>body.includes(id))) {
+        if(body.includes('GlideContextualSearch_Query') || [...emptyEventActionNames.keys()].some(id=>body.includes(id))) {
           const payload=JSON.parse(body);
-          if(repairEmptyEventActions(payload)) {
+          const filtered = await filterKnownErrorSearchResults(payload);
+          if(repairEmptyEventActions(payload) || filtered) {
             const headers=new knowledgePage.Headers(response.headers);
             headers.delete('content-length');
             const repaired=new knowledgePage.Response(JSON.stringify(payload),{status:response.status,statusText:response.statusText,headers});
