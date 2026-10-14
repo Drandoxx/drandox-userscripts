@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.654
+// @version      2.36.655
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.655","fixes":true,"changes":[{"key":"nova-expression-reset","meaningful":false,"text":"Temporary Nova expressions return to friendly after active poses finish."}]},
 {"version":"2.36.654","fixes":true,"changes":[{"key":"nova-game-minimize","meaningful":false,"text":"Minimizing Tic tac toe releases the held expression and resumes Nova idle behavior."}]},
 {"version":"2.36.653","fixes":true,"changes":[{"key":"nova-game-expansion","meaningful":false,"text":"Game panel size changes use smooth transitions."}]},
 {"version":"2.36.652","fixes":true,"changes":[{"key":"nova-game-expansion","meaningful":true,"text":"Expanded Tic tac toe boards grow the panel, preserving tile size until screen space requires smaller tiles."}]},
@@ -23998,7 +23999,24 @@ function installNovaWelcome(host) {
   // Named slots are replaceable independently, with no external image assets.
   const parts={};for(const part of avatarRoot.querySelectorAll('[data-part]'))parts[part.dataset.part]=part;
   const cup=document.createElement('div');cup.className='daily-cup';cup.dataset.part='daily-cup';parts['right-hand']?.append(cup);parts['daily-cup']=cup;
-  const setExpression=expression=>{const face=avatarRoot.querySelector('.nova');if(face)face.dataset.expression=expression;};
+  let expressionResetTimer=0;
+  const expressionHeld=()=>Boolean(avatar.dataset.motion||avatar.dataset.idle||avatar.dataset.daily||avatar.dataset.ambientPhase||avatar.dataset.reaction||avatar.dataset.gameBack||host.novaCutActive);
+  const queueExpressionReset=()=>{
+    clearTimeout(expressionResetTimer);
+    expressionResetTimer=setTimeout(()=>{
+      if(expressionHeld()){queueExpressionReset();return;}
+      const face=avatarRoot.querySelector('.nova');if(face)face.dataset.expression='friendly';
+    },4000);
+  };
+  const setExpression=expression=>{const face=avatarRoot.querySelector('.nova');if(face)face.dataset.expression=expression;if(expression==='friendly')clearTimeout(expressionResetTimer);else queueExpressionReset();};
+  const expressionObserver=new MutationObserver(()=>{
+    const expression=avatarRoot.querySelector('.nova')?.dataset.expression;
+    if(expression&&expression!=='friendly')queueExpressionReset();
+    else clearTimeout(expressionResetTimer);
+  });
+  const expressionFace=avatarRoot.querySelector('.nova');
+  if(expressionFace)expressionObserver.observe(expressionFace,{attributes:true,attributeFilter:['data-expression']});
+  window.addEventListener('pagehide',()=>{clearTimeout(expressionResetTimer);expressionObserver.disconnect();},{once:true});
   let offsetX=0,offsetY=0,motionTimer=0;
   const move=(kind,direction,distance=80,duration=1200)=>{
     if(!['walk','climb','fly'].includes(kind)||!['left','right','up','down'].includes(direction)||dismissed||avatar.hidden||avatar.dataset.phase!=='ready')return false;
