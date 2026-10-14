@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.673
+// @version      2.36.674
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.674","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Reduce new cut openings by a further five percent."}]},
 {"version":"2.36.673","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Reduce new cut openings by about five percent while retaining the bottom-edge opening."}]},
 {"version":"2.36.672","fixes":true,"changes":[{"key":"chats-today-layout","meaningful":false,"text":"Center text inside paired description rows as well as the table cell."}]},
 {"version":"2.36.671","fixes":true,"changes":[{"key":"chats-today-layout","meaningful":false,"text":"Vertically center short descriptions within report rows."}]},
@@ -24970,9 +24971,9 @@ function installNovaCutEffects(host, avatar) {
   const makeDoor=(box,body)=>{
     // Measure the hidden intersection, not a fixed doorway or the full avatar host.
     const originalLeft=Math.max(0,body.left-box.left-4),originalRight=Math.min(box.width,body.right-box.left+4);
-    const inset=(originalRight-originalLeft)*.025;
+    const inset=(originalRight-originalLeft)*.04875;
     const left=originalLeft+inset,right=originalRight-inset;
-    const bottom=box.height+3,originalTop=body.top-box.top-8,top=bottom-(bottom-originalTop)*.95;
+    const bottom=box.height+3,originalTop=body.top-box.top-8,top=bottom-(bottom-originalTop)*.9025;
     if(right<=left||bottom<=top)return null;
     const mid=top+(bottom-top)*.55,span=right-left;
     const a=left+span*.24,b=left+span*.62,c=right-span*.12;
