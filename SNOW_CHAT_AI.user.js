@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.664
+// @version      2.36.665
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.665","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Preserve the foot contact position across cut setup and disable competing figure transform transitions."}]},
 {"version":"2.36.664","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Anchor depth scaling to measured foot positions without live translation and measure the cut after shrinking."}]},
 {"version":"2.36.663","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Keep Nova's feet seated on the Chats Today button while changing depth size."}]},
 {"version":"2.36.662","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Scale only Nova's figure around her feet, with subtler shrinking and no sideways host movement."}]},
@@ -24985,6 +24986,9 @@ function installNovaCutEffects(host, avatar) {
   host.novaSwordIdleCancel=()=>{if(current?.idleOnly)close();};
   host.novaGameInterruptCut=()=>{if(current)close();};
   async function open(target,carry=null,idleOnly=false){
+    const openingAvatar=document.getElementById('sn-ai-nova-companion');
+    const openingFeet=[...(openingAvatar?.shadowRoot?.querySelectorAll('.foot')||[])].map(foot=>foot.getBoundingClientRect());
+    const openingFootY=openingFeet.length?Math.max(...openingFeet.map(rect=>rect.bottom)):null;
     const kind='panel';
     if(current){retainCut();current.panel=document.createElement('div');}
     if(carry){cancelAnimationFrame(visibilityFrame);++token;cancelAnimationFrame(frame);current?.saber.remove();current=null;}
@@ -25013,6 +25017,7 @@ function installNovaCutEffects(host, avatar) {
     if(!idleOnly){
       depthShape.style.removeProperty('translate');
       depthShape.style.removeProperty('scale');
+      depthShape.style.setProperty('transition','none','important');
       const figureRect=depthShape.getBoundingClientRect();
       const footRects=[...depthRoot.querySelectorAll('.foot')].map(foot=>foot.getBoundingClientRect());
       const footBottom=Math.max(...footRects.map(rect=>rect.bottom));
@@ -25021,6 +25026,13 @@ function installNovaCutEffects(host, avatar) {
       // a guessed bottom offset. Scaling then needs no positional correction.
       depthShape.style.transformOrigin=`${(footCenter-figureRect.left)/.72}px ${(footBottom-figureRect.top)/.72}px`;
       depthShape.style.scale='.85';
+      // Clearing an idle pose can move the figure before scaling begins.
+      // Compensate once to preserve the pre-opening contact point exactly.
+      if(openingFootY!==null){
+        const afterFeet=[...depthRoot.querySelectorAll('.foot')].map(foot=>foot.getBoundingClientRect());
+        const afterY=Math.max(...afterFeet.map(rect=>rect.bottom));
+        depthShape.style.translate=`0px ${(openingFootY-afterY)/.72}px`;
+      }
     }
     const bodyBounds=depthRoot.querySelector('.body').getBoundingClientRect();
     const old=savedCuts.get(key),wasCut=!!old;
