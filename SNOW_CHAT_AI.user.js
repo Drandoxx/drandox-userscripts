@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.684
+// @version      2.36.685
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.685","fixes":true,"changes":[{"key":"nova-daily-welcome","meaningful":true,"text":"Daily greetings have 370 distinct warm messages without repeats until the set is exhausted, with durable acknowledgement and normal follow-up timing."}]},
 {"version":"2.36.684","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Keep Nova and her sword above the TV after the forward walk, including equal maximum-z-index layers."}]},
 {"version":"2.36.683","fixes":true,"changes":[{"key":"record-action-overflow","meaningful":false,"text":"Let native record action overflow move buttons into the More menu instead of forcing every action into a scrolling row."}]},
 {"version":"2.36.682","fixes":true,"changes":[{"key":"confirmation-layout","meaningful":false,"text":"Prevent modal overlay scrollbar oscillation; long dialog content scrolls inside the body."}]},
@@ -24100,6 +24101,56 @@ function installNovaWelcome(host) {
   function finishMessage(){clearTimeout(messageTimer);messageTimer=0;card.style.opacity='0';tail.style.opacity='0';clearTimeout(transitionTimer);transitionTimer=setTimeout(()=>{transitionTimer=0;stopTyping();message=null;card.hidden=true;tail.hidden=true;card.style.opacity='';tail.style.opacity='';const next=messageQueue.shift();if(next)next.run();schedule();},180);}
   style.textContent+=' .sn-ai-nova-message,.sn-ai-nova-tail{transition:opacity .18s ease}';
   let deferredUpdate=null,updateWaitTimer=0,unfrozenSince=0,dailyTimer=0,dailyStartPending=false,dailySpeech='',dailyReply='',dailyGreetingDay='';
+  let dailyAcknowledged='';
+  const novaWelcomeStarts=[
+    'I am glad you are here.','It is lovely to see you again.','There is a little room for a fresh start today.',
+    'I hope today brings you a few easy moments.','Whatever is waiting, we can take it one step at a time.',
+    'You do not have to do the whole day at once.','A new day, and a little company from me.',
+    'I saved a small smile for your arrival.','I hope something pleasantly surprises you today.',
+    'Let us leave a little space for the good things.','It is good to have you back beside me.',
+    'Here is a quiet welcome before things get busy.','I hope your first task gives you a gentle start.',
+    'You deserve a day with more breathing room.','I will be here for the busy bits and the quiet bits.',
+    'Let us begin without rushing ourselves.','I hope you find a little reason to smile between chats.',
+    'Today does not need to be perfect to have good moments.','Your company makes this corner feel warmer.',
+    'I hope the small things go your way today.','We can make a little progress and call that a good start.',
+    'There is no need to have every answer right away.','I am rooting for a kind day for you.',
+    'Let us give ourselves a calm beginning.','I hope there is a nice break somewhere in your plans.',
+    'Welcome back to our little corner of the screen.','I am happy to share another day with you.',
+    'I hope the tricky tasks come with helpful people.','Let us take the next thing, not everything.',
+    'A little patience with yourself belongs on the list too.','I hope you get a chance to enjoy your favourite drink.',
+    'You can settle in; we will find our rhythm.','I hope today feels a little lighter than you expect.',
+    'Even a small win is worth noticing today.','Here is a friendly face before the next notification.',
+    'I hope you get as much kindness as you give.','Let us see what good we can find in this day.'
+  ];
+  const novaWelcomeEnds=[
+    'I am here if you need a little company.','One chat at a time is plenty.',
+    'Remember to give yourself a moment between tasks.','We can pause and start again whenever we need to.',
+    'I will cheer for the little victories too.','There is no prize for forgetting your own needs.',
+    'A stretch and a sip of water can wait beside the to-do list.',
+    'Let us be kind to ourselves along the way.','I hope you finish with something to feel good about.',
+    'And if things get messy, you still have a friend right here.'
+  ];
+  const novaWelcomeBank=novaWelcomeStarts.flatMap(start=>novaWelcomeEnds.map(end=>start+' '+end));
+  async function dailyWelcomeText(day){
+    const storageKey=key+':welcome-cycle-v1';let saved=null;
+    try{saved=JSON.parse(localStorage.getItem(storageKey)||'null');}catch{}
+    if(!saved)try{saved=await GM_getValue(storageKey,null);}catch{}
+    let remaining=Array.isArray(saved?.remaining)?[...new Set(saved.remaining.filter(i=>Number.isInteger(i)&&i>=0&&i<novaWelcomeBank.length))]:[];
+    let index=Number.isInteger(saved?.index)?saved.index:-1;
+    if(saved?.day!==day||index<0||index>=novaWelcomeBank.length){
+      if(!remaining.length)remaining=novaWelcomeBank.map((_,i)=>i);
+      index=remaining.splice(Math.floor(Math.random()*remaining.length),1)[0];
+      saved={day,index,remaining};
+      try{localStorage.setItem(storageKey,JSON.stringify(saved));}catch{}
+      try{await GM_setValue(storageKey,saved);}catch{}
+    }
+    return novaWelcomeBank[index];
+  }
+  function acknowledgeDaily(day){
+    dailyAcknowledged=day;clearTimeout(dailyTimer);
+    try{localStorage.setItem(key+':daily-seen',day);}catch{}
+    try{Promise.resolve(GM_setValue(key+':daily-seen',day)).catch(()=>{});}catch{}
+  }
   const ticketBusy=()=>Boolean(host.novaTicketBusy?.()||host.querySelector('[data-pinned-ims].is-running')||document.querySelector?.('[data-sn-automation-frozen]'));
   function waitForUpdate(){
     clearTimeout(updateWaitTimer);if(!deferredUpdate)return;
@@ -24110,7 +24161,7 @@ function installNovaWelcome(host) {
   }
   function runDaily(){
     dailyStartPending=false;clearIdle();const steps=[['enter',2500],['yawn',1500],['sip',2000],[avatar.dataset.dailyKind==='morning'?'magic':'cheer',1600]];let index=0;
-    const next=()=>{if(dismissed||ticketBusy()){delete avatar.dataset.daily;delete avatar.dataset.dailyKind;message=null;schedule();if(!dismissed)dailyTimer=setTimeout(greetDaily,1000);return;}if(index===steps.length){delete avatar.dataset.daily;delete avatar.dataset.dailyKind;setExpression('happy');const greetedDay=dailyGreetingDay;show({paragraphs:[dailySpeech],actions:[{label:dailyReply,run:()=>{try{localStorage.setItem(key+':daily-seen',greetedDay);}catch{}setExpression('happy');show({paragraphs:['A little smile to start us off. Hope your day goes smoothly. 💜']});}}]});waveNova();return;}const [phase,delay]=steps[index++];if(phase==='sip')host.novaCoffeeSip?.();avatar.dataset.daily=phase;if(phase==='cheer')setExpression('happy');dailyTimer=setTimeout(next,delay);};next();
+    const next=()=>{if(dismissed||ticketBusy()){delete avatar.dataset.daily;delete avatar.dataset.dailyKind;message=null;schedule();if(!dismissed)dailyTimer=setTimeout(greetDaily,1000);return;}if(index===steps.length){delete avatar.dataset.daily;delete avatar.dataset.dailyKind;setExpression('happy');const greetedDay=dailyGreetingDay;show({dailyGreetDay:greetedDay,paragraphs:[dailySpeech],actions:[{label:dailyReply,run:()=>{acknowledgeDaily(greetedDay);setExpression('happy');clearTimeout(transitionTimer);stopTyping();message=null;show({paragraphs:['A little smile to start us off. Hope your day goes smoothly. 💜']});}}]});waveNova();return;}const [phase,delay]=steps[index++];if(phase==='sip')host.novaCoffeeSip?.();avatar.dataset.daily=phase;if(phase==='cheer')setExpression('happy');dailyTimer=setTimeout(next,delay);};next();
   }
   let novaPresence='',dailyAvailabilityPending=false;
   function dailyPresenceChanged(event){
@@ -24138,11 +24189,11 @@ function installNovaWelcome(host) {
     if(ticketBusy()){dailyTimer=setTimeout(greetDaily,1000);return;}
     // Old :daily markers recorded playback, not acknowledgement. Ignore them.
     // Store only one day, and only after the user clicks a greeting reply.
-    const claim=()=>{try{return localStorage.getItem(dayKey)!==current.day;}catch{return true;}};
-    const claimed=typeof navigator!=='undefined'&&navigator.locks?await navigator.locks.request('sn-ai-nova-daily:'+key,claim):claim();if(!host.isConnected)return;if(!claimed){startSilentEntrance();return;}
+    const claim=async()=>{if(dailyAcknowledged===current.day)return false;try{if(localStorage.getItem(dayKey)===current.day)return false;}catch{}try{if(await GM_getValue(dayKey,'')===current.day)return false;}catch{}return true;};
+    const claimed=typeof navigator!=='undefined'&&navigator.locks?await navigator.locks.request('sn-ai-nova-daily:'+key,claim):await claim();if(!host.isConnected)return;if(!claimed){startSilentEntrance();return;}
     const morning=current.hour>=7&&current.hour<10,lunch=current.hour>=10&&current.hour<14;
     dailyGreetingDay=current.day;dailyReply=current.hour<12?'Good morning!':current.hour<17?'Good afternoon!':'Good evening!';
-    dailySpeech=morning?`Good morning, ${firstName}. That coffee did the trick. Let’s take the day one chat at a time. ☀️`:lunch?`Hi ${firstName}, a little lunch-break energy for you. I hope you get a proper bite to eat today. We’ve got this. 💜`:current.hour<17?`Good afternoon, ${firstName}. I hope the day is treating you kindly. I’m here for a little company.`:`Good evening, ${firstName}. Let’s keep the rest of the day gentle.`;
+    dailySpeech=`${current.hour<12?'Good morning':current.hour<17?'Good afternoon':'Good evening'}, ${firstName}. ${await dailyWelcomeText(current.day)}`;
     message={};dismissed=false;typingStarted=true;dailyStartPending=true;avatar.dataset.dailyKind=morning?'morning':lunch?'lunch':'quiet';schedule();
   }
   let sleepTimer=0,wakeTimer=0,ambientTimer=0,ambientEndTimer=0;
@@ -24442,6 +24493,7 @@ avatarRoot.querySelector('.nova')?.addEventListener('contextmenu',event=>{event.
   window.addEventListener('pagehide',()=>novaChatsObserver.disconnect(),{once:true});
   host.novaReleaseModalMessages=()=>{if(novaModalBusy())return;const next=deferredModalMessages.shift();if(next)show(next);else schedule();};
   function show(data){
+    if(data.dailyGreetDay&&dailyAcknowledged===data.dailyGreetDay)return;
     if(novaChatsTodayOpen()){deferredModalMessages.push(data);return;}
     if(novaModalBusy()&&!data.novaGame){deferredModalMessages.push(data);return;}
     if(['sleep','sit','wake'].includes(avatar.dataset.idle)){enqueueMessage(()=>show(data));wake({});return;}
