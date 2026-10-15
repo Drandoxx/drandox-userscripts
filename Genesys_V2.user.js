@@ -9231,7 +9231,13 @@
     }
   }
 
+  function boardPageHidden(doc) {
+    // Visibility, never focus: an unfocused window on another monitor is live.
+    try{return doc.defaultView.top.document.hidden || doc.hidden;}catch(_){return doc.hidden;}
+  }
   function sortBoard(table) {
+    if(boardPageHidden(table.ownerDocument)){table.__gbsVisibilityDeferred=true;return;}
+    table.__gbsVisibilityDeferred=false;
     if (table.closest('.gbs-board-preview')) return;
     const body = table.tBodies[0];
     if (!body) return;
@@ -9371,6 +9377,7 @@
     };
     const flush = () => {
       frame = 0;
+      if(boardPageHidden(doc)){pendingTables.clear();return;}
       const tables = [...pendingTables];
       pendingTables.clear();
       tables.forEach(table => {
@@ -9386,6 +9393,7 @@
       }
     };
     const observer = new doc.defaultView.MutationObserver(mutations => {
+      if(boardPageHidden(doc)){pendingTables.clear();return;}
       mutations.forEach(mutation => {
         if (!affectsStatus(mutation) && !affectsBoardRows(mutation)) return;
         const table = tableFor(mutation.target) || [...mutation.addedNodes].map(tableFor).find(Boolean);
@@ -10121,6 +10129,7 @@ function fitDashboardMetricSpacing(doc) {
   }
   function tick() {
     if (callCardDragging) return;
+    if(boardPageHidden(document))return;
     MANAGED_DOCUMENTS.add(document);
     refreshEmbeddedFrameRegistrations(document);
     const reachable = collectReachableDocuments(document);
@@ -10198,7 +10207,18 @@ function fitDashboardMetricSpacing(doc) {
   });
   shadowObserver.observe(document.documentElement, { childList: true, subtree: true });
   let lastMaintenanceAt = 0;
+  let boardVisibilityFrame=0;
+  const resumeVisibleBoard=()=>{
+    performanceEvent('board-visibility-mode',{hidden:document.hidden,mode:document.hidden?'board-paused':'board-active',callWatchersUnchanged:true});
+    if(document.hidden){if(boardVisibilityFrame)window.cancelAnimationFrame(boardVisibilityFrame);boardVisibilityFrame=0;return;}
+    if(!boardVisibilityFrame)boardVisibilityFrame=window.requestAnimationFrame(()=>{
+      boardVisibilityFrame=0;lastMaintenanceAt=Date.now();
+      performanceMeasure('maintenance-visible-resume',tick);
+    });
+  };
+  document.addEventListener('visibilitychange',resumeVisibleBoard);
   const timer = window.setInterval(() => {
+    if(boardPageHidden(document))return;
     applyPowerMode(document);
     const interval = document.hidden ? 10000 : lowPowerMode() ? 2000 : INTERVAL_MS;
     if (Date.now() - lastMaintenanceAt < interval) return;
@@ -10242,6 +10262,8 @@ function fitDashboardMetricSpacing(doc) {
     sortReachableEmbeddedDocuments(document);
   }, 30000);
   window.__genesysBoardSorterStop = () => {
+    document.removeEventListener('visibilitychange',resumeVisibleBoard);
+    if(boardVisibilityFrame)window.cancelAnimationFrame(boardVisibilityFrame);
     for(const observer of callScopeObservers.values())observer.disconnect();callScopeObservers.clear();
     window.__gbsStopLightweightPerformance?.();
     window.clearInterval(updateCheckTimer); updateCheckTimer = 0;
