@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.575.0
+// @version      1.576.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -8811,6 +8811,7 @@
   }
 
   function applyResponsiveBoardColumns(table, fast = false) {
+    if(boardPageHidden(table.ownerDocument)){table.__gbsVisibilityDeferred=true;return;}
     if (table.closest('.gbs-board-preview')) return;
     if (table.classList.contains('gbs-custom-columns')) {
       // The visible-column grid owns sizing. Do not allocate space to hidden
@@ -9195,6 +9196,7 @@
     if (!target) return;
     const view = table.ownerDocument.defaultView;
     const observer = new view.ResizeObserver(() => {
+      if(boardPageHidden(table.ownerDocument))return;
       if (table.ownerDocument.body.classList.contains('gbs-resizing')) return;
       if (view.performance.now() < (table.__gbsSuppressColumnResizeUntil || 0)) return;
       // Workspace/window animation gets a measurement-free cached fit on each
