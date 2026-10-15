@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.683
+// @version      2.36.684
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.684","fixes":true,"changes":[{"key":"nova-notification-cut","meaningful":false,"text":"Keep Nova and her sword above the TV after the forward walk, including equal maximum-z-index layers."}]},
 {"version":"2.36.683","fixes":true,"changes":[{"key":"record-action-overflow","meaningful":false,"text":"Let native record action overflow move buttons into the More menu instead of forcing every action into a scrolling row."}]},
 {"version":"2.36.682","fixes":true,"changes":[{"key":"confirmation-layout","meaningful":false,"text":"Prevent modal overlay scrollbar oscillation; long dialog content scrolls inside the body."}]},
 {"version":"2.36.681","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":false,"text":"Keep the original portal entrance overflow and use a separate vertical scroll offset."}]},
@@ -24965,6 +24966,14 @@ function installNovaCutEffects(host, avatar) {
   const liveStyle=document.createElement('style');liveStyle.textContent='.cut-demo-panel{position:fixed;pointer-events:none}.cut-demo-panel svg{width:100%;height:100%;overflow:visible}.cut-demo-saber{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}';document.body.append(liveStyle);
   const NS='http://www.w3.org/2000/svg',savedCuts=new WeakMap(),retainedCuts=new Map();let current=null,frame=0,token=0,visibilityFrame=0,retainedFrame=0;
   const ownedGlows=new WeakMap();let glowId=0,frontTarget=null;
+  const bringNovaInFront=target=>{
+    frontTarget=target;
+    avatar.style.zIndex='2147483647';
+    // TV and notifications can already use the maximum z-index. Put both
+    // character and sword in the same root context after those equal layers.
+    document.documentElement.append(avatar,animationLayer);
+    syncAnimationLayer();
+  };
   const mountGlow=(target,svg,w,h)=>{
     const previous=ownedGlows.get(target);previous?.observer.disconnect();previous?.resize?.disconnect();previous?.svg.remove();
     const glow=svg.cloneNode(true),prefix='nova-owned-glow-'+(++glowId)+'-';
@@ -25089,7 +25098,7 @@ function installNovaCutEffects(host, avatar) {
     }
     const bodyBounds=fullSizeBodyBounds;
     const old=savedCuts.get(key),wasCut=!!old;
-    if(wasCut&&!idleOnly){frontTarget=target;depthAvatar.style.zIndex='2147483647';}
+    if(wasCut&&!idleOnly)bringNovaInFront(target);
     let coordinate=0;
     const door=wasCut?old.d.replace(/-?\d+(?:\.\d+)?/g,value=>String(Number(value)+(coordinate++%2===0?w-old.w:h-old.h))):makeDoor(box,bodyBounds);
     if(!door){panel.remove();host.novaCutHold?.(false);return;}
@@ -25226,7 +25235,7 @@ function installNovaCutEffects(host, avatar) {
           feet.forEach((foot,index)=>{if(foot){foot.style.setProperty('animation','none','important');foot.style.translate=`0px ${-Math.max(0,Math.sin(t*Math.PI*8+index*Math.PI))*5}px`;}});
           const body=root.querySelector('.body').getBoundingClientRect();
           grip(body.left+body.width*.55,body.top+body.height*.66,28,cuteBlade);
-          if(t>=.3&&!frontTarget){frontTarget=target;nova.style.zIndex='2147483647';syncAnimationLayer();document.body.append(animationLayer);saber.style.zIndex='2147483647';animationLayer.append(saber);}
+          if(t>=.3&&!frontTarget){bringNovaInFront(target);saber.style.zIndex='2147483647';animationLayer.append(saber);}
           if(t<1)frame=requestAnimationFrame(approach);else resolve();
         };frame=requestAnimationFrame(approach);
       });if(mine!==token)return;
