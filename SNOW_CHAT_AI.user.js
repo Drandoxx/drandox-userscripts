@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.682
+// @version      2.36.683
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.683","fixes":true,"changes":[{"key":"record-action-overflow","meaningful":false,"text":"Let native record action overflow move buttons into the More menu instead of forcing every action into a scrolling row."}]},
 {"version":"2.36.682","fixes":true,"changes":[{"key":"confirmation-layout","meaningful":false,"text":"Prevent modal overlay scrollbar oscillation; long dialog content scrolls inside the body."}]},
 {"version":"2.36.681","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":false,"text":"Keep the original portal entrance overflow and use a separate vertical scroll offset."}]},
 {"version":"2.36.680","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":false,"text":"Nova's portal menu scrolls vertically on short screens with an invisible scrollbar."}]},
@@ -2676,7 +2677,7 @@ const snAIChatDisplayNames=(()=>{
     }
     .sn-ai-header-record-number { flex:0 0 auto;white-space:nowrap;font-size:24px;font-weight:700;color:var(--sn-theme-e6edf9); }
     .sn-header-layout-row[data-sn-ai-record-rows] .sn-header-layout-content.-last > now-record-common-uiactionbar {
-      flex:1 1 0!important;width:0!important;min-width:0!important;overflow-x:auto!important;
+      flex:1 1 0!important;width:0!important;min-width:0!important;overflow:visible!important;
     }
     .sn-header-layout-row { width:100%!important;min-width:0!important;max-width:100%!important;flex-wrap:wrap!important;align-items:flex-start!important;gap:12px!important;box-sizing:border-box!important; }
     .sn-header-layout-row.sn-header-layout-row>.sn-header-layout-content:not(.-last) {
@@ -5242,10 +5243,8 @@ const snAIChatDisplayNames=(()=>{
     syncRecordHeaderRows(root);
     const host=root.host;
     if(!host||!['sn-form-internal-header-layout','now-record-common-uiactionbar','sn-form-internal-uiactionbar'].includes(host.localName))return;
-    // Native fixedButtonNumber exposes overflow-marked actions without changing
-    // actionNodes, action identities, condition data, or click handlers.
-    const nodes=host.getProperties?.().actionNodes;
-    if(Array.isArray(nodes)&&Number(host.fixedButtonNumber||0)!==nodes.length)host.fixedButtonNumber=nodes.length;
+    // Leave fixedButtonNumber to the native responsive action bar. Forcing
+    // it to actionNodes.length defeats its More-menu overflow calculation.
     if(host.localName!=='sn-form-internal-uiactionbar')return;
     let entry=actionWidthObservers.get(host);
     if(!entry){
