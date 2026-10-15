@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.681
+// @version      2.36.682
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.682","fixes":true,"changes":[{"key":"confirmation-layout","meaningful":false,"text":"Prevent modal overlay scrollbar oscillation; long dialog content scrolls inside the body."}]},
 {"version":"2.36.681","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":false,"text":"Keep the original portal entrance overflow and use a separate vertical scroll offset."}]},
 {"version":"2.36.680","fixes":true,"changes":[{"key":"nova-portal-menu","meaningful":false,"text":"Nova's portal menu scrolls vertically on short screens with an invisible scrollbar."}]},
 {"version":"2.36.679","fixes":true,"changes":[{"key":"workspace-scrolling","meaningful":false,"text":"Scrollable Workspace navigation with hidden scrollbar and a compact contained snippet scrollbar."}]},
@@ -2800,6 +2801,12 @@ const snAIChatDisplayNames=(()=>{
       border:1px solid var(--sn-theme-655573)!important;border-radius:12px!important;
       box-shadow:0 16px 48px #0008!important;
     }
+    /* The native full-viewport absolute modal overflowed its auto-scrolling
+       overlay at fractional zoom, alternately adding both scrollbars. */
+    .now-modal-overlay{overflow:hidden!important}
+    .now-modal.is-opened{inset:0!important;width:100%!important;height:100%!important;box-sizing:border-box!important}
+    .now-modal-dialog{max-height:calc(100dvh - 48px)!important;min-height:0}
+    .now-modal-body{min-height:0;overflow:auto!important}
     .now-modal-header { background:var(--sn-theme-1c1827)!important; }
     .now-modal-body,.now-modal-footer { background:var(--sn-theme-1c1827)!important;color:var(--sn-theme-e6edf9)!important; }
     .now-modal-heading,.now-modal-body p,.now-modal-body slot { color:var(--sn-theme-e6edf9)!important; }
