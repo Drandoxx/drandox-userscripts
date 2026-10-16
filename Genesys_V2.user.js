@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.579.0
+// @version      1.580.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -5954,7 +5954,7 @@
     if(value && typeof value==='object') {
       const result={};
       for(const [key,item]of Object.entries(value).slice(0,80)) {
-        if(/token|authorization|cookie|password|secret|credential|connecturi|attributes|headers/i.test(key))continue;
+        if(/token|authorization|cookie|password|secret|credential|connecturi|attributes|headers/i.test(key) || ['divisions','recordersState','externalContact','externalContactInitialDivisionId'].includes(key))continue;
         if(budget.left<=0){result._truncated=true;break;}
         result[key]=compactCallPayload(item,depth+1,budget);
       }
@@ -6157,7 +6157,7 @@
       while(liveCallSignals.size>10)liveCallSignals.delete(liveCallSignals.keys().next().value);
     }
     if (measurementState && path.includes('/analytics/')) {
-      for(const c of projected.filter(c=>c.conversationId===activeCallSummary?.conversationId || c.conversationId===lastCallSummary?.conversationId || c.participants.some(p=>p.userId===currentAgentApiId))) {
+      for(const c of projected.filter(c=>c.conversationId===measurementState.conversationId)) {
         const fields={},flatten=(value,key)=>{
           if(value && typeof value==='object')for(const [name,item]of Object.entries(value))flatten(item,key+'/'+name);
           else if(value!==undefined)fields[key]=value;
