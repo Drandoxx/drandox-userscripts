@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.688
+// @version      2.36.689
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.689","fixes":true,"changes":[{"key":"auto-greet-transfer","meaningful":false,"text":"Capture bounded incoming-offer text and suppress greetings for explicitly identified agent transfers."}]},
 {"version":"2.36.688","fixes":true,"changes":[{"key":"description-filling","meaningful":false,"text":"Bound text commit polling and retries, avoid redundant model callbacks, and retain compact commit diagnostics."}]},
 {"version":"2.36.687","fixes":true,"changes":[{"key":"display-punctuation","meaningful":false,"text":"Replace long dash punctuation in displayed messages with spaced short hyphens."}]},
 {"version":"2.36.686","fixes":true,"changes":[{"key":"nova-game-dice-layout","meaningful":false,"text":"Use a wider dice panel and responsive score cards with a guaranteed gap."}]},
@@ -725,6 +726,11 @@ const snAIChatDisplayNames=(()=>{
   // An accepted incoming offer is required: opening an old IMS never greets it.
   const autoGreetOffers=new Map();
   const pendingGreetingIds=new Set();
+  const transferredGreetingIds=new Set();
+  document.addEventListener('sn-ai-transferred-offer',event=>{
+    for(const id of [event.detail?.id,event.detail?.ims].filter(Boolean)){transferredGreetingIds.add(id);autoGreetOffers.delete(id);}
+    while(transferredGreetingIds.size>500)transferredGreetingIds.delete(transferredGreetingIds.values().next().value);
+  });
   // Retain accepted offers until an actual send attempt or manual reply.
   // Only retry discoverable composers; never focus tabs or overwrite drafts.
   setInterval(() => {
@@ -761,6 +767,9 @@ const snAIChatDisplayNames=(()=>{
     let record;
     try{record=imsPreviewRecords.get(id)||await fetchIMSRecord('sys_id='+id);}catch(error){greetTrace('ims-lookup-failed',{error:String(error.message||error)});pendingGreetingIds.delete(id);greetSeenHosts.delete(host);return;}
     const acceptedAt=autoGreetOffers.get(id)||autoGreetOffers.get(record?.number?.value);
+    if(transferredGreetingIds.has(id)||transferredGreetingIds.has(record?.number?.value)){
+      rememberGreetingAttempt(id);greetTrace('skipped-transferred-chat',{ims:record?.number?.value||'',reason:'explicit-agent-transfer-offer'});return;
+    }
     if(!record?.number?.value||!acceptedAt){greetTrace('offer-not-matched',{reason:!record?.number?.value?'ims-number-unavailable':'no-accepted-offer'});pendingGreetingIds.delete(id);greetSeenHosts.delete(host);return;}
     greetTrace('offer-matched',{ims:record.number.value});
     const started=Date.now();
@@ -851,12 +860,14 @@ const snAIChatDisplayNames=(()=>{
         const latestQuery=latestHuman&&!messageInfo(latestHuman).right?'q':'w';
         if(latestQuery!==query){outcome('not-sent','latest-message-changed-retry');return;}
         if(composerEditedByUser){outcome('skipped','composer-edited-by-user');return;}
+        if(transferredGreetingIds.has(id)||transferredGreetingIds.has(record.number.value)){rememberGreetingAttempt(id);outcome('skipped','explicit-agent-transfer-offer');return;}
         if(!expected||!safe()||input().value.trim()){outcome('not-sent',!expected?'quick-action-empty':!safe()?'chat-no-longer-safe':'composer-edited');return;}
         greetTrace('shortcut-selected',{ims:record.number.value,code:query,nativeAction:'CHAT_INPUT#SNIPPET_SELECTED',expected});
         host.dispatch('CHAT_INPUT#SNIPPET_SELECTED',{itemSelected:snippet});
         host.dispatch('CHAT_INPUT#MENU_STATE',0);
         const ready=await wait(()=>{const send=ownElements().find(node=>node.matches('button[aria-label="Send Message"]'));return input()?.value.trim()===expected&&send&&!send.disabled;});
         if(composerEditedByUser){outcome('skipped','composer-edited-by-user');return;}
+        if(transferredGreetingIds.has(id)||transferredGreetingIds.has(record.number.value)){rememberGreetingAttempt(id);outcome('skipped','explicit-agent-transfer-offer');return;}
         const send=ownElements().find(node=>node.matches('button[aria-label="Send Message"]'));
         if(!ready||!safe()||input().value.trim()!==expected||!send||send.disabled){outcome('not-sent',!ready?'quick-action-did-not-fill':!safe()?'chat-no-longer-safe':!send?'send-control-missing':send.disabled?'send-control-disabled':'composer-edited');return;}
         greetTrace('shortcut-expanded',{ims:record.number.value,code:query,composerSnapshot:composerSnapshot()});
@@ -8144,6 +8155,7 @@ function startSNAI(tabIdentity) {
       // Preserve whitespace/line breaks and do not truncate through the general
       // 180-character diagnostic string filter.
       if(key==='composerSnapshot'&&action==='auto-greet'){safe[key]=value;continue;}
+      if(key==='message'&&action==='auto-greet'&&details.stage==='incoming-offer-content'){safe[key]=String(value).slice(0,2400);continue;}
       if(key==='chatContent'&&action==='chat-data-collected'){safe[key]=String(value);continue;}
       if(key==='responseContent'&&action==='ai-response-data'){safe[key]=String(value);continue;}
       if(key==='network'&&action==='form-network'){safe[key]=value;continue;}
@@ -22640,12 +22652,27 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         // acceptance alike. Tab titles and notice rendering are not identity.
         button.addEventListener('click',()=>{
           const acceptedAt=Date.now();
+          let offerCard=button;
+          while(offerCard instanceof Element&&!offerCard.matches('sn-inbox-card'))offerCard=deepParentElement(offerCard);
+          const parts=[];
+          const collect=root=>{if(!root||parts.length>=80)return;for(const node of root.childNodes){
+            if(parts.length>=80)break;
+            if(node.nodeType===3){const text=String(node.textContent||'').trim();if(text)parts.push(text.slice(0,300));}
+            else if(node.nodeType===1&&!/^(STYLE|SCRIPT)$/.test(node.tagName)){collect(node);if(node.shadowRoot)collect(node.shadowRoot);}
+          }};
+          collect(offerCard);
+          const offerText=parts.join(' ').slice(0,2400),offerIMS=offerText.match(/\bIMS\d+\b/)?.[0]||'';
+          const transferred=/\b(?:transferred|redirected)\s+(?:by|from)\s+(?!virtual\s+agent\b|bot\b|queue\b)\S/i.test(offerText)
+            || /\b(?:agent[- ]to[- ]agent\s+transfer|transfer(?:red)?\s+from\s+another\s+agent)\b/i.test(offerText);
+          document.dispatchEvent(new CustomEvent('sn-ai-greet-diagnostic',{detail:{stage:'incoming-offer-content',ims:offerIMS,message:offerText,reason:transferred?'explicit-agent-transfer':'transfer-not-confirmed'}}));
+          if(transferred&&offerIMS)document.dispatchEvent(new CustomEvent('sn-ai-transferred-offer',{detail:{ims:offerIMS}}));
           const previousIds=new Set(allPageElements().filter(e=>e.localName==='sn-chat-input'&&e.isChatOwner===true).map(e=>e.sysId||e.getAttribute('sys-id')));
           let checks=0;
           const confirmComposer=()=>{
             const candidates=allPageElements().filter(e=>e.localName==='sn-chat-input'&&e.isChatOwner===true
               && !previousIds.has(e.sysId||e.getAttribute('sys-id')));
             if(!button.isConnected&&candidates.length===1){
+              if(transferred)document.dispatchEvent(new CustomEvent('sn-ai-transferred-offer',{detail:{id:candidates[0].sysId||candidates[0].getAttribute('sys-id'),ims:offerIMS}}));
               document.dispatchEvent(new CustomEvent('sn-ai-accepted-chat-id',{detail:{id:candidates[0].sysId||candidates[0].getAttribute('sys-id'),acceptedAt}}));
               return;
             }
