@@ -5873,6 +5873,7 @@
     const payload=compactCallPayload(data,0,{left:1200}),signature=JSON.stringify(payload);
     if(snowScriptEvidence.get(path)===signature)return;
     snowScriptEvidence.set(path,signature);while(snowScriptEvidence.size>8)snowScriptEvidence.delete(snowScriptEvidence.keys().next().value);
+    persistCallTimeline({type:'snow-script-captured',path,status,truncated:signature.includes('[truncated]')});
     callNetworkChanges.push({at:new Date().toISOString(),kind:'snow-script-definition',path,status,payload});
     while(callNetworkChanges.length>120)callNetworkChanges.shift();
   }
@@ -6847,7 +6848,7 @@
   }
   function updateCallClockDisplay() {
     const ringing=document.querySelector('#gbs-call-information [data-gbs-ringing-timer]');
-    if(ringing){const text=`${Math.max(0,29-Math.floor((Date.now()-Number(ringing.dataset.gbsRingingTimer))/1000))}s to answer`;if(ringing.textContent!==text)ringing.textContent=text;}
+    if(ringing){const text=`${Math.max(0,Number(ringing.dataset.gbsAlertSeconds || 30)-Math.floor((Date.now()-Number(ringing.dataset.gbsRingingTimer))/1000))}s to answer`;if(ringing.textContent!==text)ringing.textContent=text;}
     if(window!==window.top)return;
     const timer=document.querySelector('#gbs-last-call-data [role="timer"]');
     if(lastCallSummary && !lastCallSummary.wrapupComplete) {
@@ -10109,6 +10110,7 @@ function fitDashboardMetricSpacing(doc) {
   }
   function performanceEvent(type,fields={}) {
     if(!lightweightPerformance)return;
+    if(/call-push|call-api-recovery|snow-|incoming-view|board-visibility/.test(type))persistCallTimeline({type,...fields});
     if(/call-push|native-call-state|call-control-action|call-source|call-api-recovery|snow-|incoming-view/.test(type)) {
       lightweightPerformance.callEvents ||= [];
       lightweightPerformance.callEvents.push({at:Date.now(),type,...fields});
