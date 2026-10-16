@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.692
+// @version      2.36.693
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.693","fixes":true,"changes":[{"key":"ci-search","meaningful":false,"text":"Show a searching state instead of an empty result while CI lookups are still running."}]},
 {"version":"2.36.692","fixes":true,"changes":[{"key":"user-similar-events","meaningful":true,"text":"Details opens the same caller-filtered event list as New Event, using the current chat user's ID."}]},
 {"version":"2.36.691","fixes":true,"changes":[{"key":"ci-search","meaningful":true,"text":"CI typeahead uses contains searches, flexible word and punctuation matching, and locally ranked results with exact partial-query CI names first."}]},
 {"version":"2.36.690","fixes":true,"changes":[{"key":"auto-greet-transfer","meaningful":true,"text":"Suppress greetings for native accepted agent transfers and capture inbox shadow content correctly."}]},
@@ -5752,7 +5753,51 @@ const snAIChatDisplayNames=(()=>{
     }
     check();
   }
+  // SN_AI_CI_LOADING_BEGIN
+  const ciLoadingTokens=new Set(),ciLoadingText=new Map();
+  let ciInputLoadingTimer;
+  const ciLoadingCaption='Searching configuration items...';
+  function decorateCILoadingText(node){
+    if(!ciLoadingTokens.size||node?.nodeType!==3||node.textContent.trim()!=='No results found')return;
+    let parent=node.parentElement;
+    for(let depth=0;parent&&depth<24;depth++,parent=parent.parentElement||parent.getRootNode?.().host){
+      if(parent.getAttribute?.('aria-label')==='Configuration Item'||['u_configuration_item','cmdb_ci'].includes(parent.dAProps?.fieldName)){
+        if(ciLoadingText.size<50){ciLoadingText.set(node,node.textContent);node.textContent=ciLoadingCaption;}
+        return;
+      }
+    }
+  }
+  function refreshCILoading(){
+    for(const [node,original] of ciLoadingText){
+      if(!node.isConnected){ciLoadingText.delete(node);continue;}
+      if(!ciLoadingTokens.size){if(node.textContent===ciLoadingCaption)node.textContent=original;ciLoadingText.delete(node);}
+    }
+    if(!ciLoadingTokens.size)return;
+    for(const root of spaceRoots)for(const box of root.querySelectorAll?.('[aria-label="Configuration Item"]')||[]){
+      const walker=document.createTreeWalker(box,NodeFilter.SHOW_TEXT);let node;
+      while((node=walker.nextNode()))decorateCILoadingText(node);
+    }
+  }
+  document.addEventListener('sn-ai-ci-search-state',event=>{
+    const {id,pending}=event.detail||{};if(!id)return;
+    if(pending){clearTimeout(ciInputLoadingTimer);ciLoadingTokens.delete('input-debounce');ciLoadingTokens.add(id);refreshCILoading();}
+    // Native rendering consumes the resolved fetch promise afterwards. Keep
+    // the caption through that render, rather than flashing the old empty row.
+    else setTimeout(()=>{ciLoadingTokens.delete(id);refreshCILoading();},200);
+  });
+  document.addEventListener('input',event=>{
+    const reference=event.composedPath().find(node=>node?.localName==='now-record-typeahead');
+    if(!['u_configuration_item','cmdb_ci'].includes(reference?.dAProps?.fieldName))return;
+    clearTimeout(ciInputLoadingTimer);
+    const input=event.composedPath().find(node=>node?.localName==='input');
+    if(String(input?.value||'').trim())ciLoadingTokens.add('input-debounce');else ciLoadingTokens.delete('input-debounce');
+    refreshCILoading();
+    ciInputLoadingTimer=setTimeout(()=>{ciLoadingTokens.delete('input-debounce');refreshCILoading();},1000);
+  },true);
+  // SN_AI_CI_LOADING_END
   function discover(node) {
+    decorateCILoadingText(node);
+    if(node.nodeType!==3&&ciLoadingTokens.size&&node.textContent?.length<600&&node.textContent.includes('No results found')){const walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT);let text;while((text=walker.nextNode()))decorateCILoadingText(text);}
     installSubTabRecordButton(node);
     installILSLinkCopy(node.nodeType === 3 ? node.parentElement?.closest('.now-form-field-message') : (node.closest?.('.now-form-field-message') || node));
     installILSStoreNote(node.host || node);
@@ -23721,7 +23766,7 @@ function ciRankRows(rows,query) {
 function installCISearch() {
   const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window,nativeFetch=page.fetch;
   if(nativeFetch.snAiCISearch)return;
-  const cache=new Map(),active=new Map();
+  const cache=new Map(),active=new Map();let sequence=0;
   page.fetch=function ciFetch(input,init){
     let operation;
     try{
@@ -23742,6 +23787,8 @@ function installCISearch() {
     const key=context+'|'+query.toLowerCase()+'|'+(vars.paginationOffset||0)+'|'+(vars.paginationLimit||25),slot=context;
     active.get(slot)?.abort();
     const controller=new AbortController();active.set(slot,controller);
+    const loadingId='ci-'+(++sequence);
+    document.dispatchEvent(new CustomEvent('sn-ai-ci-search-state',{detail:{id:loadingId,pending:true}}));
     const abort=()=>controller.abort();init.signal?.addEventListener('abort',abort,{once:true});
     if(init.signal?.aborted)abort();
     const check=()=>{if(controller.signal.aborted)throw new DOMException('CI lookup superseded','AbortError');};
@@ -23786,7 +23833,7 @@ function installCISearch() {
       if(controller.signal.aborted||error.name==='AbortError')throw error;
       document.dispatchEvent(new CustomEvent('sn-ai-ci-search-diagnostic',{detail:{stage:'native-fallback',reason:String(error.message).slice(0,120)}}));
       return Reflect.apply(nativeFetch,owner,[input,init]);
-    }).finally(()=>{init.signal?.removeEventListener('abort',abort);if(active.get(slot)===controller)active.delete(slot);});
+    }).finally(()=>{init.signal?.removeEventListener('abort',abort);if(active.get(slot)===controller)active.delete(slot);document.dispatchEvent(new CustomEvent('sn-ai-ci-search-state',{detail:{id:loadingId,pending:false}}));});
   };
   page.fetch.snAiCISearch=true;
 }
