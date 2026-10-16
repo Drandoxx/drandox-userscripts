@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.687
+// @version      2.36.688
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.688","fixes":true,"changes":[{"key":"description-filling","meaningful":false,"text":"Bound text commit polling and retries, avoid redundant model callbacks, and retain compact commit diagnostics."}]},
 {"version":"2.36.687","fixes":true,"changes":[{"key":"display-punctuation","meaningful":false,"text":"Replace long dash punctuation in displayed messages with spaced short hyphens."}]},
 {"version":"2.36.686","fixes":true,"changes":[{"key":"nova-game-dice-layout","meaningful":false,"text":"Use a wider dice panel and responsive score cards with a guaranteed gap."}]},
 {"version":"2.36.685","fixes":true,"changes":[{"key":"nova-daily-welcome","meaningful":true,"text":"Daily greetings have 370 distinct warm messages without repeats until the set is exhausted, with durable acknowledgement and normal follow-up timing."}]},
@@ -8147,6 +8148,13 @@ function startSNAI(tabIdentity) {
       if(key==='responseContent'&&action==='ai-response-data'){safe[key]=String(value);continue;}
       if(key==='network'&&action==='form-network'){safe[key]=value;continue;}
       if(key==='responseShape'&&action.startsWith('extension-')){safe[key]=value;continue;}
+      if(/^(text-fill-|auto-text-attempt|description-fill-|auto-description-field-attempt)/.test(action)
+        && /^(modelCommitted|stable|delayMs|expectedLength|actualLength|modelLength|modelMatches|domMatches|connected|controlReplaced|callbackAvailable|bindingName|ariaInvalid|succeeded|budgetMs|callbackMs)$/.test(key)){
+        if(typeof value==='number')safe[key]=Number.isFinite(value)?value:0;
+        else if(typeof value==='boolean')safe[key]=value;
+        else if(typeof value==='string')safe[key]=value.slice(0,80);
+        continue;
+      }
       if(!/^(mode|code|message|error|field|label|phase|status|profile|provider|jobId|commandId|ims|attempt|timeoutMs|durationMs|elapsedMs|waitMs|length|fields|ok|source|reason|stage|workerCount|receivedAt|submittedAt|startedAt|completedAt|textLength|assistantCount|observedAssistantMutations|generating|responseSource|conversationId|fetchStatus|fetchError|version|companionVersion|area|eventType|targetTag|targetId|targetRole|blocked|x|y)$/i.test(key))continue;
       if(typeof value==='number'||typeof value==='boolean')safe[key]=value;
       else if(typeof value==='string')safe[key]=value.replace(/\b(Bearer\s+)[^\s]+/gi,'$1[redacted]').slice(0,180);
@@ -8155,6 +8163,8 @@ function startSNAI(tabIdentity) {
     const previous=log.events.at(-1)?.entry;
     if(previous&&now-previous[0]<1000&&JSON.stringify(previous.slice(1,5))===JSON.stringify(entry.slice(1))){previous[5]=(previous[5]||1)+1;return;}
     log.events.push({day:log.day,entry});
+    // A delayed/failed storage flush must not grow the pending queue forever.
+    if(log.events.length>2000)log.events.splice(0,log.events.length-2000);
     if(!log.timer)log.timer=setTimeout(()=>{log.timer=0;flushDailyDiagnostics().catch(()=>{});},1000);
   }
   // Passive, bounded capture: never alters requests, responses or authentication.
@@ -14413,16 +14423,25 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       // Use the same bound callback as a native Workspace edit. DOM value and
       // synthetic input/change alone can leave GFORM's value empty. The first
       // callback argument is unused; name (not fieldName) is the record key.
-      props.onValueChange.call(owner, 'change', name, text, text);
-      trace('model-callback-returned');
+      const commitStarted=Date.now(),budgetMs=1600;
+      const modelAlreadyMatches=String(props.formData.fields[name]?.value ?? '')===text;
+      if(!modelAlreadyMatches)props.onValueChange.call(owner, 'change', name, text, text);
+      trace('model-callback-returned',{callbackMs:Date.now()-commitStarted,modelMatches:modelAlreadyMatches,budgetMs});
       for (let attempt = 0; attempt < 20; attempt += 1) {
-        await sleep(50);
+        if(Date.now()-commitStarted>=budgetMs)break;
+        await sleep(100);
         const current = resolveField();
         if (!current || current.isConnected === false) continue;
         const retained = workspaceTextBinding(current);
         if (retained && String(retained.props.formData.fields[name]?.value ?? '') === text &&
             String(current.value ?? '') === text && current.getAttribute('aria-invalid') !== 'true') return true;
       }
+      const latest=resolveField(),latestBinding=latest?workspaceTextBinding(latest):null;
+      trace('model-commit-budget-ended',{budgetMs,elapsedMs:Date.now()-commitStarted,
+        modelLength:String(latestBinding?.props.formData.fields[name]?.value??'').length,
+        modelMatches:Boolean(latestBinding&&String(latestBinding.props.formData.fields[name]?.value??'')===text),
+        domMatches:Boolean(latest&&String(latest.value??'')===text),actualLength:String(latest?.value??'').length,
+        connected:Boolean(latest?.isConnected),ariaInvalid:latest?.getAttribute('aria-invalid')||''});
       return false;
     }
     // Classic/native forms retain their normal input/change path.
@@ -14468,7 +14487,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     trace('start');
     try {
     if (maxLength && text.length > maxLength) automationFailure(`${code}_TOO_LONG`, `${fieldLabel} exceeds ${maxLength} characters.`, { length: text.length, maxLength });
-    for (let attempt = 1; attempt <= 10; attempt += 1) {
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
       traceAttempt = attempt;
       trace('resolving-control');
       let field = await waitForControlByLabel(fieldLabel, 2200);
@@ -14521,7 +14540,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       trace('retry-wait');
       await sleep(retryPause(attempt));
     }
-    automationFailure(code, `${fieldLabel} did not retain its text after 10 attempts.`, { attempts: 10 });
+    automationFailure(code, `${fieldLabel} did not retain its text after 3 attempts.`, { attempts: 3 });
     } finally {
       clearInterval(traceTimer);
       trace('finished', { succeeded: traceSucceeded });
