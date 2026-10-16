@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.695
+// @version      2.36.696
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.696","fixes":true,"changes":[{"key":"record-action-overflow","meaningful":false,"text":"Hide the record action More button when its menu has no actions, and restore it when overflow actions become available."}]},
 {"version":"2.36.695","fixes":true,"changes":[{"key":"ci-search","meaningful":true,"text":"Limit ranked CI suggestions to 100 and remove broad-token deep paging for faster searches."}]},
 {"version":"2.36.694","fixes":true,"changes":[{"key":"ci-search","meaningful":true,"text":"CI results prefer below-field placement, fetch pages concurrently, and reuse recent word-search pages."}]},
 {"version":"2.36.693","fixes":true,"changes":[{"key":"ci-search","meaningful":false,"text":"Show a searching state instead of an empty result while CI lookups are still running."}]},
@@ -5267,12 +5268,14 @@ const snAIChatDisplayNames=(()=>{
     syncRecordHeaderRows(root);
     const host=root.host;
     if(!host||!['sn-form-internal-header-layout','now-record-common-uiactionbar','sn-form-internal-uiactionbar'].includes(host.localName))return;
+    syncRecordOverflowMenus(root);
     // Leave fixedButtonNumber to the native responsive action bar. Forcing
     // it to actionNodes.length defeats its More-menu overflow calculation.
     if(host.localName!=='sn-form-internal-uiactionbar')return;
     let entry=actionWidthObservers.get(host);
     if(!entry){
       const update=()=>{
+        requestAnimationFrame(()=>{if(host.isConnected)syncRecordOverflowMenus(host.shadowRoot);});
         const width=Math.floor(host.getBoundingClientRect().width);
         if(width>0&&Math.abs(Number(host.width||0)-width)>=1)host.width=width;
         if(width<=0||host.hasAttribute('data-sn-ai-actions-ready')||entry.pending)return;
@@ -5441,8 +5444,35 @@ const snAIChatDisplayNames=(()=>{
     '807e83d1878010100e3dd61e36cb0b89', // Refresh Impacted Services
     'd566c8c9eb703010e0ef83c45e5228be', // Book walk-up appointment
   ]);
+  // SN_AI_EMPTY_ACTION_MENU_BEGIN
+  function recordActionMenuHasItems(items){
+    return items.some(item=>{
+      if(!item||item.hidden===true||item.visible===false||['separator','divider'].includes(item.type))return false;
+      if(Array.isArray(item.children))return recordActionMenuHasItems(item.children);
+      // Disabled actions still belong in the menu. Unknown native item shapes
+      // are kept rather than accidentally hiding a usable action.
+      return true;
+    });
+  }
+  function syncEmptyRecordActionMenu(node){
+    if(!node?.matches?.('now-dropdown.uiaction-bar-dropdown'))return;
+    const items=node.items;
+    const empty=Array.isArray(items)&&!recordActionMenuHasItems(items);
+    node.toggleAttribute('data-sn-ai-empty-action-menu',empty);
+    if(empty&&node.opened)node.opened=false;
+  }
+  function syncRecordOverflowMenus(root){
+    if(!root)return;
+    const roots=[root];
+    for(let i=0;i<roots.length;i++)for(const node of roots[i].querySelectorAll('*')){
+      syncEmptyRecordActionMenu(node);
+      if(node.shadowRoot)roots.push(node.shadowRoot);
+    }
+  }
+  // SN_AI_EMPTY_ACTION_MENU_END
   function filterIncidentActions(node) {
     if (!node?.matches?.('now-button,now-dropdown.uiaction-bar-dropdown')) return;
+    syncEmptyRecordActionMenu(node);
     let parent = node, incident = false;
     while (parent) {
       if (parent.localName === 'sn-form-internal-header-layout') {
@@ -5465,6 +5495,7 @@ const snAIChatDisplayNames=(()=>{
     });
     const filtered = clean(node.items);
     if (JSON.stringify(filtered) !== JSON.stringify(node.items)) node.items = filtered;
+    syncEmptyRecordActionMenu(node);
   }
   const attachmentDividers=new WeakSet();
   const sidebarWidthStorageKey='sn-ai-sidebar-width-v1';
@@ -6052,7 +6083,7 @@ const snAIChatDisplayNames=(()=>{
     const style = document.createElement('style');
     style.dataset.snAiActionStyle = 'true';
     style.textContent = css;
-    style.textContent += '\n[data-sn-ai-hidden-incident-action]{display:none!important;width:0!important;min-width:0!important;margin:0!important;padding:0!important;}';
+    style.textContent += '\n[data-sn-ai-hidden-incident-action],[data-sn-ai-empty-action-menu]{display:none!important;width:0!important;min-width:0!important;margin:0!important;padding:0!important;}';
     style.textContent += '\n.chrome-tab-panel-list[data-sn-ai-force-chat]:has(>.chrome-tab-panel.is-active){display:block!important;flex:0 0 min(400px,40%)!important;width:min(400px,40%)!important;min-width:0!important;}\n[data-sn-ai-force-chat]>.chrome-tab-panel.is-active{display:block!important;width:100%!important;height:100%!important;}\n[data-sn-ai-force-chat]>.chrome-tab-panel:not(.is-active){display:none!important;}';
     style.textContent += '\n.sn-ai-chat-preview-marker{flex:none;font-size:13px;color:var(--now-color_alert--critical-3,#ed7d86);pointer-events:none;margin:0 6px;} .sn-ai-chat-preview-notice{flex:0 0 auto;padding:3px 6px;font-size:11px;text-align:center;color:var(--now-color_alert--critical-3,#ed7d86);border-top:1px solid currentColor;background:var(--sn-theme-191621);line-height:1.3;} .sn-ai-ims-lookup{position:fixed;z-index:2147483647;width:280px;max-width:calc(100vw - 16px);box-sizing:border-box;padding:10px;background:var(--sn-theme-251f31,#251f31);color:var(--sn-theme-e6edf9,#eee);border:1px solid var(--sn-theme-655573,#655573);border-radius:10px;box-shadow:0 8px 24px #0005;} .sn-ai-ims-lookup input{flex:1;min-width:0;padding:8px;background:var(--sn-theme-191621,#191621);color:inherit;border:1px solid var(--sn-theme-655573);border-radius:6px;font:inherit;} .sn-ai-ims-lookup button{padding:6px 12px;color:inherit;background:var(--sn-theme-655573);border:0;border-radius:6px;cursor:pointer;} .sn-ai-ims-lookup-error{color:var(--now-color_alert--critical-3,#ed7d86);font-size:12px;margin-bottom:8px;} [data-sn-ai-inbox-accept],[data-sn-ai-inbox-accept-host],[data-sn-ai-inbox-proxy="Accept"]{user-select:none!important;}';
     style.textContent += `
