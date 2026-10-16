@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.581.0
+// @version      1.582.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -5875,7 +5875,8 @@
       const old=JSON.parse(sessionStorage.getItem(RELOAD_PRESENCE_KEY)||'null');
       const definition={id:data.presenceDefinition.id,systemPresence:data.presenceDefinition.systemPresence};
       if(definition.systemPresence==='Offline'){sessionStorage.removeItem(RELOAD_PRESENCE_KEY);return;}
-      sessionStorage.setItem(RELOAD_PRESENCE_KEY,JSON.stringify({userId:match[1],definition,at:Date.now(),offQueue:definition.systemPresence==='OnQueue'?(old?.userId===match[1]?old.offQueue:null):definition}));
+      const onQueue=String(definition.systemPresence).replace(/[\s_]/g,'').toLowerCase()==='onqueue';
+      sessionStorage.setItem(RELOAD_PRESENCE_KEY,JSON.stringify({userId:match[1],definition,at:Date.now(),offQueue:onQueue?(old?.userId===match[1]?old.offQueue:null):definition}));
       performanceEvent('presence-manual-saved',{systemPresence:definition.systemPresence});
     }catch(_){}
   }
@@ -5892,7 +5893,7 @@
       if(current.presenceDefinition?.id===saved.definition.id){presenceRestoreDone=true;return;}
       if(current.presenceDefinition?.systemPresence!=='Available'){presenceRestoreDone=true;performanceEvent('presence-restore-skipped',{reason:'non-default-current-presence'});return;}
       presenceRestoreDone=true;
-      if(saved.definition.systemPresence==='OnQueue' && saved.offQueue?.id)await bridge.request(path,{presenceDefinition:{id:saved.offQueue.id}},'PATCH');
+      if(String(saved.definition.systemPresence).replace(/[\s_]/g,'').toLowerCase()==='onqueue' && saved.offQueue?.id)await bridge.request(path,{presenceDefinition:{id:saved.offQueue.id}},'PATCH');
       await bridge.request(path,{presenceDefinition:{id:saved.definition.id}},'PATCH');
       performanceEvent('presence-reload-restored',{systemPresence:saved.definition.systemPresence});
     }catch(error){presenceRestoreDone=true;performanceEvent('presence-restore-failed',{reason:String(error.message).slice(0,100)});}finally{presenceRestoreBusy=false;}
