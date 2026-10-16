@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.694
+// @version      2.36.695
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.695","fixes":true,"changes":[{"key":"ci-search","meaningful":true,"text":"Limit ranked CI suggestions to 100 and remove broad-token deep paging for faster searches."}]},
 {"version":"2.36.694","fixes":true,"changes":[{"key":"ci-search","meaningful":true,"text":"CI results prefer below-field placement, fetch pages concurrently, and reuse recent word-search pages."}]},
 {"version":"2.36.693","fixes":true,"changes":[{"key":"ci-search","meaningful":false,"text":"Show a searching state instead of an empty result while CI lookups are still running."}]},
 {"version":"2.36.692","fixes":true,"changes":[{"key":"user-similar-events","meaningful":true,"text":"Details opens the same caller-filtered event list as New Event, using the current chat user's ID."}]},
@@ -23861,23 +23862,16 @@ function installCISearch() {
         while(pageCache.size>96)pageCache.delete(pageCache.keys().next().value);
         return length;
       };
-      // Three requests at a time, bounded pagination, no whole-CMDB preload.
+      // Only the first 100 candidates per search term, three reads at a time.
+      // Merge and rank at most 100 suggestions; do not deep-page broad terms.
       // Every request retains the native encoded record and reference qualifier.
       const queue=terms.map(chars=>({chars,offset:0}));
-      const scheduled=new Set(queue.map(task=>task.chars+'|'+task.offset));let pages=0;
-      while(queue.length&&pages<24){
-        const batch=queue.splice(0,Math.min(3,24-pages));pages+=batch.length;
-        await Promise.all(batch.map(async task=>{
-          if(await lookup(task.chars,task.offset)>=100){
-            // Fill a three-page pipeline rather than waiting for each single
-            // broad-token page before requesting its successor.
-            for(const step of [100,200,300]){const offset=task.offset+step,key=task.chars+'|'+offset;if(offset<=900&&!scheduled.has(key)){scheduled.add(key);queue.push({chars:task.chars,offset});}}
-            if(task.offset>=900)truncated=true;
-          }
-        }));
+      while(queue.length){
+        const batch=queue.splice(0,3);
+        await Promise.all(batch.map(async task=>{if(await lookup(task.chars,0)>=100)truncated=true;}));
       }
-      truncated=truncated||queue.length>0;
-      const ranked=ciRankRows(rows,query),retrieved=template.data.GlideLayout_Query.referenceDataRetriever;
+      const allRanked=ciRankRows(rows,query),ranked=allRanked.slice(0,100),retrieved=template.data.GlideLayout_Query.referenceDataRetriever;
+      truncated=truncated||allRanked.length>100;
       const limit=Math.max(1,Math.min(100,Number(vars.paginationLimit)||25)),offset=Math.max(0,Number(vars.paginationOffset)||0);
       Object.assign(retrieved,{referenceRecentDataList:[],referenceDataList:ranked.slice(offset,offset+limit),totalCount:ranked.length,recentCount:0,matchesCount:ranked.length});
       const body=JSON.stringify(template);cache.set(key,{body,at:Date.now()});
