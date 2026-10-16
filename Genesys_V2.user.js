@@ -5856,6 +5856,47 @@
   const callNetworkFields = new Map();
   const callNetworkBridges = new Set();
   const liveCallSignals=new Map();
+  const RELOAD_PRESENCE_KEY='genesys-v2-reload-presence';
+  let presenceManualAt=0,presenceRestoreDone=false,presenceRestoreBusy=false;
+  const presenceBootAt=Date.now();
+  let presenceReload=false;
+  try{presenceReload=performance.getEntriesByType('navigation')[0]?.type==='reload';if(window===window.top && !presenceReload)sessionStorage.removeItem(RELOAD_PRESENCE_KEY);}catch(_){}
+  function presenceUserIntent(event) {
+    if(!event.isTrusted)return;
+    const target=event.target?.nodeType===1?event.target:event.target?.parentElement;
+    if(!target)return;
+    if(target.closest?.('.user-settings-popover') && /log\s*out/i.test(target.closest('button,a')?.textContent || '')) {sessionStorage.removeItem(RELOAD_PRESENCE_KEY);presenceRestoreDone=true;return;}
+    if(target.closest?.('#command-bar-queue-toggle,.user-presence-input,[name="presence-selector"],.user-settings-popover form')) {presenceManualAt=Date.now();presenceRestoreDone=true;}
+  }
+  function rememberManualPresence(path,status,data) {
+    const match=path.match(/^\/api\/v2\/users\/([a-f0-9-]{36})\/presences\/PURECLOUD$/i);
+    if(!match || match[1]!==currentAgentApiId || status<200 || status>=300 || Date.now()-presenceManualAt>5000 || !data?.presenceDefinition?.id)return;
+    try {
+      const old=JSON.parse(sessionStorage.getItem(RELOAD_PRESENCE_KEY)||'null');
+      const definition={id:data.presenceDefinition.id,systemPresence:data.presenceDefinition.systemPresence};
+      if(definition.systemPresence==='Offline'){sessionStorage.removeItem(RELOAD_PRESENCE_KEY);return;}
+      sessionStorage.setItem(RELOAD_PRESENCE_KEY,JSON.stringify({userId:match[1],definition,at:Date.now(),offQueue:definition.systemPresence==='OnQueue'?(old?.userId===match[1]?old.offQueue:null):definition}));
+      performanceEvent('presence-manual-saved',{systemPresence:definition.systemPresence});
+    }catch(_){}
+  }
+  async function restoreReloadPresence() {
+    if(window!==window.top || !presenceReload || presenceRestoreDone || presenceRestoreBusy || Date.now()-presenceBootAt<5000)return;
+    if(Date.now()-presenceBootAt>60000){presenceRestoreDone=true;return;}
+    const bridge=readyCallApiBridge();if(!bridge || !currentAgentApiId)return;
+    let saved;try{saved=JSON.parse(sessionStorage.getItem(RELOAD_PRESENCE_KEY)||'null');}catch(_){}
+    if(!saved || saved.userId!==currentAgentApiId || !saved.definition?.id){presenceRestoreDone=true;return;}
+    presenceRestoreBusy=true;
+    try {
+      const path=`/api/v2/users/${currentAgentApiId}/presences/PURECLOUD`,current=await bridge.request(path);
+      if(presenceRestoreDone)return;
+      if(current.presenceDefinition?.id===saved.definition.id){presenceRestoreDone=true;return;}
+      if(current.presenceDefinition?.systemPresence!=='Available'){presenceRestoreDone=true;performanceEvent('presence-restore-skipped',{reason:'non-default-current-presence'});return;}
+      presenceRestoreDone=true;
+      if(saved.definition.systemPresence==='OnQueue' && saved.offQueue?.id)await bridge.request(path,{presenceDefinition:{id:saved.offQueue.id}},'PATCH');
+      await bridge.request(path,{presenceDefinition:{id:saved.definition.id}},'PATCH');
+      performanceEvent('presence-reload-restored',{systemPresence:saved.definition.systemPresence});
+    }catch(error){presenceRestoreDone=true;performanceEvent('presence-restore-failed',{reason:String(error.message).slice(0,100)});}finally{presenceRestoreBusy=false;}
+  }
   const CALL_TIMELINE_KEY='genesys-v2-call-event-timeline';
   function persistCallTimeline(event) {
     try{const saved=GM_getValue(CALL_TIMELINE_KEY,{version:GM_info.script.version,events:[]});const events=saved.version===GM_info.script.version?(saved.events || []):[];events.push({receivedAt:Date.now(),hidden:document.hidden,...event});GM_setValue(CALL_TIMELINE_KEY,{version:GM_info.script.version,events:events.filter(e=>Date.now()-e.receivedAt<86400000).slice(-80)});}catch(_){}
@@ -6284,15 +6325,16 @@
       const relevant = path => scriptPath(path) || path==='/api/v2/users/me' || /^\/api\/v2\/analytics\/conversations\/(details\/query|[a-f0-9-]{36}\/details)$/.test(path) || /^\/api\/v2\/conversations(?:\/[a-f0-9-]{36}|\/calls)?$/.test(path);
       const diagnosticPath=path=>relevant(path) || /^\/api\/v2\/conversations\/[^/]+\/(participants|communications|calls)(\/|$)/.test(path) || (measurementState && lastNativeCallAction?.action==='view' && Date.now()-lastNativeCallAction.at<10000);
       win.document?.addEventListener('click',recordNativeCallControl,true);
-      const consume=(u,status,data)=>{if(!stopped && relevant(u.pathname)){if(scriptPath(u.pathname))rememberSnowScript(u.pathname,status,data);else rememberCallApi(u.pathname,status,data);}};
+      const presencePath=path=>/^\/api\/v2\/users\/[a-f0-9-]{36}\/presences\/PURECLOUD$/i.test(path);
+      const consume=(u,status,data)=>{if(stopped)return;if(presencePath(u.pathname))rememberManualPresence(u.pathname,status,data);else if(relevant(u.pathname)){if(scriptPath(u.pathname))rememberSnowScript(u.pathname,status,data);else rememberCallApi(u.pathname,status,data);}};
       const wrappedFetch=function(input,options) {
         const u=observed(typeof input==='string'?input:input?.url);
         if(u) {try{authorization=new win.Headers(options?.headers || input?.headers).get('authorization') || authorization;}catch(_){}}
         if(u)recordCallRequestIntent(u.pathname,String(options?.method || input?.method || 'GET'),options?.body,'fetch');
         const request=nativeFetch.apply(this,arguments);
-        if(u && diagnosticPath(u.pathname)) request.then(response=>{
+        if(u && (diagnosticPath(u.pathname) || presencePath(u.pathname))) request.then(response=>{
           recordCallNetworkMetadata(u.pathname,response.status,String(options?.method || input?.method || 'GET'),'fetch');
-          if(relevant(u.pathname) && response.ok && !(Number(response.headers.get('content-length'))>2000000)) response.clone().json().then(data=>consume(u,response.status,data)).catch(()=>{});
+          if((relevant(u.pathname) || presencePath(u.pathname)) && response.ok && !(Number(response.headers.get('content-length'))>2000000)) response.clone().json().then(data=>consume(u,response.status,data)).catch(()=>{});
         }).catch(()=>{});
         return request;
       };
@@ -6302,9 +6344,9 @@
       const wrappedSend=function() {
         const u=requests.get(this)?.u;
         if(u)recordCallRequestIntent(u.pathname,requests.get(this)?.method || 'GET',arguments[0],'xhr');
-        if(u && diagnosticPath(u.pathname)) this.addEventListener('load',()=>{
+        if(u && (diagnosticPath(u.pathname) || presencePath(u.pathname))) this.addEventListener('load',()=>{
           recordCallNetworkMetadata(u.pathname,this.status,requests.get(this)?.method || 'GET','xhr');
-          try{if(relevant(u.pathname) && this.status>=200 && this.status<300 && (this.responseType==='json' || !this.responseType || this.responseType==='text')) {
+          try{if((relevant(u.pathname) || presencePath(u.pathname)) && this.status>=200 && this.status<300 && (this.responseType==='json' || !this.responseType || this.responseType==='text')) {
             if(this.responseType!=='json' && this.responseText.length>2000000)return;
             consume(u,this.status,this.responseType==='json'?this.response:JSON.parse(this.responseText));
           }}catch(_){}
@@ -10241,6 +10283,7 @@ function fitDashboardMetricSpacing(doc) {
 
   resetDiagnosticsForVersion();
   startLightweightPerformance();
+  if(window===window.top){document.addEventListener('click',presenceUserIntent,true);document.addEventListener('change',presenceUserIntent,true);}
   // OFF runs only the independent settings launcher plus bounded diagnostics. No loader, logo rewrite,
   // sorting, iframe work, styling, native recovery, or layout hooks are started.
   if (themeMode(document) === 'light') {
@@ -10329,6 +10372,7 @@ function fitDashboardMetricSpacing(doc) {
     if (window !== window.top || callCardDragging) return;
     performanceMeasure('frame-discovery',()=>discoverCallNetworkBridges());
     void ensureCallPush();
+    void restoreReloadPresence();
     void recoverCallDetection();
     void refreshTodayCallCache();
     void refreshLiveCallApi();
@@ -10354,6 +10398,7 @@ function fitDashboardMetricSpacing(doc) {
     sortReachableEmbeddedDocuments(document);
   }, 30000);
   window.__genesysBoardSorterStop = () => {
+    document.removeEventListener('click',presenceUserIntent,true);document.removeEventListener('change',presenceUserIntent,true);
     document.removeEventListener('visibilitychange',resumeVisibleBoard);
     if(boardVisibilityFrame)window.cancelAnimationFrame(boardVisibilityFrame);
     for(const observer of callScopeObservers.values())observer.disconnect();callScopeObservers.clear();
