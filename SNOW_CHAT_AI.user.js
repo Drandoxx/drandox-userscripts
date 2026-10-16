@@ -23730,7 +23730,12 @@ function installCISearch() {
       const lookup=async(chars,offset)=>{
         check();requests++;
         const request={...operation,variables:{...vars,chars,paginationLimit:100,paginationOffset:offset}};
-        const response=await Reflect.apply(nativeFetch,owner,[input,{...init,body:JSON.stringify(request),signal:controller.signal}]);
+        // A native typeahead cancellation ID is shared by all its searches.
+        // Reusing it for parallel word queries makes ServiceNow cancel one
+        // sibling with a truncated gzip response. Our AbortController owns
+        // cancellation for this expanded lookup instead.
+        const headers=new page.Headers(init.headers||input?.headers||{});headers.delete('x-request-cancelable');
+        const response=await Reflect.apply(nativeFetch,owner,[input,{...init,headers,body:JSON.stringify(request),signal:controller.signal}]);
         if(!response.ok)throw new Error('CI lookup HTTP '+response.status);
         const result=await response.json();check();
         const retrieved=result?.data?.GlideLayout_Query?.referenceDataRetriever;
