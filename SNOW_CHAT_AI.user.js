@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.691
+// @version      2.36.692
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.692","fixes":true,"changes":[{"key":"user-similar-events","meaningful":true,"text":"Details opens the same caller-filtered event list as New Event, using the current chat user's ID."}]},
 {"version":"2.36.691","fixes":true,"changes":[{"key":"ci-search","meaningful":true,"text":"CI typeahead uses contains searches, flexible word and punctuation matching, and locally ranked results with exact partial-query CI names first."}]},
 {"version":"2.36.690","fixes":true,"changes":[{"key":"auto-greet-transfer","meaningful":true,"text":"Suppress greetings for native accepted agent transfers and capture inbox shadow content correctly."}]},
 {"version":"2.36.689","fixes":true,"changes":[{"key":"auto-greet-transfer","meaningful":false,"text":"Capture bounded incoming-offer text and suppress greetings for explicitly identified agent transfers."}]},
@@ -5608,6 +5609,26 @@ const snAIChatDisplayNames=(()=>{
     }
   }
   const ilsStoreNotes = new Map();
+  const detailsSimilarEventHosts=new WeakSet();
+  function installDetailsSimilarEvents(reference){
+    if(reference?.localName!=='now-record-typeahead')return;
+    const url=detailsSimilarEventsURL(reference.dAProps,location.origin);
+    if(url)reference.dataset.snAiSimilarEventsUrl=url;
+    if(detailsSimilarEventHosts.has(reference))return;
+    detailsSimilarEventHosts.add(reference);
+    reference.addEventListener('click',event=>{
+      const button=event.composedPath().find(node=>node?.localName==='button');
+      if(!/^Show similar events for (?:this )?User(?: interaction)?$/i.test(button?.getAttribute('aria-label')||''))return;
+      // Read current props at click time: the same component may be reused
+      // for a different chat/user after initial hydration. Never use a stale ID.
+      const target=detailsSimilarEventsURL(reference.dAProps,location.origin);
+      if(!target)return;
+      event.preventDefault();event.stopImmediatePropagation();
+      reference.dataset.snAiSimilarEventsUrl=target;
+      const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
+      page.open(target,'_blank','noopener');
+    },true);
+  }
   const ilsNoteHosts = new WeakSet();
   const ilsHydratingHosts = new WeakMap();
   function installILSStoreNote(reference) {
@@ -5735,6 +5756,7 @@ const snAIChatDisplayNames=(()=>{
     installSubTabRecordButton(node);
     installILSLinkCopy(node.nodeType === 3 ? node.parentElement?.closest('.now-form-field-message') : (node.closest?.('.now-form-field-message') || node));
     installILSStoreNote(node.host || node);
+    installDetailsSimilarEvents(node.host || node);
     if(node.nodeType===3)keepShortChatCaption(node.parentElement);
     else if(node.matches?.('.now-dropdown-list-label,.now-button-label,.now-line-height-crop'))keepShortChatCaption(node);
     if(node.localName==='sn-agent-inbox')document.dispatchEvent(new CustomEvent('sn-ai-agent-inbox-ready',{detail:node}));
@@ -23769,6 +23791,12 @@ function installCISearch() {
   page.fetch.snAiCISearch=true;
 }
 // SN_AI_CI_SEARCH_END
+function detailsSimilarEventsURL(props,origin){
+  if((props?.tableName||props?.referringTable)!=='interaction'||(props?.fieldName||props?.name)!=='opened_for'||! /^[a-f0-9]{32}$/i.test(String(props.value||'')))return '';
+  // Verified New Event action: new_call_list.do?&sysparm_query=caller=<ID>.
+  // Details supplies the same sys_user ID through opened_for, not caller.
+  return origin+'/new_call_list.do?&sysparm_query=caller='+props.value;
+}
 function chatsTodayRecordMatches(record,query) {
   const normalized=chatsTodaySearchText(query);if(!normalized)return true;
   const fields=['number','opened_for','assigned_to','event_numbers','ticket_numbers'];
