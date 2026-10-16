@@ -5857,6 +5857,25 @@
   const callNetworkBridges = new Set();
   const liveCallSignals=new Map();
   const incomingViewPreparations=new Map();
+  const snowActionsByConversation=new Map(),snowScriptEvidence=new Map();
+  function rememberSnowScript(path,status,data) {
+    if(!measurementState)return;
+    const payload=compactCallPayload(data,0,{left:1200}),signature=JSON.stringify(payload);
+    if(snowScriptEvidence.get(path)===signature)return;
+    snowScriptEvidence.set(path,signature);while(snowScriptEvidence.size>8)snowScriptEvidence.delete(snowScriptEvidence.keys().next().value);
+    callNetworkChanges.push({at:new Date().toISOString(),kind:'snow-script-definition',path,status,payload});
+    while(callNetworkChanges.length>120)callNetworkChanges.shift();
+  }
+  function invokeCallSnow(doc,call,button) {
+    const url=validCallSnowUrl(call?.snowUrl);
+    if(url){doc.defaultView.open(url,'_blank','noopener');performanceEvent('snow-open',{source:'verified-link',conversationId:call.conversationId});return;}
+    const native=snowActionsByConversation.get(call?.conversationId) || callSnowActions.get(call?.connectedAt || call?.startedAt || call?.ringingAt);
+    if(native?.isConnected && !native.disabled && native.getAttribute('aria-disabled')!=='true') {
+      performanceEvent('snow-open',{source:'native-action',conversationId:call?.conversationId});native.click();return;
+    }
+    if(button){button.title='SNOW action is temporarily unavailable. Retry when call details finish loading.';button.textContent='Retry Open in SNOW';}
+    performanceEvent('snow-unavailable',{conversationId:call?.conversationId,reason:'native-control-detached-no-link'});requestCallPopupRefresh();
+  }
   function prepareIncomingNativeDetails(id) {
     if(!callPopupsEnabled() || !id)return;
     let entry=incomingViewPreparations.get(id);
@@ -6220,10 +6239,11 @@
       const NativeWebSocket=win.WebSocket;
       const originalOpen=proto.open, originalHeader=proto.setRequestHeader, originalSend=proto.send;
       const observed = url => {try{const u=new URL(url,win.location.href);return u.origin===CALL_API_ORIGIN?u:null;}catch(_){return null;}};
-      const relevant = path => path==='/api/v2/users/me' || /^\/api\/v2\/analytics\/conversations\/(details\/query|[a-f0-9-]{36}\/details)$/.test(path) || /^\/api\/v2\/conversations(?:\/[a-f0-9-]{36}|\/calls)?$/.test(path);
+      const scriptPath=path=>/^\/api\/v2\/scripts\/published\/[a-f0-9-]{36}(?:\/pages\/[a-f0-9-]{36})?$/.test(path);
+      const relevant = path => scriptPath(path) || path==='/api/v2/users/me' || /^\/api\/v2\/analytics\/conversations\/(details\/query|[a-f0-9-]{36}\/details)$/.test(path) || /^\/api\/v2\/conversations(?:\/[a-f0-9-]{36}|\/calls)?$/.test(path);
       const diagnosticPath=path=>relevant(path) || /^\/api\/v2\/conversations\/[^/]+\/(participants|communications|calls)(\/|$)/.test(path) || (measurementState && lastNativeCallAction?.action==='view' && Date.now()-lastNativeCallAction.at<10000);
       win.document?.addEventListener('click',recordNativeCallControl,true);
-      const consume=(u,status,data)=>{if(!stopped && relevant(u.pathname))rememberCallApi(u.pathname,status,data);};
+      const consume=(u,status,data)=>{if(!stopped && relevant(u.pathname)){if(scriptPath(u.pathname))rememberSnowScript(u.pathname,status,data);else rememberCallApi(u.pathname,status,data);}};
       const wrappedFetch=function(input,options) {
         const u=observed(typeof input==='string'?input:input?.url);
         if(u) {try{authorization=new win.Headers(options?.headers || input?.headers).get('authorization') || authorization;}catch(_){}}
@@ -6739,13 +6759,12 @@
     try{const url=new URL(value);return url.protocol==='https:' && url.hostname==='kingfisher.service-now.com' && !url.username && !url.password ? url.href : null;}catch(_){return null;}
   }
   function appendEarlierSnowButton(doc, body, call) {
-    if (!validCallSnowUrl(call.snowUrl)) return;
+    if (!validCallSnowUrl(call.snowUrl) && !call.hadSnowAction) return;
     const button = doc.createElement('button'); button.type = 'button';
     button.textContent = 'Open in SNOW';
     button.style.cssText = 'margin-top:8px;padding:8px 12px;background:#22343b;color:#a5f3fc;border:1px solid #22d3ee;border-radius:5px;cursor:pointer';
     button.addEventListener('click', () => {
-      const url=validCallSnowUrl(call.snowUrl);
-      if(url)doc.defaultView.open(url,'_blank','noopener');
+      invokeCallSnow(doc,call,button);
     });
     body.append(button);
   }
@@ -7164,6 +7183,8 @@
     popup.__gbsSnowAction = snowAction || popup.__gbsSnowAction;
     let hasSnow=false;
     if (snowAction && activeCallSummary) {
+      if(activeCallSummary.conversationId){snowActionsByConversation.set(activeCallSummary.conversationId,snowAction);while(snowActionsByConversation.size>20)snowActionsByConversation.delete(snowActionsByConversation.keys().next().value);}
+      if(!activeCallSummary.hadSnowAction)performanceEvent('snow-action-discovered',{conversationId:activeCallSummary.conversationId,hasHref:!!snowAction.getAttribute('href'),hasDataUrl:!!snowAction.getAttribute('data-url'),tag:snowAction.tagName});
       activeCallSummary.hadSnowAction = true;
       callSnowActions.set(activeCallSummary.connectedAt || activeCallSummary.ringingAt, snowAction);
       const raw = snowAction.getAttribute('href') || snowAction.getAttribute('data-url');
@@ -7173,7 +7194,7 @@
       } catch (_) { /* Button-only actions may not expose a persistent URL. */ }
       saveActiveCallWindow();
     }
-    hasSnow=Boolean(validCallSnowUrl(activeCallSummary?.snowUrl));
+    hasSnow=Boolean(validCallSnowUrl(activeCallSummary?.snowUrl) || activeCallSummary?.hadSnowAction);
     const resolveCallControl = (root, control) => {
       const candidates = [...(root?.querySelectorAll(control.selector) || [])];
       if (control.mute) {
@@ -7256,8 +7277,7 @@
       button.textContent = 'Open in SNOW';
       button.style.cssText = 'padding:8px 12px;background:#22343b;color:#a5f3fc;border:1px solid #22d3ee;border-radius:5px;cursor:pointer';
       button.addEventListener('click', () => {
-        const url=validCallSnowUrl(activeCallSummary?.snowUrl);
-        if(url)doc.defaultView.open(url,'_blank','noopener');
+        invokeCallSnow(doc,activeCallSummary,button);
       });
       body.appendChild(button);
     }
@@ -10073,7 +10093,7 @@ function fitDashboardMetricSpacing(doc) {
   }
   function performanceEvent(type,fields={}) {
     if(!lightweightPerformance)return;
-    if(/call-push|native-call-state|call-control-action|call-source|call-api-recovery/.test(type)) {
+    if(/call-push|native-call-state|call-control-action|call-source|call-api-recovery|snow-|incoming-view/.test(type)) {
       lightweightPerformance.callEvents ||= [];
       lightweightPerformance.callEvents.push({at:Date.now(),type,...fields});
       if(lightweightPerformance.callEvents.length>40)lightweightPerformance.callEvents.shift();
