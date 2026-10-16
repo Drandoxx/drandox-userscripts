@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.582.0
+// @version      1.583.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -5876,7 +5876,10 @@
       const definition={id:data.presenceDefinition.id,systemPresence:data.presenceDefinition.systemPresence};
       if(definition.systemPresence==='Offline'){sessionStorage.removeItem(RELOAD_PRESENCE_KEY);return;}
       const onQueue=String(definition.systemPresence).replace(/[\s_]/g,'').toLowerCase()==='onqueue';
-      sessionStorage.setItem(RELOAD_PRESENCE_KEY,JSON.stringify({userId:match[1],definition,at:Date.now(),offQueue:onQueue?(old?.userId===match[1]?old.offQueue:null):definition}));
+      // Verified Genesys system Available definition. Manual On Queue always
+      // restores Available -> On Queue, never an earlier Busy/Chat substatus.
+      const available={id:'6a3af858-942f-489d-9700-5f9bcdcdae9b',systemPresence:'Available'};
+      sessionStorage.setItem(RELOAD_PRESENCE_KEY,JSON.stringify({userId:match[1],definition,at:Date.now(),offQueue:onQueue?available:definition}));
       performanceEvent('presence-manual-saved',{systemPresence:definition.systemPresence});
     }catch(_){}
   }
