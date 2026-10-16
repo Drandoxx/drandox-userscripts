@@ -5856,6 +5856,16 @@
   const callNetworkFields = new Map();
   const callNetworkBridges = new Set();
   const liveCallSignals=new Map();
+  const CALL_TIMELINE_KEY='genesys-v2-call-event-timeline';
+  function persistCallTimeline(event) {
+    try{const saved=GM_getValue(CALL_TIMELINE_KEY,{version:GM_info.script.version,events:[]});const events=saved.version===GM_info.script.version?(saved.events || []):[];events.push({receivedAt:Date.now(),hidden:document.hidden,...event});GM_setValue(CALL_TIMELINE_KEY,{version:GM_info.script.version,events:events.filter(e=>Date.now()-e.receivedAt<86400000).slice(-80)});}catch(_){}
+  }
+  function apiAlertTiming(own,previous) {
+    const leg=own.calls?.find(c=>['alerting','contacting'].includes(c.state)) || own.calls?.[0];
+    const timeout=Number(own.alertingTimeoutMs || own.queueMediaSettings?.alertingTimeoutSeconds*1000 || leg?.queueMediaSettings?.alertingTimeoutSeconds*1000 || 30000);
+    const start=Date.parse(own.startTime || leg?.startTime);
+    return {alertStartedAt:Number.isFinite(start)?start:(previous?.alertStartedAt || Date.now()),alertTimeoutMs:Number.isFinite(timeout) && timeout>0?timeout:30000,alertTimestampSource:Number.isFinite(start)?'genesys':'observed'};
+  }
   const incomingViewPreparations=new Map();
   const snowActionsByConversation=new Map(),snowScriptEvidence=new Map();
   function rememberSnowScript(path,status,data) {
@@ -6001,9 +6011,9 @@
   }
   function requestCallPopupRefresh() {
     callPopupDirty=true;
-    if(!callPopupsEnabled() || callPopupScheduled || typeof window.requestAnimationFrame!=='function')return;
+    if(!callPopupsEnabled() || callPopupScheduled)return;
     callPopupScheduled=true;
-    window.requestAnimationFrame(()=>{callPopupScheduled=false;if(!callCardDragging)syncCallInformationPopup(document);});
+    Promise.resolve().then(()=>{callPopupScheduled=false;if(!callCardDragging)syncCallInformationPopup(document);});
   }
   function watchCallScope(scope) {
     if(!scope || callScopeObservers.has(scope))return;
@@ -6075,6 +6085,7 @@
       participants:(c.participants || []).map(p=>({
         participantId:p.participantId || p.id,purpose:p.purpose,userId:p.userId || p.user?.id,name:p.participantName || p.name,
         state:p.state,address:p.address,queueName:p.queueName || p.queue?.name,connectedTime:p.connectedTime,startTime:p.startTime,endTime:p.endTime,
+        alertingTimeoutMs:p.alertingTimeoutMs,queueMediaSettings:p.queueMediaSettings?{alertingTimeoutSeconds:p.queueMediaSettings.alertingTimeoutSeconds}:null,
         wrapupRequired:p.wrapupRequired,wrapupTimeoutMs:p.wrapupTimeoutMs,
         muted:p.muted,held:p.held,queueId:p.queueId || p.queue?.id,
         wrapup:p.wrapup ? {startTime:p.wrapup.startTime,endTime:p.wrapup.endTime,code:p.wrapup.code,durationSeconds:p.wrapup.durationSeconds} : null,
@@ -6132,10 +6143,11 @@
       const previous=liveCallSignals.get(c.conversationId);
       if(previous && ['alerting','contacting','connected'].includes(previous.state) && ['disconnected','terminated'].includes(state)) {lastEndedApiCallId=c.conversationId;pendingEndedCallRefresh=true;}
       const {phone,location}=myCallPhoneAndLocation(c);
-      const next={at:Date.now(),id:c.conversationId,state,phone,location,
+      const next={at:Date.now(),id:c.conversationId,state,phone,location,...apiAlertTiming(own,previous),
         queue:own.queueName || c.participants.find(p=>p.purpose==='acd' && (!own.queueId || p.queueId===own.queueId))?.name,
         participantId:own.participantId,muted:own.muted,held:own.held,connectedAt:Date.parse(own.connectedTime),endedAt:Date.parse(own.endTime),wrapupRequired:own.wrapupRequired,wrapupTimeoutMs:own.wrapupTimeoutMs,wrapup:own.wrapup};
       liveCallSignals.set(c.conversationId,next);
+      if(!previous || previous.state!==state)persistCallTimeline({type:'call-state',conversationId:c.conversationId,state,transport,alertStartedAt:next.alertStartedAt,alertTimeoutMs:next.alertTimeoutMs,timestampSource:next.alertTimestampSource,receiptDelayMs:['alerting','contacting'].includes(state)?Math.max(0,Date.now()-next.alertStartedAt):null});
       if(state==='alerting' || state==='contacting')prepareIncomingNativeDetails(c.conversationId);
       if(!previous || JSON.stringify({...previous,at:0})!==JSON.stringify({...next,at:0})) {
         if(typeof performanceEvent==='function')performanceEvent('native-call-state',{conversationId:c.conversationId,state,phonePresent:!!phone,locationPresent:!!location});
@@ -7142,6 +7154,7 @@
     }
     if (!activeCallSummary) activeCallSummary = { ringingAt: Date.now(), connectedAt: null, details: [] };
     if(apiSignal && !activeCallSummary.conversationId)activeCallSummary.conversationId=apiSignal.id;
+    if(apiSignal && incoming){activeCallSummary.ringingAt=apiSignal.alertStartedAt;activeCallSummary.alertTimeoutMs=apiSignal.alertTimeoutMs;}
     if(apiSignal && Number.isFinite(apiSignal.connectedAt)){activeCallSummary.connectedAt=apiSignal.connectedAt;activeCallSummary.apiUserId=currentAgentApiId;}
     if (/^disconnected$/i.test(state)) {
       if (activeCallSummary.connectedAt) {
@@ -7304,8 +7317,10 @@
       controls.appendChild(answer);
       const snow = [...body.querySelectorAll('button')].find(button => button.textContent === 'Open in SNOW');
       if (snow) { snow.style.marginLeft = 'auto'; controls.appendChild(snow); }
-      const ringingStartedAt = testCallSession?.startedMs || activeCallSummary?.ringingAt || Date.now();
-      const timer = doc.createElement('div'); timer.textContent = `${Math.max(0, 29 - Math.floor((Date.now() - ringingStartedAt) / 1000))}s to answer`;
+      const ringingStartedAt = activeCallSummary?.ringingAt || testCallSession?.startedMs || Date.now();
+      const alertSeconds=Math.ceil((activeCallSummary?.alertTimeoutMs || 30000)/1000);
+      const timer = doc.createElement('div'); timer.textContent = `${Math.max(0, alertSeconds - Math.floor((Date.now() - ringingStartedAt) / 1000))}s to answer`;
+      timer.dataset.gbsAlertSeconds=String(alertSeconds);
       timer.dataset.gbsRingingTimer=String(ringingStartedAt);
       timer.style.cssText = 'width:100%;color:#a0a8b0;font-size:12px;user-select:none'; controls.prepend(timer);
     }
@@ -10074,6 +10089,7 @@ function fitDashboardMetricSpacing(doc) {
       // Reset diagnostic recordings only. Never delete real history, cards,
       // preferences or the API cache used by My calls Today.
       GM_deleteValue('genesys-v2-call-measurements');
+      GM_deleteValue('genesys-v2-call-event-timeline');
       GM_setValue(key,version);
     }
     try {
@@ -10120,6 +10136,8 @@ function fitDashboardMetricSpacing(doc) {
     const saved=GM_getValue('genesys-v2-call-measurements',{calls:[],active:null});
     const report={schemaVersion:1,version:GM_info.script.version,exportedAt:new Date().toISOString(),
       callSources:{mode:callSourceMode,failedRecoveryAttempts:callRecoveryFailures,pushHealthy:callPushHealthy(),counts:{...callSourceCounts}},
+      callEventTimeline:GM_getValue(CALL_TIMELINE_KEY,{events:[]}),
+      snowCapture:{scriptDefinitions:snowScriptEvidence.size,status:snowScriptEvidence.size?'captured':'not-observed-possibly-native-cache',nativeActions:snowActionsByConversation.size},
       performance:performanceReport(),
       callMeasurements:{...saved,active:measurementState || saved.active || null,pendingNetworkChanges:callNetworkChanges.slice()},
       todayCallCache:readTodayCallCache(),incomingCallHistory:GM_getValue(CALL_HISTORY_KEY,[]),
