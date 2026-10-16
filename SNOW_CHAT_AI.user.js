@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.689
+// @version      2.36.690
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.690","fixes":true,"changes":[{"key":"auto-greet-transfer","meaningful":true,"text":"Suppress greetings for native accepted agent transfers and capture inbox shadow content correctly."}]},
 {"version":"2.36.689","fixes":true,"changes":[{"key":"auto-greet-transfer","meaningful":false,"text":"Capture bounded incoming-offer text and suppress greetings for explicitly identified agent transfers."}]},
 {"version":"2.36.688","fixes":true,"changes":[{"key":"description-filling","meaningful":false,"text":"Bound text commit polling and retries, avoid redundant model callbacks, and retain compact commit diagnostics."}]},
 {"version":"2.36.687","fixes":true,"changes":[{"key":"display-punctuation","meaningful":false,"text":"Replace long dash punctuation in displayed messages with spaced short hyphens."}]},
@@ -727,9 +728,11 @@ const snAIChatDisplayNames=(()=>{
   const autoGreetOffers=new Map();
   const pendingGreetingIds=new Set();
   const transferredGreetingIds=new Set();
+  try{for(const id of JSON.parse(sessionStorage.getItem('sn-ai-transferred-greetings-v1')||'[]').slice(-500))if(typeof id==='string')transferredGreetingIds.add(id);}catch{/* Optional tab-local recovery. */}
   document.addEventListener('sn-ai-transferred-offer',event=>{
     for(const id of [event.detail?.id,event.detail?.ims].filter(Boolean)){transferredGreetingIds.add(id);autoGreetOffers.delete(id);}
     while(transferredGreetingIds.size>500)transferredGreetingIds.delete(transferredGreetingIds.values().next().value);
+    try{sessionStorage.setItem('sn-ai-transferred-greetings-v1',JSON.stringify([...transferredGreetingIds]));}catch{/* Live guard remains active when storage is unavailable. */}
   });
   // Retain accepted offers until an actual send attempt or manual reply.
   // Only retry discoverable composers; never focus tabs or overwrite drafts.
@@ -8204,6 +8207,15 @@ function startSNAI(tabIdentity) {
     const emit=(info,payload)=>{
       try{
         const safe=body(payload),serialized=JSON.stringify(safe);let data;
+        // Native agent-transfer acceptance is authoritative, unlike card wording
+        // or a previous outgoing welcome. Inspect before diagnostic deduplication.
+        for(const part of Array.isArray(safe)?safe:[safe]){
+          const transfer=part?.data?.GlideAWA_Mutation?.GlideAWA_transfer?.accept;
+          if(transfer?.state==='accepted'&&transfer.document_table==='interaction'&&/^[a-f0-9]{32}$/i.test(transfer.document_id||'')){
+            document.dispatchEvent(new CustomEvent('sn-ai-transferred-offer',{detail:{id:transfer.document_id}}));
+            document.dispatchEvent(new CustomEvent('sn-ai-greet-diagnostic',{detail:{stage:'transfer-accepted-api',reason:'native-agent-transfer',source:'GlideAWA_transfer.accept',id:transfer.document_id}}));
+          }
+        }
         if(serialized){
           let hash=2166136261;for(let i=0;i<serialized.length;i++)hash=Math.imul(hash^serialized.charCodeAt(i),16777619);
           const fingerprint=info.url+':'+(hash>>>0)+':'+serialized.length;
@@ -22655,10 +22667,10 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           let offerCard=button;
           while(offerCard instanceof Element&&!offerCard.matches('sn-inbox-card'))offerCard=deepParentElement(offerCard);
           const parts=[];
-          const collect=root=>{if(!root||parts.length>=80)return;for(const node of root.childNodes){
+          const collect=root=>{if(!root||parts.length>=80)return;if(root.shadowRoot)collect(root.shadowRoot);for(const node of root.childNodes){
             if(parts.length>=80)break;
             if(node.nodeType===3){const text=String(node.textContent||'').trim();if(text)parts.push(text.slice(0,300));}
-            else if(node.nodeType===1&&!/^(STYLE|SCRIPT)$/.test(node.tagName)){collect(node);if(node.shadowRoot)collect(node.shadowRoot);}
+            else if(node.nodeType===1&&!/^(STYLE|SCRIPT)$/.test(node.tagName)){collect(node);}
           }};
           collect(offerCard);
           const offerText=parts.join(' ').slice(0,2400),offerIMS=offerText.match(/\bIMS\d+\b/)?.[0]||'';
