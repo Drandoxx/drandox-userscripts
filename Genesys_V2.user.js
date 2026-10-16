@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.577.0
+// @version      1.578.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -6735,16 +6735,17 @@
   }
   let callCardDragging = false;
   const callSnowActions = new Map();
+  function validCallSnowUrl(value) {
+    try{const url=new URL(value);return url.protocol==='https:' && url.hostname==='kingfisher.service-now.com' && !url.username && !url.password ? url.href : null;}catch(_){return null;}
+  }
   function appendEarlierSnowButton(doc, body, call) {
-    if (!call.snowUrl && !callSnowActions.get(call.startedAt)?.isConnected) return;
+    if (!validCallSnowUrl(call.snowUrl)) return;
     const button = doc.createElement('button'); button.type = 'button';
     button.textContent = 'Open in SNOW';
     button.style.cssText = 'margin-top:8px;padding:8px 12px;background:#22343b;color:#a5f3fc;border:1px solid #22d3ee;border-radius:5px;cursor:pointer';
     button.addEventListener('click', () => {
-      const native = callSnowActions.get(call.startedAt);
-      if (call.snowUrl) doc.defaultView.open(call.snowUrl, '_blank', 'noopener');
-      else if (native?.isConnected) native.click();
-      else button.remove();
+      const url=validCallSnowUrl(call.snowUrl);
+      if(url)doc.defaultView.open(url,'_blank','noopener');
     });
     body.append(button);
   }
@@ -7161,17 +7162,18 @@
     const snowAction = scopes.flatMap(scope => [...scope.querySelectorAll('a,button,input[type="button"]')])
       .find(element => /open in snow/i.test(element.textContent || element.value || ''));
     popup.__gbsSnowAction = snowAction || popup.__gbsSnowAction;
-    const hasSnow=Boolean(snowAction || activeCallSummary?.snowUrl || activeCallSummary?.hadSnowAction);
+    let hasSnow=false;
     if (snowAction && activeCallSummary) {
       activeCallSummary.hadSnowAction = true;
       callSnowActions.set(activeCallSummary.connectedAt || activeCallSummary.ringingAt, snowAction);
       const raw = snowAction.getAttribute('href') || snowAction.getAttribute('data-url');
       try {
         const url = new URL(raw, snowAction.ownerDocument.location.href);
-        if (raw && url.protocol === 'https:' && url.hostname === 'kingfisher.service-now.com') activeCallSummary.snowUrl = url.href;
+        if (raw && validCallSnowUrl(url.href)) activeCallSummary.snowUrl = url.href;
       } catch (_) { /* Button-only actions may not expose a persistent URL. */ }
       saveActiveCallWindow();
     }
+    hasSnow=Boolean(validCallSnowUrl(activeCallSummary?.snowUrl));
     const resolveCallControl = (root, control) => {
       const candidates = [...(root?.querySelectorAll(control.selector) || [])];
       if (control.mute) {
@@ -7254,10 +7256,8 @@
       button.textContent = 'Open in SNOW';
       button.style.cssText = 'padding:8px 12px;background:#22343b;color:#a5f3fc;border:1px solid #22d3ee;border-radius:5px;cursor:pointer';
       button.addEventListener('click', () => {
-        const action = popup.__gbsSnowAction;
-        if(activeCallSummary?.snowUrl)doc.defaultView.open(activeCallSummary.snowUrl,'_blank','noopener');
-        else if (action?.isConnected) action.click();
-        else {button.title='SNOW action is temporarily unavailable; waiting for native call details';requestCallPopupRefresh();}
+        const url=validCallSnowUrl(activeCallSummary?.snowUrl);
+        if(url)doc.defaultView.open(url,'_blank','noopener');
       });
       body.appendChild(button);
     }
