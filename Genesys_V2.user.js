@@ -5867,6 +5867,23 @@
     return {alertStartedAt:Number.isFinite(start)?start:(previous?.alertStartedAt || Date.now()),alertTimeoutMs:Number.isFinite(timeout) && timeout>0?timeout:30000,alertTimestampSource:Number.isFinite(start)?'genesys':'observed'};
   }
   const incomingViewPreparations=new Map();
+  const snowApiLookups=new Map();
+  function conversationSnowData(c) {
+    const customer=(c.participants || []).filter(p=>['customer','external'].includes(p.purpose));
+    const urls=[...new Set(customer.map(p=>validCallSnowUrl(p.attributes?.['Screen Pop URL'] || p.screenPopUrl)).filter(Boolean))];
+    return {url:urls.length===1?urls[0]:null,status:customer.map(p=>p.attributes?.SNOW_API_Call_Status || p.snowApiStatus).find(Boolean) || null,ambiguous:urls.length>1};
+  }
+  async function fetchIncomingSnowLink(id) {
+    if(!callPopupsEnabled() || !id)return;
+    const old=snowApiLookups.get(id) || {attempts:0,at:0};
+    if(old.busy || old.attempts>=2 || Date.now()-old.at<2000)return;
+    const bridge=readyCallApiBridge();if(!bridge)return;
+    old.busy=true;old.attempts++;old.at=Date.now();snowApiLookups.set(id,old);
+    while(snowApiLookups.size>20)snowApiLookups.delete(snowApiLookups.keys().next().value);
+    try{const path='/api/v2/conversations/'+id;const data=await bridge.request(path);rememberCallApi(path,200,data,'snow-api-lookup');
+      const snow=conversationSnowData(data);performanceEvent('snow-api-lookup',{conversationId:id,attempt:old.attempts,linkPresent:!!snow.url,status:snow.status,ambiguous:snow.ambiguous});
+    }catch(error){performanceEvent('snow-api-lookup-failed',{conversationId:id,attempt:old.attempts,reason:String(error.message).slice(0,100)});}finally{old.busy=false;}
+  }
   const snowActionsByConversation=new Map(),snowScriptEvidence=new Map();
   function rememberSnowScript(path,status,data) {
     if(!measurementState)return;
@@ -5889,6 +5906,9 @@
   }
   function prepareIncomingNativeDetails(id) {
     if(!callPopupsEnabled() || !id)return;
+    const signal=liveCallSignals.get(id);
+    if(signal?.snowUrl)return;
+    void fetchIncomingSnowLink(id);
     let entry=incomingViewPreparations.get(id);
     if(!entry){entry={startedAt:Date.now(),attempts:0};incomingViewPreparations.set(id,entry);while(incomingViewPreparations.size>10)incomingViewPreparations.delete(incomingViewPreparations.keys().next().value);}
     if(entry.clicked || entry.attempts>=10 || Date.now()-entry.startedAt>30000)return;
@@ -5977,6 +5997,8 @@
       beginCallMeasurement(id);
     }
     const payload=compactCallPayload(body),key='payload:'+id;
+    const snow=conversationSnowData(body);
+    payload.snowEvidence={linkPresent:!!snow.url,status:snow.status,ambiguous:snow.ambiguous,attribute:'Screen Pop URL',source:'customer-participant'};
     // One small seed per current conversation catches the event before its popup mounts.
     if(!measurementState){callPayloadPrelude.set(id,{at:Date.now(),path,status,transport,payload});while(callPayloadPrelude.size>10)callPayloadPrelude.delete(callPayloadPrelude.keys().next().value);return;}
     if(measurementState.conversationId===id && state)measurementState.lastApiState=state;
@@ -6087,6 +6109,7 @@
         participantId:p.participantId || p.id,purpose:p.purpose,userId:p.userId || p.user?.id,name:p.participantName || p.name,
         state:p.state,address:p.address,queueName:p.queueName || p.queue?.name,connectedTime:p.connectedTime,startTime:p.startTime,endTime:p.endTime,
         alertingTimeoutMs:p.alertingTimeoutMs,queueMediaSettings:p.queueMediaSettings?{alertingTimeoutSeconds:p.queueMediaSettings.alertingTimeoutSeconds}:null,
+        screenPopUrl:validCallSnowUrl(p.attributes?.['Screen Pop URL'] || p.screenPopUrl),snowApiStatus:String(p.attributes?.SNOW_API_Call_Status || p.snowApiStatus || '').slice(0,80),
         wrapupRequired:p.wrapupRequired,wrapupTimeoutMs:p.wrapupTimeoutMs,
         muted:p.muted,held:p.held,queueId:p.queueId || p.queue?.id,
         wrapup:p.wrapup ? {startTime:p.wrapup.startTime,endTime:p.wrapup.endTime,code:p.wrapup.code,durationSeconds:p.wrapup.durationSeconds} : null,
@@ -6144,10 +6167,14 @@
       const previous=liveCallSignals.get(c.conversationId);
       if(previous && ['alerting','contacting','connected'].includes(previous.state) && ['disconnected','terminated'].includes(state)) {lastEndedApiCallId=c.conversationId;pendingEndedCallRefresh=true;}
       const {phone,location}=myCallPhoneAndLocation(c);
-      const next={at:Date.now(),id:c.conversationId,state,phone,location,...apiAlertTiming(own,previous),
+      const snow=conversationSnowData(c);
+      const next={at:Date.now(),id:c.conversationId,state,phone,location,snowUrl:snow.ambiguous?null:(snow.url || previous?.snowUrl || null),...apiAlertTiming(own,previous),
         queue:own.queueName || c.participants.find(p=>p.purpose==='acd' && (!own.queueId || p.queueId===own.queueId))?.name,
         participantId:own.participantId,muted:own.muted,held:own.held,connectedAt:Date.parse(own.connectedTime),endedAt:Date.parse(own.endTime),wrapupRequired:own.wrapupRequired,wrapupTimeoutMs:own.wrapupTimeoutMs,wrapup:own.wrapup};
       liveCallSignals.set(c.conversationId,next);
+      if(next.snowUrl && next.snowUrl!==previous?.snowUrl)performanceEvent('snow-api-link-ready',{conversationId:c.conversationId,source:transport,status:snow.status});
+      if(next.snowUrl && activeCallSummary?.conversationId===c.conversationId){activeCallSummary.snowUrl=next.snowUrl;saveActiveCallWindow();}
+      if(next.snowUrl && lastCallSummary?.conversationId===c.conversationId){lastCallSummary.snowUrl=next.snowUrl;saveLastCallWindow();}
       if(!previous || previous.state!==state)persistCallTimeline({type:'call-state',conversationId:c.conversationId,state,transport,alertStartedAt:next.alertStartedAt,alertTimeoutMs:next.alertTimeoutMs,timestampSource:next.alertTimestampSource,receiptDelayMs:['alerting','contacting'].includes(state)?Math.max(0,Date.now()-next.alertStartedAt):null});
       if(state==='alerting' || state==='contacting')prepareIncomingNativeDetails(c.conversationId);
       if(!previous || JSON.stringify({...previous,at:0})!==JSON.stringify({...next,at:0})) {
@@ -7155,6 +7182,7 @@
     }
     if (!activeCallSummary) activeCallSummary = { ringingAt: Date.now(), connectedAt: null, details: [] };
     if(apiSignal && !activeCallSummary.conversationId)activeCallSummary.conversationId=apiSignal.id;
+    if(apiSignal?.snowUrl)activeCallSummary.snowUrl=apiSignal.snowUrl;
     if(apiSignal && incoming){activeCallSummary.ringingAt=apiSignal.alertStartedAt;activeCallSummary.alertTimeoutMs=apiSignal.alertTimeoutMs;}
     if(apiSignal && Number.isFinite(apiSignal.connectedAt)){activeCallSummary.connectedAt=apiSignal.connectedAt;activeCallSummary.apiUserId=currentAgentApiId;}
     if (/^disconnected$/i.test(state)) {
