@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.690
+// @version      2.36.691
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.691","fixes":true,"changes":[{"key":"ci-search","meaningful":true,"text":"CI typeahead uses contains searches, flexible word and punctuation matching, and locally ranked results with exact partial-query CI names first."}]},
 {"version":"2.36.690","fixes":true,"changes":[{"key":"auto-greet-transfer","meaningful":true,"text":"Suppress greetings for native accepted agent transfers and capture inbox shadow content correctly."}]},
 {"version":"2.36.689","fixes":true,"changes":[{"key":"auto-greet-transfer","meaningful":false,"text":"Capture bounded incoming-offer text and suppress greetings for explicitly identified agent transfers."}]},
 {"version":"2.36.688","fixes":true,"changes":[{"key":"description-filling","meaningful":false,"text":"Bound text commit polling and retries, avoid redundant model callbacks, and retain compact commit diagnostics."}]},
@@ -8184,6 +8185,7 @@ function startSNAI(tabIdentity) {
   }
   // Passive, bounded capture: never alters requests, responses or authentication.
   if (workspacePage) document.addEventListener('sn-ai-greet-diagnostic',event=>recordCompactDiagnostic('info','auto-greet',event.detail||{}));
+  if (workspacePage) document.addEventListener('sn-ai-ci-search-diagnostic',event=>recordCompactDiagnostic('info','ci-search',{stage:event.detail?.stage,count:event.detail?.count,reason:event.detail?.reason||`requests=${event.detail?.requests||0}; truncated=${!!event.detail?.truncated}`}));
   function formNetworkSafe(value,depth=0,key='') {
     if(/authorization|cookie|token|password|secret|credential|session|csrf|api.?key/i.test(key))return '[redacted]';
     if(depth>9)return '[depth limit]';
@@ -8247,6 +8249,7 @@ function startSNAI(tabIdentity) {
     proto.send=function(payload){const item=requests.get(this);if(item){item.request=body(payload);const started=performance.now();this.addEventListener('loadend',()=>{try{const text=this.responseType==='json'?JSON.stringify(this.response):!this.responseType||this.responseType==='text'?this.responseText:undefined;emit({...item,status:this.status,durationMs:Math.round(performance.now()-started)},text);}catch{emit({...item,status:this.status,error:'capture-unavailable'});}},{once:true});}return Reflect.apply(send,this,[payload]);};
   }
   try{installFormNetworkDiagnostics();}catch{/* Logging is optional; native form operation is not. */}
+  try{if(workspacePage)installCISearch();}catch{/* Preserve native lookup if enhancement cannot initialize. */}
   async function downloadDiagnostics(){
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
@@ -23645,6 +23648,122 @@ function chatsTodaySearchMatch(text,query) {
   }
   return false;
 }
+// SN_AI_CI_SEARCH_BEGIN
+function ciSearchWords(value) {
+  return String(value||'').slice(0,256).normalize('NFKD').replace(/\p{M}/gu,'').toLowerCase().match(/[\p{L}\p{N}]+/gu)||[];
+}
+function ciSearchTerms(value) {
+  const words=[...new Set(ciSearchWords(value))].slice(0,6);
+  // An exact half survives any one-character edit in the other half. Native
+  // contains searches provide candidates; local matching rejects noise.
+  const halves=words.filter(word=>word.length>=5).flatMap(word=>[word.slice(0,Math.floor(word.length/2)),word.slice(Math.floor(word.length/2))]);
+  return [...new Set([...words,...halves])].slice(0,8).map(word=>'*'+word);
+}
+function ciSearchScore(query,label) {
+  const words=ciSearchWords(query),nameWords=ciSearchWords(label),text=nameWords.join(''),used=new Set();
+  if(!words.length||!text)return {contained:0,matched:0,ratio:0};
+  for(const word of words){
+    let start=text.indexOf(word),found=false;
+    while(start>=0){
+      if([...word].every((_,i)=>!used.has(start+i))){for(let i=0;i<word.length;i++)used.add(start+i);found=true;break;}
+      start=text.indexOf(word,start+1);
+    }
+    if(!found&&word.length>=5){
+      // Share Chats Today's one-edit/transposition tolerance, with no
+      // letter-bag matching (unrelated anagrams must not become matches).
+      for(let offset=0;offset<text.length&&!found;offset++)for(const length of [word.length-1,word.length,word.length+1]){
+        if(offset+length>text.length||Array.from({length},(_,i)=>used.has(offset+i)).some(Boolean))continue;
+        if(chatsTodaySearchMatch(text.slice(offset,offset+length),word)){
+          for(let i=0;i<Math.min(length,word.length-1);i++)used.add(offset+i);
+          found=true;break;
+        }
+      }
+    }
+  }
+  const rawQuery=String(query).replace(/\*/g,'').toLowerCase(),rawName=String(label).toLowerCase();
+  const punctuation=new Map();
+  for(const char of rawName)if(!/[\p{L}\p{N}]/u.test(char))punctuation.set(char,(punctuation.get(char)||0)+1);
+  let bonus=0;
+  for(const char of rawQuery)if((punctuation.get(char)||0)>0){bonus++;punctuation.set(char,punctuation.get(char)-1);}
+  const contained=Number((' '+words.join(' ')+' ').includes(' '+nameWords.join(' ')+' ')||words.join('')===text);
+  const matched=used.size+(used.size?bonus:0);
+  return {contained,matched,ratio:matched/Math.max(1,rawName.length)};
+}
+function ciRankRows(rows,query) {
+  return [...new Map(rows.filter(row=>row?.sysId).map(row=>[row.sysId,row])).values()]
+    .map((row,index)=>({row,index,score:ciSearchScore(query,row.referenceData?.[0]?.value||'')}))
+    .filter(item=>item.score.matched>0)
+    .sort((a,b)=>b.score.contained-a.score.contained||b.score.matched-a.score.matched||b.score.ratio-a.score.ratio||a.index-b.index)
+    .map(item=>item.row);
+}
+function installCISearch() {
+  const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window,nativeFetch=page.fetch;
+  if(nativeFetch.snAiCISearch)return;
+  const cache=new Map(),active=new Map();
+  page.fetch=function ciFetch(input,init){
+    let operation;
+    try{
+      if(new URL(typeof input==='string'?input:input?.url,location.href).pathname!=='/api/now/graphql')return Reflect.apply(nativeFetch,this,arguments);
+      // The Workspace transport passes a Request, not fetch(url, init).
+      // Clone its body without consuming the original or losing headers,
+      // credentials, native cancellation, or any form-specific context.
+      if(init?.body===undefined&&typeof input?.clone==='function'&&input.method==='POST'){
+        const owner=this;
+        return input.clone().text().then(body=>ciFetch.call(owner,input,{...init,body,signal:init?.signal||input.signal}));
+      }
+      if(typeof init?.body!=='string')return Reflect.apply(nativeFetch,this,arguments);
+      operation=JSON.parse(init.body);
+      if(operation?.operationName!=='snRecordReferenceConnected'||!['u_configuration_item','cmdb_ci'].includes(operation.variables?.field)||typeof operation.variables.chars!=='string'||!ciSearchWords(operation.variables.chars).length)return Reflect.apply(nativeFetch,this,arguments);
+    }catch{return Reflect.apply(nativeFetch,this,arguments);}
+    const owner=this,vars=operation.variables,query=vars.chars.slice(0,256),terms=ciSearchTerms(query);
+    const context=JSON.stringify({...vars,chars:undefined,paginationOffset:undefined,paginationLimit:undefined});
+    const key=context+'|'+query.toLowerCase()+'|'+(vars.paginationOffset||0)+'|'+(vars.paginationLimit||25),slot=context;
+    active.get(slot)?.abort();
+    const controller=new AbortController();active.set(slot,controller);
+    const abort=()=>controller.abort();init.signal?.addEventListener('abort',abort,{once:true});
+    if(init.signal?.aborted)abort();
+    const check=()=>{if(controller.signal.aborted)throw new DOMException('CI lookup superseded','AbortError');};
+    const run=async()=>{
+      check();const cached=cache.get(key);
+      if(cached&&Date.now()-cached.at<30000)return new page.Response(cached.body,{headers:{'Content-Type':'application/json'}});
+      let template=null,requests=0,truncated=false;const rows=[];
+      const lookup=async(chars,offset)=>{
+        check();requests++;
+        const request={...operation,variables:{...vars,chars,paginationLimit:100,paginationOffset:offset}};
+        const response=await Reflect.apply(nativeFetch,owner,[input,{...init,body:JSON.stringify(request),signal:controller.signal}]);
+        if(!response.ok)throw new Error('CI lookup HTTP '+response.status);
+        const result=await response.json();check();
+        const retrieved=result?.data?.GlideLayout_Query?.referenceDataRetriever;
+        if(result.errors?.length||!Array.isArray(retrieved?.referenceDataList))throw new Error('CI lookup response unavailable');
+        if(!template)template=result;
+        rows.push(...(retrieved.referenceRecentDataList||[]),...retrieved.referenceDataList);
+        return retrieved.referenceDataList.length;
+      };
+      // Three requests at a time, bounded pagination, no whole-CMDB preload.
+      // Every request retains the native encoded record and reference qualifier.
+      const queue=terms.map(chars=>({chars,offset:0}));
+      while(queue.length&&requests<24){
+        const batch=queue.splice(0,Math.min(3,24-requests));
+        await Promise.all(batch.map(async task=>{if(await lookup(task.chars,task.offset)>=100){if(task.offset<900)queue.push({...task,offset:task.offset+100});else truncated=true;}}));
+      }
+      truncated=truncated||queue.length>0;
+      const ranked=ciRankRows(rows,query),retrieved=template.data.GlideLayout_Query.referenceDataRetriever;
+      const limit=Math.max(1,Math.min(100,Number(vars.paginationLimit)||25)),offset=Math.max(0,Number(vars.paginationOffset)||0);
+      Object.assign(retrieved,{referenceRecentDataList:[],referenceDataList:ranked.slice(offset,offset+limit),totalCount:ranked.length,recentCount:0,matchesCount:ranked.length});
+      const body=JSON.stringify(template);cache.set(key,{body,at:Date.now()});
+      while(cache.size>12)cache.delete(cache.keys().next().value);
+      document.dispatchEvent(new CustomEvent('sn-ai-ci-search-diagnostic',{detail:{stage:'ranked',count:ranked.length,requests,truncated}}));
+      return new page.Response(body,{headers:{'Content-Type':'application/json'}});
+    };
+    return run().catch(error=>{
+      if(controller.signal.aborted||error.name==='AbortError')throw error;
+      document.dispatchEvent(new CustomEvent('sn-ai-ci-search-diagnostic',{detail:{stage:'native-fallback',reason:String(error.message).slice(0,120)}}));
+      return Reflect.apply(nativeFetch,owner,[input,init]);
+    }).finally(()=>{init.signal?.removeEventListener('abort',abort);if(active.get(slot)===controller)active.delete(slot);});
+  };
+  page.fetch.snAiCISearch=true;
+}
+// SN_AI_CI_SEARCH_END
 function chatsTodayRecordMatches(record,query) {
   const normalized=chatsTodaySearchText(query);if(!normalized)return true;
   const fields=['number','opened_for','assigned_to','event_numbers','ticket_numbers'];
