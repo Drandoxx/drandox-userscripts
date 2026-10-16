@@ -5856,6 +5856,22 @@
   const callNetworkFields = new Map();
   const callNetworkBridges = new Set();
   const liveCallSignals=new Map();
+  const incomingViewPreparations=new Map();
+  function prepareIncomingNativeDetails(id) {
+    if(!callPopupsEnabled() || !id)return;
+    let entry=incomingViewPreparations.get(id);
+    if(!entry){entry={startedAt:Date.now(),attempts:0};incomingViewPreparations.set(id,entry);while(incomingViewPreparations.size>10)incomingViewPreparations.delete(incomingViewPreparations.keys().next().value);}
+    if(entry.clicked || entry.attempts>=10 || Date.now()-entry.startedAt>30000)return;
+    if(entry.lastAt && Date.now()-entry.lastAt<1000)return;
+    entry.lastAt=Date.now();entry.attempts++;
+    // Required native control preparation, not DOM-based call detection.
+    const view=document.querySelector('.messenger-shown [data-action="openAcdInteraction"] a');
+    if(!view)return;
+    entry.clicked=true;view.dataset.gbsAutoViewed='true';
+    lastNativeCallAction={at:Date.now(),action:'view'};
+    performanceEvent('incoming-view-preparation',{conversationId:id,attempt:entry.attempts});
+    view.click();requestCallPopupRefresh();
+  }
   let callRecoveryFailures=0,callRecoveryBusy=false,callRecoveryAt=0,callSourceMode='api-pending';
   const callSourceCounts={websocket:0,api:0,domFallback:0,nativeControlLookup:0};
   function callPushHealthy(){return callPushSocket?.readyState===1 && Date.now()-callPushLastMessageAt<120000;}
@@ -6101,6 +6117,7 @@
         queue:own.queueName || c.participants.find(p=>p.purpose==='acd' && (!own.queueId || p.queueId===own.queueId))?.name,
         participantId:own.participantId,muted:own.muted,held:own.held,connectedAt:Date.parse(own.connectedTime),endedAt:Date.parse(own.endTime),wrapupRequired:own.wrapupRequired,wrapupTimeoutMs:own.wrapupTimeoutMs,wrapup:own.wrapup};
       liveCallSignals.set(c.conversationId,next);
+      if(state==='alerting' || state==='contacting')prepareIncomingNativeDetails(c.conversationId);
       if(!previous || JSON.stringify({...previous,at:0})!==JSON.stringify({...next,at:0})) {
         if(typeof performanceEvent==='function')performanceEvent('native-call-state',{conversationId:c.conversationId,state,phonePresent:!!phone,locationPresent:!!location});
         requestCallPopupRefresh();
@@ -6204,7 +6221,7 @@
       const originalOpen=proto.open, originalHeader=proto.setRequestHeader, originalSend=proto.send;
       const observed = url => {try{const u=new URL(url,win.location.href);return u.origin===CALL_API_ORIGIN?u:null;}catch(_){return null;}};
       const relevant = path => path==='/api/v2/users/me' || /^\/api\/v2\/analytics\/conversations\/(details\/query|[a-f0-9-]{36}\/details)$/.test(path) || /^\/api\/v2\/conversations(?:\/[a-f0-9-]{36}|\/calls)?$/.test(path);
-      const diagnosticPath=path=>relevant(path) || /^\/api\/v2\/conversations\/[^/]+\/(participants|communications|calls)(\/|$)/.test(path);
+      const diagnosticPath=path=>relevant(path) || /^\/api\/v2\/conversations\/[^/]+\/(participants|communications|calls)(\/|$)/.test(path) || (measurementState && lastNativeCallAction?.action==='view' && Date.now()-lastNativeCallAction.at<10000);
       win.document?.addEventListener('click',recordNativeCallControl,true);
       const consume=(u,status,data)=>{if(!stopped && relevant(u.pathname))rememberCallApi(u.pathname,status,data);};
       const wrappedFetch=function(input,options) {
@@ -7142,8 +7159,9 @@
       installCallCardDrag(popup, heading);
     }
     const snowAction = scopes.flatMap(scope => [...scope.querySelectorAll('a,button,input[type="button"]')])
-      .find(element => visible(element) && /open in snow/i.test(element.textContent || element.value || ''));
-    popup.__gbsSnowAction = snowAction;
+      .find(element => /open in snow/i.test(element.textContent || element.value || ''));
+    popup.__gbsSnowAction = snowAction || popup.__gbsSnowAction;
+    const hasSnow=Boolean(snowAction || activeCallSummary?.snowUrl || activeCallSummary?.hadSnowAction);
     if (snowAction && activeCallSummary) {
       activeCallSummary.hadSnowAction = true;
       callSnowActions.set(activeCallSummary.connectedAt || activeCallSummary.ringingAt, snowAction);
@@ -7178,7 +7196,7 @@
         || /unmute/i.test(nativeLabel) || native?.getAttribute('aria-pressed') === 'true');
       return { ...control, native, label: control.mute ? (muted ? 'Unmute' : 'Mute') : control.hangup ? 'Hang up' : nativeLabel || control.fallback };
     });
-    const signature = JSON.stringify([...details]) + state + Boolean(snowAction)
+    const signature = JSON.stringify([...details]) + state + hasSnow
       + Boolean(activeCallSummary?.connectedAt)
       + JSON.stringify(callControls.map(control => [control.label, Boolean(control.native), control.native?.disabled, control.native?.getAttribute('aria-disabled'), control.native?.getAttribute('aria-pressed')]));
     if (popup.dataset.details === signature) return;
@@ -7230,15 +7248,16 @@
       timer.title='Elapsed time from the connected timestamp; final talk duration is confirmed by Genesys';
       timer.textContent=callDurationLabel({startedAt:activeCallSummary.connectedAt,endedAt:Date.now()});body.append(timer);
     }
-    if (snowAction) {
+    if (hasSnow) {
       const button = doc.createElement('button');
       button.type = 'button';
       button.textContent = 'Open in SNOW';
       button.style.cssText = 'padding:8px 12px;background:#22343b;color:#a5f3fc;border:1px solid #22d3ee;border-radius:5px;cursor:pointer';
       button.addEventListener('click', () => {
         const action = popup.__gbsSnowAction;
-        if (action?.isConnected && visible(action)) action.click();
-        else button.remove();
+        if(activeCallSummary?.snowUrl)doc.defaultView.open(activeCallSummary.snowUrl,'_blank','noopener');
+        else if (action?.isConnected) action.click();
+        else {button.title='SNOW action is temporarily unavailable; waiting for native call details';requestCallPopupRefresh();}
       });
       body.appendChild(button);
     }
@@ -10249,6 +10268,8 @@ function fitDashboardMetricSpacing(doc) {
   const callClockTimer=window.setInterval(updateCallClockDisplay,250);
   document.addEventListener('click', recordIncomingCallAction, true);
   const incomingCallTimer = window.setInterval(() => {
+    const incomingSignal=currentLiveCallSignal();
+    if(incomingSignal && ['alerting','contacting'].includes(incomingSignal.state))prepareIncomingNativeDetails(incomingSignal.id);
     performanceMeasure('incoming-watch',()=>watchIncomingCall(document));
     try { if (!callCardDragging) measureCallPopup(document); } catch (error) { console.warn('[Genesys V2] Call measurement', error); }
     try { performanceMeasure('call-popup',()=>syncCallInformationPopup(document)); } catch (_) { /* Native call panel may still be mounting. */ }
