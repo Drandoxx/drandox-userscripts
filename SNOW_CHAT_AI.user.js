@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.693
+// @version      2.36.694
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.694","fixes":true,"changes":[{"key":"ci-search","meaningful":true,"text":"CI results prefer below-field placement, fetch pages concurrently, and reuse recent word-search pages."}]},
 {"version":"2.36.693","fixes":true,"changes":[{"key":"ci-search","meaningful":false,"text":"Show a searching state instead of an empty result while CI lookups are still running."}]},
 {"version":"2.36.692","fixes":true,"changes":[{"key":"user-similar-events","meaningful":true,"text":"Details opens the same caller-filtered event list as New Event, using the current chat user's ID."}]},
 {"version":"2.36.691","fixes":true,"changes":[{"key":"ci-search","meaningful":true,"text":"CI typeahead uses contains searches, flexible word and punctuation matching, and locally ranked results with exact partial-query CI names first."}]},
@@ -5754,6 +5755,38 @@ const snAIChatDisplayNames=(()=>{
     check();
   }
   // SN_AI_CI_LOADING_BEGIN
+  const ciPlacementHosts=new WeakSet();
+  let ciPlacementRefresh;
+  window.addEventListener('resize',()=>ciPlacementRefresh?.());
+  document.addEventListener('scroll',()=>ciPlacementRefresh?.(),true);
+  function installCIDropdownPlacement(node){
+    let reference=node;
+    for(let depth=0;reference&&reference.localName!=='now-record-typeahead'&&depth<20;depth++)reference=reference.parentElement||reference.getRootNode?.().host;
+    if(!reference||!['u_configuration_item','cmdb_ci'].includes(reference.dAProps?.fieldName))return;
+    const update=()=>{
+      if(!reference.isConnected)return;
+      const roots=[reference.shadowRoot].filter(Boolean),popovers=[];let input;
+      for(let i=0;i<roots.length;i++)for(const child of roots[i].querySelectorAll('*')){
+        if(child.shadowRoot)roots.push(child.shadowRoot);
+        if(child.localName==='input')input=child;
+        if(child.localName==='now-popover'&&child.getProperties?.().interactionType==='listbox')popovers.push(child);
+      }
+      if(!input)return;
+      const layout=ciDropdownLayout(input.getBoundingClientRect(),window.innerHeight);
+      for(const popover of popovers){
+        if(JSON.stringify(popover.positions)!==JSON.stringify(layout.positions))popover.positions=layout.positions;
+        if(popover.constrain?.maxHeight!==layout.maxHeight)popover.constrain={...popover.constrain,maxHeight:layout.maxHeight};
+      }
+    };
+    update();
+    if(ciPlacementHosts.has(reference))return;
+    ciPlacementHosts.add(reference);
+    let frame=0;
+    const schedule=()=>{if(!frame)frame=requestAnimationFrame(()=>{frame=0;update();});};
+    const activate=()=>{ciPlacementRefresh=()=>{if(reference.isConnected)schedule();};schedule();};
+    reference.addEventListener('focusin',activate);
+    reference.addEventListener('input',activate);
+  }
   const ciLoadingTokens=new Set(),ciLoadingText=new Map();
   let ciInputLoadingTimer;
   const ciLoadingCaption='Searching configuration items...';
@@ -5796,6 +5829,7 @@ const snAIChatDisplayNames=(()=>{
   },true);
   // SN_AI_CI_LOADING_END
   function discover(node) {
+    if(['now-record-typeahead','now-popover'].includes((node.host||node).localName))installCIDropdownPlacement(node.host||node);
     decorateCILoadingText(node);
     if(node.nodeType!==3&&ciLoadingTokens.size&&node.textContent?.length<600&&node.textContent.includes('No results found')){const walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT);let text;while((text=walker.nextNode()))decorateCILoadingText(text);}
     installSubTabRecordButton(node);
@@ -23719,6 +23753,11 @@ function chatsTodaySearchMatch(text,query) {
 function ciSearchWords(value) {
   return String(value||'').slice(0,256).normalize('NFKD').replace(/\p{M}/gu,'').toLowerCase().match(/[\p{L}\p{N}]+/gu)||[];
 }
+function ciDropdownLayout(rect,height){
+  const below=Math.max(0,height-rect.bottom-12),above=Math.max(0,rect.top-12);
+  const preferBelow=below>=80||below>=above;
+  return {positions:preferBelow?[{target:'bottom-start',content:'top-start'}]:[{target:'top-start',content:'bottom-start'}],maxHeight:Math.max(40,Math.min(420,preferBelow?below:above))};
+}
 function ciSearchTerms(value) {
   const words=[...new Set(ciSearchWords(value))].slice(0,6);
   // An exact half survives any one-character edit in the other half. Native
@@ -23766,7 +23805,7 @@ function ciRankRows(rows,query) {
 function installCISearch() {
   const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window,nativeFetch=page.fetch;
   if(nativeFetch.snAiCISearch)return;
-  const cache=new Map(),active=new Map();let sequence=0;
+  const cache=new Map(),active=new Map(),pageCache=new Map();let sequence=0;
   page.fetch=function ciFetch(input,init){
     let operation;
     try{
@@ -23797,7 +23836,17 @@ function installCISearch() {
       if(cached&&Date.now()-cached.at<30000)return new page.Response(cached.body,{headers:{'Content-Type':'application/json'}});
       let template=null,requests=0,truncated=false;const rows=[];
       const lookup=async(chars,offset)=>{
-        check();requests++;
+        check();
+        const pageKey=context+'|'+chars+'|'+offset,cachedPage=pageCache.get(pageKey);
+        const accept=result=>{
+          const retrieved=result?.data?.GlideLayout_Query?.referenceDataRetriever;
+          if(result.errors?.length||!Array.isArray(retrieved?.referenceDataList))throw new Error('CI lookup response unavailable');
+          if(!template)template=JSON.parse(JSON.stringify(result));
+          rows.push(...(retrieved.referenceRecentDataList||[]),...retrieved.referenceDataList);
+          return retrieved.referenceDataList.length;
+        };
+        if(cachedPage&&Date.now()-cachedPage.at<30000)return accept(cachedPage.result);
+        requests++;
         const request={...operation,variables:{...vars,chars,paginationLimit:100,paginationOffset:offset}};
         // A native typeahead cancellation ID is shared by all its searches.
         // Reusing it for parallel word queries makes ServiceNow cancel one
@@ -23807,18 +23856,25 @@ function installCISearch() {
         const response=await Reflect.apply(nativeFetch,owner,[input,{...init,headers,body:JSON.stringify(request),signal:controller.signal}]);
         if(!response.ok)throw new Error('CI lookup HTTP '+response.status);
         const result=await response.json();check();
-        const retrieved=result?.data?.GlideLayout_Query?.referenceDataRetriever;
-        if(result.errors?.length||!Array.isArray(retrieved?.referenceDataList))throw new Error('CI lookup response unavailable');
-        if(!template)template=result;
-        rows.push(...(retrieved.referenceRecentDataList||[]),...retrieved.referenceDataList);
-        return retrieved.referenceDataList.length;
+        const length=accept(result);
+        pageCache.set(pageKey,{result,at:Date.now()});
+        while(pageCache.size>96)pageCache.delete(pageCache.keys().next().value);
+        return length;
       };
       // Three requests at a time, bounded pagination, no whole-CMDB preload.
       // Every request retains the native encoded record and reference qualifier.
       const queue=terms.map(chars=>({chars,offset:0}));
-      while(queue.length&&requests<24){
-        const batch=queue.splice(0,Math.min(3,24-requests));
-        await Promise.all(batch.map(async task=>{if(await lookup(task.chars,task.offset)>=100){if(task.offset<900)queue.push({...task,offset:task.offset+100});else truncated=true;}}));
+      const scheduled=new Set(queue.map(task=>task.chars+'|'+task.offset));let pages=0;
+      while(queue.length&&pages<24){
+        const batch=queue.splice(0,Math.min(3,24-pages));pages+=batch.length;
+        await Promise.all(batch.map(async task=>{
+          if(await lookup(task.chars,task.offset)>=100){
+            // Fill a three-page pipeline rather than waiting for each single
+            // broad-token page before requesting its successor.
+            for(const step of [100,200,300]){const offset=task.offset+step,key=task.chars+'|'+offset;if(offset<=900&&!scheduled.has(key)){scheduled.add(key);queue.push({chars:task.chars,offset});}}
+            if(task.offset>=900)truncated=true;
+          }
+        }));
       }
       truncated=truncated||queue.length>0;
       const ranked=ciRankRows(rows,query),retrieved=template.data.GlideLayout_Query.referenceDataRetriever;
