@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.580.0
+// @version      1.581.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -5907,8 +5907,9 @@
   function prepareIncomingNativeDetails(id) {
     if(!callPopupsEnabled() || !id)return;
     const signal=liveCallSignals.get(id);
-    if(signal?.snowUrl)return;
-    void fetchIncomingSnowLink(id);
+    // Link resolution no longer needs View. Native controls still need their
+    // panel mounted until Answer/Mute/Hold have verified API replacements.
+    if(!signal?.snowUrl)void fetchIncomingSnowLink(id);
     let entry=incomingViewPreparations.get(id);
     if(!entry){entry={startedAt:Date.now(),attempts:0};incomingViewPreparations.set(id,entry);while(incomingViewPreparations.size>10)incomingViewPreparations.delete(incomingViewPreparations.keys().next().value);}
     if(entry.clicked || entry.attempts>=10 || Date.now()-entry.startedAt>30000)return;
