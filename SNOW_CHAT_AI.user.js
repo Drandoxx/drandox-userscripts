@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.697
+// @version      2.36.698
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.698","fixes":true,"changes":[{"key":"reporting-user","meaningful":true,"text":"Commit Reporting User through the native Workspace form callback and verify its stored model value, not only visible text."}]},
 {"version":"2.36.697","fixes":true,"changes":[{"key":"record-action-overflow","meaningful":false,"text":"Remove hidden incident actions before native overflow layout and keep remounted More buttons hidden until their menu has actions."}]},
 {"version":"2.36.696","fixes":true,"changes":[{"key":"record-action-overflow","meaningful":false,"text":"Hide the record action More button when its menu has no actions, and restore it when overflow actions become available."}]},
 {"version":"2.36.695","fixes":true,"changes":[{"key":"ci-search","meaningful":true,"text":"Limit ranked CI suggestions to 100 and remove broad-token deep paging for faster searches."}]},
@@ -11592,7 +11593,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     );
     const name = readableControlValue('Name');
     const reportingUser = readableControlValue('Reporting User');
-    const reportingMatches = Boolean(name) && normalisedFieldValue(name) === normalisedFieldValue(reportingUser);
+    const reportingMatches = Boolean(name) && reportingUserHasCommittedValue(findControlByLabel('Reporting User'),name);
     verified['Reporting User'] = { expected: name || '(Name field value)', actual: reportingUser, matches: reportingMatches };
     // Reporting User is a best-effort convenience copy. It must never make an
     // otherwise complete ticket fail verification; Workspace can hide Name
@@ -13296,9 +13297,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const data = wizard.data;
     const name = readableControlValue('Name');
     const reportingUser = findControlByLabel('Reporting User');
-    if (name && reportingUser && 'value' in reportingUser && normalisedFieldValue(reportingUser.value) !== normalisedFieldValue(name)) {
-      setNativeValue(reportingUser, name);
-    }
+    if (reportingUser) await copyReportingUserAuto();
     let shortDescription;
     let description;
     let expected;
@@ -13322,7 +13321,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         const actual = readableControlValue(check.field);
         return { ...check, actual, matches: fieldMatchesExpected(actual, check.expected, check.field) };
       });
-      const reportingMatches = Boolean(name) && normalisedFieldValue(readableControlValue('Reporting User')) === normalisedFieldValue(name);
+      const reportingMatches = Boolean(name) && reportingUserHasCommittedValue(findControlByLabel('Reporting User'),name);
       const mismatches = checks.filter((check) => !check.matches).map((check) => ({ field: check.field, expected: check.expected, actual: check.actual }));
       if (!reportingMatches) mismatches.push({ field: 'Reporting User', expected: name, actual: readableControlValue('Reporting User') });
       expected = { 'Short Description': shortDescription, Description: description };
@@ -14829,6 +14828,20 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     automationFailure(code, `${fieldMetadata.label} did not retain its complete text after 3 attempts.`, { name: fieldMetadata.name || '', length: text.length });
   }
 
+  function reportingUserHasCommittedValue(field,expected){
+    if(!field||field.isConnected===false||field.getAttribute('aria-invalid')==='true')return false;
+    if(!fieldMatchesExpected(readableElementValue(field),expected,'Reporting User'))return false;
+    if(field.getAttribute('role')==='combobox'){
+      if(!workspacePage)return fieldMatchesExpected(committedReferenceValue(field),expected,'Reporting User');
+      const props=matrixReferenceHost(field)?.dAProps;
+      return /^[a-f0-9]{32}$/i.test(String(props?.value||''))&&fieldMatchesExpected(props?.displayValue,expected,'Reporting User');
+    }
+    const binding=workspaceTextBinding(field);
+    if(binding)return fieldMatchesExpected(binding.props.formData.fields[binding.name]?.value,expected,'Reporting User');
+    // A hydrating Workspace input without a binding is not a proven commit.
+    // Classic forms retain their native input/change behavior.
+    return !workspacePage;
+  }
   async function copyReportingUserAuto() {
     // In a just-opened, virtualized Workspace form the Name control can exist
     // visually before its value is exposed to the script. Wait for hydration,
@@ -14850,7 +14863,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       addLog('warn', 'reporting-user-source-unavailable', warning);
       return { value: '', skipped: true, warning };
     }
-    const matches = () => fieldMatchesExpected(verifiedControlValue('Reporting User'), reportingValue, 'Reporting User');
+    const matches = () => reportingUserHasCommittedValue(findControlByLabel('Reporting User'),reportingValue);
     // A reused New Event commonly already has the correct Reporting User.
     // Accept that committed value immediately instead of making the generic
     // text stability poll chase Workspace's virtualized replacement control.
@@ -14873,10 +14886,14 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             maxAttempts: 1,
           });
         } else {
-          field.focus({preventScroll:true});
-          setNativeValue(field, reportingValue);
-          field.blur();
-          await waitUntil(() => matches() ? verifiedControlValue('Reporting User') : null, 900, 45);
+          let current=field,resolvedAt=performance.now();
+          const resolve=()=>{
+            if(!current||current.isConnected===false||performance.now()-resolvedAt>=250){current=findControlByLabel('Reporting User');resolvedAt=performance.now();}
+            return current;
+          };
+          const modelCommitted=await commitTextToFormModel(field,reportingValue,resolve);
+          const stable=await waitStableValue('Reporting User',reportingValue,'exact',2200,450,field,resolve);
+          addLog(modelCommitted&&stable.stable&&matches()?'info':'warn','auto-text-attempt',{field:'Reporting User',attempt,modelCommitted,stable:stable.stable,expectedLength:reportingValue.length,actualLength:String(resolve()?.value||'').length});
         }
       } catch (error) {
         lastActual = verifiedControlValue('Reporting User');
@@ -15804,7 +15821,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       // renders it as a combobox/reference.
       const reportingName = readableControlValue('Name');
       const reportingUser = findControlByLabel('Reporting User');
-      if (reportingName && reportingUser && 'value' in reportingUser && String(reportingUser.value || '') !== reportingName) {
+      if (reportingName && reportingUser && 'value' in reportingUser && !reportingUserHasCommittedValue(reportingUser,reportingName)) {
         if (reportingUser.getAttribute('role') === 'combobox') {
           state.commandResult = {
             kind: 'trusted-reporting-user-required',
@@ -15813,8 +15830,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           };
           steps.push('Reporting User requires trusted selection');
         } else {
-          setNativeValue(reportingUser, reportingName);
-          steps.push('copied Name to Reporting User');
+          const copied=await copyReportingUserAuto();
+          steps.push(copied.skipped?'Reporting User commit could not be confirmed':'committed Name to Reporting User');
         }
       }
       if (profile) {
@@ -16848,17 +16865,31 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   }
 
   const reportingUserEdited = new WeakSet();
-  function fillVisibleReportingUserFromName() {
+  const reportingUserPending=new WeakSet(),reportingUserAttempts=new WeakMap();
+  async function fillVisibleReportingUserFromName() {
     if (!workspacePage || document.hidden || state.busy || !/\/sub\/new_record\/new_call(?:\/|$)/.test(location.pathname)) return;
     const elements = currentFormElements();
     const field = findControlByLabel('Reporting User', elements);
     if (!field || !('value' in field) || field.disabled || field.readOnly || field.getAttribute('role') === 'combobox'
-      || reportingUserEdited.has(field) || String(field.value || '').trim()) return;
+      || reportingUserEdited.has(field) || reportingUserPending.has(field)) return;
     const source = findControlByLabel('Name', elements);
     const name = String(source?.value || '').trim();
     if (!name || name === '\u2014' || name === '-') return;
-    // No focus/scroll changes and no ticket submission: only native field events.
-    setNativeValue(field, name);
+    const visible=String(field.value||'').trim();
+    if(visible&&!fieldMatchesExpected(visible,name,'Reporting User'))return;
+    if(reportingUserHasCommittedValue(field,name))return;
+    // Wait for Workspace's binding rather than writing a display-only value
+    // during hydration. Repair an old matching DOM value whose model is empty.
+    if(!workspaceTextBinding(field))return;
+    const attempt=(reportingUserAttempts.get(field)||0)+1;if(attempt>3)return;
+    reportingUserAttempts.set(field,attempt);reportingUserPending.add(field);
+    const path=location.pathname;
+    const resolve=()=>location.pathname===path&&!state.busy&&!reportingUserEdited.has(field)&&field.isConnected?field:null;
+    try{
+      const modelCommitted=await commitTextToFormModel(field,name,resolve);
+      addLog(modelCommitted?'info':'warn','auto-text-attempt',{field:'Reporting User',attempt,modelCommitted,stable:reportingUserHasCommittedValue(field,name),expectedLength:name.length,actualLength:String(field.value||'').length});
+    }catch(error){addLog('warn','reporting-user-attempt',{attempt,reason:'native-model-commit-failed',message:String(error.message||error)});}
+    finally{reportingUserPending.delete(field);}
   }
   function refresh() {
     state.lastSnapshot = makeSnapshot();
