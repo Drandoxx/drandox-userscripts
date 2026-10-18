@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.698
+// @version      2.36.699
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.699","fixes":true,"changes":[{"key":"automation-performance","meaningful":true,"text":"Idle clicks, typing, scrolling and Nova checks read lightweight running state instead of scanning ticket fields."}]},
 {"version":"2.36.698","fixes":true,"changes":[{"key":"reporting-user","meaningful":true,"text":"Commit Reporting User through the native Workspace form callback and verify its stored model value, not only visible text."}]},
 {"version":"2.36.697","fixes":true,"changes":[{"key":"record-action-overflow","meaningful":false,"text":"Remove hidden incident actions before native overflow layout and keep remounted More buttons hidden until their menu has actions."}]},
 {"version":"2.36.696","fixes":true,"changes":[{"key":"record-action-overflow","meaningful":false,"text":"Hide the record action More button when its menu has no actions, and restore it when overflow actions become available."}]},
@@ -8416,11 +8417,21 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
     document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
   }
-  const automationFreeze={regions:[],overlays:[],timer:0,frame:0,suspended:false,owner:null,ims:'',commandId:''};
-  function automationFreezeActivity(){
+  const automationFreeze={regions:[],overlays:[],timer:0,frame:0,suspended:false,owner:null,dialog:null,ims:'',commandId:''};
+  function automationFreezeRunning(){
+    // Hot path for input events and Nova: no form discovery, field reads,
+    // selected-tab search, layout measurement, or chat identity resolution.
+    const dialog=automationFreeze.dialog;
+    return Boolean(state.commandRunning||(dialog?.isConnected&&dialog.classList.contains('is-running')));
+  }
+  function automationFreezeActivity(resolveIMS=false){
     const root=document.getElementById(ROOT_ID);
     const dialog=root?.querySelector('[data-pinned-ims].is-running');
-    return {running:Boolean(dialog||state.commandRunning),dialog,ims:normaliseIMS(dialog?.dataset.pinnedIms||state.autoSession?.ims||currentInteractionIMS())};
+    automationFreeze.dialog=dialog||null;
+    const running=Boolean(dialog||state.commandRunning);
+    if(!running)return {running:false,dialog:null,ims:''};
+    const knownIMS=dialog?.dataset.pinnedIms||state.autoSession?.ims;
+    return {running:true,dialog,ims:normaliseIMS(knownIMS||(resolveIMS?currentInteractionIMS():''))};
   }
   function releaseAutomationFreeze(reason='finished',suspend=true){
     if(automationFreeze.overlays.length){const root=document.getElementById(ROOT_ID);if(root)root.novaTicketUnfrozenAt=Date.now();}
@@ -8440,7 +8451,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     });
   }
   function refreshAutomationFreeze(){
-    const activity=automationFreezeActivity();
+    const activity=automationFreezeActivity(true);
     if(!activity.running){for(const [id,entry] of aiResponsePreviews)if(entry.responseComplete)clearAIResponsePreview(id);releaseAutomationFreeze('finished',false);automationFreeze.suspended=false;automationFreeze.owner=null;return;}
     if(automationFreeze.suspended)return;
     const ims=activity.ims;
@@ -8464,7 +8475,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     if(location.hostname!=='kingfisher.service-now.com')return;
     const position=()=>{if(!automationFreeze.frame&&automationFreeze.overlays.length)automationFreeze.frame=requestAnimationFrame(positionAutomationFreeze);};
     const humanEvent=event=>{
-      if(!event.isTrusted)return;
+      if(!event.isTrusted||!automationFreezeRunning())return;
       const activity=automationFreezeActivity();if(!activity.running)return;
       const path=event.composedPath(),target=path.find(node=>node instanceof Element);
       const inspector=path.some(node=>node?.id===ROOT_ID);
@@ -8485,14 +8496,14 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     window.addEventListener('pagehide',()=>releaseAutomationFreeze('pagehide'));
     // Only poll while a run is active. The timer also re-resolves controls
     // replaced by Workspace without changing their native field behaviour.
-    const schedule=()=>{refreshAutomationFreeze();if(automationFreeze.timer)clearTimeout(automationFreeze.timer);automationFreeze.timer=automationFreezeActivity().running?setTimeout(schedule,350):0;};
+    const schedule=()=>{refreshAutomationFreeze();if(automationFreeze.timer)clearTimeout(automationFreeze.timer);automationFreeze.timer=automationFreezeRunning()?setTimeout(schedule,350):0;};
     const observer=new MutationObserver(records=>{if(!automationFreeze.timer&&records.some(record=>record.type==='childList'||record.attributeName==='class'))schedule();});
-    const root=document.getElementById(ROOT_ID);if(root){root.novaTicketBusy=()=>automationFreezeActivity().running||automationFreeze.overlays.length>0;observer.observe(root,{subtree:true,childList:true,attributes:true,attributeFilter:['class']});}
+    const root=document.getElementById(ROOT_ID);if(root){root.novaTicketBusy=()=>automationFreezeRunning()||automationFreeze.overlays.length>0;observer.observe(root,{subtree:true,childList:true,attributes:true,attributeFilter:['class']});}
     document.addEventListener('sn-ai-progress',event=>{if(/^(command-started|command-finished|command-failed)$/.test(event.detail?.action||''))schedule();});
     schedule();
   }
   function pauseForIncomingChat(){
-    const activity=automationFreezeActivity();
+    const activity=automationFreezeActivity(true);
     if(!activity.running||state.incomingPause)return;
     state.incomingResume={ims:activity.ims,event:state.createdEvent?.ims===activity.ims?{...state.createdEvent}:null,path:location.pathname};
     state.incomingPause=true;
