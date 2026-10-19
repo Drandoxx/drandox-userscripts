@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.712
+// @version      2.36.713
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.713","fixes":true,"changes":[{"key":"nova-cut-performance","meaningful":true,"text":"Size the cutout mask to the complete panel border box, including Chats Today, and explicitly clear the opening through its bottom edge."}]},
 {"version":"2.36.712","fixes":true,"changes":[{"key":"nova-cut-performance","meaningful":true,"text":"Double the cutting-stroke speed and extend the doorway below the panel border to avoid a remaining bottom strip."}]},
 {"version":"2.36.711","fixes":true,"changes":[{"key":"chatgpt-question-panel","meaningful":true,"text":"Show waiting ChatGPT question choices in the matching SNOW ticket bubble and send the selected answer back to continue the same request. Requires companion 0.4.40."}]},
 {"version":"2.36.710","fixes":true,"changes":[{"key":"ils-printer-values","meaningful":true,"text":"Normalize close Invoice and Picking spellings. Complete other fields when printer destination is blank and retain a reminder to fill it before saving."}]},
@@ -25732,7 +25733,15 @@ function installNovaCutEffects(host, avatar) {
     const nativeMask=(complete,distance=0)=>{
       if(idleOnly)return;
       const mw=target.offsetWidth,mh=target.offsetHeight;
-      const mask=`<svg xmlns="http://www.w3.org/2000/svg" width="${mw}" height="${mh}" viewBox="0 0 ${mw} ${mh}"><defs><mask id="cut" maskUnits="userSpaceOnUse"><rect width="100%" height="100%" fill="white"/><path transform="translate(${mw-w} ${mh-h})" d="${door}${complete?' Z':''}" fill="${complete?'black':'none'}" stroke="black" stroke-width="${complete?3:1}" stroke-dasharray="${complete?'none':length}" stroke-dashoffset="${complete?0:length-distance}"/></mask></defs><rect width="100%" height="100%" fill="white" mask="url(#cut)"/></svg>`;
+      // CSS mask positioning must include the actual painted border. The
+      // SVG's intrinsic pixel size can otherwise leave a subpixel edge strip.
+      target.style.maskOrigin=target.style.webkitMaskOrigin='border-box';
+      target.style.maskClip=target.style.webkitMaskClip='border-box';
+      target.style.maskSize=target.style.webkitMaskSize='100% 100%';
+      target.style.maskRepeat=target.style.webkitMaskRepeat='no-repeat';
+      const feet=complete?door.match(/^M([\d.+-]+)\s+([\d.+-]+)[\s\S]*\s([\d.+-]+)\s+([\d.+-]+)$/):null;
+      const bottomClear=feet?`<rect x="${Math.min(Number(feet[1]),Number(feet[3]))+mw-w-1}" y="${mh-3}" width="${Math.abs(Number(feet[3])-Number(feet[1]))+2}" height="8" fill="black"/>`:'';
+      const mask=`<svg xmlns="http://www.w3.org/2000/svg" width="${mw}" height="${mh}" viewBox="0 0 ${mw} ${mh}"><defs><mask id="cut" maskUnits="userSpaceOnUse"><rect width="100%" height="100%" fill="white"/><path transform="translate(${mw-w} ${mh-h})" d="${door}${complete?' Z':''}" fill="${complete?'black':'none'}" stroke="black" stroke-width="${complete?3:1}" stroke-dasharray="${complete?'none':length}" stroke-dashoffset="${complete?0:length-distance}"/>${bottomClear}</mask></defs><rect width="100%" height="100%" fill="white" mask="url(#cut)"/></svg>`;
       target.style.maskImage=target.style.webkitMaskImage='url("data:image/svg+xml,'+encodeURIComponent(mask)+'")';
     };
     const depthAvatar=document.getElementById('sn-ai-nova-companion');
