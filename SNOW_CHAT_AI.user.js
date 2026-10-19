@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.700
+// @version      2.36.701
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.701","fixes":true,"changes":[{"key":"hp-ci","meaningful":true,"text":"HP mode uses the shared ranked CI search. Empty CI fields search the printer model alongside AI work, select the top result through the native form callback, and preserve manual selections. No match leaves CI blank."}]},
 {"version":"2.36.700","fixes":true,"changes":[{"key":"nova-cut-performance","meaningful":true,"text":"Draw the cutting sword and sparks in a dedicated canvas worker, preanimate hands and gaze, and apply the TV hole once at completion. Unsupported browsers retain the previous effect."},{"key":"record-action-overflow","meaningful":true,"text":"Restore Save when Workspace reuses a button previously marked as a hidden incident action."}]},
 {"version":"2.36.699","fixes":true,"changes":[{"key":"automation-performance","meaningful":true,"text":"Idle clicks, typing, scrolling and Nova checks read lightweight running state instead of scanning ticket fields."}]},
 {"version":"2.36.698","fixes":true,"changes":[{"key":"reporting-user","meaningful":true,"text":"Commit Reporting User through the native Workspace form callback and verify its stored model value, not only visible text."}]},
@@ -9527,7 +9528,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     for (const key of HP_OPERATOR_PRIORITY_KEYS) {
       if (String(supplied[key] ?? '').trim()) values[key] = String(supplied[key]).trim();
     }
-    if (String(supplied['configuration-item'] ?? '').trim()) command.HP['Configuration Item'] = String(supplied['configuration-item']).trim();
+    // CI is resolved from printer model only, never a stale bubble/AI override.
+    delete command.HP['Configuration Item'];
     if (contactNumber) values['contact-name-phone'] = hpContactNamePhoneWithOverride(values['contact-name-phone'], contactNumber);
     const mapped = hpOperatorExtraOverrides(supplied, genericSchema);
     for (const [key, value] of Object.entries(mapped)) values[key] = value;
@@ -9700,13 +9702,14 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const query=String(printerModel||'').replace(/^\*+/,'').trim();
     if(!session||session.profile!=='HP'||!query||/^(not provided|n\/?a|unknown)$/i.test(query))return Promise.resolve('');
     if(session.hpPrinterCISearch?.query===query)return session.hpPrinterCISearch.promise;
-    const valid=()=>isCurrent()&&state.autoSession===session&&normaliseIMS(currentInteractionIMS())===normaliseIMS(session.ims);
+    const valid=()=>isCurrent()&&state.autoSession===session&&session.hpPrinterCISearch===job&&normaliseIMS(currentInteractionIMS())===normaliseIMS(session.ims);
     const job={query,promise:null};session.hpPrinterCISearch=job;
     job.promise=(async()=>{
       try{
         if(!valid())return '';
-        const actual=await autoLookup('Configuration Item',query,{rankedCI:true,onlyIfEmpty:true,allowEmpty:true,first:true,isCurrent:valid,code:'HP_CI_COMMIT_FAILED'});
-        addLog('info','hp-printer-ci-search',{ims:session.ims,status:actual?'selected-or-preserved':'no-match'});
+        const actual=await autoLookup('Configuration Item',query,{rankedCI:true,forceReselect:true,allowEmpty:true,first:true,isCurrent:valid,code:'HP_CI_COMMIT_FAILED'});
+        if(!actual&&valid())await autoClearReference('Configuration Item','HP_CI_CLEAR_FAILED');
+        addLog('info','hp-printer-ci-search',{ims:session.ims,status:actual?'selected':'no-match'});
         return actual||'';
       }catch(error){
         if(session.hpPrinterCISearch===job)delete session.hpPrinterCISearch;
@@ -15328,20 +15331,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       // Template application rebuilds subordinate controls. Map against THIS schema,
       // not the stale pre-template session, retaining AI keys for cached retries.
       const priority = data.values['no-other-working-printer'] === true ? '3 - Moderate' : '4 - Low';
-      if (data.configurationItem) {
-        const ciLookup = hpConfigurationItemLookup(data.configurationItem);
-        if (ciLookup) {
-          await autoLookup('Configuration Item', ciLookup.search, {
-            expected: ciLookup.expected,
-            match: 'contains',
-            first: true,
-            forceReselect: true,
-            rankedCI: true,
-            code: 'HP_CI_COMMIT_FAILED',
-          });
-        }
-      }
-      const printerCITask=!data.configurationItem?startHPPrinterCISearch(data.values['model-number']||data.values['printer-model']):null;
+      const printerCITask=startHPPrinterCISearch(data.values['model-number']||data.values['printer-model']);
       await autoLookup('Assignment Group', 'HP', { expected: 'HP', code: 'HP_ASSIGNMENT_GROUP_COMMIT_FAILED' });
       await autoSelect('Priority', priority, 'HP_PRIORITY_COMMIT_FAILED');
       const description = buildHPDescription(data.issueType, data.values);
@@ -18373,7 +18363,6 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       <div class="local-sn-hp-row"><label for="local-sn-hp-contact-${suffix}">Contact number</label><input id="local-sn-hp-contact-${suffix}" data-hp-field="contact-number" type="text" autocomplete="off" /></div>
       <div class="local-sn-hp-row"><label for="local-sn-hp-availability-${suffix}">Availability</label><input id="local-sn-hp-availability-${suffix}" data-hp-field="availability" type="text" autocomplete="off" /></div>
       <div class="local-sn-hp-row"><label for="local-sn-hp-address-${suffix}">Store Address</label><textarea id="local-sn-hp-address-${suffix}" data-hp-field="store-address" spellcheck="true"></textarea></div>
-      <div class="local-sn-hp-row"><label for="local-sn-hp-ci-${suffix}">CI</label><input id="local-sn-hp-ci-${suffix}" data-hp-field="configuration-item" type="text" autocomplete="off" placeholder="Optional model or CI search text" /></div>
       <div class="local-sn-hp-row" data-hp-ink-row hidden><label for="local-sn-hp-ink-${suffix}">Ink color(s)</label><input id="local-sn-hp-ink-${suffix}" data-hp-field="ink-colors" type="text" autocomplete="off" /></div>
       <div class="local-sn-model-note" data-hp-model-note></div>
       <div class="local-sn-hp-complete-note" data-hp-complete-note hidden></div>`;
@@ -18581,7 +18570,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             .map((field) => [field.dataset.hpField, field.value.trim()])
             .filter(([, value]) => value)) : {};
           const ci = hpStack
-            ? normalise(hpSuppliedValues['configuration-item']).replace(/^\*+/, '')
+            ? normalise(hpSuppliedValues['model-number']).replace(/^\*+/, '')
             : ciInput.value.trim().replace(/^\*+/, '');
           const group = hpStack ? '' : groupInput.value.trim().replace(/^\*+/, '');
           if (ci) setField('sys_display.incident.cmdb_ci', `*${ci}`);
@@ -21435,7 +21424,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
               );
               // The conflict merge contains AI Values only. CI belongs to the
               // operator and must survive retries independently of that merge.
-              cachedCommand.HP['Configuration Item'] = supplied['configuration-item'] || '';
+              delete cachedCommand.HP['Configuration Item'];
               reusableAICommand = await writeCachedAICommand('HP', pinnedIMS, JSON.stringify(cachedCommand));
             } catch { /* Normal command parsing below reports an unusable cache. */ }
             titleMain.textContent = `${pinnedIMS} - Retrying cached HP…`; setProgress(58); collapsedCommandInput.value = reusableAICommand;
@@ -21467,15 +21456,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             // Route first, then start printer-model CI discovery without
             // blocking the AI request. Late results use native model commits.
             await autoLookup('Assignment Group', 'HP', { expected: 'HP', code: 'HP_ASSIGNMENT_GROUP_COMMIT_FAILED' });
-            if (supplied['configuration-item']) {
-              const ciLookup = hpConfigurationItemLookup(supplied['configuration-item']);
-              if (ciLookup) {
-                await autoLookup('Configuration Item', ciLookup.search, {
-                  expected: ciLookup.expected, match: 'contains', first: true, forceReselect: true, rankedCI:true, code: 'HP_CI_COMMIT_FAILED',
-                });
-              }
-            }
-            if(!supplied['configuration-item'])void startHPPrinterCISearch(supplied['model-number'],()=>!stopped&&running&&dialog.isConnected);
+            void startHPPrinterCISearch(supplied['model-number'],()=>!stopped&&running&&dialog.isConnected);
             titleMain.textContent = `${pinnedIMS} - Sending message to ${aiProviderDisplayName()}…`; setProgress(25);
           const requestArgs = { ims: pinnedIMS, transcript: appendCurrentCaseInstruction(await aiTranscriptWithUserInformation(cacheEntry, 'HP', pinnedIMS), shell.caseInstruction?.value), issueType, supplied, genericSchema };
           assertTicketWindowAlive(dialog);
@@ -21492,7 +21473,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             // CI is an operator-only optional lookup. It is intentionally not
             // an AI value: when supplied, use the exact search text and pick
             // the first matching Configuration Item in Workspace.
-            command.HP['Configuration Item'] = supplied['configuration-item'] || '';
+            delete command.HP['Configuration Item'];
             lastAIResponse = command;
             if (stopped) throw Object.assign(new Error('HP request stopped.'), { code: 'AI_STOPPED' });
             reusableAICommand = await writeCachedAICommand('HP', pinnedIMS, JSON.stringify(command));
