@@ -5503,12 +5503,14 @@ const snAIChatDisplayNames=(()=>{
       }
       parent = parent.parentElement || parent.getRootNode?.().host;
     }
-    if (!incident) return;
     if (node.localName === 'now-button') {
       const name = node.getAttribute('component-name') || '';
-      if ([...hiddenIncidentActionIds].some(id => name.endsWith(id))) node.setAttribute('data-sn-ai-hidden-incident-action', '');
+      // Workspace recycles keyed button hosts after action filtering and tab
+      // changes. Remove a previous action's flag when this host becomes Save.
+      node.toggleAttribute('data-sn-ai-hidden-incident-action',incident&&[...hiddenIncidentActionIds].some(id => name.endsWith(id)));
       return;
     }
+    if (!incident) return;
     if (!Array.isArray(node.items)) return;
     const clean = items => items.flatMap(item => {
       if (hiddenIncidentActionIds.has(String(item.id))) return [];
