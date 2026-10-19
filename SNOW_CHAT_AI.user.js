@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.711
+// @version      2.36.712
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.712","fixes":true,"changes":[{"key":"nova-cut-performance","meaningful":true,"text":"Double the cutting-stroke speed and extend the doorway below the panel border to avoid a remaining bottom strip."}]},
 {"version":"2.36.711","fixes":true,"changes":[{"key":"chatgpt-question-panel","meaningful":true,"text":"Show waiting ChatGPT question choices in the matching SNOW ticket bubble and send the selected answer back to continue the same request. Requires companion 0.4.40."}]},
 {"version":"2.36.710","fixes":true,"changes":[{"key":"ils-printer-values","meaningful":true,"text":"Normalize close Invoice and Picking spellings. Complete other fields when printer destination is blank and retain a reminder to fill it before saving."}]},
 {"version":"2.36.709","fixes":true,"changes":[{"key":"ils-printer-values","meaningful":true,"text":"Accept free-text ILS printer destinations, normalize Invoice and Picking variants, and preserve other supplied destinations without forcing AI correction."}]},
@@ -25678,7 +25679,9 @@ function installNovaCutEffects(host, avatar) {
     const originalLeft=Math.max(0,body.left-box.left-4),originalRight=Math.min(box.width,body.right-box.left+4);
     const inset=(originalRight-originalLeft)*.04875;
     const left=originalLeft+inset,right=originalRight-inset;
-    const bottom=box.height+3,originalTop=body.top-box.top-8,top=bottom-(bottom-originalTop)*.9025;
+    // Continue beyond the full painted border, not just a 3px overrun.
+    // Keep the existing crown height while extending only the opening's feet.
+    const originalBottom=box.height+3,bottom=box.height+16,originalTop=body.top-box.top-8,top=originalBottom-(originalBottom-originalTop)*.9025;
     if(right<=left||bottom<=top)return null;
     const mid=top+(bottom-top)*.55,span=right-left;
     const a=left+span*.24,b=left+span*.62,c=right-span*.12;
@@ -25834,7 +25837,7 @@ function installNovaCutEffects(host, avatar) {
       const transform=`translate(${x}px,${y}px) rotate(${angle}deg)`;blade.style.transform=transform;hilt.style.transform=transform;
       if(size!==lastBladeSize){lastBladeSize=size;for(const p of bladePaths){p.setAttribute('d',`M0 -19 V${-19-size}`);p.style.opacity=size>0?'1':'0';}}
     };
-    const duration=matchMedia('(prefers-reduced-motion: reduce)').matches?1:4600;let start=0;
+    const duration=matchMedia('(prefers-reduced-motion: reduce)').matches?1:2300;let start=0;
     saber.style.opacity='0';
     let heldPose=null;
     const grip=(x,y,angle,size)=>{
