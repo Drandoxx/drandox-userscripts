@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.706
+// @version      2.36.707
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.707","fixes":true,"changes":[{"key":"record-action-overflow","meaningful":true,"text":"Stop rewriting native incident action arrays to prevent competing parent and child renders. Keep hidden actions presentation-only and refresh Resolved green styling when native text changes."}]},
 {"version":"2.36.706","fixes":true,"changes":[{"key":"chat-ticket-card-filter","meaningful":true,"text":"Exclude sent Incident / Request ticket-summary cards from AI chat input while accepting other HTML and rich API messages."}]},
 {"version":"2.36.705","fixes":true,"changes":[{"key":"chat-api-html","meaningful":true,"text":"Accept rich API message formats including ticket cards, links, grouped output and unfamiliar payloads without switching to scrolling solely because of their format. Read HTML inertly and bound structured extraction."}]},
 {"version":"2.36.704","fixes":true,"changes":[{"key":"chat-api-html","meaningful":true,"text":"Read native OutputHtml ticket cards as inert text instead of falling back to chat scrolling. Preserve speaker and join-boundary checks."}]},
@@ -5278,7 +5279,8 @@ const snAIChatDisplayNames=(()=>{
     syncRecordHeaderRows(root);
     const host=root.host;
     if(!host||!['sn-form-internal-header-layout','now-record-common-uiactionbar','sn-form-internal-uiactionbar'].includes(host.localName))return;
-    filterNativeIncidentActionNodes(host);
+    // The header owns actionNodes. Rewriting its child props causes the
+    // parent to restore its original array on every native layout pass.
     syncRecordOverflowMenus(root);
     // Leave fixedButtonNumber to the native responsive action bar. Forcing
     // it to actionNodes.length defeats its More-menu overflow calculation.
@@ -5457,20 +5459,8 @@ const snAIChatDisplayNames=(()=>{
   ]);
   // SN_AI_EMPTY_ACTION_MENU_BEGIN
   function filterNativeIncidentActionNodes(host){
-    if(!['now-record-common-uiactionbar','sn-form-internal-uiactionbar'].includes(host?.localName))return;
-    let owner=host;
-    while(owner&&owner.localName!=='sn-form-internal-header-layout')owner=owner.parentElement||owner.getRootNode?.().host;
-    if(owner?.table!=='incident')return;
-    const nodes=host.getProperties?.().actionNodes;
-    if(!Array.isArray(nodes))return;
-    const clean=items=>items.flatMap(item=>{
-      if(hiddenIncidentActionIds.has(String(item.id)))return [];
-      if(!Array.isArray(item.children))return [item];
-      const children=clean(item.children);
-      return children.length?[{...item,children}]:[];
-    });
-    const filtered=clean(nodes);
-    if(JSON.stringify(filtered)!==JSON.stringify(nodes))host.actionNodes=filtered;
+    // Compatibility no-op: native action data must remain owned by SNOW.
+    // filterIncidentActions hides button hosts and empty overflow menus.
   }
   function recordActionMenuHasItems(items){
     return items.some(item=>{
@@ -6205,6 +6195,7 @@ const snAIChatDisplayNames=(()=>{
       eventFieldShortcut(root);
     });
     observer.observe(root, { childList: true, subtree: true,
+      ...(root.host?.localName?.startsWith('sn-form-internal-header-label-')?{characterData:true}:{}),
       ...(root.host?.matches('sn-workspace-tab,sn-workspace-tab-bar,sn-workspace-sub-tabs')
         ? { characterData:true,attributes:true,attributeFilter:['class','aria-label','aria-selected','disabled'] } : {}) });
     discover(root);
