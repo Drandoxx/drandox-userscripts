@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.709
+// @version      2.36.710
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.710","fixes":true,"changes":[{"key":"ils-printer-values","meaningful":true,"text":"Normalize close Invoice and Picking spellings. Complete other fields when printer destination is blank and retain a reminder to fill it before saving."}]},
 {"version":"2.36.709","fixes":true,"changes":[{"key":"ils-printer-values","meaningful":true,"text":"Accept free-text ILS printer destinations, normalize Invoice and Picking variants, and preserve other supplied destinations without forcing AI correction."}]},
 {"version":"2.36.708","fixes":true,"changes":[{"key":"chat-api-control-filter","meaningful":true,"text":"Skip authorless contextual UI controls instead of falling back to chat scrolling."},{"key":"text-model-commit","meaningful":true,"text":"Accept browser-normalized textarea line endings while still verifying the exact saved form model."}]},
 {"version":"2.36.707","fixes":true,"changes":[{"key":"record-action-overflow","meaningful":true,"text":"Stop rewriting native incident action arrays to prevent competing parent and child renders. Keep hidden actions presentation-only and refresh Resolved green styling when native text changes."}]},
@@ -9895,6 +9896,10 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const comparable=text.replace(/[\s_-]+/g,' ').toLowerCase();
     if(/^(?:the )?invoice(?: printer)?$/.test(comparable))return 'Invoice';
     if(/^(?:the )?picking(?: printer)?$/.test(comparable))return 'Picking';
+    const distance=(a,b)=>{let previous=Array.from({length:b.length+1},(_,i)=>i);for(let i=1;i<=a.length;i++){const next=[i];for(let j=1;j<=b.length;j++)next[j]=Math.min(next[j-1]+1,previous[j]+1,previous[j-1]+(a[i-1]===b[j-1]?0:1));previous=next;}return previous[b.length];};
+    const words=comparable.split(/[^a-z]+/).filter(Boolean).slice(0,30);
+    const scores=['invoice','picking'].map(name=>({name,score:Math.min(...words.map(word=>distance(word,name)/Math.max(word.length,name.length)))})).sort((a,b)=>a.score-b.score);
+    if(scores[0].score<=.3&&scores[0].score<scores[1].score)return scores[0].name==='invoice'?'Invoice':'Picking';
     return text;
   }
   function validateILSPrntAIResult(raw, ims) {
@@ -15307,7 +15312,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           { kind: 'select', field: 'Event Type', value: 'Incident' },
         ],
       });
-      const shortDescription = `ILS - Printer redirection to ${data.printer}`;
+      const shortDescription = data.printer?`ILS - Printer redirection to ${data.printer}`:'ILS - Printer redirection';
       const description = `REASON FOR REDIRECTION: ${data.reason}\nWHAT PRINTER ARE YOU DIRECTING PRINTS TO: ${data.printer}\nTICKET NUMBER FOR FAULTY PRINTER: Not provided`;
       await autoText('Short Description', shortDescription, 'ILS_PRNT_SHORT_DESCRIPTION_COMMIT_FAILED', 80);
       await autoText('Description', description, 'ILS_PRNT_DESCRIPTION_COMMIT_FAILED');
@@ -15317,7 +15322,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       await autoLookup('Attached Knowledge', '*10029', { expected: 'KB0010029', match: 'prefix', first: true, code: 'ILS_PRNT_KB_COMMIT_FAILED' });
       const verification = verifyTicketProfile('ILS_PRNT', { 'Short Description': shortDescription, Description: description });
       if (!verification.ok) automationFailure('ILS_PRNT_FINAL_VERIFICATION_FAILED', 'ILS PRNT values did not pass final verification.', { mismatches: verification.mismatches });
-      const result = { kind: 'auto-complete', ok: true, profile: 'ILS_PRNT', ims: state.autoSession.ims, saved: false, durationMs: Math.round(performance.now() - started), shortDescription, description };
+      const result = { kind: 'auto-complete', ok: true, profile: 'ILS_PRNT', ims: state.autoSession.ims, saved: false, durationMs: Math.round(performance.now() - started), shortDescription, description, printer:data.printer, reviewBeforeSave:data.printer?[]:['Printer destination'] };
       state.commandResult = result;
       state.lastAction = 'ILS PRNT fields completed and verified. Event remains unsaved.';
       addLog('info', 'auto-ils-prnt-complete', result);
@@ -21014,13 +21019,19 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           dialog.classList.remove('is-running', 'is-error');
           dialog.classList.add('is-success');
           titleMain.textContent = `${pinnedIMS} - ILS PRNT complete`;
+          if(finalStatus.result.reviewBeforeSave?.includes('Printer destination')){
+            const note=document.createElement('div');note.dataset.ilsPrinterReminder='true';note.setAttribute('role','status');
+            note.textContent='Completed. Please fill in WHAT PRINTER ARE YOU DIRECTING PRINTS TO before saving.';
+            note.style.cssText='padding:10px;margin-top:8px;color:#e7ca87;font-size:13px';dialog.querySelector('[data-ils-printer-reminder]')?.remove();dialog.append(note);
+          }
           progressText.textContent = '100%';
           if (useAI) {
             await clearCachedAICommand('ILS_PRNT', pinnedIMS);
             reusableAICommand = '';
             if (!chatCacheReleased) { chatCacheReleased = true; if (useAI) releaseAIChatCache(pinnedIMS); }
           }
-          if (useAI && state.feedbackEnabled && shell.showFeedback()) { shell.feedbackClose = closeAndRemove; } else successTimer = setTimeout(() => closeAndRemove('success'), 5000);
+          if(finalStatus.result.reviewBeforeSave?.length){ /* Keep the completed reminder visible until dismissed. */ }
+          else if (useAI && state.feedbackEnabled && shell.showFeedback()) { shell.feedbackClose = closeAndRemove; } else successTimer = setTimeout(() => closeAndRemove('success'), 5000);
         } catch (error) {
           aiRequest = null;
           if (stoppedFromWindow || error?.code === 'AI_STOPPED') {
