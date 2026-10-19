@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.707
+// @version      2.36.708
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.708","fixes":true,"changes":[{"key":"chat-api-control-filter","meaningful":true,"text":"Skip authorless contextual UI controls instead of falling back to chat scrolling."},{"key":"text-model-commit","meaningful":true,"text":"Accept browser-normalized textarea line endings while still verifying the exact saved form model."}]},
 {"version":"2.36.707","fixes":true,"changes":[{"key":"record-action-overflow","meaningful":true,"text":"Stop rewriting native incident action arrays to prevent competing parent and child renders. Keep hidden actions presentation-only and refresh Resolved green styling when native text changes."}]},
 {"version":"2.36.706","fixes":true,"changes":[{"key":"chat-ticket-card-filter","meaningful":true,"text":"Exclude sent Incident / Request ticket-summary cards from AI chat input while accepting other HTML and rich API messages."}]},
 {"version":"2.36.705","fixes":true,"changes":[{"key":"chat-api-html","meaningful":true,"text":"Accept rich API message formats including ticket cards, links, grouped output and unfamiliar payloads without switching to scrolling solely because of their format. Read HTML inertly and bound structured extraction."}]},
@@ -14647,13 +14648,16 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   }
 
   async function commitTextToFormModel(field, text, resolveField, trace = () => {}) {
+    // Textareas normalize CRLF/CR to LF when projecting the native model.
+    // Keep model comparison exact; normalize only its browser presentation.
+    const domMatches=value=>String(value??'').replace(/\r\n?/g,'\n')===String(text).replace(/\r\n?/g,'\n');
     field = resolveField() || field;
     if (!field || field.isConnected === false) return false;
     const binding = workspaceTextBinding(field);
     if (binding) {
       const { owner, props, name } = binding;
       trace('model-binding-ready', { bindingName: name, callbackAvailable: typeof props.onValueChange === 'function' });
-      if (String(props.formData.fields[name]?.value ?? '') === text && String(field.value ?? '') === text
+      if (String(props.formData.fields[name]?.value ?? '') === text && domMatches(field.value)
           && field.getAttribute('aria-invalid') !== 'true') return true;
       if (typeof props.onValueChange !== 'function') return false;
       // Use the same bound callback as a native Workspace edit. DOM value and
@@ -14670,13 +14674,13 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         if (!current || current.isConnected === false) continue;
         const retained = workspaceTextBinding(current);
         if (retained && String(retained.props.formData.fields[name]?.value ?? '') === text &&
-            String(current.value ?? '') === text && current.getAttribute('aria-invalid') !== 'true') return true;
+            domMatches(current.value) && current.getAttribute('aria-invalid') !== 'true') return true;
       }
       const latest=resolveField(),latestBinding=latest?workspaceTextBinding(latest):null;
       trace('model-commit-budget-ended',{budgetMs,elapsedMs:Date.now()-commitStarted,
         modelLength:String(latestBinding?.props.formData.fields[name]?.value??'').length,
         modelMatches:Boolean(latestBinding&&String(latestBinding.props.formData.fields[name]?.value??'')===text),
-        domMatches:Boolean(latest&&String(latest.value??'')===text),actualLength:String(latest?.value??'').length,
+        domMatches:Boolean(latest&&domMatches(latest.value)),actualLength:String(latest?.value??'').length,
         connected:Boolean(latest?.isConnected),ariaInvalid:latest?.getAttribute('aria-invalid')||''});
       return false;
     }
@@ -14684,7 +14688,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     trace('native-value-start');
     setNativeValue(field, text);
     trace('native-value-returned');
-    return String((resolveField() || field).value ?? '') === text;
+    return domMatches((resolveField() || field).value);
   }
 
   function workspaceTextBinding(field) {
@@ -16487,6 +16491,9 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         continue;
       }
       if (row.internal || row.transitory || row.isBotMessage || /^(?:virtual[ ._]agent|system)$/i.test(row.createdBy || '')) continue;
+      // Contextual actions carry buttons/menu metadata, not a participant's
+      // utterance. SNOW legitimately leaves both author fields null here.
+      if(payload?.uiType==='ContextualAction')continue;
       // Unknown presentation formats are data, not an API failure. System,
       // internal and pre-agent messages were filtered above as before.
       let text = nativeAPIMessageText(row,payload);
