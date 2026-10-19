@@ -9694,6 +9694,29 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     return expected ? { search: `*${expected}`, expected } : null;
   }
 
+  // SN_AI_HP_RANKED_CI_BEGIN
+  function startHPPrinterCISearch(printerModel) {
+    const session=state.autoSession;
+    const query=String(printerModel||'').replace(/^\*+/,'').trim();
+    if(!session||session.profile!=='HP'||!query||/^(not provided|n\/?a|unknown)$/i.test(query))return Promise.resolve('');
+    if(session.hpPrinterCISearch?.query===query)return session.hpPrinterCISearch.promise;
+    const valid=()=>state.autoSession===session&&normaliseIMS(currentInteractionIMS())===normaliseIMS(session.ims);
+    const job={query,promise:null};session.hpPrinterCISearch=job;
+    job.promise=(async()=>{
+      try{
+        if(!valid())return '';
+        const actual=await autoLookup('Configuration Item',query,{rankedCI:true,onlyIfEmpty:true,allowEmpty:true,first:true,isCurrent:valid,code:'HP_CI_COMMIT_FAILED'});
+        addLog('info','hp-printer-ci-search',{ims:session.ims,status:actual?'selected-or-preserved':'no-match'});
+        return actual||'';
+      }catch(error){
+        addLog('warn','hp-printer-ci-search',{ims:session.ims,status:'unavailable',message:String(error?.message||error).slice(0,180)});
+        return '';
+      }
+    })();
+    return job.promise;
+  }
+  // SN_AI_HP_RANKED_CI_END
+
   // Store addresses are intentionally multiline, but empty visual rows are not
   // meaningful data and make the HP template needlessly hard to read.  Apply
   // this at rendering time as well as prompting the AI, so operator-provided
@@ -14014,13 +14037,15 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   }
   async function commitNativeReferenceAttempt(fieldLabel,expected,options={}) {
     await waitForAutomationResume();
+    if(options.isCurrent&&!options.isCurrent())return '';
     const isKnowledge=comparableLabel(fieldLabel)==='attached knowledge';
     const prefixMatch=isKnowledge||options.match==='prefix';
-    const matchesDisplay=value=>prefixMatch?normalisedFieldValue(value).startsWith(normalisedFieldValue(expected)):options.match==='contains'?normalisedFieldValue(value).includes(normalisedFieldValue(expected)):normalisedFieldValue(value)===normalisedFieldValue(expected);
+    const matchesDisplay=value=>options.rankedCI?true:prefixMatch?normalisedFieldValue(value).startsWith(normalisedFieldValue(expected)):options.match==='contains'?normalisedFieldValue(value).includes(normalisedFieldValue(expected)):normalisedFieldValue(value)===normalisedFieldValue(expected);
     const field=await waitForControlByLabel(fieldLabel,3000);
     const host=field?matrixReferenceHost(field):null,props=host?.dAProps;
     const callback=host?.onValueChange||props?.onValueChange;
     if(!props||typeof callback!=='function'||field.disabled||field.readOnly||props.readonly)throw new Error(`NATIVE_REFERENCE_UNAVAILABLE: ${fieldLabel}`);
+    if(options.onlyIfEmpty&&String(props.value||props.displayValue||field.value||'').trim())return props.displayValue||field.value||'';
     const valid=p=>/^[a-f0-9]{32}$/i.test(String(p?.value||''))&&matchesDisplay(p.displayValue);
     if(valid(props)&&!options.forceReselect)return props.displayValue;
     // The same read-only GraphQL resolver used by sn-record-reference-connected:
@@ -14030,7 +14055,10 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const searchChars=String(options.searchValue||expected);
     const containsCI=comparableLabel(fieldLabel)==='configuration item'&&options.match==='contains';
     const variables={table:props.tableName||props.referringTable,field:props.fieldName,sys_id:props.recordSysId||'-1',encodedRecord:props.encodedRecord,serializedChanges:props.serializedChanges||'{}',chars:containsCI&&!searchChars.startsWith('*')?'*'+searchChars:searchChars,referenceKey:props.referenceKey||null};
-    const response=await page.fetch('/api/now/graphql',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json',Accept:'application/json','X-UserToken':page.g_ck},body:JSON.stringify({query,variables})});
+    // The ranked CI transport is the exact operation used by the interactive
+    // search, including its native qualifier, token expansion and 100-row cap.
+    const operation=options.rankedCI?{operationName:'snRecordReferenceConnected',query,variables:{...variables,paginationLimit:100,paginationOffset:0}}:{query,variables};
+    const response=await page.fetch('/api/now/graphql',{method:'POST',credentials:'same-origin',...(options.rankedCI&&typeof AbortSignal?.timeout==='function'?{signal:AbortSignal.timeout(15000)}:{}),headers:{'Content-Type':'application/json',Accept:'application/json','X-UserToken':page.g_ck},body:JSON.stringify(operation)});
     if(!response.ok)throw new Error(`NATIVE_REFERENCE_READ_FAILED: ${fieldLabel} (${response.status})`);
     const body=await response.json();
     if(body.errors?.length)throw new Error(`NATIVE_REFERENCE_QUERY_FAILED: ${fieldLabel}`);
@@ -14038,15 +14066,19 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     if(!Array.isArray(retrieved?.referenceDataList))throw new Error(`NATIVE_REFERENCE_RESPONSE_INVALID: ${fieldLabel}`);
     // Native typeahead splits recent selections from regular matches.
     // Include both, keeping native order and avoiding duplicate records.
-    const rows=[...new Map([...(retrieved.referenceRecentDataList||[]),...retrieved.referenceDataList].map(r=>[r.sysId,r])).values()];
+    let rows=[...new Map([...(retrieved.referenceRecentDataList||[]),...retrieved.referenceDataList].map(r=>[r.sysId,r])).values()];
+    if(options.rankedCI)rows=ciRankRows(rows,searchChars).slice(0,100);
     const matches=rows.map(r=>({value:props.referenceKey?r.referenceKeyValue:r.sysId,displayValue:r.referenceData?.[0]?.value}))
       .filter(r=>r.value&&typeof r.displayValue==='string'&&matchesDisplay(r.displayValue));
     // Any native-returned version with the requested KB prefix is acceptable.
+    if(!matches.length&&options.allowEmpty)return '';
     if(!matches.length)throw new Error(`NATIVE_REFERENCE_NO_ALLOWED_MATCH: ${fieldLabel} - ${expected} was not returned by ServiceNow for the current form context.`);
     if(matches.length!==1 && !((isKnowledge||options.first)&&matches.length))throw new Error(`NATIVE_REFERENCE_OPTION_NOT_UNIQUE: ${fieldLabel}`);
     const resolved=matches[0];
     // Never commit a response into a replacement component with stale context.
     await waitForAutomationResume();
+    if(options.isCurrent&&!options.isCurrent())return '';
+    if(options.onlyIfEmpty){const fresh=host.dAProps;if(String(fresh?.value||fresh?.displayValue||field.value||'').trim())return fresh?.displayValue||field.value||'';}
     if(findControlByLabel(fieldLabel,currentFormElements())!==field||host.dAProps.encodedRecord!==variables.encodedRecord||(host.dAProps.serializedChanges||'{}')!==variables.serializedChanges)throw new Error(`NATIVE_REFERENCE_CONTEXT_CHANGED: ${fieldLabel}`);
     callback.call(host,{value:resolved.value,displayValue:resolved.displayValue});
     // Display text can update before the form model, especially while a
