@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.699
+// @version      2.36.700
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.700","fixes":true,"changes":[{"key":"nova-cut-performance","meaningful":true,"text":"Draw the cutting sword and sparks in a dedicated canvas worker, preanimate hands and gaze, and apply the TV hole once at completion. Unsupported browsers retain the previous effect."},{"key":"record-action-overflow","meaningful":true,"text":"Restore Save when Workspace reuses a button previously marked as a hidden incident action."}]},
 {"version":"2.36.699","fixes":true,"changes":[{"key":"automation-performance","meaningful":true,"text":"Idle clicks, typing, scrolling and Nova checks read lightweight running state instead of scanning ticket fields."}]},
 {"version":"2.36.698","fixes":true,"changes":[{"key":"reporting-user","meaningful":true,"text":"Commit Reporting User through the native Workspace form callback and verify its stored model value, not only visible text."}]},
 {"version":"2.36.697","fixes":true,"changes":[{"key":"record-action-overflow","meaningful":false,"text":"Remove hidden incident actions before native overflow layout and keep remounted More buttons hidden until their menu has actions."}]},
@@ -5496,10 +5497,6 @@ const snAIChatDisplayNames=(()=>{
   const incidentActionIdentityObservers=new WeakSet();
   function filterIncidentActions(node) {
     if (!node?.matches?.('now-button,now-dropdown.uiaction-bar-dropdown')) return;
-    if(node.localName==='now-button'&&!incidentActionIdentityObservers.has(node)){
-      incidentActionIdentityObservers.add(node);
-      new MutationObserver(()=>filterIncidentActions(node)).observe(node,{attributes:true,attributeFilter:['component-name']});
-    }
     syncEmptyRecordActionMenu(node);
     let parent = node, incident = false;
     while (parent) {
@@ -5509,6 +5506,10 @@ const snAIChatDisplayNames=(()=>{
       parent = parent.parentElement || parent.getRootNode?.().host;
     }
     if (node.localName === 'now-button') {
+      if(incident&&!incidentActionIdentityObservers.has(node)){
+        incidentActionIdentityObservers.add(node);
+        new MutationObserver(()=>filterIncidentActions(node)).observe(node,{attributes:true,attributeFilter:['component-name']});
+      }
       const name = node.getAttribute('component-name') || '';
       // Workspace recycles keyed button hosts after action filtering and tab
       // changes. Remove a previous action's flag when this host becomes Save.
