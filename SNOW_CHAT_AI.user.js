@@ -9695,12 +9695,12 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   }
 
   // SN_AI_HP_RANKED_CI_BEGIN
-  function startHPPrinterCISearch(printerModel) {
+  function startHPPrinterCISearch(printerModel,isCurrent=()=>true) {
     const session=state.autoSession;
     const query=String(printerModel||'').replace(/^\*+/,'').trim();
     if(!session||session.profile!=='HP'||!query||/^(not provided|n\/?a|unknown)$/i.test(query))return Promise.resolve('');
     if(session.hpPrinterCISearch?.query===query)return session.hpPrinterCISearch.promise;
-    const valid=()=>state.autoSession===session&&normaliseIMS(currentInteractionIMS())===normaliseIMS(session.ims);
+    const valid=()=>isCurrent()&&state.autoSession===session&&normaliseIMS(currentInteractionIMS())===normaliseIMS(session.ims);
     const job={query,promise:null};session.hpPrinterCISearch=job;
     job.promise=(async()=>{
       try{
@@ -9709,6 +9709,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         addLog('info','hp-printer-ci-search',{ims:session.ims,status:actual?'selected-or-preserved':'no-match'});
         return actual||'';
       }catch(error){
+        if(session.hpPrinterCISearch===job)delete session.hpPrinterCISearch;
         addLog('warn','hp-printer-ci-search',{ims:session.ims,status:'unavailable',message:String(error?.message||error).slice(0,180)});
         return '';
       }
@@ -21474,7 +21475,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
                 });
               }
             }
-            if(!supplied['configuration-item'])void startHPPrinterCISearch(supplied['model-number']);
+            if(!supplied['configuration-item'])void startHPPrinterCISearch(supplied['model-number'],()=>!stopped&&running&&dialog.isConnected);
             titleMain.textContent = `${pinnedIMS} - Sending message to ${aiProviderDisplayName()}…`; setProgress(25);
           const requestArgs = { ims: pinnedIMS, transcript: appendCurrentCaseInstruction(await aiTranscriptWithUserInformation(cacheEntry, 'HP', pinnedIMS), shell.caseInstruction?.value), issueType, supplied, genericSchema };
           assertTicketWindowAlive(dialog);
