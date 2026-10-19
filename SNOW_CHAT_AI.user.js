@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.703
+// @version      2.36.705
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,8 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.705","fixes":true,"changes":[{"key":"chat-api-html","meaningful":true,"text":"Accept rich API message formats including ticket cards, links, grouped output and unfamiliar payloads without switching to scrolling solely because of their format. Read HTML inertly and bound structured extraction."}]},
+{"version":"2.36.704","fixes":true,"changes":[{"key":"chat-api-html","meaningful":true,"text":"Read native OutputHtml ticket cards as inert text instead of falling back to chat scrolling. Preserve speaker and join-boundary checks."}]},
 {"version":"2.36.703","fixes":true,"changes":[{"key":"nova-update-reminder","meaningful":true,"text":"Update now hands directly to Nova's reload reminder instead of waiting behind queued reply messages. Duplicate link callbacks do not restart the reminder."}]},
 {"version":"2.36.702","fixes":true,"changes":[{"key":"hp-ci","meaningful":true,"text":"Remove CI from the HP bubble. A nonempty printer model always drives ranked CI selection, replacing an existing CI or clearing it when no match is found."}]},
 {"version":"2.36.701","fixes":true,"changes":[{"key":"hp-ci","meaningful":true,"text":"HP mode uses the shared ranked CI search. Empty CI fields search the printer model alongside AI work, select the top result through the native form callback, and preserve manual selections. No match leaves CI blank."}]},
@@ -16427,11 +16429,51 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     return { interactionId, conversationId: '', closed: true };
   }
 
+  // ServiceNow Bot Integration API documents uiType as extensible strings:
+  // https://www.servicenow.com/docs/r/api-reference/rest-apis/bot-api.html
+  function nativeAPIMessageText(row,payload){
+    const htmlText=value=>{
+      const input=String(value??'').slice(0,100000);
+      try{
+        const node=document.createElement('template');node.innerHTML=input;
+        node.content.querySelectorAll('script,style,template,noscript,iframe,object,embed').forEach(element=>element.remove());
+        for(const element of node.content.querySelectorAll('br,p,div,li,dt,dd,tr,td,th,h1,h2,h3,h4'))element.append(document.createTextNode(' '));
+        return node.content.textContent||'';
+      }catch{return input.replace(/<(script|style|template|noscript|iframe|object|embed)\b[^>]*>[\s\S]*?<\/\1\s*>/gi,' ').replace(/<[^>]*>/g,' ');}
+    };
+    if(row.messageType==='text')return String(row.payload??'');
+    if(/^Output(?:Image|File|Attachment)$/.test(payload?.uiType||''))return `[Attachment: ${payload.alt_text||payload.fileName||payload.name||'image/file'}]`;
+    if(payload?.uiType==='OutputHtml'){
+      const text=htmlText(payload.value);
+      if(normalise(text))return text;
+    }
+    const parts=[],seen=new Set();let budget=60000,nodes=0,truncated=false;
+    const visit=(value,depth=0)=>{
+      if(value===null||value===undefined)return;
+      if(depth>10||++nodes>500||budget<=0){truncated=true;return;}
+      if(typeof value!=='object'){
+        const text=htmlText(value);if(!normalise(text)||/^new message$/i.test(text.trim()))return;
+        parts.push(text.slice(0,budget));if(text.length>budget)truncated=true;budget-=text.length;return;
+      }
+      if(seen.has(value))return;seen.add(value);
+      if(Array.isArray(value)){for(const item of value)visit(item,depth+1);return;}
+      // Prefer presentation fields. Do not leak credentials from attachment
+      // headers or serialize transport metadata into the ticket transcript.
+      const preferred=['plainTextMessage','text','message','promptMsg','title','label','description','displayValue','value','body','content','parts','items','rows','cells','fields','cards','url','action'];
+      let keys=preferred.filter(key=>value[key]!==undefined&&value[key]!==null);
+      if(!keys.length)keys=Object.keys(value).filter(key=>!/(?:authorization|cookie|password|secret|token|headers|script|style|uiMetadata|uiType|sysId|messageId)/i.test(key)).slice(0,50);
+      for(const key of keys)visit(value[key],depth+1);
+    };
+    visit(payload??row.payload);
+    const text=parts.join(' ');
+    return (normalise(text)?text:`[API message: ${String(payload?.uiType||row.messageType||'empty').slice(0,60)}]`)+(truncated?' [message truncated]':'');
+  }
   function nativeAPIChatMessages(records, transcriptMessages = []) {
     const rows = [...records].sort((a, b) => String(a.sequence).localeCompare(String(b.sequence)));
     const payloadOf = row => {
       if (row.messageType === 'text') return null;
-      try { return JSON.parse(row.payload); } catch { return null; }
+      if(row.payload&&typeof row.payload==='object')return row.payload;
+      try { let value=JSON.parse(row.payload);if(typeof value==='string'){try{value=JSON.parse(value);}catch{}}return value; } catch { return null; }
     };
     const boundary = rows.findIndex(row => row.system && joinMarkerMatch(payloadOf(row)?.message));
     if (boundary < 0) return null;
@@ -16445,19 +16487,9 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         continue;
       }
       if (row.internal || row.transitory || row.isBotMessage || /^(?:virtual[ ._]agent|system)$/i.test(row.createdBy || '')) continue;
-      let text = '';
-      if (row.messageType === 'text') text = String(row.payload || '');
-      else if (payload?.uiType === 'OutputText') {
-        if (payload.plainTextMessage) text = payload.plainTextMessage;
-        else {
-          const node = document.createElement('div');
-          node.innerHTML = String(payload.value || '');
-          text = node.textContent || '';
-        }
-      } else if (/^Output(?:Image|File|Attachment)$/.test(payload?.uiType || '')) {
-        text = `[Attachment: ${payload.alt_text || payload.fileName || payload.name || 'image/file'}]`;
-      } else if (payload?.uiType === 'ContextualAction') continue;
-      else throw new Error('CHAT_API_UNSUPPORTED_MESSAGE');
+      // Unknown presentation formats are data, not an API failure. System,
+      // internal and pre-agent messages were filtered above as before.
+      let text = nativeAPIMessageText(row,payload);
       text = normalise(text);
       if (!text || isChatSummaryText(text)) continue;
       let author = normalise(row.createdBy || row.senderName);
@@ -16558,7 +16590,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     } catch (error) {
       // Never cache a partial API page or suppress a record-switch safeguard.
       checkIdentity();
-      addLog('warn', 'chat-api-scroll-fallback', { ims, reason: error.name === 'AbortError' ? 'timeout' : error.message, durationMs: Math.round(performance.now() - started) });
+      addLog('warn', 'chat-api-scroll-fallback', { ims, reason: error.name === 'AbortError' ? 'timeout' : error.message, ...(error.format?{format:error.format}:{}), durationMs: Math.round(performance.now() - started) });
       return null;
     } finally { clearTimeout(timeout); if (captureToken?.controller === controller) captureToken.controller = null; }
   }
