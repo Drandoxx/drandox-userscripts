@@ -25457,7 +25457,8 @@ function novaCutRenderWorker(){
 async function startNovaThreadedCut(options){
   if(typeof Worker==='undefined'||!HTMLCanvasElement.prototype.transferControlToOffscreen)return null;
   let worker,url,canvas,timer,settled=false,animations=[];
-  const stop=()=>{clearTimeout(timer);worker?.terminate();if(url)URL.revokeObjectURL(url);url=null;canvas?.remove();animations.forEach(a=>a.cancel());animations=[];options.blade.style.removeProperty('visibility');options.hilt.style.removeProperty('visibility');};
+  const resized=()=>{stop();if(options.valid())options.failed();};
+  const stop=()=>{clearTimeout(timer);window.removeEventListener('resize',resized);worker?.terminate();if(url)URL.revokeObjectURL(url);url=null;canvas?.remove();animations.forEach(a=>a.cancel());animations=[];options.blade.style.removeProperty('visibility');options.hilt.style.removeProperty('visibility');};
   try{
     canvas=document.createElement('canvas');canvas.dataset.novaCutWorker='true';
     const width=innerWidth,height=innerHeight,scale=Math.min(1.5,devicePixelRatio||1,Math.sqrt(4000000/Math.max(1,width*height)));
@@ -25488,6 +25489,7 @@ async function startNovaThreadedCut(options){
     const complete=()=>{stop();if(options.valid())options.finished(ready[ready.length-1]);};
     worker.onmessage=event=>{if(event.data.type==='done'){clearTimeout(timer);complete();}};
     timer=setTimeout(complete,options.duration+2500);
+    window.addEventListener('resize',resized,{once:true});
     worker.postMessage({type:'start',at});
     return {stop};
   }catch{stop();return null;}
@@ -25583,6 +25585,7 @@ function installNovaCutEffects(host, avatar) {
   };
   host.novaSwordIdleCancel=()=>{if(current?.idleOnly)close();};
   host.novaGameInterruptCut=()=>{if(current)close();};
+  window.addEventListener('pagehide',close);
   async function open(target,carry=null,idleOnly=false){
     const kind='panel';
     if(current){retainCut();current.panel=document.createElement('div');}
