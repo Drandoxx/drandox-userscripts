@@ -25416,6 +25416,83 @@ try{const response=await fetch('/api/now/table/sys_user/'+id+'?sysparm_fields=fi
 }
 
 function novaSaberHiltMarkup(){return '<rect x="-4" y="-18" width="8" height="24" rx="2" fill="#303039" stroke="#d7dbe4" stroke-width="1.3"/><path d="M-3 -13H3 M-3 -9H3 M-3 -5H3" stroke="#999da8" stroke-width="2"/><rect x="-5" y="2" width="10" height="5" rx="1" fill="#d9dce5"/><circle cx="2" cy="-16" r="1.5" fill="#ff524c"/>';}
+// SN_AI_CUT_WORKER_BEGIN
+function novaCutRenderWorker(){
+  let ctx,canvas,plan,settings,started=0,clock=0;
+  const schedule=callback=>typeof requestAnimationFrame==='function'?requestAnimationFrame(callback):setTimeout(()=>callback(performance.now()),16);
+  const draw=()=>{
+    const elapsed=performance.timeOrigin+performance.now()-started;
+    if(elapsed<0){clock=schedule(draw);return;}
+    const t=Math.min(1,elapsed/settings.duration),index=t*(plan.length-1),a=plan[Math.floor(index)],b=plan[Math.min(plan.length-1,Math.floor(index)+1)],f=index%1;
+    const p={};for(const key of ['x','y','angle','px','py'])p[key]=a[key]+(b[key]-a[key])*f;
+    ctx.clearRect(0,0,settings.width,settings.height);
+    ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.angle*Math.PI/180);
+    ctx.lineCap='round';ctx.shadowColor=settings.colour;ctx.shadowBlur=12;
+    ctx.beginPath();ctx.moveTo(0,-19);ctx.lineTo(0,-59);ctx.strokeStyle=settings.colour;ctx.lineWidth=13;ctx.stroke();
+    ctx.shadowBlur=0;ctx.strokeStyle='#fff5ff';ctx.lineWidth=4;ctx.stroke();
+    ctx.fillStyle='#303039';ctx.strokeStyle='#d7dbe4';ctx.lineWidth=1.3;ctx.fillRect(-4,-18,8,24);ctx.strokeRect(-4,-18,8,24);
+    ctx.strokeStyle='#999da8';ctx.lineWidth=2;for(const y of [-13,-9,-5]){ctx.beginPath();ctx.moveTo(-3,y);ctx.lineTo(3,y);ctx.stroke();}
+    ctx.fillStyle='#d9dce5';ctx.fillRect(-5,2,10,5);ctx.restore();
+    // Deterministic tiny particles: no DOM insertion or per-frame messages.
+    const pulse=Math.floor(elapsed/90);ctx.fillStyle='#ffcb52';
+    for(let i=0;i<5;i++){const q=pulse*2.3+i*7.1;ctx.beginPath();ctx.arc(p.px+Math.sin(q)*10,p.py+Math.cos(q*1.7)*9,1+(i%3)*.7,0,Math.PI*2);ctx.fill();}
+    if(t<1)clock=schedule(draw);else postMessage({type:'done'});
+  };
+  onmessage=event=>{
+    const data=event.data;
+    if(data.type==='init'){
+      settings=data;canvas=data.canvas;ctx=canvas.getContext('2d');
+      if(!ctx)throw Error('cut-context-unavailable');ctx.scale(data.scale,data.scale);
+      let previousAngle=null;
+      plan=data.points.map(point=>{
+        const dx=point.x-data.body.x,dy=point.y-data.body.y,norm=Math.max(1,Math.hypot(dx,dy)),ux=dx/norm,uy=dy/norm;
+        let angle=Math.atan2(dy,dx)*180/Math.PI+90;
+        if(previousAngle!==null)angle=previousAngle+((angle-previousAngle+540)%360)-180;
+        previousAngle=angle;
+        return {x:point.x-ux*59,y:point.y-uy*59,otherX:point.x-ux*68,otherY:point.y-uy*68,angle,px:point.x,py:point.y};
+      });postMessage({type:'ready',plan});
+    }else if(data.type==='start'){started=data.at;clock=schedule(draw);}
+  };
+}
+async function startNovaThreadedCut(options){
+  if(typeof Worker==='undefined'||!HTMLCanvasElement.prototype.transferControlToOffscreen)return null;
+  let worker,url,canvas,timer,settled=false,animations=[];
+  const stop=()=>{clearTimeout(timer);worker?.terminate();if(url)URL.revokeObjectURL(url);url=null;canvas?.remove();animations.forEach(a=>a.cancel());animations=[];options.blade.style.removeProperty('visibility');options.hilt.style.removeProperty('visibility');};
+  try{
+    canvas=document.createElement('canvas');canvas.dataset.novaCutWorker='true';
+    const width=innerWidth,height=innerHeight,scale=Math.min(1.5,devicePixelRatio||1,Math.sqrt(4000000/Math.max(1,width*height)));
+    canvas.width=Math.ceil(width*scale);canvas.height=Math.ceil(height*scale);
+    canvas.style.cssText=`position:fixed;inset:0;width:${width}px;height:${height}px;pointer-events:none;z-index:${options.zIndex}`;
+    options.layer.append(canvas);
+    url=URL.createObjectURL(new Blob(['('+novaCutRenderWorker.toString()+')()'],{type:'text/javascript'}));
+    worker=new Worker(url);
+    const ready=await new Promise(resolve=>{
+      timer=setTimeout(()=>{settled=true;resolve(null);},1500);
+      worker.onerror=()=>{if(!settled){settled=true;clearTimeout(timer);resolve(null);}else{stop();options.failed();}};
+      worker.onmessage=event=>{if(event.data.type==='ready'&&!settled){settled=true;clearTimeout(timer);resolve(event.data.plan);}};
+      const offscreen=canvas.transferControlToOffscreen();
+      worker.postMessage({type:'init',canvas:offscreen,width,height,scale,duration:options.duration,colour:options.colour,points:options.points,body:options.body},[offscreen]);
+    });
+    if(!ready||!options.valid()){stop();return null;}
+    URL.revokeObjectURL(url);url=null;
+    const at=performance.timeOrigin+performance.now()+40,timelineAt=document.timeline.currentTime+40;
+    const play=(element,frames)=>{const animation=element.animate(frames,{duration:options.duration,fill:'forwards',easing:'linear'});animation.startTime=timelineAt;animations.push(animation);};
+    for(const [element,box,other]of [[options.arm,options.armBox,false],[options.otherArm,options.otherArmBox,true]]){
+      element.style.removeProperty('transform');
+      play(element,ready.map(p=>({transform:`translate(${((other?p.otherX:p.x)-box.left-box.width/2)/.72}px,${((other?p.otherY:p.y)-box.top-box.height/2)/.72}px)`})));
+    }
+    options.eyes.style.removeProperty('translate');
+    play(options.eyes,ready.map(p=>({translate:`${Math.max(-4,Math.min(4,(p.px-options.body.x)/18))}px ${Math.max(-3,Math.min(3,(p.py-options.eyeY)/18))}px`})));
+    for(const path of options.paths)play(path,[{strokeDashoffset:String(options.length)},{strokeDashoffset:'0'}]);
+    options.blade.style.visibility=options.hilt.style.visibility='hidden';
+    const complete=()=>{stop();if(options.valid())options.finished(ready[ready.length-1]);};
+    worker.onmessage=event=>{if(event.data.type==='done'){clearTimeout(timer);complete();}};
+    timer=setTimeout(complete,options.duration+2500);
+    worker.postMessage({type:'start',at});
+    return {stop};
+  }catch{stop();return null;}
+}
+// SN_AI_CUT_WORKER_END
 function installNovaCutEffects(host, avatar) {
   if(!document.body||!avatar.shadowRoot||host.novaSwordIdle)return;
   // One zero-sized stacking group owns the character and all external props.
@@ -25461,7 +25538,7 @@ function installNovaCutEffects(host, avatar) {
   const retainCut=()=>{
     if(!current)return;
     const record={...current,animations:[...current.animations]};
-    record.animations.forEach(a=>a.cancel());record.animations=[];
+    record.threadedCut?.stop();record.animations.forEach(a=>a.cancel());record.animations=[];
     if(!record.complete){record.target.style.maskImage=record.previousMask;record.target.style.webkitMaskImage=record.previousWebkitMask;}
     record.saber.querySelector('.sparks').innerHTML='';
     record.panel.querySelectorAll('svg > g path').forEach(glow=>glow.animate([{opacity:.3},{opacity:.7},{opacity:.3}],{duration:3200,iterations:Infinity,easing:'ease-in-out'}));
@@ -25501,7 +25578,7 @@ function installNovaCutEffects(host, avatar) {
   };
   const close=()=>{
     cancelAnimationFrame(visibilityFrame);visibilityFrame=0;const ending=current;current=null;
-    if(ending){if(!ending.complete){ending.target.style.maskImage=ending.previousMask;ending.target.style.webkitMaskImage=ending.previousWebkitMask;}ending.animations.forEach(a=>a.cancel());if(ending.idleOnly)ending.target.remove();}
+    if(ending){ending.threadedCut?.stop();if(!ending.complete){ending.target.style.maskImage=ending.previousMask;ending.target.style.webkitMaskImage=ending.previousWebkitMask;}ending.animations.forEach(a=>a.cancel());if(ending.idleOnly)ending.target.remove();}
     ++token;cancelAnimationFrame(frame);ending?.panel.remove();ending?.saber.remove();ending?.close.remove();resetNova();status.textContent='';host.novaCutHold?.(false);
   };
   host.novaSwordIdleCancel=()=>{if(current?.idleOnly)close();};
@@ -25805,6 +25882,19 @@ function installNovaCutEffects(host, avatar) {
     const destination={x:tx-dx/norm*59,y:ty-dy/norm*59,angle:Math.atan2(dy,dx)*180/Math.PI+90};
     const from=carry?.pose||{x:drawX,y:drawY,angle:28},turn=((destination.angle-from.angle+540)%360)-180,aimStart=performance.now();
     await new Promise(resolve=>{const aim=now=>{if(mine!==token){resolve();return;}const t=Math.min(1,(now-aimStart)/400),ease=t*t*(3-2*t);grip(from.x+(destination.x-from.x)*ease,from.y+(destination.y-from.y)*ease,from.angle+turn*ease,40);if(t<1)frame=requestAnimationFrame(aim);else resolve();};frame=requestAnimationFrame(aim);});if(mine!==token)return;
+    // Sample native SVG geometry once. The worker receives geometry only,
+    // never ticket/chat content, and owns the sword/particle frame loop.
+    const points=Array.from({length:241},(_,index)=>{const p=track.getPointAtLength(length*index/240);return {x:box.left+p.x,y:box.top+p.y};});
+    const threaded=await startNovaThreadedCut({layer:animationLayer,zIndex:baseZ-1,blade,hilt,arm,otherArm,eyes,armBox,otherArmBox,
+      duration,colour,points,length,paths:[track,edge,core,slot,...gluedPaths],body:{x:bodyBox.left+bodyBox.width/2,y:bodyBox.top+bodyBox.height*.63},eyeY:bodyBox.top+bodyBox.height/2,
+      valid:()=>mine===token&&current?.target===target,
+      failed:()=>{if(mine===token)close();},
+      finished:pose=>{if(mine!==token)return;grip(pose.x,pose.y,pose.angle,40);current.distance=length;finish();}
+    });
+    if(mine!==token){threaded?.stop();return;}
+    if(threaded){current.threadedCut=threaded;return;}
+    // CSP or older browsers can reject workers/canvas transfer. Retain the
+    // existing animation as a safe fallback rather than leaving Nova stuck.
     start=performance.now();frame=requestAnimationFrame(tick);
   }
 
