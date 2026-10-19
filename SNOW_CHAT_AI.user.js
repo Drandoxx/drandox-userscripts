@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.701
+// @version      2.36.702
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.702","fixes":true,"changes":[{"key":"hp-ci","meaningful":true,"text":"Remove CI from the HP bubble. A nonempty printer model always drives ranked CI selection, replacing an existing CI or clearing it when no match is found."}]},
 {"version":"2.36.701","fixes":true,"changes":[{"key":"hp-ci","meaningful":true,"text":"HP mode uses the shared ranked CI search. Empty CI fields search the printer model alongside AI work, select the top result through the native form callback, and preserve manual selections. No match leaves CI blank."}]},
 {"version":"2.36.700","fixes":true,"changes":[{"key":"nova-cut-performance","meaningful":true,"text":"Draw the cutting sword and sparks in a dedicated canvas worker, preanimate hands and gaze, and apply the TV hole once at completion. Unsupported browsers retain the previous effect."},{"key":"record-action-overflow","meaningful":true,"text":"Restore Save when Workspace reuses a button previously marked as a hidden incident action."}]},
 {"version":"2.36.699","fixes":true,"changes":[{"key":"automation-performance","meaningful":true,"text":"Idle clicks, typing, scrolling and Nova checks read lightweight running state instead of scanning ticket fields."}]},
@@ -9701,7 +9702,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const session=state.autoSession;
     const query=String(printerModel||'').replace(/^\*+/,'').trim();
     if(!session||session.profile!=='HP'||!query||/^(not provided|n\/?a|unknown)$/i.test(query))return Promise.resolve('');
-    if(session.hpPrinterCISearch?.query===query)return session.hpPrinterCISearch.promise;
+    const previous=session.hpPrinterCISearch;
+    if(previous?.query===query&&(!previous.done||String(readableControlValue('Configuration Item')||'').trim()===previous.result))return previous.promise;
     const valid=()=>isCurrent()&&state.autoSession===session&&session.hpPrinterCISearch===job&&normaliseIMS(currentInteractionIMS())===normaliseIMS(session.ims);
     const job={query,promise:null};session.hpPrinterCISearch=job;
     job.promise=(async()=>{
@@ -9710,11 +9712,13 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         const actual=await autoLookup('Configuration Item',query,{rankedCI:true,forceReselect:true,allowEmpty:true,first:true,isCurrent:valid,code:'HP_CI_COMMIT_FAILED'});
         if(!actual&&valid())await autoClearReference('Configuration Item','HP_CI_CLEAR_FAILED');
         addLog('info','hp-printer-ci-search',{ims:session.ims,status:actual?'selected':'no-match'});
-        return actual||'';
+        job.result=actual||'';return job.result;
       }catch(error){
         if(session.hpPrinterCISearch===job)delete session.hpPrinterCISearch;
         addLog('warn','hp-printer-ci-search',{ims:session.ims,status:'unavailable',message:String(error?.message||error).slice(0,180)});
         return '';
+      }finally{
+        job.done=true;
       }
     })();
     return job.promise;
@@ -21422,8 +21426,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
                 supplied,
                 state.autoSession?.genericSchema || state.wizard?.genericSchema,
               );
-              // The conflict merge contains AI Values only. CI belongs to the
-              // operator and must survive retries independently of that merge.
+              // Old cached bubble CI values must not override printer model.
               delete cachedCommand.HP['Configuration Item'];
               reusableAICommand = await writeCachedAICommand('HP', pinnedIMS, JSON.stringify(cachedCommand));
             } catch { /* Normal command parsing below reports an unusable cache. */ }
@@ -21470,9 +21473,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             assertTicketWindowAlive(dialog);
             setStage(4);
             command = await resolveHPValueConflicts(dialog, command, supplied, genericSchema);
-            // CI is an operator-only optional lookup. It is intentionally not
-            // an AI value: when supplied, use the exact search text and pick
-            // the first matching Configuration Item in Workspace.
+            // Only printer model drives CI lookup, never a separate AI CI.
             delete command.HP['Configuration Item'];
             lastAIResponse = command;
             if (stopped) throw Object.assign(new Error('HP request stopped.'), { code: 'AI_STOPPED' });
