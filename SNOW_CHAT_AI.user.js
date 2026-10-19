@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.705
+// @version      2.36.706
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.706","fixes":true,"changes":[{"key":"chat-ticket-card-filter","meaningful":true,"text":"Exclude sent Incident / Request ticket-summary cards from AI chat input while accepting other HTML and rich API messages."}]},
 {"version":"2.36.705","fixes":true,"changes":[{"key":"chat-api-html","meaningful":true,"text":"Accept rich API message formats including ticket cards, links, grouped output and unfamiliar payloads without switching to scrolling solely because of their format. Read HTML inertly and bound structured extraction."}]},
 {"version":"2.36.704","fixes":true,"changes":[{"key":"chat-api-html","meaningful":true,"text":"Read native OutputHtml ticket cards as inert text instead of falling back to chat scrolling. Preserve speaker and join-boundary checks."}]},
 {"version":"2.36.703","fixes":true,"changes":[{"key":"nova-update-reminder","meaningful":true,"text":"Update now hands directly to Nova's reload reminder instead of waiting behind queued reply messages. Duplicate link callbacks do not restart the reminder."}]},
@@ -8617,7 +8618,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
 
   const isChatSummaryText = (value) => {
     const text = String(value || '').trim();
-    return /(?:^|\s)chat\s+summari[sz]ed\s+by\b/i.test(text) || /^private\b/i.test(text);
+    return /(?:^|\s)chat\s+summari[sz]ed\s+by\b/i.test(text) || /^private\b/i.test(text)
+      || /^Incident\s*\/\s*Request\s+(?:INC|RITM|REQ)\d+\s+Number\s+(?:INC|RITM|REQ)\d+\s+Created\s+[\s\S]*\bUser\s+ID\b/i.test(text);
   };
   const looksLikeChatDisplayName = (value) => {
     const text = normalise(value);
@@ -15940,6 +15942,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
 
   function isGeneratedChatSummaryElement(el) {
     if (!(el instanceof Element)) return false;
+    if(el.classList.contains('vac-card')&&el.querySelector('.vac-fields')&&/^Incident\s*\/\s*Request$/i.test(el.querySelector('.vac-title-displayed-value')?.textContent?.trim()||''))return true;
     if (['sn-chat-chat-summary-card', 'chat-summary-header-metadata', 'chat-summary-content', 'chat-summary-footer', 'chat-summary-feedback']
       .some((className) => el.classList.contains(className))) return true;
     return el.getAttribute('role') === 'group'
@@ -16432,6 +16435,12 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   // ServiceNow Bot Integration API documents uiType as extensible strings:
   // https://www.servicenow.com/docs/r/api-reference/rest-apis/bot-api.html
   function nativeAPIMessageText(row,payload){
+    // These are generated "ticket sent" confirmations, not conversation.
+    // Match ServiceNow's card structure, never arbitrary ticket mentions.
+    if(payload?.uiType==='OutputHtml'){
+      const html=String(payload.value||'');
+      if(/class\s*=\s*["'][^"']*\bvac-card\b/i.test(html)&&/class\s*=\s*["'][^"']*\bvac-fields\b/i.test(html)&&/class\s*=\s*["'][^"']*\bvac-title-displayed-value\b[^>]*>\s*Incident\s*\/\s*Request\s*</i.test(html)&&/\b(?:INC|RITM|REQ)\d+\b/i.test(html))return '';
+    }
     const htmlText=value=>{
       const input=String(value??'').slice(0,100000);
       try{
