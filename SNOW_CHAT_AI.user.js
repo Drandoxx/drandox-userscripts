@@ -5493,8 +5493,13 @@ const snAIChatDisplayNames=(()=>{
     }
   }
   // SN_AI_EMPTY_ACTION_MENU_END
+  const incidentActionIdentityObservers=new WeakSet();
   function filterIncidentActions(node) {
     if (!node?.matches?.('now-button,now-dropdown.uiaction-bar-dropdown')) return;
+    if(node.localName==='now-button'&&!incidentActionIdentityObservers.has(node)){
+      incidentActionIdentityObservers.add(node);
+      new MutationObserver(()=>filterIncidentActions(node)).observe(node,{attributes:true,attributeFilter:['component-name']});
+    }
     syncEmptyRecordActionMenu(node);
     let parent = node, incident = false;
     while (parent) {
