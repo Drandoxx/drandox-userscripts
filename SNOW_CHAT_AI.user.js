@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.710
+// @version      2.36.711
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.711","fixes":true,"changes":[{"key":"chatgpt-question-panel","meaningful":true,"text":"Show waiting ChatGPT question choices in the matching SNOW ticket bubble and send the selected answer back to continue the same request. Requires companion 0.4.40."}]},
 {"version":"2.36.710","fixes":true,"changes":[{"key":"ils-printer-values","meaningful":true,"text":"Normalize close Invoice and Picking spellings. Complete other fields when printer destination is blank and retain a reminder to fill it before saving."}]},
 {"version":"2.36.709","fixes":true,"changes":[{"key":"ils-printer-values","meaningful":true,"text":"Accept free-text ILS printer destinations, normalize Invoice and Picking variants, and preserve other supplied destinations without forcing AI correction."}]},
 {"version":"2.36.708","fixes":true,"changes":[{"key":"chat-api-control-filter","meaningful":true,"text":"Skip authorless contextual UI controls instead of falling back to chat scrolling."},{"key":"text-model-commit","meaningful":true,"text":"Accept browser-normalized textarea line endings while still verifying the exact saved form model."}]},
@@ -7327,6 +7328,8 @@ function startSNAI(tabIdentity) {
         }
         document.dispatchEvent(new CustomEvent('sn-ai-web-progress', { detail: message.progress }));
       }
+      if(message.action==='worker-question')showSNChatGPTQuestion(message.question);
+      if(message.action==='worker-question-resolved')clearSNChatGPTQuestion(message.jobId);
       if(message.action==='worker-preview')updateAIResponsePreview(message.preview);
       if (message.action === 'worker-diagnostics' && Array.isArray(message.diagnostics)) {
         // Streaming text travels separately and is never added to diagnostics.
@@ -10032,6 +10035,30 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   }
 
   const activeWebRequestAborts = new Map();
+  const snChatGPTQuestions=new Map();
+  const snChatGPTQuestionJobs=new Map();
+  function clearSNChatGPTQuestion(jobId){const entry=snChatGPTQuestions.get(jobId);if(entry){entry.panel.remove();entry.dialog.classList.remove('sn-ai-question-only');const job=snChatGPTQuestionJobs.get(jobId);if(job)job.paused+=Date.now()-entry.started;}snChatGPTQuestions.delete(jobId);}
+  function showSNChatGPTQuestion(question){
+    const job=snChatGPTQuestionJobs.get(question?.jobId);
+    if(!job||!activeWebRequestAborts.has(normaliseIMS(job.ims))||!Array.isArray(question.choices)||!question.choices.length)return;
+    const old=snChatGPTQuestions.get(question.jobId);if(old?.id===question.questionId)return;clearSNChatGPTQuestion(question.jobId);
+    const root=document.getElementById(ROOT_ID),dialog=[...(root?.querySelectorAll('[data-pinned-ims].is-running')||[])].find(element=>normaliseIMS(element.dataset.pinnedIms)===normaliseIMS(job.ims));
+    if(!dialog)return;
+    const panel=document.createElement('section');panel.setAttribute('role','group');panel.setAttribute('aria-label','ChatGPT needs your answer');
+    panel.style.cssText='margin:12px;padding:14px;border:1px solid #ac94ec;border-radius:12px;background:#241c33;color:#e6edf9;pointer-events:auto';
+    panel.dataset.snQuestion='true';
+    const compactStyle=document.createElement('style');compactStyle.textContent='.sn-ai-question-only > :not([data-sn-question]){display:none!important}.sn-ai-question-only{min-height:0!important;height:auto!important;max-height:85vh!important;overflow:auto!important}';panel.append(compactStyle);
+    const intro=document.createElement('p');intro.textContent='ChatGPT asks for more info, please select one';panel.append(intro);
+    const title=document.createElement('p');title.textContent=String(question.text||'ChatGPT needs your answer').slice(0,1000);panel.append(title);
+    const entry={id:question.questionId,panel,dialog,started:Date.now()};snChatGPTQuestions.set(question.jobId,entry);dialog.classList.add('sn-ai-question-only');
+    for(const [index,label]of question.choices.slice(0,20).entries()){
+      const button=document.createElement('button');button.type='button';button.textContent=String(label).slice(0,600);button.style.cssText='display:block;width:100%;margin:7px 0;padding:10px;text-align:left;white-space:normal';
+      button.addEventListener('click',()=>{for(const b of panel.querySelectorAll('button'))b.disabled=true;title.textContent='Sending your answer to ChatGPT…';
+        const packet={source:'sn-ai-userscript',action:'worker-question-answer',jobId:question.jobId,questionId:question.questionId,choiceIndex:index};window.postMessage(packet,location.origin);document.dispatchEvent(new CustomEvent('sn-ai-userscript-message',{detail:packet}));
+      });panel.append(button);
+    }
+    dialog.append(panel);
+  }
   function validateAIShape(value,schema,path='response'){
     if(schema?.type==='object'){
       if(!value||typeof value!=='object'||Array.isArray(value))throwAIValidation(path+' must be an object.',value);
@@ -10267,6 +10294,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         if (stopped) throw Object.assign(new Error('AI request stopped.'), { code: 'AI_STOPPED' });
         startAIResponsePreview(activeId,ims,workerJob.provider);
         await gmSetValue(CHATGPT_WEB_JOB_KEY, workerJob);
+        snChatGPTQuestionJobs.set(activeId,{ims,paused:0});
         if (stopped) { await abort(); throw Object.assign(new Error('AI request stopped.'), { code: 'AI_STOPPED' }); }
         requestChatGPTExtensionWorker('worker-job', workerJob);
         await gmSetValue(CHATGPT_WEB_WAKE_KEY, { id: activeId, at: Date.now(), source: 'servicenow-persistent-window-request' });
@@ -10274,7 +10302,9 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         let lastBackgroundWakeAt = 0;
         let lastWorkerJobResendAt = 0;
         const requestTimeoutMs = isTransportTest ? 22000 : 165000;
-        while (Date.now() - started < requestTimeoutMs) {
+        while (Date.now() - started - (snChatGPTQuestionJobs.get(activeId)?.paused||0) < requestTimeoutMs || snChatGPTQuestions.has(activeId)) {
+          const question=snChatGPTQuestions.get(activeId);
+          if(question&&Date.now()-question.started>600000){clearSNChatGPTQuestion(activeId);throw Error('ChatGPT question expired after 10 minutes.');}
           if (stopped) throw Object.assign(new Error('AI request stopped.'), { code: 'AI_STOPPED' });
           if (Date.now() - lastBackgroundWakeAt >= 500) {
             lastBackgroundWakeAt = Date.now();
@@ -10351,6 +10381,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       }
       throw new Error('ChatGPT Web could not produce a usable response.');
     })().finally(() => {
+      clearSNChatGPTQuestion(activeId);snChatGPTQuestionJobs.delete(activeId);
       if(!aiResponsePreviews.get(activeId)?.responseComplete)clearAIResponsePreview(activeId);
       if (activeWebRequestAborts.get(normaliseIMS(ims)) === abort) activeWebRequestAborts.delete(normaliseIMS(ims));
     });
