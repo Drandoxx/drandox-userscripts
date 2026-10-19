@@ -15335,11 +15335,12 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             match: 'contains',
             first: true,
             forceReselect: true,
+            rankedCI: true,
             code: 'HP_CI_COMMIT_FAILED',
           });
         }
       }
-      if(!data.configurationItem)await autoClearReference('Configuration Item','HP_CI_CLEAR_FAILED');
+      const printerCITask=!data.configurationItem?startHPPrinterCISearch(data.values['model-number']||data.values['printer-model']):null;
       await autoLookup('Assignment Group', 'HP', { expected: 'HP', code: 'HP_ASSIGNMENT_GROUP_COMMIT_FAILED' });
       await autoSelect('Priority', priority, 'HP_PRIORITY_COMMIT_FAILED');
       const description = buildHPDescription(data.issueType, data.values);
@@ -15368,9 +15369,11 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       });
       if (!verification.ok) automationFailure('HP_FINAL_VERIFICATION_FAILED', 'HP printer fields did not pass final verification.', { mismatches: verification.mismatches });
       const printerModel = hpValue(data.values['model-number'] || data.values['printer-model']);
-      const result = { kind: 'auto-complete', ok: true, profile: 'HP', ims: state.autoSession.ims, saved: false, durationMs: Math.round(performance.now() - started), shortDescription: data.shortDescription, description, printerModel, priority, configurationItem: data.configurationItem || '', reviewBeforeSave: data.configurationItem ? [] : ['Configuration Item'] };
+      if(printerCITask)await printerCITask;
+      const selectedCI=String(readableControlValue('Configuration Item')||'').trim();
+      const result = { kind: 'auto-complete', ok: true, profile: 'HP', ims: state.autoSession.ims, saved: false, durationMs: Math.round(performance.now() - started), shortDescription: data.shortDescription, description, printerModel, priority, configurationItem: selectedCI, reviewBeforeSave: selectedCI ? [] : ['Configuration Item'] };
       state.commandResult = result;
-      state.lastAction = `HP fields completed and verified. Change the CI; printer model: ${printerModel}. Event remains unsaved.`;
+      state.lastAction = selectedCI?'HP fields completed and verified. Review the selected CI before saving. Event remains unsaved.':`HP fields completed and verified. No CI selected; printer model: ${printerModel}. Event remains unsaved.`;
       addLog('info', 'auto-hp-complete', result);
       return result;
     } finally {
@@ -21460,17 +21463,18 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
               if (!prepared) throw new Error(`A New Event for ${pinnedIMS} could not be prepared.`);
             }
             const { genericSchema } = await prepareHPBaseForm(issueType);
-            // Route to HP and resolve an operator-entered CI before asking AI.
-            // Neither value is an AI decision.
+            // Route first, then start printer-model CI discovery without
+            // blocking the AI request. Late results use native model commits.
             await autoLookup('Assignment Group', 'HP', { expected: 'HP', code: 'HP_ASSIGNMENT_GROUP_COMMIT_FAILED' });
             if (supplied['configuration-item']) {
               const ciLookup = hpConfigurationItemLookup(supplied['configuration-item']);
               if (ciLookup) {
                 await autoLookup('Configuration Item', ciLookup.search, {
-                  expected: ciLookup.expected, match: 'contains', first: true, forceReselect: true, code: 'HP_CI_COMMIT_FAILED',
+                  expected: ciLookup.expected, match: 'contains', first: true, forceReselect: true, rankedCI:true, code: 'HP_CI_COMMIT_FAILED',
                 });
               }
             }
+            if(!supplied['configuration-item'])void startHPPrinterCISearch(supplied['model-number']);
             titleMain.textContent = `${pinnedIMS} - Sending message to ${aiProviderDisplayName()}…`; setProgress(25);
           const requestArgs = { ims: pinnedIMS, transcript: appendCurrentCaseInstruction(await aiTranscriptWithUserInformation(cacheEntry, 'HP', pinnedIMS), shell.caseInstruction?.value), issueType, supplied, genericSchema };
           assertTicketWindowAlive(dialog);
@@ -21505,8 +21509,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           setProgress(100); dialog.classList.remove('is-running', 'is-error'); dialog.classList.add('is-success', 'is-hp-reminder');
           titleMain.textContent = `${pinnedIMS} - HP complete`;
           completeNote.textContent = finalStatus.result.configurationItem
-            ? `CI selected from your search: ${finalStatus.result.configurationItem}. Please review before saving.`
-            : `Change the CI! - printer model:\n${finalStatus.result.printerModel || 'Not provided'}`;
+            ? `CI selected: ${finalStatus.result.configurationItem}. Please review before saving.`
+            : `No matching CI selected - printer model:\n${finalStatus.result.printerModel || 'Not provided'}`;
           completeNote.hidden = false;
           await clearCachedAICommand('HP', pinnedIMS); reusableAICommand = '';
           if (!chatCacheReleased) { chatCacheReleased = true; releaseAIChatCache(pinnedIMS); }
