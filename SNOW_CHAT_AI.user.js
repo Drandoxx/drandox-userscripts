@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.702
+// @version      2.36.703
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.703","fixes":true,"changes":[{"key":"nova-update-reminder","meaningful":true,"text":"Update now hands directly to Nova's reload reminder instead of waiting behind queued reply messages. Duplicate link callbacks do not restart the reminder."}]},
 {"version":"2.36.702","fixes":true,"changes":[{"key":"hp-ci","meaningful":true,"text":"Remove CI from the HP bubble. A nonempty printer model always drives ranked CI selection, replacing an existing CI or clearing it when no match is found."}]},
 {"version":"2.36.701","fixes":true,"changes":[{"key":"hp-ci","meaningful":true,"text":"HP mode uses the shared ranked CI search. Empty CI fields search the printer model alongside AI work, select the top result through the native form callback, and preserve manual selections. No match leaves CI blank."}]},
 {"version":"2.36.700","fixes":true,"changes":[{"key":"nova-cut-performance","meaningful":true,"text":"Draw the cutting sword and sparks in a dedicated canvas worker, preanimate hands and gaze, and apply the TV hole once at completion. Unsupported browsers retain the previous effect."},{"key":"record-action-overflow","meaningful":true,"text":"Restore Save when Workspace reuses a button previously marked as a hidden incident action."}]},
@@ -24849,6 +24850,16 @@ avatarRoot.querySelector('.nova')?.addEventListener('contextmenu',event=>{event.
   host.novaUpdateMessage=data=>{
     try{if(!data.reload&&Date.now()<Number(localStorage.getItem('sn-ai-update-muted-until')||0))return;}catch{}
     if(!nameReady){pendingUpdate=data;return;}
+    // The anchor also acknowledges the click on its next timer turn. Do not
+    // queue a second reminder behind the first reminder's persistent actions.
+    if(data.reload&&(message?.updateSpeech||deferredModalMessages.some(item=>item.updateSpeech)))return;
+    if(data.reload&&data.explicit){
+      // An explicit Update now is a handoff, not an ordinary queued speech.
+      // Preserve unrelated queued messages for after Reload/Later is answered.
+      clearTimeout(messageTimer);messageTimer=0;clearTimeout(transitionTimer);transitionTimer=0;
+      stopTyping();message=null;card.style.opacity='';tail.style.opacity='';
+      for(let i=messageQueue.length-1;i>=0;i--)if(messageQueue[i].id==='reload')messageQueue.splice(i,1);
+    }
     if(['sleep','sit','wake'].includes(avatar.dataset.idle)){enqueueMessage(()=>host.novaUpdateMessage(data),data.reload?'reload':data.version);wake({});return;}
     if((message||dailyStartPending||avatar.dataset.daily||transitionTimer)&&!answering){enqueueMessage(()=>host.novaUpdateMessage(data),data.reload?'reload':data.version);return;}
     if(host.novaTicketUnfrozenAt>unfrozenSince)unfrozenSince=host.novaTicketUnfrozenAt;
@@ -24860,7 +24871,7 @@ avatarRoot.querySelector('.nova')?.addEventListener('contextmenu',event=>{event.
     setExpression('happy');
     const muteUpdates=()=>{try{localStorage.setItem('sn-ai-update-muted-until',String(Date.now()+300000));}catch{}pendingUpdate=null;deferredUpdate=null;clearTimeout(updateWaitTimer);for(let i=deferredModalMessages.length-1;i>=0;i--)if(deferredModalMessages[i].novaUpdate||deferredModalMessages[i].updateSpeech)deferredModalMessages.splice(i,1);data.later?.();finishMessage();};
     if(data.reload){show({updateSpeech:true,paragraphs:['The update page is open. Once the update is installed, reload this page to use the new version.'],actions:[{label:'Reload page',run:()=>location.reload()},{label:'Later',run:muteUpdates}]});return;}
-    show({novaUpdate:data,paragraphs:[`Hi ${firstName},`,`I have a new update for you, version ${data.version}.`,`Here’s what’s new:`],bullets:summarizeNovaReleaseNotes(data.notes,data.currentVersion,data.version),actions:[{label:'Update now',run:()=>{enqueueMessage(()=>host.novaUpdateMessage({reload:true,explicit:true}),'reload');data.update?.();if(message?.novaUpdate===data)finishMessage();}},{label:'Later',run:muteUpdates}]});
+    show({novaUpdate:data,paragraphs:[`Hi ${firstName},`,`I have a new update for you, version ${data.version}.`,`Here’s what’s new:`],bullets:summarizeNovaReleaseNotes(data.notes,data.currentVersion,data.version),actions:[{label:'Update now',run:()=>{host.novaUpdateMessage({reload:true,explicit:true});data.update?.();}},{label:'Later',run:muteUpdates}]});
   };
   function stopTyping(){clearTimeout(typingTimer);typingTimer=0;typingQueue=[];typingDone=null;card.removeAttribute('aria-busy');}
   function typeNext(){
