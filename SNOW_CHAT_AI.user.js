@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.728
+// @version      2.36.729
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.729","fixes":true,"changes":[{"key":"runtime-memory","meaningful":false,"text":"Restore root-local action styles after shared stylesheet adoption changed native tab styling and icon sizes."}]},
 {"version":"2.36.728","fixes":true,"changes":[{"key":"runtime-memory","meaningful":true,"text":"Share the large action stylesheet across shadow roots instead of parsing a separate copy for each component."},{"key":"reopen-tabs","meaningful":true,"text":"Match the reopen button to the plus button and place it immediately to its left."}]},
 {"version":"2.36.727","fixes":true,"changes":[{"key":"reopen-tabs","meaningful":false,"text":"Use the official Lucide Undo2 icon for reopening closed tabs."}]},
 {"version":"2.36.726","fixes":true,"changes":[{"key":"reopen-tabs","meaningful":true,"text":"Add Reopen closed tab beside the tab plus buttons, restoring most-recently closed records first with reload-persistent 24-hour history."}]},
@@ -913,23 +914,10 @@ const snAIChatDisplayNames=(()=>{
     spaceRoots.clear(); spaceStyles.clear();
   }, { once: true });
   const spaceStyles = new Map();
-  const sharedActionSheets = new WeakMap();
   function shareActionStyle(root, style, text) {
-    try {
-      if (!('adoptedStyleSheets' in root)) throw new Error('unsupported');
-      const doc = root.ownerDocument || root;
-      let shared = sharedActionSheets.get(doc);
-      if (!shared || shared.text !== text) {
-        const Sheet = doc.defaultView.CSSStyleSheet;
-        const sheet = new Sheet(); sheet.replaceSync(text);
-        shared = { text, sheet }; sharedActionSheets.set(doc, shared);
-      }
-      const previous = style.snAiSharedSheet;
-      const sheets = root.adoptedStyleSheets.filter(sheet => sheet !== previous && sheet !== shared.sheet);
-      root.adoptedStyleSheets = [...sheets, shared.sheet];
-      style.snAiSharedSheet = shared.sheet;
-      if (style.textContent) style.textContent = '';
-    } catch { style.textContent = text; }
+    // Preserve native/custom stylesheet cascade order. Adopted sheets are
+    // ordered after ordinary styles and changed Workspace tab/icon rendering.
+    if (style.textContent !== text) style.textContent = text;
   }
   let acceptedIMS = new Set();
   const lastTypedIMS = new Map();
