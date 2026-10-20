@@ -8675,13 +8675,14 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   function runningTicketDialog(ims){return document.getElementById(ROOT_ID)?.querySelector(`[data-pinned-ims="${normaliseIMS(ims)}"].is-running`)||null;}
   function ownedTicketDraft(ims){const dialog=runningTicketDialog(ims);return dialog?dialog.snAiOwnedEvent||null:state.createdEvent?.ims===normaliseIMS(ims)?state.createdEvent:null;}
   function ticketDraftSelected(token){const main=snWorkspacePrimary(),parent=main?.props.tabList.find(t=>String(t.tab_id)===token.parentId);return String(main?.props.selectedTabId)===token.parentId&&String(parent?.selectedTabId)===token.tabId&&newEventMatchesIMS(checkCurrentEvent(),token.ims);}
-  function rememberTicketDraft(ims,source){
+  function rememberTicketDraft(ims,source,createdTabId=''){
     ims=normaliseIMS(ims);const main=snWorkspacePrimary(),parent=main?.props.tabList.find(t=>t.table==='interaction'&&(t.title===ims||t.formHeaderInfo?.recordDisplayValue===ims));
-    const selected=parent?.tabList?.find(t=>String(t.tab_id)===String(parent.selectedTabId)&&t.table==='new_call'&&t.type==='new_record');
-    if(!selected||String(main.props.selectedTabId)!==String(parent.tab_id))throw Error('OWNED_EVENT_ID_UNAVAILABLE: The active New Event identity could not be confirmed.');
+    const selected=parent?.tabList?.find(t=>String(t.tab_id)===String(createdTabId||parent.selectedTabId)&&t.table==='new_call'&&t.type==='new_record');
+    if(!selected||(!createdTabId&&String(main.props.selectedTabId)!==String(parent.tab_id)))throw Error('OWNED_EVENT_ID_UNAVAILABLE: The active New Event identity could not be confirmed.');
     const events=parent.tabList.filter(t=>t.table==='new_call'&&t.type==='new_record');
     const token={ims,parentId:String(parent.tab_id),interactionId:parent.sys_id,tabId:String(selected.tab_id),contentId:selected.contentId,ordinal:events.findIndex(t=>t.tab_id===selected.tab_id)+1,count:events.length,path:location.pathname,source};
     const dialog=runningTicketDialog(ims);if(dialog)dialog.snAiOwnedEvent=token;state.createdEvent=token;
+    if(state.incomingPause&&state.incomingResume?.ims===ims)state.incomingResume.event={...token};
     addLog('info','ticket-draft-owned',token);return token;
   }
   async function restoreTicketDraft(token){
@@ -12556,6 +12557,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const ims=normaliseIMS(activeSelectedIMS()||state.startContext?.ims||currentInteractionIMS());
     const owned=ownedTicketDraft(ims);if(owned){await restoreTicketDraft(owned);return await waitForControlByLabel('Location',12000);}
     const beforePath=location.pathname;
+    const parentBefore=snWorkspacePrimary()?.props.tabList.find(t=>t.table==='interaction'&&(t.title===ims||t.formHeaderInfo?.recordDisplayValue===ims));
+    const previousDraftIds=new Set((parentBefore?.tabList||[]).filter(t=>t.table==='new_call'&&t.type==='new_record').map(t=>String(t.tab_id)));
     const findNative=()=>{
       for(const owner of allPageElements()){
         if(owner.localName!=='sn-form-internal-workspace-form-layout')continue;
@@ -12587,6 +12590,16 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     // Invoke the loaded ServiceNow UI action controller, not a synthetic DOM
     // click or reconstructed URL. ServiceNow opens and selects its own draft.
     await native.props.handleUiActionClick({id:native.action.id});
+    const identityStarted=performance.now();let captured=false;
+    while(performance.now()-identityStarted<12000){
+      assertAutomationNotStopped();const parent=snWorkspacePrimary()?.props.tabList.find(t=>t.table==='interaction'&&(t.title===ims||t.formHeaderInfo?.recordDisplayValue===ims));
+      const fresh=(parent?.tabList||[]).filter(t=>t.table==='new_call'&&t.type==='new_record'&&!previousDraftIds.has(String(t.tab_id)));
+      if(fresh.length>1)throw Error('OWNED_EVENT_AMBIGUOUS: Multiple new drafts appeared. No draft was selected for filling.');
+      if(fresh.length===1){rememberTicketDraft(ims,'script-created',String(fresh[0].tab_id));captured=true;break;}
+      await rawSleep(60);
+    }
+    if(!captured)throw Error('OWNED_EVENT_ID_UNAVAILABLE: No new draft ID was returned. A replacement will not be opened automatically.');
+    await waitForAutomationResume();
     const ready=await waitUntil(()=>{
       if(location.pathname===beforePath)return null;
       const event=checkCurrentEvent();
@@ -12594,7 +12607,6 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     },12000,45);
     if(!ready)throw new Error('NEW_EVENT_NATIVE_FORM_NOT_READY: ServiceNow did not mount the requested IMS draft.');
     const tab=allPageElements().find(el=>el.getAttribute('role')==='tab'&&el.getAttribute('aria-selected')==='true'&&comparableLabel(elementLabel(el)).includes('new event'));
-    rememberTicketDraft(ims,'script-created');
     addLog('info','new-event-native-created',{ims,source:native.action.id});
     return await waitForControlByLabel('Location',12000);
   }
