@@ -12249,6 +12249,18 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
 
   async function clickIMSFast(ims) {
     const requestedIMS = normalise(ims).toUpperCase();
+    if(!/^IMS\d+$/.test(requestedIMS))throw Error('A valid IMS number is required.');
+    if(snWorkspaceFocusIMS(requestedIMS)){
+      if(!await waitForActiveIMS(requestedIMS,4000))throw Error('Native IMS navigation was not confirmed: '+requestedIMS);
+      state.commandResult={kind:'ims-navigation',ims:requestedIMS,method:'native-tab-id',confirmedActive:true};return;
+    }
+    const response=await fetch('/api/now/table/interaction?'+new URLSearchParams({sysparm_query:'number='+requestedIMS,sysparm_fields:'sys_id,number',sysparm_limit:'1'}),{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':chatAPISessionToken()}});
+    if(!response.ok)throw Error('IMS lookup HTTP '+response.status);
+    const record=(await response.json()).result?.[0];
+    if(record?.number!==requestedIMS||!/^[a-f0-9]{32}$/i.test(record.sys_id||''))throw Error('IMS record was not found: '+requestedIMS);
+    openWorkspaceIMSMainTab({sys_id:record.sys_id,number:requestedIMS});
+    if(!await waitForActiveIMS(requestedIMS,4000))throw Error('Native IMS navigation was not confirmed: '+requestedIMS);
+    state.commandResult={kind:'ims-navigation',ims:requestedIMS,method:'native-open',confirmedActive:true};return;
     // A New Event can retain the parent IMS as the selected top tab. It is
     // still not the interaction transcript, so force the IMS tab click when
     // an Event subtab is active.
@@ -12617,7 +12629,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     },12000,45);
     if(!ready)throw new Error('NEW_EVENT_NATIVE_FORM_NOT_READY: ServiceNow did not mount the requested IMS draft.');
     const tab=allPageElements().find(el=>el.getAttribute('role')==='tab'&&el.getAttribute('aria-selected')==='true'&&comparableLabel(elementLabel(el)).includes('new event'));
-    state.createdEvent={ims,tabId:tab?.id||'',controls:tab?.getAttribute('aria-controls')||'',path:location.pathname};
+    rememberTicketDraft(ims,'script-created');
     addLog('info','new-event-native-created',{ims,source:native.action.id});
     return await waitForControlByLabel('Location',12000);
   }
@@ -12685,6 +12697,9 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const requestedIMS = normaliseIMS(ims);
     const activeEvent = checkCurrentEvent();
     const startedOnNewEvent = newEventMatchesIMS(activeEvent, requestedIMS);
+    const owned=ownedTicketDraft(requestedIMS);
+    if(owned&&location.pathname!==owned.path){await restoreTicketDraft(owned);return prepareDescriptionAcrossWorkspaceTabs(ims,options);}
+    if(startedOnNewEvent&&!owned)rememberTicketDraft(requestedIMS,'description-existing');
     const capturedNewEventPath = startedOnNewEvent ? location.pathname : '';
     let preloadedSchema = options.preloadedSchema || (startedOnNewEvent ? await waitForGenericDescriptionSchema(2800, 450) : null);
 
