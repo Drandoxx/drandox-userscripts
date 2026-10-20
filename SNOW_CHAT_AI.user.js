@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.722
+// @version      2.36.723
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.723","fixes":true,"changes":[{"key":"presence-menu","meaningful":true,"text":"Show pre-rendered presence options in a themed menu instead of the native dropdown that could paint as an empty dark box."}]},
 {"version":"2.36.722","fixes":true,"changes":[{"key":"runtime-memory","meaningful":true,"text":"Release detached theme roots and inbox observers, bound the stylesheet cache, and stop rewriting the presence dropdown while it is focused."}]},
 {"version":"2.36.721","fixes":true,"changes":[{"key":"ai-feedback","meaningful":true,"text":"Send feedback once to the original AI conversation with a request to update the relevant skill. Remove locally stored feedback and stop adding old corrections to new ticket prompts."},{"key":"ai-response-recovery","meaningful":true,"text":"Recover ticket wrappers before accepting nested response fragments, preserve rejected response text, and log bounded validation evidence."}]},
 {"version":"2.36.720","fixes":true,"changes":[{"key":"ticket-bubble-layout","meaningful":true,"text":"Use the selected theme for completed and feedback header backgrounds without changing their text or completion state."}]},
@@ -22830,6 +22831,57 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const box = document.createElement('div');
     box.style.cssText = 'position:relative;flex:1 1 100%;width:100%;min-width:0;margin:0;box-sizing:border-box';
     box.append(select, arrow); container.prepend(box);
+    // Keep the select as a private value adapter, never open its OS popup.
+    select.hidden = true;
+    select.style.setProperty('display', 'none', 'important');
+    const trigger = document.createElement('button');
+    trigger.type = 'button'; trigger.setAttribute('aria-label', 'SN AI agent presence');
+    trigger.setAttribute('aria-haspopup', 'menu'); trigger.setAttribute('aria-expanded', 'false');
+    trigger.style.cssText = 'display:block;width:100%;height:30px;padding:0 36px 0 10px;text-align:left;border:1px solid;border-radius:5px;font:13px system-ui;cursor:pointer';
+    box.prepend(trigger);
+    const menu = document.createElement('div');
+    menu.hidden = true; menu.setAttribute('role', 'menu'); menu.setAttribute('aria-label', 'Agent presence options');
+    menu.style.cssText = 'position:fixed;z-index:2147483647;padding:4px;background:var(--sn-theme-191621,#191621);color:var(--sn-theme-e6edf9,#e6edf9);border:1px solid var(--sn-theme-423750,#526a62);border-radius:5px;box-shadow:0 5px 16px #0006;box-sizing:border-box';
+    const choices = [];
+    const closeMenu = (focus = false) => { menu.hidden = true; trigger.setAttribute('aria-expanded', 'false'); if (focus) trigger.focus(); };
+    const positionMenu = () => {
+      const rect = trigger.getBoundingClientRect();
+      menu.style.width = rect.width + 'px'; menu.style.left = Math.max(0, Math.min(rect.left, window.innerWidth - rect.width)) + 'px';
+      menu.style.top = Math.max(0, Math.min(rect.bottom + 2, window.innerHeight - 116)) + 'px';
+    };
+    for (const name of ['Available', 'Away', 'Offline']) {
+      const choice = document.createElement('button'); choice.type = 'button';
+      choice.textContent = name; choice.setAttribute('role', 'menuitemradio');
+      choice.style.cssText = 'display:block;width:100%;min-height:32px;padding:6px 10px;text-align:left;border:0;border-radius:3px;font:13px system-ui;cursor:pointer;background:transparent;color:' + (name === 'Available' ? '#8de3af' : name === 'Away' ? '#f3d86f' : '#c5cbd0');
+      choice.addEventListener('focus', () => { choice.style.background = 'var(--sn-theme-423750,#423750)'; });
+      choice.addEventListener('blur', () => { choice.style.background = 'transparent'; });
+      choice.addEventListener('click', () => {
+        closeMenu(true); select.value = name;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      choices.push(choice); menu.append(choice);
+    }
+    document.body.append(menu);
+    trigger.addEventListener('click', () => {
+      if (!menu.hidden) { closeMenu(); return; }
+      positionMenu(); menu.hidden = false; trigger.setAttribute('aria-expanded', 'true');
+      choices.forEach(choice => choice.setAttribute('aria-checked', String(choice.textContent === actual())));
+      (choices.find(choice => choice.textContent === actual()) || choices[0]).focus();
+    });
+    const onMenuKey = event => {
+      if (event.key === 'Escape') { event.preventDefault(); closeMenu(true); }
+      else if (event.key === 'Tab') closeMenu();
+      else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault(); const index = choices.indexOf(event.target);
+        choices[(index + (event.key === 'ArrowDown' ? 1 : choices.length - 1)) % choices.length].focus();
+      }
+    };
+    menu.addEventListener('keydown', onMenuKey);
+    const outsideMenu = event => { const path = event.composedPath(); if (!path.includes(menu) && !path.includes(trigger)) closeMenu(); };
+    document.addEventListener('pointerdown', outsideMenu, true);
+    window.addEventListener('resize', positionMenu);
+    const onMenuScroll = () => { if (!menu.hidden) closeMenu(); };
+    document.addEventListener('scroll', onMenuScroll, true);
     // Keep the authoritative native control mounted for its normal event path,
     // but remove its footprint from the visible status widget.
     if (popover) { popover.style.position = 'absolute'; popover.style.visibility = 'hidden'; popover.style.pointerEvents = 'none'; }
@@ -22863,7 +22915,6 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       const current = actual();
       // Native select popups must remain untouched while the user chooses.
       // Reassigning value/styles on each poll can blank or dismiss the popup.
-      if (select.matches(':focus')) return;
       if (current && ![...select.options].some(option => option.value === current)) {
         const option = document.createElement('option'); option.value = current; option.textContent = current; select.append(option);
       }
@@ -22889,6 +22940,9 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       select.style.color = presenceColours.text;
       arrow.style.color = presenceColours.text;
       select.style.backgroundColor = presenceColours.background;
+      if (trigger.textContent !== current) trigger.textContent = current;
+      trigger.title = message.textContent;
+      trigger.style.borderColor = presenceColours.border; trigger.style.color = presenceColours.text; trigger.style.backgroundColor = presenceColours.background;
       for (const option of select.options) {
         option.style.color = option.value === 'Available' ? '#8de3af' : option.value === 'Away' ? '#f3d86f' : '#c5cbd0';
         option.style.backgroundColor = '#20282b';
@@ -22906,6 +22960,9 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     sync();
     function disposePresence() {
       document.removeEventListener('sn-ai-runtime-dispose', disposePresence);
+      document.removeEventListener('pointerdown', outsideMenu, true);
+      document.removeEventListener('scroll', onMenuScroll, true);
+      window.removeEventListener('resize', positionMenu); menu.remove();
       clearInterval(timer); box.remove();
       if (originalContainerStyle === null) container.removeAttribute('style');
       else container.setAttribute('style', originalContainerStyle);
