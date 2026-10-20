@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.718
+// @version      2.36.719
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.719","fixes":true,"changes":[{"key":"automation-pause","meaningful":true,"text":"Keep incoming-chat and manual pauses visible until Continue restores the bubble's exact native Event tab. Preserve draft ownership on retries and exclude paused time from field waits."},{"key":"incoming-log-count","meaningful":true,"text":"Count distinct incoming chats, including chats not sent to AI, and restore the count from today's saved incoming-offer logs."},{"key":"ticket-bubble-layout","meaningful":true,"text":"Theme running bubbles, replace Stop with Pause and Continue, remove unused spacing, and show Give feedback and Done before revealing the feedback input."}]},
 {"version":"2.36.718","fixes":true,"changes":[{"key":"record-sla-links","meaningful":true,"text":"Simplify the breach-time popup, retain the normal cursor, and copy only the displayed breach date and time when its message is clicked."}]},
 {"version":"2.36.717","fixes":true,"changes":[{"key":"record-sla-links","meaningful":true,"text":"Use the same explicit 16px Source Sans Pro font, weight and line height for INC, RITM and SCTASK shortcut buttons instead of inheriting different header sizes."}]},
 {"version":"2.36.716","fixes":true,"changes":[{"key":"record-sla-links","meaningful":true,"text":"Match linked RITM and SCTASK buttons to the INC shortcut and add number-copy controls beside shortcuts and EVNT, INC, RITM and SCTASK titles."}]},
@@ -231,7 +232,7 @@ SN_AI_RELEASE_NOTES_END */
      matching New Event or creates one, fills the profile, and verifies it.
   D. If the exact IMS has no cached chat, send START, read ai-chat and
      ai-request, then send the IMS-aware final command.
-  E. Read #local-sn-inspector-ai-result after Run. Wait while status=running or stopping;
+  E. Read #local-sn-inspector-ai-result after Run. Wait while status=running, paused or stopping;
      accept only the exact command with status=complete, result.kind=
      auto-complete, and result.ok=true. Never save, submit, or inspect the form.
 
@@ -8381,7 +8382,7 @@ function startSNAI(tabIdentity) {
       'HP one-line: send an HP object containing IMS, Issue Type (Generic issue or Toner order), and every schema Values key. The helper constructs the exact HP template, routing, priority, KB, and CI reminder.',
       'TEXT one-line: send JSON {"TEXT":{"IMS":"IMS0000000","Short Description":"max 80 chars","Description":"completed template","Fields Under Description":{"label":"value"}}}.',
       'The helper owns every field operation, verification, retry, and ordering. Report complete only when commandResult.kind=auto-complete and ok=true.',
-      'After clicking Run, read #local-sn-inspector-ai-result. Wait while status=running or stopping. Accept only status=complete for the exact commandId/command and result.kind=auto-complete with ok=true; Workspace transitions cannot erase this session-persisted result.',
+      'After clicking Run, read #local-sn-inspector-ai-result. Wait while status=running, paused or stopping. Accept only status=complete for the exact commandId/command and result.kind=auto-complete with ok=true; Workspace transitions cannot erase this session-persisted result.',
       'The Stop button requests a safe interruption. status becomes stopping, then error with result.code=AUTOMATION_STOPPED; never treat stopping as completion.',
       'CPC defaults to the manual quick-action path. Interface can switch CPC to AI mode; AI extracts only ON/OFF, Store ID, and Reason, then sends the same strict IMS-aware CPC command through deterministic helper automation. CPC Store ID is exactly three alphanumeric characters such as LB2, optionally prefixed directly by SFD as SFDLB2; never return a descriptive location name.',
       'SN AI settings has Interface and AI settings tabs. Interface immediately persists CMD visibility and CPC, ILS PRNT, Description, FTF, and HP launcher visibility without a separate Save step. Description, FTF, and HP always require AI; CPC and ILS PRNT each have a separate manual/AI selector. AI returns only a strict CPC, ILS_PRNT, FTF, HP, or TEXT command; deterministic helper automation performs and verifies all ServiceNow work.',
@@ -8718,6 +8719,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     state.pauseClockStarted=performance.now();
     state.pause.paused=true;state.pause.dismissed=false;state.pause.reason=kind==='incoming-chat'?'Paused for new incoming chats. Click Continue when ready.':'Paused. Click Continue when ready.';
     releaseAutomationFreeze('incoming-chat',false);updatePausePanel();
+    if(state.commandRunning){const current=readStoredCommandStatus();if(current?.commandId===state.activeCommandId)publishCommandStatus({...current,status:'paused',pauseReason:state.pause.reason});}
     addLog('info',kind==='incoming-chat'?'automation-incoming-chat-paused':'automation-manually-paused',{ims:activity.ims,tabId:event?.tabId||'',phase:state.commandRunning?'filling':'preparing'});
   }
   function pauseForIncomingChat(){
@@ -8738,6 +8740,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     if(state.incomingResume!==saved||generation!==(state.incomingGeneration||0))throw Error('Another chat arrived while restoring the draft. Click Continue when ready.');
     finishPauseClock();state.incomingPause=false;state.incomingResume=null;state.pause.paused=false;state.pause.reason='';
     automationFreeze.suspended=false;updatePausePanel();refreshAutomationFreeze();
+    if(state.commandRunning){const current=readStoredCommandStatus();if(current?.commandId===state.activeCommandId)publishCommandStatus({...current,status:'running',pauseReason:''});}
     addLog('info','automation-incoming-chat-continued',{ims:saved.ims});
     }finally{state.continuingIncoming=false;}
   }
@@ -12632,6 +12635,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   }
 
   async function reopenMatchingNewEvent(ims, timeoutMs = 1400, options = {}) {
+    const owned=ownedTicketDraft(ims);if(owned){await restoreTicketDraft(owned);return true;}
     const preferred = options.tab;
     const preferredId = preferred?.id || '';
     const preferredControls = normalise(preferred?.getAttribute?.('aria-controls'));
@@ -13266,6 +13270,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       return autoTEXT(rawData);
     }
     const data = withoutIMS(rawData);
+    const owned=ownedTicketDraft(requestedIMS);if(owned&&!ticketDraftSelected(owned))await restoreTicketDraft(owned);
     const currentEvent = checkCurrentEvent();
     let preparation = state.autoSession?.profile === profile
       && normaliseIMS(state.autoSession?.ims) === requestedIMS
@@ -13686,7 +13691,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
 
   function updateStopButtons() {
     for (const button of document.querySelectorAll(`#${ROOT_ID} [data-action="stop-automation"]`)) {
-      button.disabled = !state.commandRunning && !state.busy;
+      button.disabled = !state.incomingPause && !state.commandRunning && !state.busy && !automationFreezeRunning();
       button.textContent = state.incomingPause ? 'Continue' : 'Pause';
     }
   }
@@ -15842,7 +15847,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
 
   function ticketWindowCommandSummary(dialog) {
     const classes = dialog.classList;
-    const status = classes.contains('is-minimized') ? 'minimized'
+    const status = classes.contains('is-paused') ? 'paused' : classes.contains('is-minimized') ? 'minimized'
       : classes.contains('is-running') ? 'running'
         : classes.contains('is-success') ? 'success'
           : classes.contains('is-error') ? 'error' : 'ready';
@@ -17547,7 +17552,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       <div class="local-sn-command-popover" role="group" aria-label="ServiceNow command line" hidden>
         <input class="local-sn-inspector-header-command" aria-label="Collapsed ServiceNow command" type="text" placeholder="Enter an SN AI command" />
         <button type="button" data-action="run-header-command">Run</button>
-        <button class="danger" type="button" data-action="stop-automation" disabled>Stop</button>
+        <button class="danger" type="button" data-action="stop-automation" disabled>Pause</button>
         <button class="secondary local-sn-command-close" type="button" data-action="close-command-line" aria-label="Close command line">×</button>
       </div>
       <span class="local-sn-inspector-header-actions" hidden><button type="button" data-action="get-logs">Get Logs</button></span>
@@ -17556,7 +17561,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         <div class="local-sn-inspector-quick" aria-label="Inspector command line">
           <input aria-label="ServiceNow command" type="text" placeholder="inspect FIELD | fill FIELD = VALUE | lookup FIELD = VALUE | select FIELD = OPTION" />
           <button type="button" data-action="run-command">Run command</button>
-          <button class="danger" type="button" data-action="stop-automation" disabled>Stop</button>
+          <button class="danger" type="button" data-action="stop-automation" disabled>Pause</button>
         </div>
         <div class="local-sn-inspector-command" aria-label="Inspector selection command">
           <input aria-label="Inspector field" type="text" placeholder="Field, e.g. Event Type" />
@@ -17578,7 +17583,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       <div id="local-sn-command-stage" role="status" aria-live="polite" hidden>
         <div class="local-sn-command-stage-head">
           <div class="local-sn-command-stage-title"><span data-command-stage-title>CMD</span><span class="local-sn-command-stage-state" data-command-stage-state>Starting...</span></div>
-          <div class="local-sn-command-stage-actions"><button class="danger" type="button" data-action="stop-automation">Stop</button><button class="local-sn-command-stage-close" type="button" data-action="close-command-stage" aria-label="Close CMD work-stage bubble">×</button></div>
+          <div class="local-sn-command-stage-actions"><button class="danger" type="button" data-action="stop-automation">Pause</button><button class="local-sn-command-stage-close" type="button" data-action="close-command-stage" aria-label="Close CMD work-stage bubble">×</button></div>
         </div>
         <div class="local-sn-command-stage-body"><div class="local-sn-command-stage-command" data-command-stage-command></div><div class="local-sn-command-stage-track"><span class="local-sn-command-stage-bar" data-command-stage-bar></span></div><div class="local-sn-command-stage-error" data-command-stage-error hidden></div></div>
       </div>
@@ -19520,12 +19525,13 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       state.activeCommandId = commandId;
       if (showStage) openCommandStage(rawCommand, commandId);
       const startedAt = new Date().toISOString();
-      publishCommandStatus({ status: 'running', commandId, command: rawCommand, startedAt });
+      publishCommandStatus({ status: state.incomingPause?'paused':'running', commandId, command: rawCommand, startedAt, ...(state.incomingPause?{pauseReason:state.pause.reason}:{}) });
       addLog('info', 'command-started', { commandId, command: rawCommand });
       let finalStatus;
       try {
         state.commandResult = null;
         await waitForAutomationResume();
+        publishCommandStatus({status:'running',commandId,command:rawCommand,startedAt});
         await runCommandLine(rawCommand);
         assertAutomationNotStopped();
         const durationMs = Math.round((performance.now() - started) * 10) / 10;
