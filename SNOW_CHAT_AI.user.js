@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.715
+// @version      2.36.716
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.716","fixes":true,"changes":[{"key":"record-sla-links","meaningful":true,"text":"Match linked RITM and SCTASK buttons to the INC shortcut and add number-copy controls beside shortcuts and EVNT, INC, RITM and SCTASK titles."}]},
 {"version":"2.36.715","fixes":true,"changes":[{"key":"record-sla-links","meaningful":true,"text":"Keep native State, linked record buttons and SLA details aligned on the same header row, wrapping only on narrow screens."}]},
 {"version":"2.36.714","fixes":true,"changes":[{"key":"record-sla-links","meaningful":true,"text":"Add linked SCTASK and RITM shortcuts, task state chips matching incident headers, and active resolution SLA percentages with breach time details. Remove pricing metadata from RITM headers."}]},
 {"version":"2.36.713","fixes":true,"changes":[{"key":"nova-cut-performance","meaningful":true,"text":"Size the cutout mask to the complete panel border box, including Chats Today, and explicitly clear the opening through its bottom edge."}]},
@@ -548,6 +549,23 @@ SN_AI_RELEASE_NOTES_END */
   restoreLoadedFavorites();
 })();
 
+// SN_AI_RECORD_COPY_BEGIN
+const snRecordOpenIcon='<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/><path d="m21 3-9 9"/><path d="M15 3h6v6"/></svg>';
+const snRecordShortcutStyle='display:inline-flex!important;flex-direction:row!important;flex:0 0 auto!important;align-items:center!important;justify-content:center!important;align-self:flex-start!important;gap:8px;width:max-content!important;height:34px!important;min-height:34px!important;max-height:34px!important;box-sizing:border-box!important;margin:0!important;padding:6px 10px;border:0;border-radius:7px;background:linear-gradient(115deg,var(--sn-theme-9de2f5),var(--sn-theme-ac94ec));color:var(--sn-theme-14121c);font:inherit;font-weight:600;cursor:pointer';
+function snRecordCopyButton(getNumber){
+  const button=document.createElement('button');button.type='button';button.className='sn-ai-record-number-copy';
+  button.title='Copy record number';button.setAttribute('aria-label','Copy '+getNumber());
+  button.style.cssText='display:inline-flex!important;align-items:center;justify-content:center;flex:0 0 34px;width:34px!important;height:34px!important;min-height:34px!important;padding:6px;margin:0;border:1px solid var(--sn-theme-74618b);border-radius:7px;background:var(--sn-theme-241d33);color:var(--sn-theme-e6edf9);cursor:pointer;';
+  const icon='<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
+  button.innerHTML=icon;let reset=0;
+  button.addEventListener('click',async event=>{
+    event.stopPropagation();const number=String(getNumber()||'').trim();if(!/^(?:EVNT|INC|RITM|SCTASK)\d+$/i.test(number))return;
+    try{if(typeof GM_setClipboard==='function')await GM_setClipboard(number,'text');else await navigator.clipboard.writeText(number);button.title=number+' copied';button.setAttribute('aria-label',button.title);button.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>';}
+    catch{button.title='Could not copy '+number;button.setAttribute('aria-label',button.title);}
+    clearTimeout(reset);reset=setTimeout(()=>{button.innerHTML=icon;button.title='Copy '+getNumber();button.setAttribute('aria-label',button.title);},2000);
+  });return button;
+}
+// SN_AI_RECORD_COPY_END
 // SN_AI_RECORD_SLA_BEGIN
 function snRecordValue(value,display=false){return value&&typeof value==='object'?String(display?(value.display_value??value.value??''):(value.value??'')):String(value??'');}
 function snRecordSLASummary(rows,now=Date.now()){
@@ -615,7 +633,7 @@ const snRecordSLAHeaders=(()=>{
     const style=document.createElement('style');style.textContent='.sn-ai-record-sla{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-left:12px;font:inherit}.sn-ai-record-sla button{font:inherit;font-weight:600;cursor:pointer;border:0;border-radius:7px;padding:6px 10px;background:linear-gradient(115deg,var(--sn-theme-9de2f5,#9de2f5),var(--sn-theme-ac94ec,#ac94ec));color:var(--sn-theme-14121c,#14121c)}.sn-ai-record-sla .sla-chip{display:inline-flex;align-items:center;padding:5px 9px;border:1px solid currentColor;border-radius:7px;background:color-mix(in srgb,currentColor 9%,transparent);white-space:nowrap}.sn-ai-record-sla [data-level="healthy"]{color:#8cdbac}.sn-ai-record-sla [data-level="warning"]{color:#ffc16e}.sn-ai-record-sla [data-level="breached"]{color:#ff9b9b}.sn-ai-record-sla .sla-breach{position:relative;cursor:help}.sn-ai-record-sla .sla-breach:hover::after,.sn-ai-record-sla .sla-breach:focus::after{content:attr(data-exact-date);position:absolute;bottom:calc(100% + 7px);right:0;z-index:100;white-space:pre;background:var(--sn-theme-251f31,#251f31);color:var(--sn-theme-e6edf9,#eee);border:1px solid #74618b;border-radius:7px;padding:8px 10px;box-shadow:0 3px 12px #0005}';panel.append(style);
     for(const link of data?.links||[]){
       const group=document.createElement('span');group.style.cssText='display:inline-flex;align-items:center;flex-wrap:wrap;gap:7px';
-      const button=document.createElement('button');button.type='button';button.textContent=link.number+' ↗';button.setAttribute('aria-label','Open '+link.number);button.onclick=()=>{try{entry.open(link.table,link.id);}catch(err){button.title=err.message;}};group.append(button);
+      const button=document.createElement('button');button.type='button';button.style.cssText=snRecordShortcutStyle;const number=document.createElement('span');number.textContent=link.number;button.append(number);button.insertAdjacentHTML('beforeend',snRecordOpenIcon);button.setAttribute('aria-label','Open '+link.number);button.onclick=()=>{try{entry.open(link.table,link.id);}catch(err){button.title=err.message;}};group.append(button,snRecordCopyButton(()=>link.number));
       if(link.state){const state=document.createElement('span');state.textContent=link.state;state.setAttribute('aria-label',link.number+' state: '+link.state);state.style.cssText='display:inline-flex;align-items:center;max-width:100%;padding:2px 8px;border-radius:5px;font-size:16px;min-height:26px;box-sizing:border-box;color:var(--sn-theme-ac94ec,#ac94ec);background:color-mix(in srgb,currentColor 14%,var(--sn-theme-251f31,#251f31));border:1px solid color-mix(in srgb,currentColor 32%,transparent);font-weight:600;line-height:1.3';group.append(state);}
       panel.append(group);
     }
@@ -5345,7 +5363,7 @@ const snAIChatDisplayNames=(()=>{
     const common = row?.querySelector('now-record-common-header');
     const props = root.host.getProperties?.().formHeader;
     const number = [props?.recordDisplayValue, props?.primaryValue, props?.primaryItem?.displayValue]
-      .find(value => /^(?:EVNT|INC|IMS|REQ|RITM)\d+$/i.test(String(value || '').trim()));
+      .find(value => /^(?:EVNT|INC|IMS|REQ|RITM|SCTASK)\d+$/i.test(String(value || '').trim()));
     if (!row || !actions || !common) return;
     if (!number) {
       // Unsaved New Event forms have a title rather than a record number.
@@ -5361,7 +5379,15 @@ const snAIChatDisplayNames=(()=>{
       label.setAttribute('aria-level', '1');
       actions.prepend(label);
     }
-    if (label.textContent !== String(number).trim()) label.textContent = String(number).trim();
+    let numberText=label.querySelector('.sn-ai-header-number-text');
+    if(!numberText){label.textContent='';numberText=document.createElement('span');numberText.className='sn-ai-header-number-text';label.append(numberText);}
+    if(numberText.textContent!==String(number).trim())numberText.textContent=String(number).trim();
+    const copyTitle=/^(?:EVNT|INC|RITM|SCTASK)\d+$/i.test(String(number).trim());
+    let titleCopy=label.querySelector('.sn-ai-record-number-copy');
+    if(copyTitle&&!titleCopy){titleCopy=snRecordCopyButton(()=>numberText.textContent);label.append(titleCopy);}
+    if(!copyTitle)titleCopy?.remove();
+    if(titleCopy&&titleCopy.getAttribute('aria-label')!=='Copy '+String(number).trim())titleCopy.setAttribute('aria-label','Copy '+String(number).trim());
+    for(const [key,value]of [['display','flex'],['align-items','center'],['gap','8px']])if(label.style.getPropertyValue(key)!==value)label.style.setProperty(key,value,'important');
     for (const heading of common.shadowRoot?.querySelectorAll('now-heading') || []) {
       const value = heading.shadowRoot?.querySelector('h1,h2,h3,[role="heading"]')?.textContent
         || heading.textContent || common.getProperties?.().primaryValue;
