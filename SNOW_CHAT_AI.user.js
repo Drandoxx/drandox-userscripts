@@ -11494,7 +11494,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   async function revealVirtualisedActiveEventField(fieldLabel, timeoutMs = 6000) {
     const wanted = comparableLabel(fieldLabel);
     let scroller = activeEventFormScroller();
-    const started = performance.now();
+    const started = automationNow();
     let moves = 0;
     let bottomStalls = 0;
     // ServiceNow mounts a deferred reference host before its inner input.
@@ -11504,7 +11504,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     if (deferredHost) {
       deferredHost.dataset.snAiScrollTarget = wanted.replace(/ /g, '-');
       await scrollActiveEventTargetIntoView(deferredHost);
-      while (performance.now() - started < timeoutMs) {
+      while (automationNow() - started < timeoutMs) {
         assertAutomationNotStopped();
         if (findControlByLabel(fieldLabel)) return true;
         await sleep(100);
@@ -11517,7 +11517,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     if (scroller instanceof HTMLElement && !findControlByLabel(fieldLabel) && scroller.scrollTop > 0) {
       await smoothActiveFormScroll(scroller, 0);
     }
-    while (performance.now() - started < timeoutMs) {
+    while (automationNow() - started < timeoutMs) {
       assertAutomationNotStopped();
       if (findControlByLabel(fieldLabel, allPageElements())) {
         if (moves) addLog('info', 'virtualised-field-auto-scroll-mounted', { field: fieldLabel, moves });
@@ -13988,18 +13988,18 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const wanted = normalisedFieldValue(expected);
     let stableSince = 0;
     let actual = '';
-    const started = performance.now();
+    const started = automationNow();
     let lastControlScanAt = 0;
-    while (performance.now() - started < timeoutMs) {
+    while (automationNow() - started < timeoutMs) {
       // A deep Workspace/shadow-DOM walk is expensive enough to visibly stall
       // ServiceNow when repeated every animation frame. Keep the committed
       // control as the primary source and rescan only when it changes or at a
       // modest cadence to discover an asynchronous replacement.
       const needsControlScan = !lockedControl || !lockedControl.isConnected || !isVisible(lockedControl)
-        || performance.now() - lastControlScanAt >= 250;
+        || automationNow() - lastControlScanAt >= 250;
       if (needsControlScan) {
         const currentControl = findControlByLabel(fieldLabel) || null;
-        lastControlScanAt = performance.now();
+        lastControlScanAt = automationNow();
         if (currentControl) lockedControl = currentControl;
         else if (!lockedControl?.isConnected || !isVisible(lockedControl)) lockedControl = null;
       }
@@ -14007,8 +14007,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       const got = normalisedFieldValue(actual);
       const matches = match === 'prefix' ? got.startsWith(wanted) : (match === 'contains' ? got.includes(wanted) : got === wanted);
       if (matches) {
-        if (!stableSince) stableSince = performance.now();
-        if (performance.now() - stableSince >= stableMs) return { actual, stable: true };
+        if (!stableSince) stableSince = automationNow();
+        if (automationNow() - stableSince >= stableMs) return { actual, stable: true };
       } else {
         stableSince = 0;
       }
@@ -14198,8 +14198,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     }
   }
   async function waitNativeReferenceCommit(fieldLabel, id, display, timeoutMs = 8000) {
-    const started=performance.now();let actual='';
-    while(performance.now()-started<timeoutMs){
+    const started=automationNow();let actual='';
+    while(automationNow()-started<timeoutMs){
       assertAutomationNotStopped();
       const field=findControlByLabel(fieldLabel,currentFormElements());
       const props=field?.isConnected?matrixReferenceHost(field)?.dAProps:null;
@@ -14278,15 +14278,15 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       const callback=host?.onValueChange||props?.onValueChange;
       if(!props||typeof callback!=='function'||props.readonly)automationFailure(code,`${fieldLabel} cannot be cleared.`);
       callback.call(host,{value:'',displayValue:''});
-      let stableSince=0;const started=performance.now();
-      while(performance.now()-started<2500){
+      let stableSince=0;const started=automationNow();
+      while(automationNow()-started<2500){
         const current=findControlByLabel(fieldLabel,currentFormElements());
         const value=current?matrixReferenceHost(current)?.dAProps:null;
         // A mandatory-field error is expected: verify the reference ID and
         // display value, not aria-invalid. Never suppress native validation.
         if(value&&!String(value.value||'').trim()&&!String(value.displayValue||'').trim()){
-          if(!stableSince)stableSince=performance.now();
-          if(performance.now()-stableSince>=450)return;
+          if(!stableSince)stableSince=automationNow();
+          if(automationNow()-stableSince>=450)return;
         }else stableSince=0;
         await sleep(50);
       }
@@ -14548,7 +14548,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   // Recognize the authoritative dependency, not elapsed time or dropdown
   // identity. The choice commit separately requires the requested option.
   async function waitForClassificationDependencyAfterEventType() {
-    const started=performance.now();
+    const started=automationNow();
     let lastControl = null;
     let stableSince = 0;
     const settled = await waitUntil(() => {
@@ -14568,14 +14568,14 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       }
       if (control !== lastControl) {
         lastControl = control;
-        stableSince = performance.now();
+        stableSince = automationNow();
         return null;
       }
-      return performance.now() - stableSince >= 450 ? control : null;
+      return automationNow() - stableSince >= 450 ? control : null;
     }, 6500, 50);
     addLog(settled ? 'info' : 'warn', 'event-type-classification-settle', {
       settled: Boolean(settled),
-      durationMs: Math.round(performance.now()-started),
+      durationMs: Math.round(automationNow()-started),
       minimumWaitMs: 0,
       stableWindowMs: 450,
       controlId: settled?.id || '',
@@ -14597,8 +14597,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const initialModel=initialProps?.formData?.fields?.[initialProps.name];
     if(fieldMatchesExpected(current,optionValue,fieldLabel)&&(!initialProps?.name||(initialModel&&fieldMatchesExpected(initialModel.displayValue,optionValue,fieldLabel))))return current;
     const ready=async timeout=>{
-      const started=performance.now();
-      while(performance.now()-started<timeout){
+      const started=automationNow();
+      while(automationNow()-started<timeout){
         await waitForAutomationResume();assertAutomationNotStopped();
         field=findControlByLabel(fieldLabel,currentFormElements());host=field;
         while(host&&host.localName!=='now-select')host=deepParentElement(host);
