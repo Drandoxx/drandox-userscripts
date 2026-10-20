@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.716
+// @version      2.36.717
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.717","fixes":true,"changes":[{"key":"record-sla-links","meaningful":true,"text":"Use the same explicit 16px Source Sans Pro font, weight and line height for INC, RITM and SCTASK shortcut buttons instead of inheriting different header sizes."}]},
 {"version":"2.36.716","fixes":true,"changes":[{"key":"record-sla-links","meaningful":true,"text":"Match linked RITM and SCTASK buttons to the INC shortcut and add number-copy controls beside shortcuts and EVNT, INC, RITM and SCTASK titles."}]},
 {"version":"2.36.715","fixes":true,"changes":[{"key":"record-sla-links","meaningful":true,"text":"Keep native State, linked record buttons and SLA details aligned on the same header row, wrapping only on narrow screens."}]},
 {"version":"2.36.714","fixes":true,"changes":[{"key":"record-sla-links","meaningful":true,"text":"Add linked SCTASK and RITM shortcuts, task state chips matching incident headers, and active resolution SLA percentages with breach time details. Remove pricing metadata from RITM headers."}]},
@@ -551,7 +552,7 @@ SN_AI_RELEASE_NOTES_END */
 
 // SN_AI_RECORD_COPY_BEGIN
 const snRecordOpenIcon='<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/><path d="m21 3-9 9"/><path d="M15 3h6v6"/></svg>';
-const snRecordShortcutStyle='display:inline-flex!important;flex-direction:row!important;flex:0 0 auto!important;align-items:center!important;justify-content:center!important;align-self:flex-start!important;gap:8px;width:max-content!important;height:34px!important;min-height:34px!important;max-height:34px!important;box-sizing:border-box!important;margin:0!important;padding:6px 10px;border:0;border-radius:7px;background:linear-gradient(115deg,var(--sn-theme-9de2f5),var(--sn-theme-ac94ec));color:var(--sn-theme-14121c);font:inherit;font-weight:600;cursor:pointer';
+const snRecordShortcutStyle='display:inline-flex!important;flex-direction:row!important;flex:0 0 auto!important;align-items:center!important;justify-content:center!important;align-self:flex-start!important;gap:8px;width:max-content!important;height:34px!important;min-height:34px!important;max-height:34px!important;box-sizing:border-box!important;margin:0!important;padding:6px 10px;border:0;border-radius:7px;background:linear-gradient(115deg,var(--sn-theme-9de2f5),var(--sn-theme-ac94ec));color:var(--sn-theme-14121c);font:normal 600 16px/20px "Source Sans Pro",arial,sans-serif!important;letter-spacing:normal!important;text-transform:none!important;cursor:pointer';
 function snRecordCopyButton(getNumber){
   const button=document.createElement('button');button.type='button';button.className='sn-ai-record-number-copy';
   button.title='Copy record number';button.setAttribute('aria-label','Copy '+getNumber());
@@ -5496,7 +5497,7 @@ const snAIChatDisplayNames=(()=>{
       if(!/^INC\d+$/.test(number)||!id){header.querySelector('.sn-ai-event-incident-actions')?.remove();button?.remove();continue;}
       if(!button){
         button=document.createElement('button');button.type='button';button.className='sn-ai-event-incident-shortcut';
-        button.style.cssText='display:inline-flex!important;flex-direction:row!important;flex:0 0 auto!important;align-items:center!important;justify-content:center!important;align-self:flex-start!important;gap:8px;width:max-content!important;height:34px!important;min-height:34px!important;max-height:34px!important;box-sizing:border-box!important;margin:0 0 10px 24px!important;padding:6px 10px;border:0;border-radius:7px;background:linear-gradient(115deg,var(--sn-theme-9de2f5),var(--sn-theme-ac94ec));color:var(--sn-theme-14121c);font:inherit;font-weight:600;cursor:pointer';
+        button.style.cssText=snRecordShortcutStyle;
         button.addEventListener('click',()=>{
           // Closed chats have no mounted transcript smart link. Always use the
           // explicit IMS parent route, which works for active and closed chats.
