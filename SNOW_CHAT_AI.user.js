@@ -12053,9 +12053,9 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   }
   async function waitForControlByLabelInternal(label, timeoutMs = 6000) {
     if (comparableLabel(label) === 'attached knowledge') timeoutMs = Math.max(timeoutMs,12000);
-    const started = performance.now();
+    const started = automationNow();
     let searched = false;
-    while (performance.now() - started < timeoutMs) {
+    while (automationNow() - started < timeoutMs) {
       assertAutomationNotStopped();
       let field = findControlByLabel(label);
       if (field) {
@@ -12109,7 +12109,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       }
       if (!searched) {
         searched = true;
-        await revealVirtualisedActiveEventField(label, Math.min(8000, Math.max(0, timeoutMs - (performance.now() - started))));
+        await revealVirtualisedActiveEventField(label, Math.min(8000, Math.max(0, timeoutMs - (automationNow() - started))));
       } else await sleep(100);
     }
     return null;
@@ -12882,18 +12882,18 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     return null;
   }
   async function waitForNativeDescriptionSchema(timeoutMs,stableMs) {
-    const started=performance.now();let signature='',stableSince=0;
-    while(performance.now()-started<Math.min(timeoutMs,1800)){
+    const started=automationNow();let signature='',stableSince=0;
+    while(automationNow()-started<Math.min(timeoutMs,1800)){
       assertAutomationNotStopped();const schema=nativeDescriptionSchema();if(!schema)return null;
       const next=JSON.stringify([schema.descriptionTemplate,schema.fieldsUnderDescription]);
-      if(next!==signature){signature=next;stableSince=performance.now();}
-      if(performance.now()-stableSince>=stableMs){addLog('info','description-schema-native-complete',{source:'native-form-model',durationMs:Math.round(performance.now()-started),fields:schema.fieldsUnderDescription.length,ok:true});return schema;}
+      if(next!==signature){signature=next;stableSince=automationNow();}
+      if(automationNow()-stableSince>=stableMs){addLog('info','description-schema-native-complete',{source:'native-form-model',durationMs:Math.round(automationNow()-started),fields:schema.fieldsUnderDescription.length,ok:true});return schema;}
       await sleep(60);
     }
     return null;
   }
   async function waitForGenericDescriptionSchema(timeoutMs = 5000, stableMs = 700) {
-    const started = performance.now();
+    const started = automationNow();
     const native=await waitForNativeDescriptionSchema(timeoutMs,stableMs);
     if(native)return native;
     let lastSignature = '';
@@ -12910,7 +12910,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       else{scroller.scrollTop=0;scroller.dispatchEvent(new Event('scroll',{bubbles:true}));}
       await sleep(120);
     }
-    while (performance.now() - started < timeoutMs) {
+    while (automationNow() - started < timeoutMs) {
       const discovered = discoverGenericDescriptionSchema();
       if (discovered) {
         schema = discovered;
@@ -12918,10 +12918,10 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         mergedFields = uniqueDescriptionFields([...mergedFields, ...discovered.fieldsUnderDescription]);
         const signature = JSON.stringify(mergedFields.map((field) => [field.label, field.name, field.role]));
         if (signature === lastSignature) {
-          if (!stableSince) stableSince = performance.now();
+          if (!stableSince) stableSince = automationNow();
         } else {
           lastSignature = signature;
-          stableSince = performance.now();
+          stableSince = automationNow();
         }
       }
       if (scroller) {
@@ -12935,7 +12935,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           continue;
         }
       }
-      if (schema && (!scroller || scroller.scrollTop>=scroller.scrollHeight-scroller.clientHeight-2) && performance.now() - stableSince >= stableMs) break;
+      if (schema && (!scroller || scroller.scrollTop>=scroller.scrollHeight-scroller.clientHeight-2) && automationNow() - stableSince >= stableMs) break;
       await new Promise((resolve) => setTimeout(resolve, 60));
     }
     if (scroller && scroller.scrollTop<scroller.scrollHeight-scroller.clientHeight-2) {
@@ -12961,7 +12961,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         },
       };
     }
-    addLog('info','description-schema-scan-complete',{durationMs:Math.round(performance.now()-started),fields:mergedFields.length,ok:Boolean(schema)});
+    addLog('info','description-schema-scan-complete',{durationMs:Math.round(automationNow()-started),fields:mergedFields.length,ok:Boolean(schema)});
     return schema;
   }
 
@@ -13907,8 +13907,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   }
 
   async function waitUntil(test, timeoutMs = 2500, intervalMs = 35) {
-    const started = performance.now();
-    while (performance.now() - started < timeoutMs) {
+    const started = automationNow();
+    while (automationNow() - started < timeoutMs) {
       const value = test();
       if (value) return value;
       await sleep(intervalMs);
@@ -13920,8 +13920,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const wanted = normalisedFieldValue(expected);
     let stableSince = 0;
     let actual = '';
-    const started = performance.now();
-    while (performance.now() - started < timeoutMs) {
+    const started = automationNow();
+    while (automationNow() - started < timeoutMs) {
       // Always prefer the currently visible labelled control. Classification
       // can keep its old button connected while projecting a replacement button,
       // so waiting for isConnected=false reads stale/blank state and triggers
@@ -13934,8 +13934,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       const got = normalisedFieldValue(actual);
       const matches = match === 'prefix' ? got.startsWith(wanted) : (match === 'contains' ? got.includes(wanted) : got === wanted);
       if (matches) {
-        if (!stableSince) stableSince = performance.now();
-        if (performance.now() - stableSince >= stableMs) return { actual, stable: true };
+        if (!stableSince) stableSince = automationNow();
+        if (automationNow() - stableSince >= stableMs) return { actual, stable: true };
       } else {
         stableSince = 0;
       }
@@ -15108,10 +15108,10 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       if (!field) automationFailure(`${code}_FIELD_MISSING`, `${fieldMetadata.label} was not found.`, { attempt, name: fieldMetadata.name || '' });
       await scrollActiveEventTargetIntoView(field);
       const resolveField = descriptionControlResolver(fieldMetadata, field);
-      const attemptStarted = performance.now();
+      const attemptStarted = automationNow();
       const trace = (phase, extra = {}) => addLog('info', 'description-fill-phase', {
         field: fieldMetadata.label, name: fieldMetadata.name || '', attempt, phase,
-        elapsedMs: Math.round(performance.now() - attemptStarted), expectedLength: text.length, ...extra });
+        elapsedMs: Math.round(automationNow() - attemptStarted), expectedLength: text.length, ...extra });
       trace('model-commit-start');
       const modelCommitted = await commitTextToFormModel(field, text, resolveField, trace);
       trace('model-commit-finished', { modelCommitted });
