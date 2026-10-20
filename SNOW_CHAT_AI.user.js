@@ -625,10 +625,10 @@ const snRecordSLAHeaders=(()=>{
     const set=root.querySelector('sn-form-internal-header-label-value-set');
     if(props.table==='sc_req_item'&&set&&set.style.getPropertyValue('display')!=='none')set.style.setProperty('display','none','important');
     if(props.table==='sc_task')for(const field of set?.shadowRoot?.querySelectorAll('sn-form-internal-header-label-reference-value')||[])if(field.getProperties?.().fieldLabel==='Request item'&&field.style.getPropertyValue('display')!=='none')field.style.setProperty('display','none','important');
-    let entry=entries.get(header);if(entry&&(entry.id!==props.sysId||entry.table!==props.table)){entry.panel.remove();entries.delete(header);entry=null;}
-    if(!entry){const panel=document.createElement('div');panel.className='sn-ai-record-sla';entry={header,panel,id:props.sysId,table:props.table,open,pending:false,data:null,error:'',signature:''};entries.set(header,entry);}
+    let entry=entries.get(header);if(entry&&(entry.id!==props.sysId||entry.table!==props.table)){entry.observer?.disconnect();entry.panel.remove();entries.delete(header);entry=null;}
+    if(!entry){const panel=document.createElement('div');panel.className='sn-ai-record-sla';entry={header,panel,id:props.sysId,table:props.table,open,pending:false,data:null,error:'',signature:''};entries.set(header,entry);entry.observer=new ResizeObserver(()=>{if(!entry.fetchedAt||Date.now()-entry.fetchedAt>=60000)update(entry);});entry.observer.observe(header);}
     render(entry);if(!entry.fetchedAt||Date.now()-entry.fetchedAt>=60000)update(entry);
-    if(!timer){timer=setInterval(()=>{for(const [node,item]of entries){if(!node.isConnected){entries.delete(node);continue;}update(item);}},60000);window.addEventListener('pagehide',()=>{clearInterval(timer);entries.clear();},{once:true});}
+    if(!timer){timer=setInterval(()=>{for(const [node,item]of entries){if(!node.isConnected){item.observer?.disconnect();entries.delete(node);continue;}update(item);}},60000);window.addEventListener('pagehide',()=>{clearInterval(timer);for(const item of entries.values())item.observer?.disconnect();entries.clear();},{once:true});}
   }};
 })();
 // SN_AI_RECORD_SLA_END
