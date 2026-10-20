@@ -8712,6 +8712,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const event=ownedTicketDraft(activity.ims);
     state.incomingResume={ims:activity.ims,event:event?{...event}:null,path:location.pathname,kind};
     state.incomingPause=true;
+    state.pauseClockStarted=performance.now();
     state.pause.paused=true;state.pause.dismissed=false;state.pause.reason=kind==='incoming-chat'?'Paused for new incoming chats. Click Continue when ready.':'Paused. Click Continue when ready.';
     releaseAutomationFreeze('incoming-chat',false);updatePausePanel();
     addLog('info',kind==='incoming-chat'?'automation-incoming-chat-paused':'automation-manually-paused',{ims:activity.ims,tabId:event?.tabId||'',phase:state.commandRunning?'filling':'preparing'});
@@ -8731,7 +8732,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       const details=findOuterDetailsTab();if(details)clickableAncestor(details).click();
     }
     if(state.incomingResume!==saved||generation!==(state.incomingGeneration||0))throw Error('Another chat arrived while restoring the draft. Click Continue when ready.');
-    state.incomingPause=false;state.incomingResume=null;state.pause.paused=false;state.pause.reason='';
+    finishPauseClock();state.incomingPause=false;state.incomingResume=null;state.pause.paused=false;state.pause.reason='';
     automationFreeze.suspended=false;updatePausePanel();refreshAutomationFreeze();
     addLog('info','automation-incoming-chat-continued',{ims:saved.ims});
     }finally{state.continuingIncoming=false;}
@@ -13674,6 +13675,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   }
 
   const rawSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  function automationNow(){return performance.now()-(state.pauseClockTotal||0)-(state.incomingPause&&state.pauseClockStarted!=null?performance.now()-state.pauseClockStarted:0);}
+  function finishPauseClock(){if(state.pauseClockStarted!=null){state.pauseClockTotal=(state.pauseClockTotal||0)+performance.now()-state.pauseClockStarted;state.pauseClockStarted=null;}}
 
   function updateStopButtons() {
     for (const button of document.querySelectorAll(`#${ROOT_ID} [data-action="stop-automation"]`)) {
@@ -13692,7 +13695,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
 
   function requestAutomationStop() {
     releaseAutomationFreeze('stop');
-    state.incomingPause=false;state.incomingResume=null;
+    finishPauseClock();state.incomingPause=false;state.incomingResume=null;
     if (!state.commandRunning && !state.busy) {
       state.lastAction = 'No automation is currently running.';
       updateStopButtons();
