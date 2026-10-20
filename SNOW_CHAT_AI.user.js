@@ -8671,33 +8671,59 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     document.addEventListener('sn-ai-progress',event=>{if(/^(command-started|command-finished|command-failed)$/.test(event.detail?.action||''))schedule();});
     schedule();
   }
-  function pauseForIncomingChat(){
+  // SN_AI_OWNED_DRAFT_BEGIN
+  function runningTicketDialog(ims){return document.getElementById(ROOT_ID)?.querySelector(`[data-pinned-ims="${normaliseIMS(ims)}"].is-running`)||null;}
+  function ownedTicketDraft(ims){const dialog=runningTicketDialog(ims);return dialog?dialog.snAiOwnedEvent||null:state.createdEvent?.ims===normaliseIMS(ims)?state.createdEvent:null;}
+  function rememberTicketDraft(ims,source){
+    ims=normaliseIMS(ims);const main=snWorkspacePrimary(),parent=main?.props.tabList.find(t=>t.table==='interaction'&&(t.title===ims||t.formHeaderInfo?.recordDisplayValue===ims));
+    const selected=parent?.tabList?.find(t=>String(t.tab_id)===String(parent.selectedTabId)&&t.table==='new_call'&&t.type==='new_record');
+    if(!selected||String(main.props.selectedTabId)!==String(parent.tab_id))throw Error('OWNED_EVENT_ID_UNAVAILABLE: The active New Event identity could not be confirmed.');
+    const events=parent.tabList.filter(t=>t.table==='new_call'&&t.type==='new_record');
+    const token={ims,parentId:String(parent.tab_id),interactionId:parent.sys_id,tabId:String(selected.tab_id),contentId:selected.contentId,ordinal:events.findIndex(t=>t.tab_id===selected.tab_id)+1,count:events.length,path:location.pathname,source};
+    const dialog=runningTicketDialog(ims);if(dialog)dialog.snAiOwnedEvent=token;state.createdEvent=token;
+    addLog('info','ticket-draft-owned',token);return token;
+  }
+  async function restoreTicketDraft(token){
+    if(!token?.tabId||!token.parentId)throw Error('No owned Event identity is available. Resume will not create a replacement.');
+    await clickIMSFast(token.ims);
+    const main=snWorkspacePrimary(),parent=main?.props.tabList.find(t=>String(t.tab_id)===token.parentId&&t.sys_id===token.interactionId);
+    const tab=parent?.tabList?.find(t=>String(t.tab_id)===token.tabId&&t.contentId===token.contentId&&t.table==='new_call'&&t.type==='new_record');
+    if(!tab)throw Error('The Event owned by this bubble is no longer open. No replacement Event was created.');
+    if(!snWorkspaceFocusSubtab(token.parentId,token.tabId))throw Error('Native Event navigation is not ready. Try Continue again.');
+    const started=performance.now();while(performance.now()-started<12000){assertAutomationNotStopped();const p=snWorkspacePrimary()?.props.tabList.find(t=>String(t.tab_id)===token.parentId);if(String(p?.selectedTabId)===token.tabId&&newEventMatchesIMS(checkCurrentEvent(),token.ims)){state.createdEvent=token;return;}await rawSleep(60);}
+    throw Error('The owned Event did not become ready. Automation remains paused.');
+  }
+  // SN_AI_OWNED_DRAFT_END
+  function requestAutomationPause(kind='manual'){
     const activity=automationFreezeActivity(true);
     if(!activity.running||state.incomingPause)return;
-    state.incomingResume={ims:activity.ims,event:state.createdEvent?.ims===activity.ims?{...state.createdEvent}:null,path:location.pathname};
+    const event=ownedTicketDraft(activity.ims);
+    state.incomingResume={ims:activity.ims,event:event?{...event}:null,path:location.pathname,kind};
     state.incomingPause=true;
-    state.pause.paused=true;state.pause.dismissed=false;state.pause.reason='Paused for a new incoming chat. Click Continue when ready.';
+    state.pause.paused=true;state.pause.dismissed=false;state.pause.reason=kind==='incoming-chat'?'Paused for new incoming chats. Click Continue when ready.':'Paused. Click Continue when ready.';
     releaseAutomationFreeze('incoming-chat',false);updatePausePanel();
-    addLog('info','automation-incoming-chat-paused',{ims:activity.ims});
+    addLog('info',kind==='incoming-chat'?'automation-incoming-chat-paused':'automation-manually-paused',{ims:activity.ims,tabId:event?.tabId||'',phase:state.commandRunning?'filling':'preparing'});
+  }
+  function pauseForIncomingChat(){
+    state.incomingGeneration=(state.incomingGeneration||0)+1;
+    requestAutomationPause('incoming-chat');
   }
   async function continueIncomingAutomation(){
     const saved=state.incomingResume;if(!saved||!state.incomingPause)return;
     const wait=async test=>{const start=performance.now();while(performance.now()-start<12000){assertAutomationNotStopped();if(test())return true;await rawSleep(60);}return false;};
-    const imsTab=findIMSInteractionTarget(saved.ims);
-    if(!imsTab)throw new Error('Original IMS tab is no longer available.');
-    clickableAncestor(imsTab).click();
-    if(!await wait(()=>normaliseIMS(activeSelectedIMS())===saved.ims))throw new Error('Original IMS could not be restored.');
+    if(state.continuingIncoming)return;state.continuingIncoming=true;const generation=state.incomingGeneration||0;
+    try{
     if(saved.event){
-      const tab=allPageElements().find(el=>el.getAttribute('role')==='tab'&&((saved.event.tabId&&el.id===saved.event.tabId)||(saved.event.controls&&el.getAttribute('aria-controls')===saved.event.controls)));
-      if(!tab)throw new Error('The Event created by this run is no longer available. No other draft will be used.');
-      clickableAncestor(tab).click();
-      if(!await wait(()=>(saved.event.path?location.pathname===saved.event.path:activeWorkspaceRecordPanel()?.id===saved.event.controls)&&newEventMatchesIMS(checkCurrentEvent(),saved.ims)))throw new Error('The original Event could not be confirmed.');
+      await restoreTicketDraft(saved.event);
     }else{
+      await clickIMSFast(saved.ims);
       const details=findOuterDetailsTab();if(details)clickableAncestor(details).click();
     }
+    if(state.incomingResume!==saved||generation!==(state.incomingGeneration||0))throw Error('Another chat arrived while restoring the draft. Click Continue when ready.');
     state.incomingPause=false;state.incomingResume=null;state.pause.paused=false;state.pause.reason='';
     automationFreeze.suspended=false;updatePausePanel();refreshAutomationFreeze();
     addLog('info','automation-incoming-chat-continued',{ims:saved.ims});
+    }finally{state.continuingIncoming=false;}
   }
   function addLog(level, action, details = {}) {
     if (!workspacePage && level !== 'error' && level !== 'warn') return;
