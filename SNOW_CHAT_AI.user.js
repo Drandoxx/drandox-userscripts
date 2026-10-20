@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.725
+// @version      2.36.726
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.726","fixes":true,"changes":[{"key":"reopen-tabs","meaningful":true,"text":"Add Reopen closed tab beside the tab plus buttons, restoring most-recently closed records first with reload-persistent 24-hour history."}]},
 {"version":"2.36.725","fixes":true,"changes":[{"key":"hp-printer-name","meaningful":true,"text":"For SFD ticket locations, IP suffix .200 fills Invoice printer and Next to tills; .202 fills Picking printer and Next to manager's PC. Apply in both HP forms before sending data to AI."}]},
 {"version":"2.36.724","fixes":true,"changes":[{"key":"presence-menu","meaningful":true,"text":"Highlight only the hovered or pressed presence option and restore the confirmed selection when the pointer leaves the menu."}]},
 {"version":"2.36.723","fixes":true,"changes":[{"key":"presence-menu","meaningful":true,"text":"Show pre-rendered presence options in a themed menu instead of the native dropdown that could paint as an empty dark box."}]},
@@ -5060,6 +5061,113 @@ const snAIChatDisplayNames=(()=>{
     if(plus){if(plus.getAttribute('aria-label')!=='Open record')plus.setAttribute('aria-label','Open record');if(plus.getAttribute('title')!=='Open record')plus.setAttribute('title','Open record');}
   }
   let imsLookupBox=null;
+  // Store navigation descriptors only, never closed DOM trees or form values.
+  const closedTabsKey = 'sn-ai-closed-workspace-tabs-v1:' + String((typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).g_user?.userID || 'local');
+  const closedTabTTL = 24 * 60 * 60 * 1000;
+  let closedTabSnapshot = null, closedTabBusy = false;
+  function readClosedTabs(now = Date.now()) {
+    try {
+      const entries = JSON.parse(localStorage.getItem(closedTabsKey) || '[]');
+      return Array.isArray(entries) ? entries.filter(entry => entry && Number.isFinite(entry.closedAt) && entry.closedAt <= now && now - entry.closedAt < closedTabTTL && typeof entry.table === 'string' && typeof entry.sys_id === 'string').sort((a,b) => b.closedAt-a.closedAt) : [];
+    } catch { return []; }
+  }
+  function saveClosedTabs(entries) {
+    localStorage.setItem(closedTabsKey, JSON.stringify(entries));
+  }
+  function closedTabDescriptor(tab, parent) {
+    if (!tab?.table || !tab.sys_id) return null;
+    return { table:String(tab.table), sys_id:String(tab.sys_id), type:String(tab.type || 'record'), title:String(tab.title || tab.formHeaderInfo?.recordDisplayValue || tab.table).slice(0,180),
+      ...(parent ? { parent: { table:String(parent.table), sys_id:String(parent.sys_id), title:String(parent.title || '') } } : {}) };
+  }
+  function captureClosedTabChanges(props) {
+    if (props?.type !== 'primary' || !Array.isArray(props.tabList)) return;
+    const next = new Map();
+    for (const tab of props.tabList) {
+      const descriptor = closedTabDescriptor(tab);
+      if (descriptor) next.set(String(tab.tab_id), descriptor);
+      for (const child of tab.tabList || []) {
+        const entry = closedTabDescriptor(child, tab);
+        if (entry) next.set(String(tab.tab_id) + '/' + String(child.tab_id), entry);
+      }
+    }
+    if (closedTabSnapshot) {
+      const removed = [...closedTabSnapshot].filter(([key]) => !next.has(key));
+      // A closed parent is one action; do not replay all its children as
+      // separate closures when ServiceNow removes the whole subtree.
+      const entries = removed.filter(([key]) => !key.includes('/') || next.has(key.split('/')[0]));
+      if (entries.length) {
+        const history = readClosedTabs();
+        const at = Date.now();
+        for (const [,entry] of entries) history.unshift({...entry, closedAt:at, id:crypto.randomUUID()});
+        try { saveClosedTabs(history); } catch (error) { console.warn('[SN AI reopen history]',error.message); }
+      }
+    }
+    closedTabSnapshot = next;
+  }
+  async function reopenClosedTab(button) {
+    if (closedTabBusy) return;
+    closedTabBusy = true; button.disabled = true;
+    try {
+      const history = readClosedTabs(), entry = history[0];
+      if (!entry) { saveClosedTabs([]); button.title = 'No closed tabs in the last 24 hours'; return; }
+      const focusOrOpen = target => {
+        const main=snWorkspacePrimary();
+        const existing=main?.props.tabList.find(tab=>tab.table===target.table&&String(tab.sys_id)===target.sys_id);
+        if(existing&&typeof main.props.onClickTab==='function')main.props.onClickTab(existing.tab_id);
+        else openWorkspaceIMSMainTab({table:target.table,sys_id:target.sys_id,number:target.title});
+      };
+      if (entry.parent) {
+        // Restore/focus the original parent, not whichever chat is active now.
+        focusOrOpen(entry.parent);
+        let parent;
+        for (let attempt=0;attempt<40;attempt++) {
+          parent=snWorkspacePrimary()?.props.tabList.find(tab=>tab.table===entry.parent.table&&String(tab.sys_id)===entry.parent.sys_id);
+          if (parent && String(snWorkspacePrimary()?.props.selectedTabId) === String(parent.tab_id)) break;
+          parent=null;
+          await new Promise(resolve=>setTimeout(resolve,100));
+        }
+        if (!parent) throw new Error('The original parent tab is not ready. Try again.');
+        const existing=parent.tabList?.find(tab=>tab.table===entry.table&&String(tab.sys_id)===entry.sys_id&&tab.type===entry.type);
+        if (existing) snWorkspaceFocusSubtab(parent.tab_id,existing.tab_id);
+        else {
+          let owner;
+          for (const root of spaceRoots) {
+            owner=[...root.querySelectorAll('sn-workspace-sub-tabs')].find(node=>typeof node.dispatch==='function'&&node.getBoundingClientRect().width>0);
+            if(owner)break;
+          }
+          if (!owner) throw new Error('Sub-tab navigation is not ready. Try again.');
+          owner.dispatch('ITEM_SELECTED',{table:entry.table,sys_id:entry.sys_id,type:entry.type,parent_table:entry.parent.table,parent_sys_id:entry.parent.sys_id});
+        }
+      } else focusOrOpen(entry);
+      // Only consume after the native tab model confirms it opened.
+      let opened=false;
+      for(let attempt=0;attempt<40;attempt++){
+        const tabs=snWorkspacePrimary()?.props.tabList||[];
+        const list=entry.parent?(tabs.find(tab=>tab.table===entry.parent.table&&String(tab.sys_id)===entry.parent.sys_id)?.tabList||[]):tabs;
+        if(list.some(tab=>tab.table===entry.table&&String(tab.sys_id)===entry.sys_id)){opened=true;break;}
+        await new Promise(resolve=>setTimeout(resolve,100));
+      }
+      if(!opened)throw new Error('ServiceNow did not reopen this tab. Its history entry was kept.');
+      saveClosedTabs(readClosedTabs().filter(item=>item.id!==entry.id));
+      button.title='Reopen last closed tab';
+    } catch(error) { button.title=error.message; console.warn('[SN AI reopen tab]',error.message); }
+    finally { closedTabBusy=false; button.disabled=false; }
+  }
+  function installReopenTabButtons(root) {
+    if(root.host?.localName==='sn-workspace-tab-bar') captureClosedTabChanges(root.host.getProperties?.());
+    for(const plus of root.querySelectorAll?.('#chrome-add-new-button,[data-sn-ai-subtab-add]')||[]) {
+      if(plus.nextElementSibling?.hasAttribute('data-sn-ai-reopen-tab'))continue;
+      const button=document.createElement('button');button.type='button';button.dataset.snAiReopenTab='';
+      button.className=plus.className;button.style.cssText=plus.style.cssText;
+      button.style.setProperty('margin-left','5px');button.style.setProperty('cursor','pointer');
+      button.setAttribute('aria-label','Reopen last closed tab');button.title='Reopen last closed tab';
+      button.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10h7M3 10V3M3 10a9 9 0 1 1 0 5"/></svg>';
+      button.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();void reopenClosedTab(button);});
+      plus.after(button);
+    }
+  }
+  const closedTabPruneTimer=setInterval(()=>{try{saveClosedTabs(readClosedTabs());}catch{}},60000);
+  window.addEventListener('pagehide',()=>clearInterval(closedTabPruneTimer),{once:true});
   function currentIMSParentId() {
     return location.pathname.match(/\/chat\/([a-f0-9]{32})(?:\/|$)/i)?.[1]
       ||location.pathname.match(/\/record\/interaction\/([a-f0-9]{32})(?:\/|$)/i)?.[1];
@@ -6384,6 +6492,7 @@ const snAIChatDisplayNames=(()=>{
       syncInteractionsHeader(root);
       syncNativeActionWidth(root);
       eventFieldShortcut(root);
+      installReopenTabButtons(root);
     });
     const observationOptions = { childList: true, subtree: true,
       ...(root.host?.localName?.startsWith('sn-form-internal-header-label-')?{characterData:true}:{}),
@@ -6398,6 +6507,7 @@ const snAIChatDisplayNames=(()=>{
     syncInteractionsHeader(root);
     syncNativeActionWidth(root);
     eventFieldShortcut(root);
+    installReopenTabButtons(root);
   }
   // Cover roots created synchronously before their first children are mounted.
   const attach = Element.prototype.attachShadow;
