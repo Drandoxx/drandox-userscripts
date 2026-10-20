@@ -8674,6 +8674,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   // SN_AI_OWNED_DRAFT_BEGIN
   function runningTicketDialog(ims){return document.getElementById(ROOT_ID)?.querySelector(`[data-pinned-ims="${normaliseIMS(ims)}"].is-running`)||null;}
   function ownedTicketDraft(ims){const dialog=runningTicketDialog(ims);return dialog?dialog.snAiOwnedEvent||null:state.createdEvent?.ims===normaliseIMS(ims)?state.createdEvent:null;}
+  function ticketDraftSelected(token){const main=snWorkspacePrimary(),parent=main?.props.tabList.find(t=>String(t.tab_id)===token.parentId);return String(main?.props.selectedTabId)===token.parentId&&String(parent?.selectedTabId)===token.tabId&&newEventMatchesIMS(checkCurrentEvent(),token.ims);}
   function rememberTicketDraft(ims,source){
     ims=normaliseIMS(ims);const main=snWorkspacePrimary(),parent=main?.props.tabList.find(t=>t.table==='interaction'&&(t.title===ims||t.formHeaderInfo?.recordDisplayValue===ims));
     const selected=parent?.tabList?.find(t=>String(t.tab_id)===String(parent.selectedTabId)&&t.table==='new_call'&&t.type==='new_record');
@@ -8689,8 +8690,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const main=snWorkspacePrimary(),parent=main?.props.tabList.find(t=>String(t.tab_id)===token.parentId&&t.sys_id===token.interactionId);
     const tab=parent?.tabList?.find(t=>String(t.tab_id)===token.tabId&&t.contentId===token.contentId&&t.table==='new_call'&&t.type==='new_record');
     if(!tab)throw Error('The Event owned by this bubble is no longer open. No replacement Event was created.');
-    if(!snWorkspaceFocusSubtab(token.parentId,token.tabId))throw Error('Native Event navigation is not ready. Try Continue again.');
-    const started=performance.now();while(performance.now()-started<12000){assertAutomationNotStopped();const p=snWorkspacePrimary()?.props.tabList.find(t=>String(t.tab_id)===token.parentId);if(String(p?.selectedTabId)===token.tabId&&newEventMatchesIMS(checkCurrentEvent(),token.ims)){state.createdEvent=token;return;}await rawSleep(60);}
+    const navigationStarted=performance.now();while(!snWorkspaceFocusSubtab(token.parentId,token.tabId)){if(performance.now()-navigationStarted>4000)throw Error('Native Event navigation is not ready. Try Continue again.');await rawSleep(60);assertAutomationNotStopped();}
+    const started=performance.now();while(performance.now()-started<12000){assertAutomationNotStopped();if(ticketDraftSelected(token)){token.path=location.pathname;state.createdEvent=token;const dialog=runningTicketDialog(token.ims);if(dialog)dialog.snAiOwnedEvent=token;return;}await rawSleep(60);}
     throw Error('The owned Event did not become ready. Automation remains paused.');
   }
   // SN_AI_OWNED_DRAFT_END
@@ -8710,7 +8711,6 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   }
   async function continueIncomingAutomation(){
     const saved=state.incomingResume;if(!saved||!state.incomingPause)return;
-    const wait=async test=>{const start=performance.now();while(performance.now()-start<12000){assertAutomationNotStopped();if(test())return true;await rawSleep(60);}return false;};
     if(state.continuingIncoming)return;state.continuingIncoming=true;const generation=state.incomingGeneration||0;
     try{
     if(saved.event){
@@ -12698,7 +12698,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const activeEvent = checkCurrentEvent();
     const startedOnNewEvent = newEventMatchesIMS(activeEvent, requestedIMS);
     const owned=ownedTicketDraft(requestedIMS);
-    if(owned&&location.pathname!==owned.path){await restoreTicketDraft(owned);return prepareDescriptionAcrossWorkspaceTabs(ims,options);}
+    if(owned&&!ticketDraftSelected(owned)){await restoreTicketDraft(owned);return prepareDescriptionAcrossWorkspaceTabs(ims,options);}
     if(startedOnNewEvent&&!owned)rememberTicketDraft(requestedIMS,'description-existing');
     const capturedNewEventPath = startedOnNewEvent ? location.pathname : '';
     let preloadedSchema = options.preloadedSchema || (startedOnNewEvent ? await waitForGenericDescriptionSchema(2800, 450) : null);
@@ -17393,6 +17393,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         #${ROOT_ID} .local-sn-cpc-dialog.is-success .local-sn-cpc-user { display: none; }
         #${ROOT_ID} .local-sn-cpc-dialog.is-success .local-sn-cpc-content { max-height: 0; padding-top: 0; padding-bottom: 0; opacity: 0; }
         #${ROOT_ID} .local-sn-cpc-dialog.is-success.is-feedback .local-sn-cpc-content { max-height: 260px; padding: 14px; opacity: 1; }
+        #${ROOT_ID} .local-sn-cpc-dialog.is-success.is-feedback .local-sn-cpc-content > :is(.local-sn-case-instruction,[data-ticket-content],[data-ticket-ai-returned],[data-ticket-manual-ai-panel],.local-sn-cpc-actions) { display:none!important; }
+        #${ROOT_ID} .local-sn-cpc-dialog.is-success.is-feedback .local-sn-ticket-feedback { margin:0; }
         #${ROOT_ID} .local-sn-cpc-dialog.is-success .local-sn-case-instruction { display: none; }
         #${ROOT_ID} .local-sn-cpc-dialog.is-error .local-sn-cpc-drag { background: #7d211a; }
         #${ROOT_ID} .local-sn-cpc-dialog.is-error .local-sn-cpc-content { max-height: min(calc(100vh - 92px), 1100px); overflow-y: auto; overscroll-behavior: contain; }
@@ -19927,6 +19929,12 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       refs.aiReturnedValues = null;
       refs.forceFreshAI = false;
       refs.aiMode = Boolean(aiMode);
+      const completionActions=document.createElement('div');completionActions.className='local-sn-cpc-actions';completionActions.dataset.ticketCompletionActions='';completionActions.hidden=true;
+      const feedbackButton=document.createElement('button');feedbackButton.type='button';feedbackButton.textContent='Give feedback';
+      const doneButton=document.createElement('button');doneButton.type='button';doneButton.textContent='Done';completionActions.append(feedbackButton,doneButton);refs.feedbackPanel.before(completionActions);
+      feedbackButton.addEventListener('click',()=>{completionActions.hidden=true;refs.feedbackPanel.hidden=false;refs.feedbackInput.focus();});
+      doneButton.addEventListener('click',()=>refs.closeButton.click());
+      refs.runButton.addEventListener('click',()=>{completionActions.hidden=true;refs.feedbackPanel.hidden=true;dialog.classList.remove('is-feedback');});
       refs.stopButton.addEventListener('click',event=>{
         if(dialog.dataset.ticketDisposed==='true')return;
         event.preventDefault();event.stopImmediatePropagation();
@@ -20446,12 +20454,13 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         refs.dialog.classList.add('is-feedback');
         refs.content.hidden = true;
         refs.errorLine.textContent = '';
-        refs.feedbackPanel.hidden = false;
+        refs.feedbackPanel.hidden = true;
+        completionActions.hidden = false;
         refs.cancelButton.hidden = true;
         refs.runButton.hidden = true;
         refs.fixAIButton.hidden = true;
         refs.manualAIButton.hidden = true;
-        refs.feedbackInput.focus();
+        doneButton.focus();
         return true;
       };
       return refs;
