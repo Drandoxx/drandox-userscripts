@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.717
+// @version      2.36.718
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.718","fixes":true,"changes":[{"key":"record-sla-links","meaningful":true,"text":"Simplify the breach-time popup, retain the normal cursor, and copy only the displayed breach date and time when its message is clicked."}]},
 {"version":"2.36.717","fixes":true,"changes":[{"key":"record-sla-links","meaningful":true,"text":"Use the same explicit 16px Source Sans Pro font, weight and line height for INC, RITM and SCTASK shortcut buttons instead of inheriting different header sizes."}]},
 {"version":"2.36.716","fixes":true,"changes":[{"key":"record-sla-links","meaningful":true,"text":"Match linked RITM and SCTASK buttons to the INC shortcut and add number-copy controls beside shortcuts and EVNT, INC, RITM and SCTASK titles."}]},
 {"version":"2.36.715","fixes":true,"changes":[{"key":"record-sla-links","meaningful":true,"text":"Keep native State, linked record buttons and SLA details aligned on the same header row, wrapping only on narrow screens."}]},
@@ -567,6 +568,20 @@ function snRecordCopyButton(getNumber){
   });return button;
 }
 // SN_AI_RECORD_COPY_END
+// SN_AI_BREACH_COPY_BEGIN
+function snRecordBreachChip(summary){
+  const breach=document.createElement('span');breach.className='sla-chip sla-breach';breach.dataset.level='breached';breach.textContent=summary.breachText;breach.tabIndex=0;
+  breach.dataset.exactDate=summary.exactDate;breach.setAttribute('role','button');
+  const label=breach.textContent+'. Copy breach time: '+summary.exactDate;breach.setAttribute('aria-label',label);
+  let reset=0;
+  const copy=async event=>{event.stopPropagation();if(!summary.exactDate)return;
+    try{if(typeof GM_setClipboard==='function')await GM_setClipboard(summary.exactDate,'text');else await navigator.clipboard.writeText(summary.exactDate);breach.setAttribute('aria-label','Copied '+summary.exactDate);}
+    catch{breach.setAttribute('aria-label','Could not copy breach time');}
+    clearTimeout(reset);reset=setTimeout(()=>breach.setAttribute('aria-label',label),2000);
+  };
+  breach.addEventListener('click',copy);breach.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();copy(event);}});return breach;
+}
+// SN_AI_BREACH_COPY_END
 // SN_AI_RECORD_SLA_BEGIN
 function snRecordValue(value,display=false){return value&&typeof value==='object'?String(display?(value.display_value??value.value??''):(value.value??'')):String(value??'');}
 function snRecordSLASummary(rows,now=Date.now()){
@@ -640,7 +655,8 @@ const snRecordSLAHeaders=(()=>{
     }
     const badge=document.createElement('span');badge.className='sla-chip';badge.textContent=summary?.label||(error?'SLA - Unavailable':data?'SLA - N/A':'SLA - Loading…');badge.dataset.level=summary?.level||'';
     badge.title=error||summary?error||[summary.task,summary.name,summary.count>1?'Highest of '+summary.count+' active matching SLAs':'',summary.exactDate?'Breach time: '+summary.exactDate+' (ServiceNow timezone)':''].filter(Boolean).join('\n'):'No applicable active SLA';panel.append(badge);
-    if(summary?.breachText){const breach=document.createElement('span');breach.className='sla-chip sla-breach';breach.dataset.level='breached';breach.textContent=summary.breachText;breach.tabIndex=0;breach.dataset.exactDate='Breach time: '+summary.exactDate+' (ServiceNow timezone)\n'+summary.utcDate;breach.setAttribute('aria-label',breach.textContent+'. '+breach.dataset.exactDate);panel.append(breach);}
+    style.textContent+='.sn-ai-record-sla .sla-breach{cursor:default}.sn-ai-record-sla .sla-breach:hover::after,.sn-ai-record-sla .sla-breach:focus::after{white-space:nowrap;border:0;border-radius:3px;padding:4px 7px;box-shadow:none;font-size:13px;line-height:1.4;font-weight:400;pointer-events:none}';
+    if(summary?.breachText)panel.append(snRecordBreachChip(summary));
   };
   const update=async entry=>{
     if(!entry.header.isConnected||!entry.header.getBoundingClientRect().width||document.hidden||entry.pending)return;
