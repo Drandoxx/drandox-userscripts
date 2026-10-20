@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.724
+// @version      2.36.725
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.725","fixes":true,"changes":[{"key":"hp-printer-name","meaningful":true,"text":"For SFD ticket locations, IP suffix .200 fills Invoice printer and Next to tills; .202 fills Picking printer and Next to manager's PC. Apply in both HP forms before sending data to AI."}]},
 {"version":"2.36.724","fixes":true,"changes":[{"key":"presence-menu","meaningful":true,"text":"Highlight only the hovered or pressed presence option and restore the confirmed selection when the pointer leaves the menu."}]},
 {"version":"2.36.723","fixes":true,"changes":[{"key":"presence-menu","meaningful":true,"text":"Show pre-rendered presence options in a themed menu instead of the native dropdown that could paint as an empty dark box."}]},
 {"version":"2.36.722","fixes":true,"changes":[{"key":"runtime-memory","meaningful":true,"text":"Release detached theme roots and inbox observers, bound the stylesheet cache, and stop rewriting the presence dropdown while it is focused."}]},
@@ -9713,6 +9714,32 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   }
 
   const HP_OPERATOR_PRIORITY_KEYS = new Set(['serial-number', 'email', 'model-number']);
+  function applySFDPrinterName(fields, locationName) {
+    if (!/^SFD/i.test(String(locationName || '').trim())) return '';
+    const ip = String(fields.find(field => field.dataset.hpField === 'ip-address')?.value || '').trim();
+    const octets = ip.split('.');
+    if (octets.length !== 4 || !octets.every(part => /^\d{1,3}$/.test(part) && Number(part) <= 255)) return '';
+    const name = octets[3] === '200' ? 'Invoice printer' : octets[3] === '202' ? 'Picking printer' : '';
+    const target = fields.find(field => field.dataset.hpField === 'printer-name');
+    if (name && target && target.value !== name) {
+      target.value = name;
+      target.dispatchEvent(new Event('input', { bubbles: true }));
+      target.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    if (name) {
+      const site = name === 'Invoice printer' ? 'Next to tills' : "Next to manager's PC";
+      for (const field of fields.filter(field => ['location', 'device-location'].includes(field.dataset.hpField))) {
+        if (field.value === site) continue;
+        field.value = site;
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+        field.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
+    return name;
+  }
+  function currentHPPrinterLocation() {
+    return document.getElementById('sys_display.incident.location')?.value || readableControlValue('Location');
+  }
   const HP_AI_PRIORITY_KEYS = new Set(['store-address', 'printer-name', 'availability']);
 
   function hpComparableValue(value) {
@@ -18842,6 +18869,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         setHPIssueType(button.dataset.hpType);
       }));
       hpFields.forEach((field) => field.addEventListener('blur', () => { field.value = field.value.trim(); }));
+      hpFields.find(field => field.dataset.hpField === 'ip-address')?.addEventListener('input', () => applySFDPrinterName(hpFields, currentHPPrinterLocation()));
+      applySFDPrinterName(hpFields, currentHPPrinterLocation());
       if (hpStack) prefillHPStackFields();
       const templateSpecification = (template) => String(template ?? '').split('\n').map((line, index) => {
         const match = line.match(/^(.{1,140}?)(:\s*|\s[-\u2013]\s*)(.*)$/);
@@ -18895,6 +18924,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           if (!state.ai.enabled) throw new Error('AI power is off. Turn it on in SN AI settings, then run again.');
           if (state.ai.provider !== 'web') throw new Error('Stack modes currently use ChatGPT Web. Select ChatGPT Web in SN AI settings.');
           document.addEventListener('sn-ai-web-progress', aiWebProgress);
+          if (hpStack) applySFDPrinterName(hpFields, currentHPPrinterLocation());
           const hpSuppliedValues = hpStack ? Object.fromEntries(hpFields
             .filter((field) => hpIssueType === 'Toner order' || field.dataset.hpField !== 'ink-colors')
             .map((field) => [field.dataset.hpField, field.value.trim()])
@@ -21674,13 +21704,15 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         if (shell.caseInstruction && instruction) shell.caseInstruction.value = instruction.value;
       }
       fields.forEach((field) => field.addEventListener('blur', () => { field.value = field.value.trim(); }));
+      fields.find(field => field.dataset.hpField === 'ip-address')?.addEventListener('input', () => applySFDPrinterName(fields, currentHPPrinterLocation()));
+      applySFDPrinterName(fields, currentHPPrinterLocation());
       const emailField=fields.find(field=>field.dataset.hpField==='email');
       const verifiedEmail=readNewEventEmail();
       if(emailField&&!emailField.value&&verifiedEmail)emailField.value=verifiedEmail;
-      const suppliedValues = () => Object.fromEntries(fields
+      const suppliedValues = () => { applySFDPrinterName(fields, currentHPPrinterLocation()); return Object.fromEntries(fields
         .filter((field) => issueType === 'Toner order' || field.dataset.hpField !== 'ink-colors')
         .map((field) => [field.dataset.hpField, field.value.trim()])
-        .filter(([, value]) => value));
+        .filter(([, value]) => value)); };
       const hpStages = ['Getting Chat data', 'Creating template for ticket', 'Sending message to AI', 'Waiting for AI reply', 'Validating AI response', 'Generating Ticket', 'Finishing'];
       let hpStage = 0;
       const setStage = (stage) => {
@@ -21806,6 +21838,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             // blocking the AI request. Late results use native model commits.
             await autoLookup('Assignment Group', 'HP', { expected: 'HP', code: 'HP_ASSIGNMENT_GROUP_COMMIT_FAILED' });
             void startHPPrinterCISearch(supplied['model-number'],()=>!stopped&&running&&dialog.isConnected);
+            supplied = suppliedValues();
             titleMain.textContent = `${pinnedIMS} - Sending message to ${aiProviderDisplayName()}…`; setProgress(25);
           const requestArgs = { ims: pinnedIMS, transcript: appendCurrentCaseInstruction(await aiTranscriptWithUserInformation(cacheEntry, 'HP', pinnedIMS), shell.caseInstruction?.value), issueType, supplied, genericSchema };
           assertTicketWindowAlive(dialog);
