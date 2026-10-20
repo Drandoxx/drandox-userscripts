@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.727
+// @version      2.36.728
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.728","fixes":true,"changes":[{"key":"runtime-memory","meaningful":true,"text":"Share the large action stylesheet across shadow roots instead of parsing a separate copy for each component."},{"key":"reopen-tabs","meaningful":true,"text":"Match the reopen button to the plus button and place it immediately to its left."}]},
 {"version":"2.36.727","fixes":true,"changes":[{"key":"reopen-tabs","meaningful":false,"text":"Use the official Lucide Undo2 icon for reopening closed tabs."}]},
 {"version":"2.36.726","fixes":true,"changes":[{"key":"reopen-tabs","meaningful":true,"text":"Add Reopen closed tab beside the tab plus buttons, restoring most-recently closed records first with reload-persistent 24-hour history."}]},
 {"version":"2.36.725","fixes":true,"changes":[{"key":"hp-printer-name","meaningful":true,"text":"For SFD ticket locations, IP suffix .200 fills Invoice printer and Next to tills; .202 fills Picking printer and Next to manager's PC. Apply in both HP forms before sending data to AI."}]},
@@ -912,6 +913,24 @@ const snAIChatDisplayNames=(()=>{
     spaceRoots.clear(); spaceStyles.clear();
   }, { once: true });
   const spaceStyles = new Map();
+  const sharedActionSheets = new WeakMap();
+  function shareActionStyle(root, style, text) {
+    try {
+      if (!('adoptedStyleSheets' in root)) throw new Error('unsupported');
+      const doc = root.ownerDocument || root;
+      let shared = sharedActionSheets.get(doc);
+      if (!shared || shared.text !== text) {
+        const Sheet = doc.defaultView.CSSStyleSheet;
+        const sheet = new Sheet(); sheet.replaceSync(text);
+        shared = { text, sheet }; sharedActionSheets.set(doc, shared);
+      }
+      const previous = style.snAiSharedSheet;
+      const sheets = root.adoptedStyleSheets.filter(sheet => sheet !== previous && sheet !== shared.sheet);
+      root.adoptedStyleSheets = [...sheets, shared.sheet];
+      style.snAiSharedSheet = shared.sheet;
+      if (style.textContent) style.textContent = '';
+    } catch { style.textContent = text; }
+  }
   let acceptedIMS = new Set();
   const lastTypedIMS = new Map();
   const manualChatKeys=new WeakMap();
@@ -1222,15 +1241,21 @@ const snAIChatDisplayNames=(()=>{
       // measurement; it is restored before the browser can paint a frame.
       const styles=[...spaceRoots].flatMap(root=>[...root.querySelectorAll('style[data-sn-ai-space-theme],style[data-sn-ai-action-style]')]);
       const previous=styles.map(style=>style.disabled);
+      const adopted = new Map();
       try{
         styles.forEach(style=>{style.disabled=true;});
+        for (const style of styles) if (style.snAiSharedSheet) {
+          const scope=style.getRootNode();
+          if(!adopted.has(scope))adopted.set(scope,scope.adoptedStyleSheets);
+          scope.adoptedStyleSheets=scope.adoptedStyleSheets.filter(sheet=>sheet!==style.snAiSharedSheet);
+        }
         for(const target of pendingNativeSnowColors){
           if(!target.isConnected)continue;
           const computed=getComputedStyle(target);
           for(const property of ['background-color','background-image','color','border-top-color','border-right-color','border-bottom-color','border-left-color'])target.style.setProperty(`--sn-native-${property}`,computed.getPropertyValue(property));
           target.setAttribute('data-sn-ai-native-snow-colors','');nativeSnowColorElements.add(target);
         }
-      }finally{styles.forEach((style,index)=>{style.disabled=previous[index];});pendingNativeSnowColors.clear();}
+      }finally{for(const [scope,sheets] of adopted)scope.adoptedStyleSheets=sheets;styles.forEach((style,index)=>{style.disabled=previous[index];});pendingNativeSnowColors.clear();}
     });
   }
   let spaceEnabled = false;
@@ -3285,7 +3310,7 @@ const snAIChatDisplayNames=(()=>{
     for (const style of spaceStyles.values()) style.textContent = themeText();
     for(const root of spaceRoots) {
       const action=root.querySelector?.('style[data-sn-ai-action-style]');
-      if(action)action.textContent=css+(action.snAiPersistentCss||'');
+      if(action)shareActionStyle(root,action,css+(action.snAiPersistentCss||''));
       if(selectedSpaceTheme==='original')for(const node of root.querySelectorAll?.('[data-sn-ai-loading-text]') || []) {
         node.style.removeProperty('color');node.style.removeProperty('-webkit-text-fill-color');node.removeAttribute('data-sn-ai-loading-text');
       }
@@ -5157,15 +5182,15 @@ const snAIChatDisplayNames=(()=>{
   function installReopenTabButtons(root) {
     if(root.host?.localName==='sn-workspace-tab-bar') captureClosedTabChanges(root.host.getProperties?.());
     for(const plus of root.querySelectorAll?.('#chrome-add-new-button,[data-sn-ai-subtab-add]')||[]) {
-      if(plus.nextElementSibling?.hasAttribute('data-sn-ai-reopen-tab'))continue;
+      if(plus.previousElementSibling?.hasAttribute('data-sn-ai-reopen-tab'))continue;
       const button=document.createElement('button');button.type='button';button.dataset.snAiReopenTab='';
       button.className=plus.className;button.style.cssText=plus.style.cssText;
-      button.style.setProperty('margin-left','5px');button.style.setProperty('cursor','pointer');
+      button.style.cssText='display:flex!important;align-items:center;justify-content:center;width:28px!important;height:28px!important;min-width:28px!important;min-height:28px!important;flex:0 0 28px!important;position:relative!important;right:auto!important;bottom:10px!important;z-index:20!important;margin:0 5px 0 0!important;padding:4px!important;box-sizing:border-box!important;border:0!important;border-radius:8px!important;background:var(--sn-theme-251f31)!important;color:var(--sn-theme-c8d7ef)!important;outline:0!important;box-shadow:none!important;cursor:pointer;';
       button.setAttribute('aria-label','Reopen last closed tab');button.title='Reopen last closed tab';
       // Lucide Undo2, ISC license: https://lucide.dev/icons/undo-2
       button.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-undo-2" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></svg>';
       button.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();void reopenClosedTab(button);});
-      plus.after(button);
+      plus.before(button);
     }
   }
   const closedTabPruneTimer=setInterval(()=>{try{saveClosedTabs(readClosedTabs());}catch{}},60000);
@@ -6454,6 +6479,7 @@ const snAIChatDisplayNames=(()=>{
     `;
     // Theme palette changes replace the base CSS, but must retain feature CSS.
     style.snAiPersistentCss=style.textContent.slice(css.length);
+    shareActionStyle(root,style,style.textContent);
     (root.nodeType === 9 ? (root.head || root.documentElement) : root)?.prepend(style);
     const observer = new MutationObserver(records => {
       // Workspace sometimes clears a mounted root's children, including our
