@@ -8728,6 +8728,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const saved=state.incomingResume;if(!saved||!state.incomingPause)return;
     if(state.continuingIncoming)return;state.continuingIncoming=true;const generation=state.incomingGeneration||0;
     try{
+    const latest=ownedTicketDraft(saved.ims);if(latest)saved.event={...latest};
     if(saved.event){
       await restoreTicketDraft(saved.event);
     }else{
@@ -12055,6 +12056,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     finally{addLog(found?'info':'warn','field-wait-complete',{field:label,durationMs:Math.round(performance.now()-started),timeoutMs,ok:found});}
   }
   async function waitForControlByLabelInternal(label, timeoutMs = 6000) {
+    await waitForAutomationResume();
     if (comparableLabel(label) === 'attached knowledge') timeoutMs = Math.max(timeoutMs,12000);
     const started = automationNow();
     let searched = false;
@@ -13912,6 +13914,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   async function waitUntil(test, timeoutMs = 2500, intervalMs = 35) {
     const started = automationNow();
     while (automationNow() - started < timeoutMs) {
+      await waitForAutomationResume();
       const value = test();
       if (value) return value;
       await sleep(intervalMs);
@@ -14898,6 +14901,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   }
 
   async function commitTextToFormModel(field, text, resolveField, trace = () => {}) {
+    await waitForAutomationResume();
     // Textareas normalize CRLF/CR to LF when projecting the native model.
     // Keep model comparison exact; normalize only its browser presentation.
     const domMatches=value=>String(value??'').replace(/\r\n?/g,'\n')===String(text).replace(/\r\n?/g,'\n');
@@ -14913,12 +14917,12 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       // Use the same bound callback as a native Workspace edit. DOM value and
       // synthetic input/change alone can leave GFORM's value empty. The first
       // callback argument is unused; name (not fieldName) is the record key.
-      const commitStarted=Date.now(),budgetMs=1600;
+      const commitStarted=automationNow(),budgetMs=1600;
       const modelAlreadyMatches=String(props.formData.fields[name]?.value ?? '')===text;
       if(!modelAlreadyMatches)props.onValueChange.call(owner, 'change', name, text, text);
-      trace('model-callback-returned',{callbackMs:Date.now()-commitStarted,modelMatches:modelAlreadyMatches,budgetMs});
+      trace('model-callback-returned',{callbackMs:automationNow()-commitStarted,modelMatches:modelAlreadyMatches,budgetMs});
       for (let attempt = 0; attempt < 20; attempt += 1) {
-        if(Date.now()-commitStarted>=budgetMs)break;
+        if(automationNow()-commitStarted>=budgetMs)break;
         await sleep(100);
         const current = resolveField();
         if (!current || current.isConnected === false) continue;
@@ -14927,7 +14931,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             domMatches(current.value) && current.getAttribute('aria-invalid') !== 'true') return true;
       }
       const latest=resolveField(),latestBinding=latest?workspaceTextBinding(latest):null;
-      trace('model-commit-budget-ended',{budgetMs,elapsedMs:Date.now()-commitStarted,
+      trace('model-commit-budget-ended',{budgetMs,elapsedMs:automationNow()-commitStarted,
         modelLength:String(latestBinding?.props.formData.fields[name]?.value??'').length,
         modelMatches:Boolean(latestBinding&&String(latestBinding.props.formData.fields[name]?.value??'')===text),
         domMatches:Boolean(latest&&domMatches(latest.value)),actualLength:String(latest?.value??'').length,
@@ -15104,6 +15108,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   }
 
   async function autoTextDescriptionField(fieldMetadata, value, code) {
+    await waitForAutomationResume();
     const text = String(value ?? '');
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       let field = dynamicDescriptionControl(fieldMetadata);
