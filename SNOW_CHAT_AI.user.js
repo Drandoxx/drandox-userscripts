@@ -8489,6 +8489,7 @@ function startSNAI(tabIdentity) {
       if(key==='chatContent'&&action==='chat-data-collected'){safe[key]=String(value);continue;}
       if(key==='responseContent'&&action==='ai-response-data'){safe[key]=String(value);continue;}
       if(key==='network'&&action==='form-network'){safe[key]=value;continue;}
+      if(action==='ticket-draft-owned'&&/^(parentId|interactionId|tabId|contentId|ordinal|count)$/.test(key)){safe[key]=typeof value==='number'?value:String(value).slice(0,100);continue;}
       if(key==='responseShape'&&action.startsWith('extension-')){safe[key]=value;continue;}
       if(/^(text-fill-|auto-text-attempt|description-fill-|auto-description-field-attempt)/.test(action)
         && /^(modelCommitted|stable|delayMs|expectedLength|actualLength|modelLength|modelMatches|domMatches|connected|controlReplaced|callbackAvailable|bindingName|ariaInvalid|succeeded|budgetMs|callbackMs)$/.test(key)){
@@ -12599,6 +12600,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     // Invoke the loaded ServiceNow UI action controller, not a synthetic DOM
     // click or reconstructed URL. ServiceNow opens and selects its own draft.
     await waitForAutomationResume();assertAutomationNotStopped();
+    if(!parentBefore)throw Error('Native IMS tab identity is unavailable. No Event was created.');
     const owner=runningTicketDialog(ims);if(owner)owner.snAiPendingDraft={parentId:String(parentBefore.tab_id),before:[...previousDraftIds]};
     try{await native.props.handleUiActionClick({id:native.action.id});}catch(error){if(owner)delete owner.snAiPendingDraft;throw error;}
     const identityStarted=performance.now();let captured=false;
@@ -23090,7 +23092,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const logControls = document.createElement('div');logControls.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap';
     const playPause = document.createElement('button');playPause.type = 'button';
     function renderLogStatus(status) {
-      logStatus.textContent = `${status.running ? 'Collecting logs...' : 'Logs paused.'} ${status.count} incoming chat data collected`;
+      logStatus.textContent = `${status.running ? 'Collecting logs...' : 'Logs paused.'} ${status.count} distinct incoming chats recorded`;
       playPause.setAttribute('aria-label',status.running ? 'Pause incoming chat logging' : 'Start incoming chat logging');
       playPause.title = playPause.getAttribute('aria-label');
       // Lucide play/pause, ISC license: https://lucide.dev/icons/play
