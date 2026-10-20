@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.729
+// @version      2.36.730
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.730","fixes":true,"changes":[{"key":"reopen-tabs","meaningful":false,"text":"Reduce the reopen icon to 16px and tighten spacing beside the plus button while retaining its click area."}]},
 {"version":"2.36.729","fixes":true,"changes":[{"key":"runtime-memory","meaningful":false,"text":"Restore root-local action styles after shared stylesheet adoption changed native tab styling and icon sizes."}]},
 {"version":"2.36.728","fixes":true,"changes":[{"key":"runtime-memory","meaningful":true,"text":"Share the large action stylesheet across shadow roots instead of parsing a separate copy for each component."},{"key":"reopen-tabs","meaningful":true,"text":"Match the reopen button to the plus button and place it immediately to its left."}]},
 {"version":"2.36.727","fixes":true,"changes":[{"key":"reopen-tabs","meaningful":false,"text":"Use the official Lucide Undo2 icon for reopening closed tabs."}]},
@@ -5177,6 +5178,10 @@ const snAIChatDisplayNames=(()=>{
       button.setAttribute('aria-label','Reopen last closed tab');button.title='Reopen last closed tab';
       // Lucide Undo2, ISC license: https://lucide.dev/icons/undo-2
       button.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-undo-2" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></svg>';
+      const icon=button.querySelector('svg');
+      icon.style.setProperty('width','16px','important');icon.style.setProperty('height','16px','important');
+      // Compensate only this pair for the native tab bar's 16px gap.
+      button.style.setProperty('margin-right','-12px','important');
       button.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();void reopenClosedTab(button);});
       plus.before(button);
     }
