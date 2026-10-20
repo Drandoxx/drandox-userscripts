@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.714
+// @version      2.36.715
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.715","fixes":true,"changes":[{"key":"record-sla-links","meaningful":true,"text":"Keep native State, linked record buttons and SLA details aligned on the same header row, wrapping only on narrow screens."}]},
 {"version":"2.36.714","fixes":true,"changes":[{"key":"record-sla-links","meaningful":true,"text":"Add linked SCTASK and RITM shortcuts, task state chips matching incident headers, and active resolution SLA percentages with breach time details. Remove pricing metadata from RITM headers."}]},
 {"version":"2.36.713","fixes":true,"changes":[{"key":"nova-cut-performance","meaningful":true,"text":"Size the cutout mask to the complete panel border box, including Chats Today, and explicitly clear the opening through its bottom edge."}]},
 {"version":"2.36.712","fixes":true,"changes":[{"key":"nova-cut-performance","meaningful":true,"text":"Double the cutting-stroke speed and extend the doorway below the panel border to avoid a remaining bottom strip."}]},
@@ -600,7 +601,14 @@ const snRecordSLAHeaders=(()=>{
   const render=entry=>{
     const {header,panel,data,error}=entry;
     const row=header.shadowRoot?.querySelector('sn-form-internal-header-label-value-set')?.parentElement;if(!row)return;
-    if(row.style.flexWrap!=='wrap')row.style.flexWrap='wrap';
+    if(header.parentElement?.classList.contains('sn-header-layout-content'))for(const [key,value]of [['flex','1 0 auto'],['width','max-content'],['min-width','0']])if(header.parentElement.style.getPropertyValue(key)!==value)header.parentElement.style.setProperty(key,value,'important');
+    const content=row.closest('.sn-heading-content');
+    if(content?.parentElement)for(const [key,value]of [['flex','1 1 auto'],['width','100%'],['min-width','0']])if(content.parentElement.style.getPropertyValue(key)!==value)content.parentElement.style.setProperty(key,value,'important');
+    if(content)for(const [key,value]of [['flex','1 1 auto'],['min-width','0'],['max-width','none'],['width','100%']])if(content.style.getPropertyValue(key)!==value)content.style.setProperty(key,value,'important');
+    for(const [key,value]of [['display','flex'],['flex-direction','row'],['flex-wrap','wrap'],['align-items','flex-end'],['gap','7px']])if(row.style.getPropertyValue(key)!==value)row.style.setProperty(key,value,'important');
+    const nativeSet=row.querySelector('sn-form-internal-header-label-value-set');
+    if(nativeSet&&entry.table!=='sc_req_item')for(const [key,value]of [['flex','0 0 max-content'],['width','max-content'],['min-width','0']])if(nativeSet.style.getPropertyValue(key)!==value)nativeSet.style.setProperty(key,value,'important');
+    if(panel.style.marginLeft!=='0px')panel.style.marginLeft='0px';
     if(panel.parentElement!==row)row.append(panel);
     const summary=data?snRecordSLASummary(data.rows):null;
     const signature=JSON.stringify({data,summary,error});if(signature===entry.signature)return;entry.signature=signature;panel.replaceChildren();
