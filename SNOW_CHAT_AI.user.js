@@ -9178,7 +9178,6 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
 
   async function aiTranscriptWithUserInformation(entry, profile, ims, schema) {
     if(['CPC','ILS_PRNT','FTF'].includes(profile)){
-      state.createdEvent=null;
       await prepareTicketSessionFromCache(profile,ims,{requireChat:true});
     }
     const userInformation = await readAIUserInformation(profile, ims, schema);
@@ -12590,6 +12589,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
 
   async function createNewEventFromWorkspace() {
     const ims=normaliseIMS(activeSelectedIMS()||state.startContext?.ims||currentInteractionIMS());
+    const owned=ownedTicketDraft(ims);if(owned){await restoreTicketDraft(owned);return await waitForControlByLabel('Location',12000);}
     const beforePath=location.pathname;
     const findNative=()=>{
       for(const owner of allPageElements()){
@@ -13144,6 +13144,9 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   async function prepareTicketSessionFromCache(profileName, ims, options = {}) {
     const profile = normaliseTicketProfile(profileName);
     const requestedIMS = normaliseIMS(ims);
+    if(state.incomingPause)await waitForAutomationResume();
+    const owned=ownedTicketDraft(requestedIMS);
+    if(owned)await restoreTicketDraft(owned);
     // Final deterministic commands already contain every value needed by the
     // form filler. Manual CPC/ILS PRNT must therefore never open Details or
     // read chat merely to prepare an Event. AI launchers collect chat before
@@ -13185,6 +13188,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       if (!reusedOpenNewEvent) {
         automationFailure('DESCRIPTION_CURRENT_EVENT_REQUIRED', `The existing New Event for ${requestedIMS} is not available. Description mode requires both Details and New Event and will not create a replacement Event.`, { ims: requestedIMS });
       }
+      if(!ownedTicketDraft(requestedIMS))rememberTicketDraft(requestedIMS,'description-existing');
     } else {
       const scriptDraft=reusedOpenNewEvent&&state.createdEvent?.ims===requestedIMS&&state.createdEvent.path===location.pathname;
       if(!scriptDraft)await runWorkflow({ ims: requestedIMS, createNewEvent: true, forceNewEvent:true, openDetails: false });
@@ -21730,7 +21734,6 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             }
             if (!cacheEntry) throw new Error(`No transcript details were found for ${pinnedIMS}.`);
             // Chat capture is finished before any template/routing controls are touched.
-            state.createdEvent=null;
             state.autoSession=null;
             setStage(1);
             const prefilled = prefillHPFieldsFromChat(fields, cacheEntry);
@@ -23859,6 +23862,7 @@ async function openDataBubble(anchor,element,ready,isCurrent,position) {
   session.growth.cancel();snAIDataBubbleSessions.delete(element);
 }
 function openWorkspaceIMSMainTab(record) {
+  if((record.table||'interaction')==='interaction'&&snWorkspaceFocusIMS(record.number))return;
   let tabs=null;
   const findTabs=root=>{for(const element of root.querySelectorAll('*')){
     if(element.localName==='sn-workspace-tabs'&&typeof element.dispatch==='function'){tabs=element;return;}
