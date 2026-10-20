@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.726
+// @version      2.36.727
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.727","fixes":true,"changes":[{"key":"reopen-tabs","meaningful":false,"text":"Use the official Lucide Undo2 icon for reopening closed tabs."}]},
 {"version":"2.36.726","fixes":true,"changes":[{"key":"reopen-tabs","meaningful":true,"text":"Add Reopen closed tab beside the tab plus buttons, restoring most-recently closed records first with reload-persistent 24-hour history."}]},
 {"version":"2.36.725","fixes":true,"changes":[{"key":"hp-printer-name","meaningful":true,"text":"For SFD ticket locations, IP suffix .200 fills Invoice printer and Next to tills; .202 fills Picking printer and Next to manager's PC. Apply in both HP forms before sending data to AI."}]},
 {"version":"2.36.724","fixes":true,"changes":[{"key":"presence-menu","meaningful":true,"text":"Highlight only the hovered or pressed presence option and restore the confirmed selection when the pointer leaves the menu."}]},
@@ -5161,7 +5162,8 @@ const snAIChatDisplayNames=(()=>{
       button.className=plus.className;button.style.cssText=plus.style.cssText;
       button.style.setProperty('margin-left','5px');button.style.setProperty('cursor','pointer');
       button.setAttribute('aria-label','Reopen last closed tab');button.title='Reopen last closed tab';
-      button.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10h7M3 10V3M3 10a9 9 0 1 1 0 5"/></svg>';
+      // Lucide Undo2, ISC license: https://lucide.dev/icons/undo-2
+      button.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-undo-2" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></svg>';
       button.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();void reopenClosedTab(button);});
       plus.after(button);
     }
