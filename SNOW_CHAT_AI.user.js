@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.719
+// @version      2.36.720
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.720","fixes":true,"changes":[{"key":"ticket-bubble-layout","meaningful":true,"text":"Use the selected theme for completed and feedback header backgrounds without changing their text or completion state."}]},
 {"version":"2.36.719","fixes":true,"changes":[{"key":"automation-pause","meaningful":true,"text":"Keep incoming-chat and manual pauses visible until Continue restores the bubble's exact native Event tab. Preserve draft ownership on retries and exclude paused time from field waits."},{"key":"incoming-log-count","meaningful":true,"text":"Count distinct incoming chats, including chats not sent to AI, and restore the count from today's saved incoming-offer logs."},{"key":"ticket-bubble-layout","meaningful":true,"text":"Theme running bubbles, replace Stop with Pause and Continue, remove unused spacing, and show Give feedback and Done before revealing the feedback input."}]},
 {"version":"2.36.718","fixes":true,"changes":[{"key":"record-sla-links","meaningful":true,"text":"Simplify the breach-time popup, retain the normal cursor, and copy only the displayed breach date and time when its message is clicked."}]},
 {"version":"2.36.717","fixes":true,"changes":[{"key":"record-sla-links","meaningful":true,"text":"Use the same explicit 16px Source Sans Pro font, weight and line height for INC, RITM and SCTASK shortcut buttons instead of inheriting different header sizes."}]},
@@ -17396,7 +17397,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         #${ROOT_ID} .local-sn-cpc-dialog.is-running .local-sn-cpc-user { display: none; }
         #${ROOT_ID} .local-sn-cpc-dialog.is-running .local-sn-cpc-stop { display: inline-block; }
         #${ROOT_ID} .local-sn-cpc-dialog.is-running .local-sn-cpc-content { max-height: 0; padding-top: 0; padding-bottom: 0; opacity: 0; }
-        #${ROOT_ID} .local-sn-cpc-dialog.is-success .local-sn-cpc-drag { background: #168a4a; }
+        #${ROOT_ID} .local-sn-cpc-dialog.is-success .local-sn-cpc-drag,
+        #${ROOT_ID} .local-sn-cpc-dialog.is-feedback .local-sn-cpc-drag { background:var(--sn-theme-3a2f4c,#3a2f4c); }
         #${ROOT_ID} .local-sn-cpc-dialog.is-success .local-sn-cpc-user { display: none; }
         #${ROOT_ID} .local-sn-cpc-dialog.is-success .local-sn-cpc-content { max-height: 0; padding-top: 0; padding-bottom: 0; opacity: 0; }
         #${ROOT_ID} .local-sn-cpc-dialog.is-success.is-feedback .local-sn-cpc-content { max-height: 260px; padding: 14px; opacity: 1; }
