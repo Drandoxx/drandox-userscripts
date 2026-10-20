@@ -8673,7 +8673,16 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   }
   // SN_AI_OWNED_DRAFT_BEGIN
   function runningTicketDialog(ims){return document.getElementById(ROOT_ID)?.querySelector(`[data-pinned-ims="${normaliseIMS(ims)}"].is-running`)||null;}
-  function ownedTicketDraft(ims){const dialog=runningTicketDialog(ims);return dialog?dialog.snAiOwnedEvent||null:state.createdEvent?.ims===normaliseIMS(ims)?state.createdEvent:null;}
+  function ownedTicketDraft(ims){
+    const dialog=runningTicketDialog(ims);
+    if(dialog?.snAiPendingDraft&&!dialog.snAiOwnedEvent){
+      const pending=dialog.snAiPendingDraft,parent=snWorkspacePrimary()?.props.tabList.find(t=>String(t.tab_id)===pending.parentId);
+      const fresh=(parent?.tabList||[]).filter(t=>t.table==='new_call'&&t.type==='new_record'&&!pending.before.includes(String(t.tab_id)));
+      if(fresh.length===1){rememberTicketDraft(ims,'script-created',String(fresh[0].tab_id));delete dialog.snAiPendingDraft;}
+      else throw Error('Draft creation is not yet confirmed. No additional Event will be opened.');
+    }
+    return dialog?dialog.snAiOwnedEvent||null:state.createdEvent?.ims===normaliseIMS(ims)?state.createdEvent:null;
+  }
   function ticketDraftSelected(token){const main=snWorkspacePrimary(),parent=main?.props.tabList.find(t=>String(t.tab_id)===token.parentId);return String(main?.props.selectedTabId)===token.parentId&&String(parent?.selectedTabId)===token.tabId&&newEventMatchesIMS(checkCurrentEvent(),token.ims);}
   function rememberTicketDraft(ims,source,createdTabId=''){
     ims=normaliseIMS(ims);const main=snWorkspacePrimary(),parent=main?.props.tabList.find(t=>t.table==='interaction'&&(t.title===ims||t.formHeaderInfo?.recordDisplayValue===ims));
@@ -12589,13 +12598,15 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     assertAutomationNotStopped();
     // Invoke the loaded ServiceNow UI action controller, not a synthetic DOM
     // click or reconstructed URL. ServiceNow opens and selects its own draft.
-    await native.props.handleUiActionClick({id:native.action.id});
+    await waitForAutomationResume();assertAutomationNotStopped();
+    const owner=runningTicketDialog(ims);if(owner)owner.snAiPendingDraft={parentId:String(parentBefore.tab_id),before:[...previousDraftIds]};
+    try{await native.props.handleUiActionClick({id:native.action.id});}catch(error){if(owner)delete owner.snAiPendingDraft;throw error;}
     const identityStarted=performance.now();let captured=false;
     while(performance.now()-identityStarted<12000){
       assertAutomationNotStopped();const parent=snWorkspacePrimary()?.props.tabList.find(t=>t.table==='interaction'&&(t.title===ims||t.formHeaderInfo?.recordDisplayValue===ims));
       const fresh=(parent?.tabList||[]).filter(t=>t.table==='new_call'&&t.type==='new_record'&&!previousDraftIds.has(String(t.tab_id)));
       if(fresh.length>1)throw Error('OWNED_EVENT_AMBIGUOUS: Multiple new drafts appeared. No draft was selected for filling.');
-      if(fresh.length===1){rememberTicketDraft(ims,'script-created',String(fresh[0].tab_id));captured=true;break;}
+      if(fresh.length===1){rememberTicketDraft(ims,'script-created',String(fresh[0].tab_id));if(owner)delete owner.snAiPendingDraft;captured=true;break;}
       await rawSleep(60);
     }
     if(!captured)throw Error('OWNED_EVENT_ID_UNAVAILABLE: No new draft ID was returned. A replacement will not be opened automatically.');
@@ -20428,7 +20439,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       });
       refs.feedbackClose = null;
       refs.showFeedback = () => {
-        if (!refs.aiMode || !state.feedbackEnabled) return false;
+        if (!refs.aiMode) return false;
+        feedbackButton.hidden=!state.feedbackEnabled;
         refs.dialog.classList.add('is-feedback');
         refs.content.hidden = true;
         refs.errorLine.textContent = '';
