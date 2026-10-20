@@ -551,6 +551,22 @@ SN_AI_RELEASE_NOTES_END */
   restoreLoadedFavorites();
 })();
 
+// SN_AI_WORKSPACE_NAV_BEGIN
+function snWorkspaceTabBars(){
+  const bars=[];const walk=root=>{for(const el of root.querySelectorAll('*')){if(el.localName==='sn-workspace-tab-bar'){const props=el.getProperties?.();if(Array.isArray(props?.tabList))bars.push({el,props});}if(el.shadowRoot)walk(el.shadowRoot);}};walk(document);return bars;
+}
+function snWorkspacePrimary(){return snWorkspaceTabBars().find(bar=>bar.props.type==='primary')||null;}
+function snWorkspaceFocusIMS(number){
+  const bar=snWorkspacePrimary(),tab=bar?.props.tabList.find(tab=>tab.table==='interaction'&&String(tab.title||tab.formHeaderInfo?.recordDisplayValue||'').toUpperCase()===String(number).toUpperCase());
+  if(!tab||typeof bar.props.onClickTab!=='function')return false;bar.props.onClickTab(tab.tab_id);return true;
+}
+function snWorkspaceFocusSubtab(parentId,tabId){
+  const main=snWorkspacePrimary(),parent=main?.props.tabList.find(t=>String(t.tab_id)===String(parentId));
+  if(!parent?.tabList?.some(t=>String(t.tab_id)===String(tabId)))return false;
+  const bar=snWorkspaceTabBars().find(b=>b.props.type!=='primary'&&b.props.tabList.some(t=>String(t.tab_id)===String(tabId)&&String(t.parentTabId)===String(parentId)));
+  if(!bar||typeof bar.props.onClickTab!=='function')return false;bar.props.onClickTab(tabId);return true;
+}
+// SN_AI_WORKSPACE_NAV_END
 // SN_AI_RECORD_COPY_BEGIN
 const snRecordOpenIcon='<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/><path d="m21 3-9 9"/><path d="M15 3h6v6"/></svg>';
 const snRecordShortcutStyle='display:inline-flex!important;flex-direction:row!important;flex:0 0 auto!important;align-items:center!important;justify-content:center!important;align-self:flex-start!important;gap:8px;width:max-content!important;height:34px!important;min-height:34px!important;max-height:34px!important;box-sizing:border-box!important;margin:0!important;padding:6px 10px;border:0;border-radius:7px;background:linear-gradient(115deg,var(--sn-theme-9de2f5),var(--sn-theme-ac94ec));color:var(--sn-theme-14121c);font:normal 600 16px/20px "Source Sans Pro",arial,sans-serif!important;letter-spacing:normal!important;text-transform:none!important;cursor:pointer';
@@ -8444,7 +8460,7 @@ function startSNAI(tabIdentity) {
       const log=state.diagnostics;
       const loadedDay=log.day;
       prunePreviousDiagnosticDays(loadedDay).catch(()=>{});
-      const loadedAt=Date.now();storedDailyDiagnostics(loadedDay).then(rows=>{if(log.day!==loadedDay||log.clearing||state.diagnosticClearedAt>=loadedAt)return;for(const entry of rows)if(entry[2]==='chat-data-collected'&&entry[4]?.ims)log.chats.add(entry[4].ims);updateDiagnosticCount();}).catch(()=>{});
+      const loadedAt=Date.now();storedDailyDiagnostics(loadedDay).then(rows=>{if(log.day!==loadedDay||log.clearing||state.diagnosticClearedAt>=loadedAt)return;for(const entry of rows)if(entry[2]==='auto-greet'&&/^(incoming-offer-content|offer-accepted)$/.test(entry[4]?.stage||'')&&/^IMS\d+$/.test(entry[4]?.ims||''))log.chats.add(entry[4].ims);updateDiagnosticCount();}).catch(()=>{});
       setInterval(()=>{diagnosticStore();},30000);
     }
     const log=state.diagnostics;if(log.day!==diagnosticDay()){log.day=diagnosticDay();log.chats.clear();log.contents.clear();log.sleepCount=0;log.sleepMs=0;state.diagnosticWorkerSeen?.clear();state.diagnosticCompanionResults?.clear();prunePreviousDiagnosticDays(log.day).catch(()=>{});updateDiagnosticCount();}
@@ -8454,7 +8470,7 @@ function startSNAI(tabIdentity) {
     if (!workspacePage) return;
     if(state.diagnostics?.clearing)return;
     const log=diagnosticStore(),text=typeof transcript==='string'?transcript:JSON.stringify(transcript||'');
-    log.chats.add(ims||'unknown');updateDiagnosticCount();
+    // Transcript collection is separate from distinct incoming-offer counts.
     if(log.contents.get(ims)===text){recordCompactDiagnostic('info','chat-request',{mode,ims});return;}
     log.contents.set(ims,text);recordCompactDiagnostic('info','chat-data-collected',{mode,ims,chatContent:text});
   }
@@ -8462,6 +8478,7 @@ function startSNAI(tabIdentity) {
     if (!workspacePage) return;
     if(state.diagnostics?.clearing||(action.startsWith('extension-')&&details.at&&details.at<=state.diagnosticClearedAt))return;
     const log=diagnosticStore(),now=action.startsWith('extension-')&&Number.isFinite(details.at)?details.at:Date.now(),safe={};
+    if(action==='auto-greet'&&/^(incoming-offer-content|offer-accepted)$/.test(details.stage||'')&&/^IMS\d+$/.test(details.ims||'')){log.chats.add(details.ims);updateDiagnosticCount();}
     if(action.startsWith('extension-')&&now<new Date().setHours(0,0,0,0))return;
     for(const [key,value]of Object.entries(details||{})){
       // Explicitly requested exact draft evidence, only on greeting failures.
