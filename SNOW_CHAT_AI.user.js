@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.731
+// @version      2.36.732
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.732","fixes":true,"changes":[{"key":"runtime-memory","meaningful":true,"text":"Reuse cached stylesheet resources in their original cascade positions with inline fallback until successful loading."}]},
 {"version":"2.36.731","fixes":true,"changes":[{"key":"memory-diagnostics","meaningful":true,"text":"Record lightweight minute memory samples and sampled peaks, with heap availability, stylesheet text totals, DOM counts and script cache counts in diagnostic reports."}]},
 {"version":"2.36.730","fixes":true,"changes":[{"key":"reopen-tabs","meaningful":false,"text":"Reduce the reopen icon to 16px and tighten spacing beside the plus button while retaining its click area."}]},
 {"version":"2.36.729","fixes":true,"changes":[{"key":"runtime-memory","meaningful":false,"text":"Restore root-local action styles after shared stylesheet adoption changed native tab styling and icon sizes."}]},
@@ -566,7 +567,7 @@ SN_AI_RELEASE_NOTES_END */
 
 // SN_AI_WORKSPACE_NAV_BEGIN
 async function snMeasureMemoryFootprint(doc = document) {
-  const started=performance.now(),queue=[doc];
+  const started=performance.now(),queue=[doc],resources=new Map();
   const result={roots:0,nodes:0,styles:0,actionCssChars:0,themeCssChars:0,otherCssChars:0,partial:false};
   while(queue.length){
     const slice=performance.now();
@@ -574,6 +575,7 @@ async function snMeasureMemoryFootprint(doc = document) {
       const root=queue.pop();result.roots++;
       for(const node of root.querySelectorAll('*')){
         result.nodes++;
+        if(node.localName==='link'&&node.hasAttribute('data-sn-ai-shared-style'))resources.set(node.href,Number(node.dataset.snAiCssChars)||0);
         if(node.shadowRoot)queue.push(node.shadowRoot);
         if(node.localName==='style'){
           result.styles++;
@@ -588,6 +590,8 @@ async function snMeasureMemoryFootprint(doc = document) {
     if(queue.length)await new Promise(resolve=>setTimeout(resolve,0));
   }
   const memory=performance.memory;
+  result.sharedCssResourceCount=resources.size;
+  result.sharedCssSourceChars=[...resources.values()].reduce((sum,length)=>sum+length,0);
   result.heapUsedBytes=Number.isFinite(memory?.usedJSHeapSize)?memory.usedJSHeapSize:null;
   result.heapAllocatedBytes=Number.isFinite(memory?.totalJSHeapSize)?memory.totalJSHeapSize:null;
   result.heapLimitBytes=Number.isFinite(memory?.jsHeapSizeLimit)?memory.jsHeapSizeLimit:null;
@@ -945,10 +949,31 @@ const snAIChatDisplayNames=(()=>{
     spaceRoots.clear(); spaceStyles.clear();
   }, { once: true });
   const spaceStyles = new Map();
+  const sharedStyleResources = new Map();
   function shareActionStyle(root, style, text) {
-    // Preserve native/custom stylesheet cascade order. Adopted sheets are
-    // ordered after ordinary styles and changed Workspace tab/icon rendering.
-    if (style.textContent !== text) style.textContent = text;
+    if(style.snAiSharedText===text&&style.snAiSharedLink?.parentNode===style.parentNode)return;
+    if(style.textContent!==text)style.textContent=text;
+    if(!style.parentNode)return;
+    let resource=sharedStyleResources.get(text);
+    if(!resource){
+      try{resource={url:URL.createObjectURL(new Blob([text],{type:'text/css'})),text};}catch{return;}
+      sharedStyleResources.set(text,resource);
+      while(sharedStyleResources.size>20){const oldest=sharedStyleResources.keys().next().value;URL.revokeObjectURL(sharedStyleResources.get(oldest).url);sharedStyleResources.delete(oldest);}
+    }
+    text=resource.text;
+    // Ordinary links preserve cascade position; adopted sheets did not.
+    const previous=style.snAiSharedLink,link=document.createElement('link');
+    link.rel='stylesheet';link.href=resource.url;link.dataset.snAiSharedStyle='true';
+    link.dataset.snAiCssChars=String(text.length);
+    style.snAiSharedLink=link;style.snAiSharedText=text;
+    link.addEventListener('load',()=>{
+      if(style.snAiSharedLink!==link){link.remove();return;}
+      if(!link.sheet){link.remove();style.snAiSharedLink=null;return;}
+      if(style.textContent===text)style.textContent='';
+      previous?.remove();
+    },{once:true});
+    link.addEventListener('error',()=>{if(style.snAiSharedLink===link){style.textContent=text;style.snAiSharedLink=null;}link.remove();previous?.remove();},{once:true});
+    style.before(link);
   }
   let acceptedIMS = new Set();
   const lastTypedIMS = new Map();
@@ -1261,6 +1286,8 @@ const snAIChatDisplayNames=(()=>{
       const styles=[...spaceRoots].flatMap(root=>[...root.querySelectorAll('style[data-sn-ai-space-theme],style[data-sn-ai-action-style]')]);
       const previous=styles.map(style=>style.disabled);
       const adopted = new Map();
+      const sharedLinks=styles.map(style=>style.snAiSharedLink).filter(Boolean);
+      sharedLinks.forEach(link=>{link.disabled=true;});
       try{
         styles.forEach(style=>{style.disabled=true;});
         for (const style of styles) if (style.snAiSharedSheet) {
@@ -1274,7 +1301,7 @@ const snAIChatDisplayNames=(()=>{
           for(const property of ['background-color','background-image','color','border-top-color','border-right-color','border-bottom-color','border-left-color'])target.style.setProperty(`--sn-native-${property}`,computed.getPropertyValue(property));
           target.setAttribute('data-sn-ai-native-snow-colors','');nativeSnowColorElements.add(target);
         }
-      }finally{for(const [scope,sheets] of adopted)scope.adoptedStyleSheets=sheets;styles.forEach((style,index)=>{style.disabled=previous[index];});pendingNativeSnowColors.clear();}
+      }finally{for(const [scope,sheets] of adopted)scope.adoptedStyleSheets=sheets;styles.forEach((style,index)=>{style.disabled=previous[index];});sharedLinks.forEach(link=>{link.disabled=false;});pendingNativeSnowColors.clear();}
     });
   }
   let spaceEnabled = false;
@@ -1288,6 +1315,7 @@ const snAIChatDisplayNames=(()=>{
     style.dataset.snAiSpaceTheme = 'true'; style.textContent = themeText();
     (root.nodeType === 9 ? (root.head || root.documentElement) : root)?.append(style);
     spaceStyles.set(root, style);
+    shareActionStyle(root,style,style.textContent);
   }
   // Add future themes here. Every colour in the shared CSS is a token.
   const SN_THEME_PALETTES = {
@@ -3326,7 +3354,7 @@ const snAIChatDisplayNames=(()=>{
     if (!SN_THEME_PALETTES[event.detail]) return;
     selectedSpaceTheme = event.detail;
     if(selectedSpaceTheme==='original')for(const root of spaceRoots)for(const element of root.querySelectorAll(nativeSnowColorSelector))preserveNativeSnowColors(element);
-    for (const style of spaceStyles.values()) style.textContent = themeText();
+    for (const [root,style] of spaceStyles) shareActionStyle(root,style,themeText());
     for(const root of spaceRoots) {
       const action=root.querySelector?.('style[data-sn-ai-action-style]');
       if(action)shareActionStyle(root,action,css+(action.snAiPersistentCss||''));
@@ -3339,15 +3367,15 @@ const snAIChatDisplayNames=(()=>{
   document.addEventListener('sn-ai-chat-background', event => {
     if (!Object.hasOwn(chatBackgrounds, event.detail)) return;
     selectedChatBackground = event.detail;
-    for (const style of spaceStyles.values()) style.textContent = themeText();
+    for (const [root,style] of spaceStyles) shareActionStyle(root,style,themeText());
   });
   Promise.resolve(GM_getValue('sn-ai-chat-background-v1', 'plain')).then(value => {
     if (Object.hasOwn(chatBackgrounds, value)) selectedChatBackground = value;
-    for (const style of spaceStyles.values()) style.textContent = themeText();
+    for (const [root,style] of spaceStyles) shareActionStyle(root,style,themeText());
   }).catch(() => {});
   Promise.resolve(GM_getValue('sn-ai-theme-palette-v1', 'original')).then(value => {
     if (SN_THEME_PALETTES[value]) selectedSpaceTheme = value;
-    for (const style of spaceStyles.values()) style.textContent = themeText();
+    for (const [root,style] of spaceStyles) shareActionStyle(root,style,themeText());
     scheduleTabGeometryRefresh();
   });
   // Theme activation reads tabGeometryFrame, initialized later in this IIFE.
@@ -6502,8 +6530,8 @@ const snAIChatDisplayNames=(()=>{
     `;
     // Theme palette changes replace the base CSS, but must retain feature CSS.
     style.snAiPersistentCss=style.textContent.slice(css.length);
-    shareActionStyle(root,style,style.textContent);
     (root.nodeType === 9 ? (root.head || root.documentElement) : root)?.prepend(style);
+    shareActionStyle(root,style,css+(style.snAiPersistentCss||''));
     const observer = new MutationObserver(records => {
       // Workspace sometimes clears a mounted root's children, including our
       // style. Restore only this changed root; never rescan the whole page.
@@ -6515,9 +6543,10 @@ const snAIChatDisplayNames=(()=>{
       // when native controls mount, not only newly inserted descendants.
       queueNewChatGreeting(root.host);
       if(style.getRootNode()!==root)(root.nodeType===9?(root.head || root.documentElement):root)?.prepend(style);
+      if(style.snAiSharedText&&style.snAiSharedLink?.parentNode!==style.parentNode)shareActionStyle(root,style,style.snAiSharedText);
       if(records.some(record=>[...record.addedNodes].some(node=>node.nodeType===1
         && node.matches?.('style,link[rel="stylesheet"]') && !node.hasAttribute('data-sn-ai-space-theme')
-        && !node.hasAttribute('data-sn-ai-action-style')))) {
+        && !node.hasAttribute('data-sn-ai-action-style') && !node.hasAttribute('data-sn-ai-shared-style')))) {
         const theme=spaceStyles.get(root);
         if(theme)(root.nodeType===9?(root.head || root.documentElement):root)?.append(theme);
       }
