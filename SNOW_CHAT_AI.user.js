@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.723
+// @version      2.36.724
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.724","fixes":true,"changes":[{"key":"presence-menu","meaningful":true,"text":"Highlight only the hovered or pressed presence option and restore the confirmed selection when the pointer leaves the menu."}]},
 {"version":"2.36.723","fixes":true,"changes":[{"key":"presence-menu","meaningful":true,"text":"Show pre-rendered presence options in a themed menu instead of the native dropdown that could paint as an empty dark box."}]},
 {"version":"2.36.722","fixes":true,"changes":[{"key":"runtime-memory","meaningful":true,"text":"Release detached theme roots and inbox observers, bound the stylesheet cache, and stop rewriting the presence dropdown while it is focused."}]},
 {"version":"2.36.721","fixes":true,"changes":[{"key":"ai-feedback","meaningful":true,"text":"Send feedback once to the original AI conversation with a request to update the relevant skill. Remove locally stored feedback and stop adding old corrections to new ticket prompts."},{"key":"ai-response-recovery","meaningful":true,"text":"Recover ticket wrappers before accepting nested response fragments, preserve rejected response text, and log bounded validation evidence."}]},
@@ -22843,6 +22844,16 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     menu.hidden = true; menu.setAttribute('role', 'menu'); menu.setAttribute('aria-label', 'Agent presence options');
     menu.style.cssText = 'position:fixed;z-index:2147483647;padding:4px;background:var(--sn-theme-191621,#191621);color:var(--sn-theme-e6edf9,#e6edf9);border:1px solid var(--sn-theme-423750,#526a62);border-radius:5px;box-shadow:0 5px 16px #0006;box-sizing:border-box';
     const choices = [];
+    let hoveredChoice = null;
+    const paintChoice = (active, pressed = false) => {
+      for (const choice of choices) {
+        const selected = choice === active;
+        choice.style.background = selected ? (pressed ? 'var(--sn-theme-ac94ec,#ac94ec)' : 'var(--sn-theme-423750,#423750)') : 'transparent';
+        choice.style.color = selected && pressed ? 'var(--sn-theme-191621,#191621)' : (choice.textContent === 'Available' ? '#8de3af' : choice.textContent === 'Away' ? '#f3d86f' : '#c5cbd0');
+      }
+    };
+    const restoreChoice = () => paintChoice(choices.find(choice => choice.textContent === actual()));
+    menu.addEventListener('pointerleave', () => { hoveredChoice = null; restoreChoice(); });
     const closeMenu = (focus = false) => { menu.hidden = true; trigger.setAttribute('aria-expanded', 'false'); if (focus) trigger.focus(); };
     const positionMenu = () => {
       const rect = trigger.getBoundingClientRect();
@@ -22853,8 +22864,13 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       const choice = document.createElement('button'); choice.type = 'button';
       choice.textContent = name; choice.setAttribute('role', 'menuitemradio');
       choice.style.cssText = 'display:block;width:100%;min-height:32px;padding:6px 10px;text-align:left;border:0;border-radius:3px;font:13px system-ui;cursor:pointer;background:transparent;color:' + (name === 'Available' ? '#8de3af' : name === 'Away' ? '#f3d86f' : '#c5cbd0');
-      choice.addEventListener('focus', () => { choice.style.background = 'var(--sn-theme-423750,#423750)'; });
-      choice.addEventListener('blur', () => { choice.style.background = 'transparent'; });
+      choice.style.transition = 'background-color 100ms ease,color 100ms ease';
+      choice.style.outline = 'none';
+      choice.addEventListener('pointerenter', () => { hoveredChoice = choice; paintChoice(choice); });
+      choice.addEventListener('pointerdown', () => { hoveredChoice = choice; paintChoice(choice, true); });
+      choice.addEventListener('pointerup', () => paintChoice(hoveredChoice || choice));
+      choice.addEventListener('pointercancel', () => { hoveredChoice = null; restoreChoice(); });
+      choice.addEventListener('focus', () => { if (!hoveredChoice) paintChoice(choice); });
       choice.addEventListener('click', () => {
         closeMenu(true); select.value = name;
         select.dispatchEvent(new Event('change', { bubbles: true }));
@@ -22866,6 +22882,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       if (!menu.hidden) { closeMenu(); return; }
       positionMenu(); menu.hidden = false; trigger.setAttribute('aria-expanded', 'true');
       choices.forEach(choice => choice.setAttribute('aria-checked', String(choice.textContent === actual())));
+      hoveredChoice = null;
       (choices.find(choice => choice.textContent === actual()) || choices[0]).focus();
     });
     const onMenuKey = event => {
