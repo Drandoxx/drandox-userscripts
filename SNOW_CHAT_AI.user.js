@@ -12570,7 +12570,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   }
 
   async function createNewEventFromWorkspace() {
-    const ims=normaliseIMS(activeSelectedIMS()||state.startContext?.ims||currentInteractionIMS());
+    const ims=normaliseIMS(state.startContext?.ims||state.autoSession?.ims||activeSelectedIMS()||currentInteractionIMS());
     const owned=ownedTicketDraft(ims);if(owned){await restoreTicketDraft(owned);return await waitForControlByLabel('Location',12000);}
     const beforePath=location.pathname;
     const parentBefore=snWorkspacePrimary()?.props.tabList.find(t=>t.table==='interaction'&&(t.title===ims||t.formHeaderInfo?.recordDisplayValue===ims));
@@ -12625,6 +12625,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       return newEventMatchesIMS(event,ims)?event:null;
     },12000,45);
     if(!ready)throw new Error('NEW_EVENT_NATIVE_FORM_NOT_READY: ServiceNow did not mount the requested IMS draft.');
+    const readyOwner=ownedTicketDraft(ims)||state.createdEvent;if(readyOwner?.ims===ims)readyOwner.path=location.pathname;
     const tab=allPageElements().find(el=>el.getAttribute('role')==='tab'&&el.getAttribute('aria-selected')==='true'&&comparableLabel(elementLabel(el)).includes('new event'));
     addLog('info','new-event-native-created',{ims,source:native.action.id});
     return await waitForControlByLabel('Location',12000);
