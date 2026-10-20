@@ -546,6 +546,86 @@ SN_AI_RELEASE_NOTES_END */
   restoreLoadedFavorites();
 })();
 
+// SN_AI_RECORD_SLA_BEGIN
+function snRecordValue(value,display=false){return value&&typeof value==='object'?String(display?(value.display_value??value.value??''):(value.value??'')):String(value??'');}
+function snRecordSLASummary(rows,now=Date.now()){
+  const sorted=rows.filter(row=>Number.isFinite(Number(snRecordValue(row.business_percentage)))&&snRecordValue(row.business_percentage)!=='').sort((a,b)=>Number(snRecordValue(b.business_percentage))-Number(snRecordValue(a.business_percentage)));
+  if(!sorted.length)return null;
+  const row=sorted[0],percentage=Number(snRecordValue(row.business_percentage));
+  const rawDate=snRecordValue(row.planned_end_time),utc=/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(rawDate)?Date.parse(rawDate.replace(' ','T')+'Z'):NaN;
+  const hours=Number.isFinite(utc)?Math.max(0,Math.floor((now-utc)/3600000)):null;
+  return {percentage,label:'SLA - '+Number(percentage.toFixed(2))+'%',level:percentage>100?'breached':percentage>=90?'warning':'healthy',
+    breachText:percentage>100?(hours===null?'Breached':`Breached ${Math.floor(hours/24)} days ${hours%24} hours ago`):'',
+    exactDate:snRecordValue(row.planned_end_time,true),utcDate:Number.isFinite(utc)?new Date(utc).toISOString():'',
+    task:snRecordValue(row.task,true),name:snRecordValue(row.sla,true),count:sorted.length};
+}
+function createSNRecordSLAService(read,clock=()=>Date.now()){
+  const cache=new Map(),pending=new Map();
+  const idOK=id=>/^[a-f0-9]{32}$/i.test(id||'');
+  const refs=rows=>rows.map(row=>({id:snRecordValue(row.sys_id),number:snRecordValue(row.number)})).filter(row=>idOK(row.id)&&/^SCTASK\d+$/.test(row.number));
+  const slaRows=async(ids,incident)=>{
+    if(!ids.length)return [];
+    const names=incident?'sla.nameSTARTSWITHInc Resolution^ORsla.nameSTARTSWITHReq Resolution':'sla.nameSTARTSWITHCatalog Task';
+    return read('task_sla','taskIN'+ids.join(',')+'^stageINin_progress,breached,paused^'+names+'^ORDERBYDESCbusiness_percentage','sys_id,task,sla,business_percentage,planned_end_time,stage,has_breached',100);
+  };
+  return {async get(table,id){
+    if(!['incident','sc_req_item','sc_task'].includes(table)||!idOK(id))throw Error('Invalid record context');
+    const key=table+':'+id,cached=cache.get(key);if(cached&&clock()-cached.at<60000)return cached.data;if(pending.has(key))return pending.get(key);
+    const promise=(async()=>{
+      let links=[],ids=[id];
+      if(table==='sc_req_item'){
+        const tasks=await read('sc_task','request_item='+id+'^ORDERBYnumber','sys_id,number,state',200);links=refs(tasks).map(row=>({...row,table:'sc_task'}));
+        if(tasks.length>=200)throw Error('Too many linked tasks to summarize safely');
+        ids=tasks.filter(row=>!['-12','6','10'].includes(snRecordValue(row.state))).map(row=>snRecordValue(row.sys_id)).filter(idOK);
+      }else if(table==='sc_task'){
+        const rows=await read('sc_task','sys_id='+id,'request_item',1),item=rows[0]?.request_item;
+        if(idOK(snRecordValue(item))&&/^RITM\d+$/.test(snRecordValue(item,true)))links=[{id:snRecordValue(item),number:snRecordValue(item,true),table:'sc_req_item'}];
+      }
+      const rows=await slaRows(ids,table==='incident');if(rows.length>=100)throw Error('Too many SLA rows to summarize safely');
+      // Enforce the same list filters even if a server qualifier is ignored.
+      const applicable=rows.filter(row=>['in_progress','breached','paused'].includes(snRecordValue(row.stage))&&(table==='incident'?/^(Inc|Req) Resolution/i:/^Catalog Task/i).test(snRecordValue(row.sla,true)));
+      const data={links,rows:applicable};cache.set(key,{at:clock(),data});while(cache.size>80)cache.delete(cache.keys().next().value);return data;
+    })().finally(()=>pending.delete(key));pending.set(key,promise);return promise;
+  }};
+}
+const snRecordSLAHeaders=(()=>{
+  const entries=new Map();let service=null,timer=0;
+  const read=async(table,query,fields,limit)=>{
+    const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
+    const token=page.g_ck||[...document.scripts].filter(s=>!s.src).map(s=>s.textContent.match(/\bg_ck\s*=\s*["']([^"']+)["']/)?.[1]).find(Boolean)||'';
+    const response=await page.fetch('/api/now/table/'+table+'?'+new URLSearchParams({sysparm_query:query,sysparm_fields:fields,sysparm_limit:String(limit),sysparm_display_value:'all',sysparm_exclude_reference_link:'true'}),{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':token},signal:AbortSignal.timeout(12000)});
+    if(!response.ok)throw Error('SLA read HTTP '+response.status);const body=await response.json();if(!Array.isArray(body.result))throw Error('Invalid SLA response');return body.result;
+  };
+  const render=entry=>{
+    const {header,panel,data,error}=entry;
+    const row=header.shadowRoot?.querySelector('sn-form-internal-header-label-value-set')?.parentElement;if(!row)return;
+    if(panel.parentElement!==row)row.append(panel);
+    const summary=data?snRecordSLASummary(data.rows):null;
+    const signature=JSON.stringify({data,summary,error});if(signature===entry.signature)return;entry.signature=signature;panel.replaceChildren();
+    const style=document.createElement('style');style.textContent='.sn-ai-record-sla{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-left:12px;font:inherit}.sn-ai-record-sla button{font:inherit;font-weight:600;cursor:pointer;border:0;border-radius:7px;padding:6px 10px;background:linear-gradient(115deg,var(--sn-theme-9de2f5,#9de2f5),var(--sn-theme-ac94ec,#ac94ec));color:var(--sn-theme-14121c,#14121c)}.sn-ai-record-sla .sla-chip{display:inline-flex;align-items:center;padding:5px 9px;border:1px solid currentColor;border-radius:7px;background:color-mix(in srgb,currentColor 9%,transparent);white-space:nowrap}.sn-ai-record-sla [data-level="healthy"]{color:#8cdbac}.sn-ai-record-sla [data-level="warning"]{color:#ffc16e}.sn-ai-record-sla [data-level="breached"]{color:#ff9b9b}.sn-ai-record-sla .sla-breach{position:relative;cursor:help}.sn-ai-record-sla .sla-breach:hover::after,.sn-ai-record-sla .sla-breach:focus::after{content:attr(data-exact-date);position:absolute;bottom:calc(100% + 7px);right:0;z-index:100;white-space:pre;background:var(--sn-theme-251f31,#251f31);color:var(--sn-theme-e6edf9,#eee);border:1px solid #74618b;border-radius:7px;padding:8px 10px;box-shadow:0 3px 12px #0005}';panel.append(style);
+    for(const link of data?.links||[]){const button=document.createElement('button');button.type='button';button.textContent=link.number+' ↗';button.setAttribute('aria-label','Open '+link.number);button.onclick=()=>{try{entry.open(link.table,link.id);}catch(err){button.title=err.message;}};panel.append(button);}
+    const badge=document.createElement('span');badge.className='sla-chip';badge.textContent=summary?.label||(error?'SLA - Unavailable':data?'SLA - N/A':'SLA - Loading…');badge.dataset.level=summary?.level||'';
+    badge.title=error||summary?error||[summary.task,summary.name,summary.count>1?'Highest of '+summary.count+' active matching SLAs':'',summary.exactDate?'Breach time: '+summary.exactDate+' (ServiceNow timezone)':''].filter(Boolean).join('\n'):'No applicable active SLA';panel.append(badge);
+    if(summary?.breachText){const breach=document.createElement('span');breach.className='sla-chip sla-breach';breach.dataset.level='breached';breach.textContent=summary.breachText;breach.tabIndex=0;breach.dataset.exactDate='Breach time: '+summary.exactDate+' (ServiceNow timezone)\n'+summary.utcDate;breach.setAttribute('aria-label',breach.textContent+'. '+breach.dataset.exactDate);panel.append(breach);}
+  };
+  const update=async entry=>{
+    if(!entry.header.isConnected||!entry.header.getBoundingClientRect().width||document.hidden||entry.pending)return;
+    render(entry);entry.pending=true;
+    try{service||=createSNRecordSLAService(read);entry.data=await service.get(entry.table,entry.id);entry.error='';}catch(error){entry.error=error.message;entry.data=null;}finally{entry.pending=false;if(entry.header.isConnected)render(entry);}
+  };
+  return {install(header,open){
+    const props=header?.getProperties?.();if(!['incident','sc_req_item','sc_task'].includes(props?.table)||!/^[a-f0-9]{32}$/i.test(props.sysId||''))return;
+    const root=header.shadowRoot;if(!root)return;
+    const set=root.querySelector('sn-form-internal-header-label-value-set');
+    if(props.table==='sc_req_item'&&set&&set.style.getPropertyValue('display')!=='none')set.style.setProperty('display','none','important');
+    if(props.table==='sc_task')for(const field of set?.shadowRoot?.querySelectorAll('sn-form-internal-header-label-reference-value')||[])if(field.getProperties?.().fieldLabel==='Request item'&&field.style.getPropertyValue('display')!=='none')field.style.setProperty('display','none','important');
+    let entry=entries.get(header);if(entry&&(entry.id!==props.sysId||entry.table!==props.table)){entry.panel.remove();entries.delete(header);entry=null;}
+    if(!entry){const panel=document.createElement('div');panel.className='sn-ai-record-sla';entry={header,panel,id:props.sysId,table:props.table,open,pending:false,data:null,error:'',signature:''};entries.set(header,entry);}
+    render(entry);if(!entry.fetchedAt||Date.now()-entry.fetchedAt>=60000){entry.fetchedAt=Date.now();update(entry);}
+    if(!timer){timer=setInterval(()=>{for(const [node,item]of entries){if(!node.isConnected){entries.delete(node);continue;}update(item);}},60000);window.addEventListener('pagehide',()=>{clearInterval(timer);entries.clear();},{once:true});}
+  }};
+})();
+// SN_AI_RECORD_SLA_END
 // Shared, bounded EVNT -> INC metadata; no transcripts or DOM references.
 const snAIEventIncLinks=(()=>{
   const cache=new Map(),pending=new Map();
@@ -5317,6 +5397,7 @@ const snAIChatDisplayNames=(()=>{
     entry.update();
   }
   function eventFieldShortcut(root) {
+    if(root.host?.localName==='now-record-common-header')snRecordSLAHeaders.install(root.host,openContextWorkspaceRecord);
     if(root.host?.localName?.startsWith('sn-form-internal-header-label-')){
       const host=root.host,props=host.getProperties?.();
       let incident=false;
