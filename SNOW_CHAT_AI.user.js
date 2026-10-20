@@ -12260,41 +12260,6 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     openWorkspaceIMSMainTab({sys_id:record.sys_id,number:requestedIMS});
     if(!await waitForActiveIMS(requestedIMS,4000))throw Error('Native IMS navigation was not confirmed: '+requestedIMS);
     state.commandResult={kind:'ims-navigation',ims:requestedIMS,method:'native-open',confirmedActive:true};return;
-    // A New Event can retain the parent IMS as the selected top tab. It is
-    // still not the interaction transcript, so force the IMS tab click when
-    // an Event subtab is active.
-    if (activeSelectedIMS() === requestedIMS && !getCurrentEventState().onEventPage) {
-      state.commandResult = { kind: 'ims-navigation', ims: requestedIMS, alreadyActive: true, confirmedActive: true };
-      return findIMSInteractionTarget(requestedIMS);
-    }
-    for (let attempt = 1; attempt <= 2; attempt += 1) {
-      const match = findIMSInteractionTarget(requestedIMS);
-      if (match) {
-        const target = clickableAncestor(match);
-        target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-        target.click();
-        if (await waitForActiveIMS(requestedIMS)) {
-          state.commandResult = {
-            kind: 'ims-navigation',
-            ims: requestedIMS,
-            attempt,
-            confirmedActive: true,
-            target: controlRecord(target),
-          };
-          return target;
-        }
-      }
-      if (attempt === 1) await new Promise((resolve) => requestAnimationFrame(resolve));
-    }
-    state.commandResult = {
-      kind: 'ims-navigation',
-      ims: requestedIMS,
-      unavailable: true,
-      attempts: 2,
-      activeIMS: activeSelectedIMS(),
-      guidance: 'Requested IMS could not be confirmed as the active selected interaction. Stop and verify the exact IMS tab before continuing.',
-    };
-    throw new Error(`IMS did not become the active selected interaction: ${requestedIMS}`);
   }
 
   async function selectWorkspaceOption(fieldLabel, optionLabel) {
@@ -17393,7 +17358,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         #${ROOT_ID} .local-sn-cpc-dialog.is-success .local-sn-cpc-user { display: none; }
         #${ROOT_ID} .local-sn-cpc-dialog.is-success .local-sn-cpc-content { max-height: 0; padding-top: 0; padding-bottom: 0; opacity: 0; }
         #${ROOT_ID} .local-sn-cpc-dialog.is-success.is-feedback .local-sn-cpc-content { max-height: 260px; padding: 14px; opacity: 1; }
-        #${ROOT_ID} .local-sn-cpc-dialog.is-success.is-feedback .local-sn-cpc-content > :is(.local-sn-case-instruction,[data-ticket-content],[data-ticket-ai-returned],[data-ticket-manual-ai-panel],.local-sn-cpc-actions) { display:none!important; }
+        #${ROOT_ID} .local-sn-cpc-dialog.is-success.is-feedback .local-sn-cpc-content > :is(.local-sn-case-instruction,[data-ticket-content],[data-ticket-ai-returned],[data-ticket-manual-ai-panel],.local-sn-cpc-actions):not([data-ticket-completion-actions]) { display:none!important; }
         #${ROOT_ID} .local-sn-cpc-dialog.is-success.is-feedback .local-sn-ticket-feedback { margin:0; }
         #${ROOT_ID} .local-sn-cpc-dialog.is-success .local-sn-case-instruction { display: none; }
         #${ROOT_ID} .local-sn-cpc-dialog.is-error .local-sn-cpc-drag { background: #7d211a; }
@@ -17412,6 +17377,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         #${ROOT_ID} .switch-button .button-indicator { position: absolute; right: 2px; top: 2px; height: 20px; width: 20px; border: 2px solid #ef565f; border-radius: 50%; box-sizing: border-box; transition: left .2s ease-out, right .2s ease-out, border-color .2s ease-out; pointer-events: none; }
         #${ROOT_ID} .switch-button input:checked + .button .button-indicator { left: 2px; right: auto; border-color: #60d480; }
         #${ROOT_ID} .local-sn-cpc-error { min-height: 18px; color: #ffb4ab; margin-top: 6px; }
+        #${ROOT_ID} .local-sn-cpc-dialog [hidden], #${ROOT_ID} .local-sn-cpc-error:empty { display:none!important; }
         #${ROOT_ID} .local-sn-cpc-error.is-success { color: #74e39a; }
         #${ROOT_ID} .local-sn-ticket-feedback { margin-top: 12px; padding: 10px; background: var(--sn-theme-251f31,#132a26); border: 1px solid var(--sn-theme-655573,#35534d); border-radius: 8px; }
         #${ROOT_ID} .local-sn-manual-ai-label { margin-bottom: 8px; color: var(--sn-theme-e6edf9,#d7e9e5); font-weight: 700; }
