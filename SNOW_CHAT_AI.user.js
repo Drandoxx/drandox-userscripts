@@ -1178,10 +1178,7 @@ const snAIChatDisplayNames=(()=>{
   document.addEventListener('sn-ai-focus-ims',event=>{
     const ims=event.detail?.ims;
     if (!/^IMS\d+$/.test(ims || '')) return;
-    for (const scope of spaceRoots) {
-      const tab=scope.querySelector?.(`.sn-chrome-one-tab[aria-label="${ims}"]`);
-      if (tab?.isConnected) { tab.click();tab.focus();break; }
-    }
+    if(!snWorkspaceFocusIMS(ims))document.dispatchEvent(new CustomEvent('sn-ai-native-open-ims',{detail:{ims}}));
   });
   document.addEventListener('sn-ai-autoaccepted-ims',event => {
     if (!/^IMS\d+$/.test(event.detail?.ims || '')) return;
@@ -5091,6 +5088,7 @@ const snAIChatDisplayNames=(()=>{
       submit.disabled=true;
       try {
         const table={IMS:'interaction',EVNT:'new_call',INC:'incident',SCTASK:'sc_task',RITM:'sc_req_item'}[prefix];
+        if(prefix==='IMS'&&snWorkspaceFocusIMS(ims)){box.remove();imsLookupBox=null;return;}
         let record;
         if(prefix==='IMS')record=await fetchIMSRecord('number='+ims);
         else {
@@ -8714,7 +8712,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   function requestAutomationPause(kind='manual'){
     const activity=automationFreezeActivity(true);
     if(!activity.running||state.incomingPause)return;
-    const event=ownedTicketDraft(activity.ims);
+    let event=null;try{event=ownedTicketDraft(activity.ims);}catch(error){addLog('warn','pause-draft-identity-pending',{ims:activity.ims,message:error.message});}
     state.incomingResume={ims:activity.ims,event:event?{...event}:null,path:location.pathname,kind};
     state.incomingPause=true;
     state.pauseClockStarted=performance.now();
@@ -13756,7 +13754,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   }
 
   function pauseReason() {
-    if(state.incomingPause)return state.incomingResume?.kind==='incoming-chat'?'Paused for new incoming chats. Click Continue when ready.':'Paused. Click Continue when ready.';
+    if(state.incomingPause)return state.pause.reason||(state.incomingResume?.kind==='incoming-chat'?'Paused for new incoming chats. Click Continue when ready.':'Paused. Click Continue when ready.');
     // The ChatGPT side panel can legitimately own keyboard focus while this
     // page remains active, so use visibility rather than document.hasFocus().
     if (document.visibilityState !== 'visible') return 'Paused - return to this ServiceNow browser tab to continue.';
@@ -22258,6 +22256,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     if (workspacePage) {
       installAutomationFreeze();
       document.addEventListener('sn-ai-new-chat-arrived',pauseForIncomingChat);
+      document.addEventListener('sn-ai-native-open-ims',event=>{const ims=normaliseIMS(event.detail?.ims);if(/^IMS\d+$/.test(ims))clickIMSFast(ims).catch(error=>addLog('warn','native-ims-open-failed',{ims,message:error.message}));});
     }
     addLog('info', 'helper-version', { version: typeof GM_info!=='undefined'?GM_info.script?.version||'unknown':'unknown' });
     // The launcher starts collapsed. Avoid retaining a duplicate full-page
