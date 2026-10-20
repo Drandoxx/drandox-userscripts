@@ -13688,7 +13688,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   function updateStopButtons() {
     for (const button of document.querySelectorAll(`#${ROOT_ID} [data-action="stop-automation"]`)) {
       button.disabled = !state.commandRunning && !state.busy;
-      button.textContent = state.stopRequested ? 'Stopping...' : 'Stop';
+      button.textContent = state.incomingPause ? 'Continue' : 'Pause';
     }
   }
 
@@ -13727,6 +13727,16 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   }
 
   function updatePausePanel() {
+    const root=document.getElementById(ROOT_ID);
+    for(const dialog of root?.querySelectorAll('[data-pinned-ims]')||[]){
+      const paused=Boolean(state.incomingPause&&dialog.classList.contains('is-running')&&dialog.dataset.pinnedIms===state.incomingResume?.ims);
+      dialog.classList.toggle('is-paused',paused);
+      let label=dialog.querySelector('[data-ticket-pause-label]');
+      if(paused&&!label){label=document.createElement('span');label.dataset.ticketPauseLabel='';label.setAttribute('role','status');dialog.querySelector('.local-sn-cpc-title-block')?.append(label);}
+      if(label){label.hidden=!paused;label.textContent=state.incomingResume?.kind==='incoming-chat'?'Paused for new incoming chats':'Paused';}
+      const button=dialog.querySelector('[data-ticket-stop]');if(button)button.textContent=paused?'Continue':'Pause';
+    }
+    updateStopButtons();
     const panel = document.getElementById('local-sn-inspector-pause');
     if (!panel) return;
     panel.hidden = !state.pause.paused || state.pause.dismissed;
@@ -13748,7 +13758,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   }
 
   function pauseReason() {
-    if(state.incomingPause)return 'Paused for a new incoming chat. Click Continue when ready.';
+    if(state.incomingPause)return state.incomingResume?.kind==='incoming-chat'?'Paused for new incoming chats. Click Continue when ready.':'Paused. Click Continue when ready.';
     // The ChatGPT side panel can legitimately own keyboard focus while this
     // page remains active, so use visibility rather than document.hasFocus().
     if (document.visibilityState !== 'visible') return 'Paused - return to this ServiceNow browser tab to continue.';
@@ -13790,6 +13800,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     await waitForAutomationResume();
     await rawSleep(ms);
     assertAutomationNotStopped();
+    await waitForAutomationResume();
   }
 
   function publishAIBox(id, value) {
@@ -17371,7 +17382,10 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         #${ROOT_ID} .local-sn-cpc-dialog.is-minimized .local-sn-cpc-drag h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
         #${ROOT_ID} .local-sn-cpc-dialog.is-minimized .local-sn-cpc-user, #${ROOT_ID} .local-sn-cpc-dialog.is-minimized .local-sn-cpc-progress, #${ROOT_ID} .local-sn-cpc-dialog.is-minimized .local-sn-cpc-stop, #${ROOT_ID} .local-sn-cpc-dialog.is-minimized .local-sn-cpc-close, #${ROOT_ID} .local-sn-cpc-dialog.is-minimized .local-sn-cpc-minimize, #${ROOT_ID} .local-sn-cpc-dialog.is-minimized .local-sn-cpc-content { display: none !important; }
         #${ROOT_ID} .local-sn-cpc-content { max-height: min(calc(100vh - 92px), 1100px); padding: 14px 16px 16px; opacity: 1; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; transition: max-height .24s ease, opacity .16s ease, padding .24s ease; }
-        #${ROOT_ID} .local-sn-cpc-dialog.is-running .local-sn-cpc-drag { background: #87550d; }
+        #${ROOT_ID} .local-sn-cpc-dialog.is-running .local-sn-cpc-drag { background:var(--sn-theme-3a2f4c,#3a2f4c);color:var(--sn-theme-e6edf9,#eee); }
+        #${ROOT_ID} .local-sn-cpc-dialog.is-paused [data-ticket-progress] { display:none!important; }
+        #${ROOT_ID} [data-ticket-pause-label] { display:block;font-size:14px;font-weight:600;color:var(--sn-theme-ac94ec,#ac94ec); }
+        #${ROOT_ID} .local-sn-cpc-dialog .local-sn-cpc-stop { background:var(--sn-theme-534775,#534775);color:var(--sn-theme-e6edf9,#eee);border:1px solid var(--sn-theme-74618b,#74618b); }
         #${ROOT_ID} .local-sn-cpc-dialog.is-running .local-sn-cpc-user { display: none; }
         #${ROOT_ID} .local-sn-cpc-dialog.is-running .local-sn-cpc-stop { display: inline-block; }
         #${ROOT_ID} .local-sn-cpc-dialog.is-running .local-sn-cpc-content { max-height: 0; padding-top: 0; padding-bottom: 0; opacity: 0; }
@@ -19555,7 +19569,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       await runCommandInput(collapsedCommandInput, { showStage: true });
     });
     for (const button of host.querySelectorAll('[data-action="stop-automation"]')) {
-      button.addEventListener('click', requestAutomationStop);
+      button.addEventListener('click',()=>{if(state.incomingPause)continueIncomingAutomation().catch(error=>{state.pause.reason=error.message;updatePausePanel();});else requestAutomationPause('manual');});button.textContent='Pause';
     }
     for (const input of [commandInput, collapsedCommandInput]) {
       input.addEventListener('keydown', async (event) => {
@@ -19842,7 +19856,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
               <h2 id="${titleId}"><span data-ticket-title></span><span class="local-sn-ticket-id" data-ticket-id>${windowId}</span><span class="local-sn-cpc-progress" data-ticket-progress></span></h2>
               <div class="local-sn-cpc-user" data-ticket-user></div>
             </div>
-            <button class="local-sn-cpc-stop" type="button" data-ticket-stop>STOP</button>
+            <button class="local-sn-cpc-stop" type="button" data-ticket-stop>Pause</button>
             <button class="local-sn-cpc-minimize" type="button" data-ticket-minimize aria-label="Minimize ${title}" title="Minimize">−</button>
             <button class="local-sn-cpc-close" type="button" data-ticket-close aria-label="${closeLabel || `Close ${title}`}">${ticketWindowCloseIcon}</button>
           </div>
@@ -19913,6 +19927,12 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       refs.aiReturnedValues = null;
       refs.forceFreshAI = false;
       refs.aiMode = Boolean(aiMode);
+      refs.stopButton.addEventListener('click',event=>{
+        if(dialog.dataset.ticketDisposed==='true')return;
+        event.preventDefault();event.stopImmediatePropagation();
+        if(state.incomingPause)continueIncomingAutomation().catch(error=>{state.pause.reason=error.message;updatePausePanel();addLog('warn','automation-continue-failed',{message:error.message});});
+        else requestAutomationPause('manual');
+      },true);
       // A running header stays compact, but its close control remains an
       // escape hatch. Stop at the next safe checkpoint before removing only
       // the local bubble; ServiceNow itself is never saved or closed here.
