@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.721
+// @version      2.36.722
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.722","fixes":true,"changes":[{"key":"runtime-memory","meaningful":true,"text":"Release detached theme roots and inbox observers, bound the stylesheet cache, and stop rewriting the presence dropdown while it is focused."}]},
 {"version":"2.36.721","fixes":true,"changes":[{"key":"ai-feedback","meaningful":true,"text":"Send feedback once to the original AI conversation with a request to update the relevant skill. Remove locally stored feedback and stop adding old corrections to new ticket prompts."},{"key":"ai-response-recovery","meaningful":true,"text":"Recover ticket wrappers before accepting nested response fragments, preserve rejected response text, and log bounded validation evidence."}]},
 {"version":"2.36.720","fixes":true,"changes":[{"key":"ticket-bubble-layout","meaningful":true,"text":"Use the selected theme for completed and feedback header backgrounds without changing their text or completion state."}]},
 {"version":"2.36.719","fixes":true,"changes":[{"key":"automation-pause","meaningful":true,"text":"Keep incoming-chat and manual pauses visible until Continue restores the bubble's exact native Event tab. Preserve draft ownership on retries and exclude paused time from field waits."},{"key":"incoming-log-count","meaningful":true,"text":"Count distinct incoming chats, including chats not sent to AI, and restore the count from today's saved incoming-offer logs."},{"key":"ticket-bubble-layout","meaningful":true,"text":"Theme running bubbles, replace Stop with Pause and Continue, remove unused spacing, and show Give feedback and Done before revealing the feedback input."}]},
@@ -890,6 +891,21 @@ const snAIChatDisplayNames=(()=>{
   if (location.hostname !== 'kingfisher.service-now.com' || !location.pathname.startsWith('/now/workspace/agent/')) return;
   const roots = new WeakSet();
   const spaceRoots = new Set();
+  const themeRootObservers = new WeakMap();
+  function pruneDetachedThemeRoots() {
+    for (const root of spaceRoots) {
+      if (root === document || (root.host ? root.host.isConnected : root.defaultView?.frameElement?.isConnected)) continue;
+      themeRootObservers.get(root)?.observer.disconnect();
+      spaceRoots.delete(root);
+      spaceStyles.delete(root);
+    }
+  }
+  const themeRootCleanupTimer = setInterval(pruneDetachedThemeRoots, 5000);
+  window.addEventListener('pagehide', () => {
+    clearInterval(themeRootCleanupTimer);
+    for (const root of spaceRoots) themeRootObservers.get(root)?.observer.disconnect();
+    spaceRoots.clear(); spaceStyles.clear();
+  }, { once: true });
   const spaceStyles = new Map();
   let acceptedIMS = new Set();
   const lastTypedIMS = new Map();
@@ -1581,6 +1597,7 @@ const snAIChatDisplayNames=(()=>{
         return '';
       };
       structuralCSSCache.set(source,[...sheet.cssRules].map(serialize).join(''));
+      while (structuralCSSCache.size > 100) structuralCSSCache.delete(structuralCSSCache.keys().next().value);
     }
     return structuralCSSCache.get(source);
   }
@@ -6214,7 +6231,11 @@ const snAIChatDisplayNames=(()=>{
   }
   function watch(root) {
     ensureSpaceRoot(root);
-    if (roots.has(root)) return;
+    if (roots.has(root)) {
+      const saved = themeRootObservers.get(root);
+      if (saved) saved.observer.observe(root, saved.options);
+      return;
+    }
     roots.add(root);
     root.addEventListener('click',event=>{
       const tab=event.composedPath().find(element=>element.matches?.('.sn-chrome-one-tab[aria-label^="IMS"]'));
@@ -6361,10 +6382,12 @@ const snAIChatDisplayNames=(()=>{
       syncNativeActionWidth(root);
       eventFieldShortcut(root);
     });
-    observer.observe(root, { childList: true, subtree: true,
+    const observationOptions = { childList: true, subtree: true,
       ...(root.host?.localName?.startsWith('sn-form-internal-header-label-')?{characterData:true}:{}),
       ...(root.host?.matches('sn-workspace-tab,sn-workspace-tab-bar,sn-workspace-sub-tabs')
-        ? { characterData:true,attributes:true,attributeFilter:['class','aria-label','aria-selected','disabled'] } : {}) });
+        ? { characterData:true,attributes:true,attributeFilter:['class','aria-label','aria-selected','disabled'] } : {}) };
+    themeRootObservers.set(root, { observer, options: observationOptions });
+    observer.observe(root, observationOptions);
     discover(root);
     syncForcedIMSChat(root);
     syncIMSPreview(root);
@@ -22838,11 +22861,14 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     }
     function sync() {
       const current = actual();
+      // Native select popups must remain untouched while the user chooses.
+      // Reassigning value/styles on each poll can blank or dismiss the popup.
+      if (select.matches(':focus')) return;
       if (current && ![...select.options].some(option => option.value === current)) {
         const option = document.createElement('option'); option.value = current; option.textContent = current; select.append(option);
       }
       // Retain confirmed native state during transient empty renders; never default to Available.
-      if (current) select.value = current;
+      if (current && select.value !== current) select.value = current;
       if (select.dataset.snAiStatus !== (current || 'Offline')) {
         select.dataset.snAiStatus = current || 'Offline';
         document.dispatchEvent(new CustomEvent('sn-ai-presence-status', { detail:select.dataset.snAiStatus }));
@@ -22875,9 +22901,11 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       inboxLog('presence-preference-user-selected', { desired: select.value });
       applyDesired();
     });
-    const timer = setInterval(() => { if (container.isConnected) sync(); else clearInterval(timer); }, 500);
+    select.addEventListener('blur', sync);
+    const timer = setInterval(() => { if (container.isConnected) sync(); else disposePresence(); }, 500);
     sync();
-    document.addEventListener('sn-ai-runtime-dispose', () => {
+    function disposePresence() {
+      document.removeEventListener('sn-ai-runtime-dispose', disposePresence);
       clearInterval(timer); box.remove();
       if (originalContainerStyle === null) container.removeAttribute('style');
       else container.setAttribute('style', originalContainerStyle);
@@ -22886,7 +22914,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         else gear.setAttribute('style', originalGearStyle);
       }
       if (popover) { popover.style.position = ''; popover.style.visibility = ''; popover.style.pointerEvents = ''; }
-    }, { once: true });
+    }
+    document.addEventListener('sn-ai-runtime-dispose', disposePresence, { once: true });
   }
   function inboxLog(kind, detail) {
     const entry = { at: new Date().toISOString(), kind, ...detail };
@@ -23158,6 +23187,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const settingsDeadline = setTimeout(showNotificationSettingsMissingError, 10000);
     const monitored = new WeakSet();
     const inboxRoots = new WeakMap();
+    const inboxObserverTargets = new Map();
     const discoveredWidgets = [];
     document.addEventListener('sn-ai-accepted-ims-read',event=>{
       for (const box of document.querySelectorAll('[data-sn-ai-notification="accepted"]')) {
@@ -23314,6 +23344,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           }, 1500);
         };
         countdownObserver=new MutationObserver(checkAcceptance);
+        inboxObserverTargets.set(countdownObserver, { root: button, node: card || button });
         for(const root of countdownRoots)countdownObserver.observe(root,{subtree:true,childList:true,characterData:true});
         inboxPolicy.observers.push(countdownObserver);
         const timer = setInterval(checkAcceptance, 500);
@@ -23358,6 +23389,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           if (kind === 'inbox' && actionControlsChanged) inspectButtons(node);
         });
         observer.observe(root, { subtree: true, childList: true, attributes: true, attributeOldValue: true, characterData: true, characterDataOldValue: true });
+        inboxObserverTargets.set(observer, { root, node });
         inboxPolicy.observers.push(observer);
       };
       observeRoot(node);
@@ -23366,6 +23398,17 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     }
     const discover = () => {
       if (inboxPolicy.disposed) return;
+      for (const [observer, target] of inboxObserverTargets) {
+        if (target.node.isConnected && (!target.root.host || target.root.host.isConnected)) continue;
+        observer.disconnect(); inboxObserverTargets.delete(observer);
+        const index = inboxPolicy.observers.indexOf(observer);
+        if (index >= 0) inboxPolicy.observers.splice(index, 1);
+        inboxRoots.get(target.node)?.delete(target.root);
+        monitored.delete(target.node);
+      }
+      for (let index = discoveredWidgets.length - 1; index >= 0; index--) {
+        if (!discoveredWidgets[index].isConnected) discoveredWidgets.splice(index, 1);
+      }
       if (discoveredWidgets.some(node => node.isConnected && node.matches('.sn-presence-state-container'))
         && discoveredWidgets.some(node => node.isConnected && node.matches('.sn-card-list'))) return;
       // Discovery uses the existing cached shadow traversal; detailed observers
@@ -23413,6 +23456,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       document.getElementById('local-sn-ai-notification-settings-confirmed')?.remove();
       document.getElementById('local-sn-ai-notification-settings-error')?.remove();
       inboxPolicy.observers.forEach(observer => observer.disconnect());
+      inboxPolicy.observers.length = 0;
+      inboxObserverTargets.clear(); discoveredWidgets.length = 0;
       inboxPolicy.timers.forEach(timer => clearTimeout(timer));
       document.removeEventListener('focusin', focusLog, true);
       document.removeEventListener('click', focusLog, true);
