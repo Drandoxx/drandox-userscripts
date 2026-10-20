@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.730
+// @version      2.36.731
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.731","fixes":true,"changes":[{"key":"memory-diagnostics","meaningful":true,"text":"Record lightweight minute memory samples and sampled peaks, with heap availability, stylesheet text totals, DOM counts and script cache counts in diagnostic reports."}]},
 {"version":"2.36.730","fixes":true,"changes":[{"key":"reopen-tabs","meaningful":false,"text":"Reduce the reopen icon to 16px and tighten spacing beside the plus button while retaining its click area."}]},
 {"version":"2.36.729","fixes":true,"changes":[{"key":"runtime-memory","meaningful":false,"text":"Restore root-local action styles after shared stylesheet adoption changed native tab styling and icon sizes."}]},
 {"version":"2.36.728","fixes":true,"changes":[{"key":"runtime-memory","meaningful":true,"text":"Share the large action stylesheet across shadow roots instead of parsing a separate copy for each component."},{"key":"reopen-tabs","meaningful":true,"text":"Match the reopen button to the plus button and place it immediately to its left."}]},
@@ -564,6 +565,35 @@ SN_AI_RELEASE_NOTES_END */
 })();
 
 // SN_AI_WORKSPACE_NAV_BEGIN
+async function snMeasureMemoryFootprint(doc = document) {
+  const started=performance.now(),queue=[doc];
+  const result={roots:0,nodes:0,styles:0,actionCssChars:0,themeCssChars:0,otherCssChars:0,partial:false};
+  while(queue.length){
+    const slice=performance.now();
+    do {
+      const root=queue.pop();result.roots++;
+      for(const node of root.querySelectorAll('*')){
+        result.nodes++;
+        if(node.shadowRoot)queue.push(node.shadowRoot);
+        if(node.localName==='style'){
+          result.styles++;
+          // Read text-node lengths, never concatenate megabytes of CSS.
+          let length=0;for(const text of node.childNodes)if(text.nodeType===3)length+=text.length;
+          const key=node.hasAttribute('data-sn-ai-action-style')?'actionCssChars':node.hasAttribute('data-sn-ai-space-theme')?'themeCssChars':'otherCssChars';
+          result[key]+=length;
+        }
+      }
+      if(result.nodes>100000||result.roots>5000||performance.now()-started>1000){result.partial=true;queue.length=0;break;}
+    }while(queue.length&&performance.now()-slice<4);
+    if(queue.length)await new Promise(resolve=>setTimeout(resolve,0));
+  }
+  const memory=performance.memory;
+  result.heapUsedBytes=Number.isFinite(memory?.usedJSHeapSize)?memory.usedJSHeapSize:null;
+  result.heapAllocatedBytes=Number.isFinite(memory?.totalJSHeapSize)?memory.totalJSHeapSize:null;
+  result.heapLimitBytes=Number.isFinite(memory?.jsHeapSizeLimit)?memory.jsHeapSizeLimit:null;
+  result.durationMs=Math.round(performance.now()-started);
+  return result;
+}
 function snWorkspaceTabBars(){
   const bars=[];const walk=root=>{for(const el of root.querySelectorAll('*')){if(el.localName==='sn-workspace-tab-bar'){const props=el.getProperties?.();if(Array.isArray(props?.tabList))bars.push({el,props});}if(el.shadowRoot)walk(el.shadowRoot);}};walk(document);return bars;
 }
@@ -8634,6 +8664,9 @@ function startSNAI(tabIdentity) {
     if(action==='auto-greet'&&/^(incoming-offer-content|offer-accepted)$/.test(details.stage||'')&&/^IMS\d+$/.test(details.ims||'')){log.chats.add(details.ims);updateDiagnosticCount();}
     if(action.startsWith('extension-')&&now<new Date().setHours(0,0,0,0))return;
     for(const [key,value]of Object.entries(details||{})){
+      if(action==='memory-sample'&&key==='metrics'){
+        safe.metrics=Object.fromEntries(Object.entries(value||{}).filter(([,item])=>item===null||typeof item==='boolean'||(typeof item==='number'&&Number.isFinite(item))));continue;
+      }
       // Explicitly requested exact draft evidence, only on greeting failures.
       // Preserve whitespace/line breaks and do not truncate through the general
       // 180-character diagnostic string filter.
@@ -8729,12 +8762,32 @@ function startSNAI(tabIdentity) {
     proto.send=function(payload){const item=requests.get(this);if(item){item.request=body(payload);const started=performance.now();this.addEventListener('loadend',()=>{try{const text=this.responseType==='json'?JSON.stringify(this.response):!this.responseType||this.responseType==='text'?this.responseText:undefined;emit({...item,status:this.status,durationMs:Math.round(performance.now()-started)},text);}catch{emit({...item,status:this.status,error:'capture-unavailable'});}},{once:true});}return Reflect.apply(send,this,[payload]);};
   }
   try{installFormNetworkDiagnostics();}catch{/* Logging is optional; native form operation is not. */}
+  let memorySampling=false,memoryStopped=false,memoryPeak=0;
+  const memoryTimer=workspacePage?setInterval(async()=>{
+    if(memorySampling||memoryStopped)return;
+    memorySampling=true;
+    try{
+      const metrics=await snMeasureMemoryFootprint();
+      if(memoryStopped)return;
+      memoryPeak=Math.max(memoryPeak,metrics.heapUsedBytes||0);
+      metrics.sessionPeakHeapBytes=memoryPeak||null;
+      metrics.scriptLogEntries=state.logs.length;
+      metrics.pendingDiagnosticEntries=state.diagnostics?.events.length||0;
+      metrics.cachedTranscriptCount=state.diagnostics?.contents.size||0;
+      metrics.activeChatCacheUsers=state.aiChatCacheUsers.size;
+      recordCompactDiagnostic('info','memory-sample',{metrics});
+    }catch{/* Sampling must never interrupt ticket work. */}
+    finally{memorySampling=false;}
+  },60000):0;
+  window.addEventListener('pagehide',()=>{memoryStopped=true;clearInterval(memoryTimer);},{once:true});
   try{if(workspacePage)installCISearch();}catch{/* Preserve native lookup if enhancement cannot initialize. */}
   async function downloadDiagnostics(){
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
     const events=await storedDailyDiagnostics(log.day);
 const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.version||'unknown':'unknown',day:log.day,chatCount:log.chats.size,exportedAt:new Date().toISOString(),columns:['epochMs','level','action','commandId','details','repeatCount'],sleep:{count:log.sleepCount,requestedMs:log.sleepMs},events};
+    const memorySamples=events.filter(entry=>entry[2]==='memory-sample').map(entry=>entry[4]?.metrics).filter(Boolean);
+    payload.memory={sampleIntervalMs:60000,sampleCount:memorySamples.length,peakHeapUsedBytes:memorySamples.reduce((peak,item)=>Math.max(peak,item.heapUsedBytes||0),0)||null,peakCssTextChars:memorySamples.reduce((peak,item)=>Math.max(peak,item.actionCssChars+item.themeCssChars+item.otherCssChars),0)||null,limitations:'Minute samples can miss short peaks. Heap may be unavailable or approximate; it is not total Chrome RAM. CSS values are text character counts, not parsed-style memory. DOM counts cover mounted open shadow roots, not detached nodes. Cache counts do not measure retained bytes or exact ownership.'};
     let blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),suffix='.json';
     if(typeof CompressionStream==='function'){blob=await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();suffix='.json.gz';}
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+suffix;
