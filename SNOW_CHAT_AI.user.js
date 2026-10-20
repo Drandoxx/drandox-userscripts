@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.713
+// @version      2.36.714
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.714","fixes":true,"changes":[{"key":"record-sla-links","meaningful":true,"text":"Add linked SCTASK and RITM shortcuts, task state chips matching incident headers, and active resolution SLA percentages with breach time details. Remove pricing metadata from RITM headers."}]},
 {"version":"2.36.713","fixes":true,"changes":[{"key":"nova-cut-performance","meaningful":true,"text":"Size the cutout mask to the complete panel border box, including Chats Today, and explicitly clear the opening through its bottom edge."}]},
 {"version":"2.36.712","fixes":true,"changes":[{"key":"nova-cut-performance","meaningful":true,"text":"Double the cutting-stroke speed and extend the doorway below the panel border to avoid a remaining bottom strip."}]},
 {"version":"2.36.711","fixes":true,"changes":[{"key":"chatgpt-question-panel","meaningful":true,"text":"Show waiting ChatGPT question choices in the matching SNOW ticket bubble and send the selected answer back to continue the same request. Requires companion 0.4.40."}]},
