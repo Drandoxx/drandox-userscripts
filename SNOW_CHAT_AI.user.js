@@ -566,6 +566,11 @@ function snWorkspaceFocusSubtab(parentId,tabId){
   const bar=snWorkspaceTabBars().find(b=>b.props.type!=='primary'&&b.props.tabList.some(t=>String(t.tab_id)===String(tabId)&&String(t.parentTabId)===String(parentId)));
   if(!bar||typeof bar.props.onClickTab!=='function')return false;bar.props.onClickTab(tabId);return true;
 }
+function snIncomingOfferText(button){
+  let card=button;while(card&&card.localName!=='sn-inbox-card')card=card.parentElement||card.getRootNode?.().host;
+  const parts=[];const collect=root=>{if(!root||parts.length>=80)return;if(root.shadowRoot)collect(root.shadowRoot);for(const node of root.childNodes||[]){if(parts.length>=80)break;if(node.nodeType===3){const text=String(node.textContent||'').trim();if(text)parts.push(text.slice(0,300));}else if(node.nodeType===1&&!/^(STYLE|SCRIPT)$/.test(node.tagName))collect(node);}};
+  collect(card);return parts.join(' ').slice(0,2400);
+}
 // SN_AI_WORKSPACE_NAV_END
 // SN_AI_RECORD_COPY_BEGIN
 const snRecordOpenIcon='<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/><path d="m21 3-9 9"/><path d="M15 3h6v6"/></svg>';
@@ -8428,7 +8433,7 @@ function startSNAI(tabIdentity) {
   }
   async function storedDailyDiagnostics(day){const db=await diagnosticDatabase();return new Promise((resolve,reject)=>{const request=db.transaction('events').objectStore('events').index('day').getAll(day);request.onsuccess=()=>resolve(deduplicateWorkerDiagnostics(request.result.map(row=>row.entry)));request.onerror=()=>reject(request.error);});}
   async function prunePreviousDiagnosticDays(day){const db=await diagnosticDatabase();return new Promise((resolve,reject)=>{const tx=db.transaction('events','readwrite');const request=tx.objectStore('events').index('day').openCursor(IDBKeyRange.upperBound(day,true));request.onsuccess=()=>{const cursor=request.result;if(cursor){cursor.delete();cursor.continue();}};tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});}
-  function updateDiagnosticCount(){const log=state.diagnostics;if(!log)return;const button=document.querySelector('#local-sn-ai-settings-template [data-download-diagnostics]');if(button)button.textContent='Download logs ['+log.chats.size+' chats]';}
+  function updateDiagnosticCount(){const log=state.diagnostics;if(!log)return;const button=document.querySelector('#local-sn-ai-settings-template [data-download-diagnostics]');if(button)button.textContent='Download logs ['+log.chats.size+' incoming chats]';}
   async function clearDailyDiagnostics(){
     const log=diagnosticStore();if(log.clearing)return;
     log.clearing=true;state.diagnosticClearedAt=Date.now();
@@ -17352,8 +17357,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         #${ROOT_ID} .local-sn-cpc-title-block { min-width: 0; flex: 1 1 auto; }
         #${ROOT_ID} .local-sn-cpc-drag h2 { margin: 0; font-size: 15px; }
         #${ROOT_ID} .local-sn-cpc-user { margin-top: 2px; color: var(--sn-theme-a8b8d1,#789b95); font-size: 11px; font-weight: 500; }
-        #${ROOT_ID} .local-sn-cpc-progress { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; margin: 4px 0 0; color: #ffe2a6; font-size: 12px; font-weight: 650; line-height: 1.35; contain: layout paint style; }
-        #${ROOT_ID} .local-sn-progress-stage { display: inline-flex; align-items: center; gap: 5px; width: auto; min-height: 18px; color: #ffe2a6; }
+        #${ROOT_ID} .local-sn-cpc-progress { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; margin: 4px 0 0; color:var(--sn-theme-e6edf9,#eee); font-size: 12px; font-weight: 650; line-height: 1.35; contain: layout paint style; }
+        #${ROOT_ID} .local-sn-progress-stage { display: inline-flex; align-items: center; gap: 5px; width: auto; min-height: 18px; color:var(--sn-theme-e6edf9,#eee); }
         #${ROOT_ID} .local-sn-progress-stage.is-complete { color: #69db91; }
         #${ROOT_ID} .local-sn-progress-stage svg { width: 15px; height: 15px; flex: 0 0 15px; }
         #${ROOT_ID} .local-sn-progress-spinner { display: grid; place-items: center; width: 15px; height: 15px; flex: 0 0 15px; contain: paint; isolation: isolate; transform: translate3d(0, 0, 0); backface-visibility: hidden; will-change: transform; }
@@ -23095,7 +23100,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const logControls = document.createElement('div');logControls.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap';
     const playPause = document.createElement('button');playPause.type = 'button';
     function renderLogStatus(status) {
-      logStatus.textContent = `${status.running ? 'Collecting logs...' : 'Logs paused.'} ${status.count} distinct incoming chats recorded`;
+      logStatus.textContent = `${status.running ? 'Collecting logs...' : 'Logs paused.'} ${status.count} incoming chat data collected`;
       playPause.setAttribute('aria-label',status.running ? 'Pause incoming chat logging' : 'Start incoming chat logging');
       playPause.title = playPause.getAttribute('aria-label');
       // Lucide play/pause, ISC license: https://lucide.dev/icons/play
@@ -23199,6 +23204,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         if (!/^(accept|accept chat|accept work item)$/.test(name)) continue;
         if (inboxPolicy.seen.has(button)) continue;
         inboxPolicy.seen.add(button);
+        const incomingText=snIncomingOfferText(button),incomingIMS=incomingText.match(/\bIMS\d+\b/)?.[0]||'';
+        if(incomingIMS)document.dispatchEvent(new CustomEvent('sn-ai-greet-diagnostic',{detail:{stage:'incoming-offer-content',ims:incomingIMS,message:incomingText,reason:'offer-detected'}}));
         // Track the actual native Accept action, for manual and automatic
         // acceptance alike. Tab titles and notice rendering are not identity.
         button.addEventListener('click',()=>{
