@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.734
+// @version      2.36.735
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.735","fixes":true,"changes":[{"key":"auto-greet-diagnostics","meaningful":true,"text":"Record bounded message evidence for every greeting shortcut decision, including selected text, metadata and excluded recent elements."}]},
 {"version":"2.36.734","fixes":true,"changes":[{"key":"auto-greet","meaningful":true,"text":"Exclude typing indicators, empty messages and AI summary cards when choosing the incoming-chat greeting."}]},
 {"version":"2.36.733","fixes":true,"changes":[{"key":"ai-ticket-relevance","meaningful":true,"text":"Across AI modes, omit VITA logging advice unless VITA is the main issue and exclude discussions about who should log the ticket."}]},
 {"version":"2.36.732","fixes":true,"changes":[{"key":"runtime-memory","meaningful":true,"text":"Reuse cached stylesheet resources in their original cascade positions with inline fallback until successful loading."}]},
@@ -612,7 +613,17 @@ function snGreetingMessageInfo(message) {
   const system=Boolean(props.isSystem||native.is_system||control||/typing|summary|system/i.test(type));
   return {right:props.orientation==='right'||Boolean(message.shadowRoot?.querySelector('.now-chat-message.right:not(.system)')),system,text,
     meaningful:!system&&!!text&&!/^(?:\.{3}|…|(?:\S+\s+)?is typing(?:\.{3}|…)?|typing(?:\.{3}|…)?)$/i.test(text),
+    orientation:String(props.orientation||''),type:String(native.messageType||type).slice(0,80),
+    messageId:String(native.messageId||native.sys_id||'').slice(0,100),timestamp:String(native.timestamp||'').slice(0,60),
+    excludedReason:system?(control?'summary-or-typing-control':'system-or-control-message'):!text?'empty-message':/^(?:\.{3}|…|(?:\S+\s+)?is typing(?:\.{3}|…)?|typing(?:\.{3}|…)?)$/i.test(text)?'typing-text':'',
     status:native.delivery_status,key:native.messageId||native.sys_id||message};
+}
+function snGreetingDecisionEvidence(messages) {
+  const infos=messages.map(snGreetingMessageInfo),selectedIndex=infos.findLastIndex(info=>info.meaningful);
+  const snapshot=(info,index,limit)=>({index,messageId:info.messageId,timestamp:info.timestamp,type:info.type,orientation:info.orientation,right:info.right,system:info.system,meaningful:info.meaningful,excludedReason:info.excludedReason,text:info.text.slice(0,limit),textLength:info.text.length,truncated:info.text.length>limit});
+  const selected=selectedIndex>=0?infos[selectedIndex]:null;
+  return {code:selected&&!selected.right?'q':'w',reason:!selected?'no-meaningful-message':selected.right?'last-meaningful-message-is-agent':'last-meaningful-message-is-customer',messageCount:infos.length,excludedCount:infos.filter(info=>!info.meaningful).length,
+    selected:selected?snapshot(selected,selectedIndex,1800):null,recent:infos.slice(-6).map((info,index)=>snapshot(info,Math.max(0,infos.length-6)+index,400))};
 }
 function snWorkspaceTabBars(){
   const bars=[];const walk=root=>{for(const el of root.querySelectorAll('*')){if(el.localName==='sn-workspace-tab-bar'){const props=el.getProperties?.();if(Array.isArray(props?.tabList))bars.push({el,props});}if(el.shadowRoot)walk(el.shadowRoot);}};walk(document);return bars;
@@ -1115,9 +1126,9 @@ const snAIChatDisplayNames=(()=>{
       const observeComposerEdit=event=>{if(event.isTrusted){composerEditedByUser=true;rememberGreetingAttempt(id);greetTrace('manual-composer-edit',{ims:record.number.value,composerSnapshot:composerSnapshot()});}};
       host.addEventListener('input',observeComposerEdit,true);
       try {
-        const lastMessage=agentMessages.filter(message=>messageInfo(message).meaningful).at(-1);
-        const userLast=Boolean(lastMessage&&!messageInfo(lastMessage).right);
-        const query=userLast?'q':'w';
+        const decision=snGreetingDecisionEvidence(agentMessages);
+        const query=decision.code;
+        greetTrace('greeting-decision',{ims:record.number.value,code:query,reason:decision.reason,decisionEvidence:decision});
         greetTrace('shortcut-requested',{ims:record.number.value,code:query,source:'native-read-only-quick-reply-lookup',menuOpened:false});
         const controller=new AbortController(),lookupTimer=setTimeout(()=>controller.abort(),8000);
         let snippet;
@@ -8704,6 +8715,9 @@ function startSNAI(tabIdentity) {
     if(action==='auto-greet'&&/^(incoming-offer-content|offer-accepted)$/.test(details.stage||'')&&/^IMS\d+$/.test(details.ims||'')){log.chats.add(details.ims);updateDiagnosticCount();}
     if(action.startsWith('extension-')&&now<new Date().setHours(0,0,0,0))return;
     for(const [key,value]of Object.entries(details||{})){
+      if(key==='decisionEvidence'&&action==='auto-greet'&&details.stage==='greeting-decision'){
+        try{const encoded=JSON.stringify(value);safe[key]=encoded.length<=12000?JSON.parse(encoded):{omitted:true,reason:'decision-evidence-size-limit'};}catch{safe[key]={omitted:true,reason:'decision-evidence-unserializable'};}continue;
+      }
       if(action==='memory-sample'&&key==='metrics'){
         safe.metrics=Object.fromEntries(Object.entries(value||{}).filter(([,item])=>item===null||typeof item==='boolean'||(typeof item==='number'&&Number.isFinite(item))));continue;
       }
