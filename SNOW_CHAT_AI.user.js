@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.733
+// @version      2.36.734
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.734","fixes":true,"changes":[{"key":"auto-greet","meaningful":true,"text":"Exclude typing indicators, empty messages and AI summary cards when choosing the incoming-chat greeting."}]},
 {"version":"2.36.733","fixes":true,"changes":[{"key":"ai-ticket-relevance","meaningful":true,"text":"Across AI modes, omit VITA logging advice unless VITA is the main issue and exclude discussions about who should log the ticket."}]},
 {"version":"2.36.732","fixes":true,"changes":[{"key":"runtime-memory","meaningful":true,"text":"Reuse cached stylesheet resources in their original cascade positions with inline fallback until successful loading."}]},
 {"version":"2.36.731","fixes":true,"changes":[{"key":"memory-diagnostics","meaningful":true,"text":"Record lightweight minute memory samples and sampled peaks, with heap availability, stylesheet text totals, DOM counts and script cache counts in diagnostic reports."}]},
@@ -599,6 +600,20 @@ async function snMeasureMemoryFootprint(doc = document) {
   result.durationMs=Math.round(performance.now()-started);
   return result;
 }
+function snGreetingMessageInfo(message) {
+  const props=message.getProperties?.()||{},native=props.message?.data?.props?.message||{};
+  const excluded='sn-chat-control-chat-summary-card,.chat-summary-content,.chat-summary-footer,[data-typing],.typing-indicator,.now-chat-message-typing,[role="status"]';
+  let control=false;
+  const visit=root=>{if(!root||control)return;for(const node of root.querySelectorAll('*')){if(node.matches?.(excluded)||/typing|summary/i.test(node.localName||'')){control=true;break;}if(node.shadowRoot)visit(node.shadowRoot);}};
+  visit(message.shadowRoot);
+  const bubble=message.shadowRoot?.querySelector('.now-chat-message:not(.system)');
+  const text=String(native.formatted_message??native.text??bubble?.textContent??'').trim();
+  const type=String(native.type||native.message_type||props.message?.type||'');
+  const system=Boolean(props.isSystem||native.is_system||control||/typing|summary|system/i.test(type));
+  return {right:props.orientation==='right'||Boolean(message.shadowRoot?.querySelector('.now-chat-message.right:not(.system)')),system,text,
+    meaningful:!system&&!!text&&!/^(?:\.{3}|…|(?:\S+\s+)?is typing(?:\.{3}|…)?|typing(?:\.{3}|…)?)$/i.test(text),
+    status:native.delivery_status,key:native.messageId||native.sys_id||message};
+}
 function snWorkspaceTabBars(){
   const bars=[];const walk=root=>{for(const el of root.querySelectorAll('*')){if(el.localName==='sn-workspace-tab-bar'){const props=el.getProperties?.();if(Array.isArray(props?.tabList))bars.push({el,props});}if(el.shadowRoot)walk(el.shadowRoot);}};walk(document);return bars;
 }
@@ -1087,12 +1102,7 @@ const snAIChatDisplayNames=(()=>{
         const visit=root=>{if(!root)return;for(const node of root.querySelectorAll('*')){if(node.localName==='now-chat-message')result.push(node);if(node.shadowRoot)visit(node.shadowRoot);}};
         visit(chat?.shadowRoot);return result;
       };
-      const messageInfo=message=>{
-        const props=message.getProperties?.(),native=props?.message?.data?.props?.message;
-        return {right:props?.orientation==='right'||Boolean(message.shadowRoot?.querySelector('.now-chat-message.right:not(.system)')),
-          system:Boolean(props?.isSystem||native?.is_system),text:native?.formatted_message??message.shadowRoot?.querySelector('.now-chat-message.right:not(.system)')?.textContent,
-          status:native?.delivery_status,key:native?.messageId||native?.sys_id||message};
-      };
+      const messageInfo=snGreetingMessageInfo;
       const agentMessages=chatMessages();
       const logOutgoingEvidence=messages=>{
         const outgoing=messages.map(messageInfo).filter(info=>info.right&&!info.system);
@@ -1105,7 +1115,7 @@ const snAIChatDisplayNames=(()=>{
       const observeComposerEdit=event=>{if(event.isTrusted){composerEditedByUser=true;rememberGreetingAttempt(id);greetTrace('manual-composer-edit',{ims:record.number.value,composerSnapshot:composerSnapshot()});}};
       host.addEventListener('input',observeComposerEdit,true);
       try {
-        const lastMessage=agentMessages.filter(message=>!messageInfo(message).system).at(-1);
+        const lastMessage=agentMessages.filter(message=>messageInfo(message).meaningful).at(-1);
         const userLast=Boolean(lastMessage&&!messageInfo(lastMessage).right);
         const query=userLast?'q':'w';
         greetTrace('shortcut-requested',{ims:record.number.value,code:query,source:'native-read-only-quick-reply-lookup',menuOpened:false});
