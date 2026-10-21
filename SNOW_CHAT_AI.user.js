@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.735
+// @version      2.36.736
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.736","fixes":true,"changes":[{"key":"chat-api-control-filter","meaningful":true,"text":"Keep API chat collection when authorless generated closing messages are returned as non-system OutputText controls."}]},
 {"version":"2.36.735","fixes":true,"changes":[{"key":"auto-greet-diagnostics","meaningful":true,"text":"Record bounded message evidence for every greeting shortcut decision, including selected text, metadata and excluded recent elements."}]},
 {"version":"2.36.734","fixes":true,"changes":[{"key":"auto-greet","meaningful":true,"text":"Exclude typing indicators, empty messages and AI summary cards when choosing the incoming-chat greeting."}]},
 {"version":"2.36.733","fixes":true,"changes":[{"key":"ai-ticket-relevance","meaningful":true,"text":"Across AI modes, omit VITA logging advice unless VITA is the main issue and exclude discussions about who should log the ticket."}]},
@@ -17047,6 +17048,9 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       // Contextual actions carry buttons/menu metadata, not a participant's
       // utterance. SNOW legitimately leaves both author fields null here.
       if(payload?.uiType==='ContextualAction')continue;
+      // Native VA output controls can falsely advertise system:false and
+      // isBotMessage:false. Their model still identifies generated output.
+      if(!normalise(row.createdBy||row.senderName)&&payload?.uiType==='OutputText'&&payload?.model?.type==='outputMsg')continue;
       // Unknown presentation formats are data, not an API failure. System,
       // internal and pre-agent messages were filtered above as before.
       let text = nativeAPIMessageText(row,payload);
