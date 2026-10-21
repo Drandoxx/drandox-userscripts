@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.736
+// @version      2.36.737
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.737","fixes":true,"changes":[{"key":"auto-greet","meaningful":true,"text":"Recognize common short greetings, use W for clearly greeting-only messages, Q for issue-focused messages and skip uncertain mixtures with logged ratios."}]},
 {"version":"2.36.736","fixes":true,"changes":[{"key":"chat-api-control-filter","meaningful":true,"text":"Keep API chat collection when authorless generated closing messages are returned as non-system OutputText controls."}]},
 {"version":"2.36.735","fixes":true,"changes":[{"key":"auto-greet-diagnostics","meaningful":true,"text":"Record bounded message evidence for every greeting shortcut decision, including selected text, metadata and excluded recent elements."}]},
 {"version":"2.36.734","fixes":true,"changes":[{"key":"auto-greet","meaningful":true,"text":"Exclude typing indicators, empty messages and AI summary cards when choosing the incoming-chat greeting."}]},
@@ -619,11 +620,27 @@ function snGreetingMessageInfo(message) {
     excludedReason:system?(control?'summary-or-typing-control':'system-or-control-message'):!text?'empty-message':/^(?:\.{3}|…|(?:\S+\s+)?is typing(?:\.{3}|…)?|typing(?:\.{3}|…)?)$/i.test(text)?'typing-text':'',
     status:native.delivery_status,key:native.messageId||native.sys_id||message};
 }
+function snClassifyCustomerGreeting(value) {
+  const text=String(value||'').trim(),maxGreetingLength="Good afternoon, I hope you're doing well".length+10;
+  const normal=text.normalize('NFKC').replace(/[’‘]/g,"'").toLowerCase();
+  // Match whole phrases/words, never substrings such as hi inside shipping.
+  const phrases=/\b(?:good\s+(?:morning|afternoon|evening|day)|(?:very\s+)?(?:happy|lovely)\s+(?:morning|afternoon|evening)|morning|afternoon|evening|hello(?:\s+there)?|hiya|heya|howdy|greetings|hey(?:\s+there)?|hi(?:\s+there)?|dear\s+(?:team|support|all)|hope\s+(?:you(?:'re|\s+are)?|all\s+is)\s+(?:doing\s+)?(?:well|good|ok(?:ay)?)|i\s+hope\s+you(?:'re|\s+are)\s+doing\s+well|how\s+are\s+you(?:\s+doing)?|how(?:'s|\s+is)\s+it\s+going)\b/gi;
+  const matches=[...normal.matchAll(phrases)];
+  const meaningful=normal.replace(/[^\p{L}\p{N}]/gu,'');
+  const remainder=normal.replace(phrases,' ').replace(/\bi\b(?=\s*[,!.?]*\s*$)/g,'').replace(/[^\p{L}\p{N}]/gu,'');
+  const ratio=meaningful.length?(meaningful.length-remainder.length)/meaningful.length:0;
+  const issue=/\b(?:issue|problem|error|fault|broken|stuck|unable|cannot|can't|cant|not\s+(?:working|printing|loading)|help|order|printer|password|access|login|log\s*in|cancel|refund|sap|vpn)\b/i.test(normal);
+  let code=null,reason='uncertain-customer-message';
+  if(matches.length&&text.length<maxGreetingLength&&ratio>0.7&&!issue&&remainder.length===0){code='w';reason='short-greeting-only';}
+  else if((1-ratio)>0.5&&(issue||remainder.length>=12)){code='q';reason='predominantly-non-greeting';}
+  return {code,reason,greetingRatio:Math.round(ratio*1000)/1000,nonGreetingRatio:Math.round((1-ratio)*1000)/1000,messageLength:text.length,maxGreetingLength,issueMarker:issue,matchedGreetings:matches.slice(0,8).map(match=>match[0]),unmatchedChars:remainder.length};
+}
 function snGreetingDecisionEvidence(messages) {
   const infos=messages.map(snGreetingMessageInfo),selectedIndex=infos.findLastIndex(info=>info.meaningful);
   const snapshot=(info,index,limit)=>({index,messageId:info.messageId,timestamp:info.timestamp,type:info.type,orientation:info.orientation,right:info.right,system:info.system,meaningful:info.meaningful,excludedReason:info.excludedReason,text:info.text.slice(0,limit),textLength:info.text.length,truncated:info.text.length>limit});
   const selected=selectedIndex>=0?infos[selectedIndex]:null;
-  return {code:selected&&!selected.right?'q':'w',reason:!selected?'no-meaningful-message':selected.right?'last-meaningful-message-is-agent':'last-meaningful-message-is-customer',messageCount:infos.length,excludedCount:infos.filter(info=>!info.meaningful).length,
+  const classification=selected&&!selected.right?snClassifyCustomerGreeting(selected.text):null;
+  return {code:classification?classification.code:'w',reason:classification?classification.reason:!selected?'no-meaningful-message':'last-meaningful-message-is-agent',classification,messageCount:infos.length,excludedCount:infos.filter(info=>!info.meaningful).length,
     selected:selected?snapshot(selected,selectedIndex,1800):null,recent:infos.slice(-6).map((info,index)=>snapshot(info,Math.max(0,infos.length-6)+index,400))};
 }
 function snWorkspaceTabBars(){
@@ -1130,6 +1147,7 @@ const snAIChatDisplayNames=(()=>{
         const decision=snGreetingDecisionEvidence(agentMessages);
         const query=decision.code;
         greetTrace('greeting-decision',{ims:record.number.value,code:query,reason:decision.reason,decisionEvidence:decision});
+        if(!query){rememberGreetingAttempt(id);outcome('skipped','uncertain-greeting-or-issue');return;}
         greetTrace('shortcut-requested',{ims:record.number.value,code:query,source:'native-read-only-quick-reply-lookup',menuOpened:false});
         const controller=new AbortController(),lookupTimer=setTimeout(()=>controller.abort(),8000);
         let snippet;
