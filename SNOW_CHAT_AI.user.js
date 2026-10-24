@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.738
+// @version      2.36.739
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.739","fixes":true,"changes":[{"key":"hp-printer-site","meaningful":true,"text":"Replace missing HP printer site locations with Next to tills for Invoice or Next to Manager's PC for Picking, preserving specific AI locations in both description and form fields."}]},
 {"version":"2.36.738","fixes":true,"changes":[{"key":"nova-tic-tac-toe","meaningful":true,"text":"Keep the game board above page backgrounds while Nova draws instead of moving it to a negative stacking layer."}]},
 {"version":"2.36.737","fixes":true,"changes":[{"key":"auto-greet","meaningful":true,"text":"Recognize common short greetings, use W for clearly greeting-only messages, Q for issue-focused messages and skip uncertain mixtures with logged ratios."}]},
 {"version":"2.36.736","fixes":true,"changes":[{"key":"chat-api-control-filter","meaningful":true,"text":"Keep API chat collection when authorless generated closing messages are returned as non-system OutputText controls."}]},
@@ -9974,6 +9975,20 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   }
 
   const HP_OPERATOR_PRIORITY_KEYS = new Set(['serial-number', 'email', 'model-number']);
+  function applyHPPrinterSiteFallback(values, genericSchema = null) {
+    if (!values || typeof values !== 'object') return values;
+    const printer = String(values['printer-name'] ?? '').trim();
+    const fallback = /\binvoice\b/i.test(printer) ? 'Next to tills'
+      : /\bpicking\b/i.test(printer) ? "Next to Manager's PC" : '';
+    if (!fallback) return values;
+    const missing = value => /^(?:not\s+provided|not\s+specified|unknown|n\/?a|none|null|undefined|[-–—])?[.!]?$/i.test(String(value ?? '').trim());
+    const siteFields = fieldsUnderDescriptionSpecification(genericSchema)
+      .filter(field => /printer\s+location(?:\s+at\s+site)?|location\s+of\s+(?:the\s+)?device\s+on\s+site/i.test(field.label));
+    const keys = [...new Set(['device-location', 'location', ...siteFields.map(field => field.key),
+      ...Object.keys(values).filter(key => /^extrafield-(?:printer-location(?:-at-site)?|location-of-(?:the-)?device-on-site)$/i.test(key))])];
+    for (const key of keys) if (missing(values[key])) values[key] = fallback;
+    return values;
+  }
   function applySFDPrinterName(fields, locationName) {
     if (!/^SFD/i.test(String(locationName || '').trim())) return '';
     const ip = String(fields.find(field => field.dataset.hpField === 'ip-address')?.value || '').trim();
@@ -10048,6 +10063,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     if (contactNumber) for (const key of Object.keys(values)) {
       if (/^extrafield-(?:contact-(?:number|no|phone)|phone-(?:number|contact)|telephone(?:-number)?|mobile(?:-number)?)$/i.test(canonicalDescriptionValueKey(key))) values[key] = contactNumber;
     }
+    applyHPPrinterSiteFallback(values, genericSchema);
     return command;
   }
 
@@ -10190,6 +10206,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     if (!merged['printer-online'] || /^(?:not provided|unknown|n\/a)$/i.test(merged['printer-online'])) merged['printer-online'] = 'Yes';
     if (!merged['printer-powered-on'] || /^(?:not provided|unknown|n\/a)$/i.test(merged['printer-powered-on'])) merged['printer-powered-on'] = 'Yes';
     if (!merged['short-description']) throwAIValidation('The AI did not provide an HP short description.', raw);
+    applyHPPrinterSiteFallback(merged, genericSchema);
     return { HP: { IMS: ims, 'Issue Type': issueType, Values: merged } };
   }
 
@@ -10278,6 +10295,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   }
 
   function buildHPDescription(issueType, values) {
+    applyHPPrinterSiteFallback(values);
     const address = hpValue(normaliseHPAddress(values['store-address']));
     const email = hpValue(values.email);
     const commonTop = [
@@ -15922,6 +15940,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       const genericSchema=await waitForGenericDescriptionSchema(7000,350);
       if(!genericSchema)automationFailure('HP_DESCRIPTION_SCHEMA_MISSING','Description fields could not be discovered.');
       const hpExtras=fieldsUnderDescriptionSpecification(genericSchema);
+      applyHPPrinterSiteFallback(data.values, genericSchema);
       const unmappedExtras=Object.keys(data.values).filter(key=>key.startsWith('extrafield-') && !hpExtras.some(field=>field.key===key));
       if(unmappedExtras.length)automationFailure('HP_EXTRA_FIELDS_NOT_DISCOVERED','HP template controls were not fully discovered.',{keys:unmappedExtras});
       for(const field of hpExtras)if(Object.prototype.hasOwnProperty.call(data.values,field.key))data.fieldsUnderDescription[field.label]=String(data.values[field.key]??'').trim();
@@ -19255,6 +19274,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             aiRequest = null;
             if (stopped) return;
             const hpValues = (hpResult?.HP || hpResult)?.Values || {};
+            applyHPPrinterSiteFallback(hpValues, hpGenericSchema);
             setProgress(80);
             setField('incident.short_description', hpValues['short-description']);
             setField('incident.description', buildHPDescription(hpIssueType, hpValues));
