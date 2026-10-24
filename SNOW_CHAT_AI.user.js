@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.755
+// @version      2.36.756
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.756","fixes":true,"changes":[{"key":"button-shape-consistency","meaningful":true,"text":"Match normal text buttons to gradient buttons in size, typography, padding and corner radius while retaining their existing colors."}]},
 {"version":"2.36.755","fixes":true,"changes":[{"key":"button-edge-rendering","meaningful":false,"text":"Remove the fractional transparent modal-primary border and opacity workaround; paint the gradient to the outer edge."}]},
 {"version":"2.36.754","fixes":true,"changes":[{"key":"stable-record-actions","meaningful":true,"text":"Give unsaved New Event actions the space remaining after the title and hide Create Incident on interaction Details."}]},
 {"version":"2.36.753","fixes":true,"changes":[{"key":"button-edge-rendering","meaningful":true,"text":"Remove native border, shadow and pseudo-element edge overlays from gradient primary buttons while keeping their fill and keyboard focus indicator."}]},
@@ -4012,7 +4013,20 @@ const snAIChatDisplayNames=(()=>{
       padding: 0 !important;
     }
     button.now-button:not(.only-icon):not(.is-bare) {
-      border-radius: 4px !important;
+      border-radius:6px!important;
+      min-height:34px!important;height:auto!important;box-sizing:border-box!important;
+      padding:6px 16px!important;
+      font:600 16px/20px "Source Sans Pro",Arial,sans-serif!important;
+      letter-spacing:normal!important;text-transform:none!important;
+    }
+    /* Preserve an outline without making normal buttons larger than the
+       borderless gradient variant. Border is painted inside the same box. */
+    button.now-button:not(.only-icon):not(.is-bare):not([aria-haspopup="menu"]) {
+      border-width:0!important;
+      box-shadow:inset 0 0 0 1px var(--sn-theme-806493)!important;
+    }
+    button.now-button:not(.only-icon):not(.is-bare) .now-line-height-crop {
+      font:inherit!important;line-height:20px!important;
     }
     button.now-button.now-button[aria-label="Create a new Event"],
     button.now-button.now-button[aria-label="Send incident details to chat"],
