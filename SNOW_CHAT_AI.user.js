@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.740
+// @version      2.36.741
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.741","fixes":true,"changes":[{"key":"ai-modify-result","meaningful":true,"text":"Apply AI revisions as changed-field-only updates against the last successful run, skipping unchanged controls and full template/routing checks on the same draft."}]},
 {"version":"2.36.740","fixes":true,"changes":[{"key":"ticket-command-recovery","meaningful":true,"text":"Explicit ticket commands can replace a confirmed closed owned Event using native IMS navigation; pause and Continue still never create duplicate drafts."},{"key":"ai-modify-result","meaningful":true,"text":"Keep successful AI results open with Ask AI to Modify, an instruction box and Done, independently of feedback settings."}]},
 {"version":"2.36.739","fixes":true,"changes":[{"key":"hp-printer-site","meaningful":true,"text":"Replace missing HP printer site locations with Next to tills for Invoice or Next to Manager's PC for Picking, preserving specific AI locations in both description and form fields."}]},
 {"version":"2.36.738","fixes":true,"changes":[{"key":"nova-tic-tac-toe","meaningful":true,"text":"Keep the game board above page backgrounds while Nova draws instead of moving it to a negative stacking layer."}]},
@@ -13606,6 +13607,99 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     return { cacheUsed: Boolean(cached), chatRequired: requireChat, reusedOpenNewEvent, currentEvent };
   }
 
+  // SN_AI_REVISION_DELTA_BEGIN
+  function ticketRevisionPlan(profile, data, schema = [], location = '') {
+    const plan=[];
+    const text=(field,value,maxLength)=>plan.push({kind:'text',field,value:String(value??''),maxLength});
+    const extra=(label,value)=>{
+      const metadata=schema.find(field=>comparableLabel(field.label)===comparableLabel(label))||{label};
+      plan.push({kind:'extra',field:label,value:String(value??'').trim(),metadata});
+    };
+    if(profile==='FTF'){
+      text('Short Description',data.shortDescription,80);
+      text('Description',`DEVICE DETAILS(IP/SN/PTID/Host name): ${data.deviceDetails}\nWHAT WAS THE ISSUE REPORTED: ${data.issue}\nSOLUTION PROVIDED: ${data.solution}`);
+    }else if(profile==='ILS_PRNT'){
+      text('Short Description',data.printer?`ILS - Printer redirection to ${data.printer}`:'ILS - Printer redirection',80);
+      text('Description',`REASON FOR REDIRECTION: ${data.reason}\nWHAT PRINTER ARE YOU DIRECTING PRINTS TO: ${data.printer}\nTICKET NUMBER FOR FAULTY PRINTER: Not provided`);
+    }else if(profile==='CPC'){
+      const on=data.action==='ENABLE';
+      plan.push({kind:'lookup',field:'Location',value:data.locationSearch});
+      text('Short Description',`CPC TCND turn ${on?'ON':'OFF'} for ${location||data.locationSearch}`,80);
+      text('Description',`REASON FOR REQUEST TO DISABLE/ENABLE: ${on?`ENABLE - ${data.reason||'store is open now'}`:`DISABLE - ${data.reason}`}\nDOES TC ALSO NEED TCND TO TURN ON\\OFF?: yes\nINFORMATION PROVIDED: this ticket`);
+    }else if(profile==='HP'){
+      const values=data.values;
+      const hpSchema={fieldsUnderDescription:schema};
+      applyHPPrinterSiteFallback(values,hpSchema);
+      text('Short Description',data.shortDescription,80);
+      text('Description',buildHPDescription(data.issueType,values));
+      plan.push({kind:'select',field:'Priority',value:values['no-other-working-printer']===true?'3 - Moderate':'4 - Low'});
+      const phone=String(values['contact-name-phone']||'').match(/(?:\+44\s?|0)\d(?:[\s()-]?\d){8,12}/)?.[0]?.trim();
+      if(phone)text('Contact Number',phone,40);
+      plan.push({kind:'ci',field:'Configuration Item',value:String(values['model-number']||values['printer-model']||'')});
+      const extras={...data.fieldsUnderDescription};
+      for(const field of fieldsUnderDescriptionSpecification(hpSchema))if(Object.prototype.hasOwnProperty.call(values,field.key))extras[field.label]=values[field.key];
+      const skipped=new Set((data.skipDescriptionFields||[]).map(comparableLabel));
+      for(const [label,value] of Object.entries(extras)){
+        const metadata=schema.find(field=>comparableLabel(field.label)===comparableLabel(label));
+        if(!skipped.has(comparableLabel(label))&&!skipped.has(comparableLabel(metadata?.name||'')))extra(label,value);
+      }
+    }else if(profile==='TEXT'){
+      text('Short Description',data.shortDescription,80);text('Description',data.description);
+      const phone=[data.description,...Object.entries(data.fieldsUnderDescription||{}).filter(([label])=>/contact.*(?:number|phone)|phone.*contact/i.test(label)).map(([,value])=>value)]
+        .map(value=>String(value||'').match(/(?:\+44\s?|0)\d(?:[\s()-]?\d){8,12}/)?.[0]||'').find(Boolean)?.replace(/[\s()-]+/g,'');
+      if(phone)text('Contact Number',phone,40);
+      if(!data.skipOptionalFields)for(const [label,value] of Object.entries(data.fieldsUnderDescription||{}))extra(label,value);
+    }
+    return plan;
+  }
+  function ticketRevisionChanges(previous,next){
+    const old=new Map(previous.map(item=>[`${item.kind}:${comparableLabel(item.field)}`,item.value]));
+    return next.filter(item=>old.get(`${item.kind}:${comparableLabel(item.field)}`)!==item.value);
+  }
+  function ticketRevisionIdentity(token){return token?JSON.stringify([token.ims,token.parentId,token.interactionId,token.tabId,token.contentId]):'';}
+  function ticketRevisionBaseline(dialog,profile){
+    const baseline=dialog?.snAiLastSuccessfulRun;
+    return dialog?.snAiModifyPending&&baseline?.profile===profile&&baseline.identity===ticketRevisionIdentity(dialog.snAiOwnedEvent)?baseline:null;
+  }
+  function rememberSuccessfulTicketRun(dialog,profile,data,result){
+    if(!dialog||result?.ok!==true)return;
+    const schema=state.autoSession?.revisionSchema||[];
+    const normalized=validateAndNormaliseWizardData(profile,data);
+    const location=profile==='CPC'?String(result.shortDescription||'').replace(/^CPC TCND turn (?:ON|OFF) for /,''):'';
+    const sourceSchema=state.autoSession?.genericSchema||state.wizard?.genericSchema;
+    const genericSchema={descriptionTemplate:String(sourceSchema?.descriptionTemplate||''),fieldsUnderDescription:schema};
+    const summary=Object.fromEntries(['kind','ok','profile','ims','saved','durationMs','shortDescription','description','warnings','reviewBeforeSave','printer','printerModel','priority','configurationItem'].filter(key=>Object.prototype.hasOwnProperty.call(result,key)).map(key=>[key,result[key]]));
+    dialog.snAiLastSuccessfulRun=JSON.parse(JSON.stringify({profile,data:normalized,result:summary,schema,genericSchema,location,identity:ticketRevisionIdentity(ownedTicketDraft(dialog.dataset.pinnedIms))}));
+  }
+  async function applyTicketRevision(dialog,baseline,data,ims){
+    const started=performance.now(),profile=baseline.profile;
+    const previous=ticketRevisionPlan(profile,baseline.data,baseline.schema,baseline.location);
+    let location=baseline.location;
+    let plan=ticketRevisionPlan(profile,data,baseline.schema,location);
+    const locationChange=ticketRevisionChanges(previous,plan).find(item=>item.field==='Location');
+    // Invalidate before writing so a partial/failed revision cannot masquerade
+    // as a successful baseline on retry. Changed helpers verify only their own fields.
+    delete dialog.snAiLastSuccessfulRun;
+    if(locationChange){location=await autoLookup('Location',locationChange.value,{match:'prefix',first:true,preferExpandedValue:true,code:'REVISION_LOCATION_COMMIT_FAILED'});plan=ticketRevisionPlan(profile,data,baseline.schema,location);}
+    const changed=ticketRevisionChanges(previous,plan);
+    for(const item of changed){
+      assertAutomationNotStopped();await waitForAutomationResume();
+      if(item.field==='Location')continue;
+      if(item.kind==='text')await autoText(item.field,item.value,'REVISION_TEXT_COMMIT_FAILED',item.maxLength);
+      else if(item.kind==='select')await autoSelect(item.field,item.value,'REVISION_SELECT_COMMIT_FAILED');
+      else if(item.kind==='ci')await startHPPrinterCISearch(item.value);
+      else if(item.kind==='extra')await fillMappedFieldsUnderDescription({fieldsUnderDescription:[item.metadata]},{[item.field]:item.value},'REVISION');
+    }
+    const result={...baseline.result,kind:'auto-complete',ok:true,ims,saved:false,revision:true,changedFields:changed.map(item=>item.field),durationMs:Math.round(performance.now()-started)};
+    for(const item of plan){if(item.field==='Short Description')result.shortDescription=item.value;if(item.field==='Description')result.description=item.value;if(item.field==='Priority')result.priority=item.value;}
+    if(profile==='ILS_PRNT'){result.printer=data.printer;result.reviewBeforeSave=data.printer?[]:['Printer destination'];}
+    if(profile==='HP'&&changed.some(item=>item.kind==='ci')){result.printerModel=data.values['model-number'];result.configurationItem=String(readableControlValue('Configuration Item')||'').trim();result.reviewBeforeSave=result.configurationItem?[]:['Configuration Item'];}
+    dialog.snAiLastSuccessfulRun=JSON.parse(JSON.stringify({...baseline,data,result,location}));
+    dialog.snAiModifyPending=false;state.commandResult=result;
+    addLog('info','ticket-revision-complete',{ims,profile,changedFields:result.changedFields,unchangedFields:plan.length-changed.length,durationMs:result.durationMs});
+    return result;
+  }
+  // SN_AI_REVISION_DELTA_END
   async function runIMSProfileData(profile, rawData) {
     const requestedIMS = profileDataIMS(rawData);
     if (!requestedIMS) {
@@ -13617,6 +13711,11 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     }
     const data = withoutIMS(rawData);
     const owned=ownedTicketDraft(requestedIMS);if(owned&&!ticketDraftSelected(owned))await restoreTicketDraft(owned,{allowReplacement:true});
+    const revisionDialog=runningTicketDialog(requestedIMS),baseline=revisionDialog?.snAiLastSuccessfulRun;
+    if(revisionDialog?.snAiModifyPending&&baseline?.profile===profile&&baseline.identity===ticketRevisionIdentity(ownedTicketDraft(requestedIMS))){
+      const normalized=validateAndNormaliseWizardData(profile,data);
+      if(profile!=='HP'||normalized.issueType===baseline.data.issueType)return applyTicketRevision(revisionDialog,baseline,normalized,requestedIMS);
+    }
     const currentEvent = checkCurrentEvent();
     let preparation = state.autoSession?.profile === profile
       && normaliseIMS(state.autoSession?.ims) === requestedIMS
@@ -13634,6 +13733,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       ? await autoCPC(data)
       : (profile === 'FTF' ? await autoFTF(data) : (profile === 'HP' ? await autoHP(data) : (profile === 'ILS_PRNT' ? await autoILSPrnt(data) : await autoTEXT(data))));
     if (result && typeof result === 'object') Object.assign(result, preparation, { ims: requestedIMS });
+    rememberSuccessfulTicketRun(runningTicketDialog(requestedIMS),profile,data,result);
+    if(revisionDialog)revisionDialog.snAiModifyPending=false;
     return result;
   }
 
@@ -15593,6 +15694,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   // owns field identity, control type, committing, and verification.
   async function fillMappedFieldsUnderDescription(genericSchema, suppliedValues, codePrefix) {
     const schemaFields = uniqueDescriptionFields(genericSchema?.fieldsUnderDescription);
+    if(state.autoSession&&codePrefix!=='REVISION')state.autoSession.revisionSchema=schemaFields.map(({key,label,name,id,role,maxLength})=>({key,label,name,id,role,maxLength}));
     const values = suppliedValues && typeof suppliedValues === 'object' ? suppliedValues : {};
     const skippedIdentities = new Set((state.autoSession?.skipDescriptionFields || []).map(comparableLabel));
     const fieldsToFill = Object.entries(values).map(([label, value]) => ({
@@ -20342,6 +20444,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         event.stopPropagation();
         if (refs.runButton.disabled) return;
         if (!window.confirm('Are you sure you want to retry from the beginning? This will discard the cached AI result and ask AI again.')) return;
+        dialog.snAiModifyPending=false;
         refs.fullRetryButton.hidden = true;
         refs.forceFreshAI = true;
         if (typeof refs.onFullRetry === 'function') await refs.onFullRetry();
@@ -20797,6 +20900,12 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           if(modifyingSuccess&&refs.dialog.snAiOwnedEvent){
             await restoreTicketDraft(refs.dialog.snAiOwnedEvent,{allowReplacement:true});
             if(state.createdEvent?.ims===refs.dialog.dataset.pinnedIms)refs.dialog.snAiOwnedEvent=state.createdEvent;
+          }
+          if(modifyingSuccess)refs.dialog.snAiModifyPending=true;
+          const revision=ticketRevisionBaseline(refs.dialog,refs.dialog.snAiLastSuccessfulRun?.profile);
+          if(revision){
+            state.autoSession={profile:revision.profile,ims:refs.dialog.dataset.pinnedIms,genericSchema:revision.genericSchema,revisionSchema:revision.schema};
+            state.wizard={...state.wizard,profile:revision.profile,ims:refs.dialog.dataset.pinnedIms,genericSchema:revision.genericSchema};
           }
           if (state.ai.provider === 'web') { state.webContinueNext = true; state.webCorrectionPrompt = instruction; state.webManualPromptOnly = false; }
           else if(modifyingSuccess&&refs.caseInstruction){refs.caseInstruction.value=[refs.caseInstruction.value,instruction].filter(Boolean).join('\n');}
@@ -22030,7 +22139,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       const emailField=fields.find(field=>field.dataset.hpField==='email');
       const verifiedEmail=readNewEventEmail();
       if(emailField&&!emailField.value&&verifiedEmail)emailField.value=verifiedEmail;
-      const suppliedValues = () => { applySFDPrinterName(fields, currentHPPrinterLocation()); return Object.fromEntries(fields
+      const suppliedValues = () => { if(!ticketRevisionBaseline(dialog,'HP'))applySFDPrinterName(fields, currentHPPrinterLocation()); return Object.fromEntries(fields
         .filter((field) => issueType === 'Toner order' || field.dataset.hpField !== 'ink-colors')
         .map((field) => [field.dataset.hpField, field.value.trim()])
         .filter(([, value]) => value)); };
@@ -22145,7 +22254,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             }
             if (!cacheEntry) throw new Error(`No transcript details were found for ${pinnedIMS}.`);
             // Chat capture is finished before any template/routing controls are touched.
-            state.autoSession=null;
+            const revision=ticketRevisionBaseline(dialog,'HP');
+            if(!revision)state.autoSession=null;
             setStage(1);
             const prefilled = prefillHPFieldsFromChat(fields, cacheEntry);
             supplied = suppliedValues();
@@ -22154,11 +22264,13 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
               const prepared = await prepareTicketSessionFromCache('HP', pinnedIMS, { requireChat: false });
               if (!prepared) throw new Error(`A New Event for ${pinnedIMS} could not be prepared.`);
             }
-            const { genericSchema } = await prepareHPBaseForm(issueType);
+            const { genericSchema } = revision?{genericSchema:revision.genericSchema}:await prepareHPBaseForm(issueType);
             // Route first, then start printer-model CI discovery without
             // blocking the AI request. Late results use native model commits.
-            await autoLookup('Assignment Group', 'HP', { expected: 'HP', code: 'HP_ASSIGNMENT_GROUP_COMMIT_FAILED' });
-            void startHPPrinterCISearch(supplied['model-number'],()=>!stopped&&running&&dialog.isConnected);
+            if(!revision){
+              await autoLookup('Assignment Group', 'HP', { expected: 'HP', code: 'HP_ASSIGNMENT_GROUP_COMMIT_FAILED' });
+              void startHPPrinterCISearch(supplied['model-number'],()=>!stopped&&running&&dialog.isConnected);
+            }
             supplied = suppliedValues();
             titleMain.textContent = `${pinnedIMS} - Sending message to ${aiProviderDisplayName()}…`; setProgress(25);
           const requestArgs = { ims: pinnedIMS, transcript: appendCurrentCaseInstruction(await aiTranscriptWithUserInformation(cacheEntry, 'HP', pinnedIMS), shell.caseInstruction?.value), issueType, supplied, genericSchema };
@@ -22419,7 +22531,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           document.addEventListener('sn-ai-web-progress', aiWebProgress);
           if (descriptionShell.forceFreshAI) { reusableAICommand = ''; descriptionShell.forceFreshAI = false; }
           let cacheEntry = null;
-          const preparation = await prepareDescriptionAcrossWorkspaceTabs(pinnedIMS, {
+          const preparation = ticketRevisionBaseline(descriptionDialog,'TEXT')?{revision:true}:await prepareDescriptionAcrossWorkspaceTabs(pinnedIMS, {
             forceChat: !reusableAICommand && !chatLoadedForWindow,
             preloadedSchema: capturedDescriptionSchema,
           });
@@ -22470,6 +22582,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           if (stoppedFromWindow || finalStatus?.result?.code === 'AUTOMATION_STOPPED') throw Object.assign(new Error('Description request stopped.'), { code: 'AI_STOPPED' });
           const successful = finalStatus?.status === 'complete' && finalStatus?.result?.kind === 'auto-complete' && finalStatus?.result?.ok === true;
           if (!successful) throw new Error(finalStatus?.result?.message || finalStatus?.result?.guidance || 'Description automation did not complete.');
+          if(!finalStatus.result.revision){
           await sleep(900);
           let expectedText = null;
           try { expectedText = JSON.parse(reusableAICommand)?.TEXT || null; } catch {}
@@ -22482,6 +22595,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           );
           if (!persisted) {
           throw new Error('The completed Description or Short Description did not pass verification. The full replacement is cached; use Continue to retry without reading the Description again.');
+          }
           }
           setProgress(100);
           descriptionDialog.classList.remove('is-running', 'is-error');
