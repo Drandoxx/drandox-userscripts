@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.744
+// @version      2.36.745
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.745","fixes":true,"changes":[{"key":"chat-api-join-recovery","meaningful":true,"text":"When no human join marker exists, use the Virtual Agent's exact Welcome to Service Desk handover as the chat boundary in API, transcript and live readers."}]},
 {"version":"2.36.744","fixes":true,"changes":[{"key":"chat-api-join-recovery","meaningful":true,"text":"Read agent join events in text and rich API formats, and try the matching durable transcript before scrolling when the API boundary is missing."}]},
 {"version":"2.36.743","fixes":true,"changes":[{"key":"button-text-rendering","meaningful":true,"text":"Use neutral text rendering on gradient buttons to suppress red and blue subpixel fringes without changing gradient or hover colors."}]},
 {"version":"2.36.742","fixes":true,"changes":[{"key":"ai-modify-result","meaningful":false,"text":"Place Done last, to the right of Ask AI to Modify and Give feedback."}]},
@@ -16805,9 +16806,13 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
 
   function parseTranscriptMessages(rawText) {
     const lines = String(rawText || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    const joinIndex = lines.findIndex((line) => joinMarkerMatch(line));
+    let joinIndex = lines.findIndex((line) => joinMarkerMatch(line));
+    if(joinIndex<0)joinIndex=lines.findIndex(line=>{const row=parseTranscriptRowText(line);return row&&isServiceDeskWelcome(row.text,row.speaker);});
     if (joinIndex < 0) return [];
-    const agentId = normalise(joinMarkerMatch(lines[joinIndex])?.[1]).toLowerCase();
+    const joinedAgent=joinMarkerMatch(lines[joinIndex])?.[1];
+    const greetingRow=joinedAgent?null:lines.slice(joinIndex+1).map(parseTranscriptRowText).find(row=>row&&!isAutomatedTranscriptSpeaker(row.speaker)&&isHumanServiceDeskGreeting(row.text));
+    const agentId = normalise(joinedAgent||greetingRow?.speaker).toLowerCase();
+    if(!agentId)return [];
     const messages = [];
     let current = null;
     let skippingSummary = false;
@@ -16905,7 +16910,20 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const joinCandidates = matchingJoinCandidates.filter((candidate) => !matchingJoinCandidates.some((other) =>
       other !== candidate && isWithinDeepRoot(other.el, candidate.el)
     )).sort((left, right) => order.get(left.el) - order.get(right.el));
-    const join = joinCandidates[0];
+    const fallbackCandidates=joinCandidates.length?[]:usable.map(el=>({el,text:renderedChatText(el)})).filter(item=>{
+      if(!isVisible(item.el))return false;
+      const row=parseTranscriptRowText(item.text);
+      if(row&&isServiceDeskWelcome(row.text,row.speaker))return true;
+      if(!item.el.classList?.contains('now-chat-message-bubble'))return false;
+      let owner=item.el;
+      for(let depth=0;owner&&depth<14;depth++,owner=owner.parentElement||owner.getRootNode?.().host){
+        if(owner.localName!=='now-chat-message')continue;
+        const props=owner.getProperties?.(),message=props?.message?.data?.props?.message;
+        return isServiceDeskWelcome(item.text,message?.createdBy||message?.senderName);
+      }
+      return false;
+    }).sort((a,b)=>order.get(a.el)-order.get(b.el));
+    const join = joinCandidates[0]||fallbackCandidates[0];
     const joinOrder = join ? order.get(join.el) : -1;
     if (join) {
       context.afterJoin = true;
@@ -17164,6 +17182,12 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     if(row.payload&&typeof row.payload==='object')return row.payload;
     try{let value=JSON.parse(row.payload);if(typeof value==='string'){try{value=JSON.parse(value);}catch{}}return value;}catch{return null;}
   }
+  function isServiceDeskWelcome(text,author){
+    return /^(?:virtual[ ._]+agent)$/i.test(normalise(author))&&/^Welcome to Service Desk[.!]?$/i.test(normalise(text));
+  }
+  function isHumanServiceDeskGreeting(text){
+    return /^Welcome to (?:IT Support|(?:the )?Service Desk)[,.!\s]+my name is\b/i.test(normalise(text));
+  }
   function nativeAPIMessageText(row,payload=nativeAPIChatPayload(row)){
     // These are generated "ticket sent" confirmations, not conversation.
     // Match ServiceNow's card structure, never arbitrary ticket mentions.
@@ -17214,9 +17238,20 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       const payload=payloadOf(row);
       return joinMarkerMatch(normalise(payload?.message || nativeAPIMessageText(row,payload)));
     };
-    const boundary = rows.findIndex(row => row.system && joinOf(row));
+    let boundary = rows.findIndex(row => row.system && joinOf(row));
+    const fallback=boundary<0;
+    if(fallback)boundary=rows.findIndex(row=>isServiceDeskWelcome(nativeAPIMessageText(row,payloadOf(row)),row.createdBy||row.senderName));
     if (boundary < 0) return null;
     const agents = new Set();
+    if(fallback){
+      const greeting=rows.slice(boundary+1).find(row=>!row.system&&!row.internal&&!row.transitory&&!row.isBotMessage
+        &&!isServiceDeskWelcome(nativeAPIMessageText(row,payloadOf(row)),row.createdBy||row.senderName)
+        &&! /^(?:virtual[ ._]+agent|system)$/i.test(row.createdBy||row.senderName||'')
+        &&isHumanServiceDeskGreeting(nativeAPIMessageText(row,payloadOf(row))));
+      if(!greeting||!normalise(greeting.createdBy||greeting.senderName))return null;
+      agents.add(normalise(greeting.createdBy||greeting.senderName).toLowerCase());
+      if(greeting.senderName)agents.add(normalise(greeting.senderName).toLowerCase());
+    }
     const messages = [];
     for (const row of rows.slice(boundary)) {
       const payload = payloadOf(row);
