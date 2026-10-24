@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.742
+// @version      2.36.743
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.743","fixes":true,"changes":[{"key":"button-text-rendering","meaningful":true,"text":"Use neutral text rendering on gradient buttons to suppress red and blue subpixel fringes without changing gradient or hover colors."}]},
 {"version":"2.36.742","fixes":true,"changes":[{"key":"ai-modify-result","meaningful":false,"text":"Place Done last, to the right of Ask AI to Modify and Give feedback."}]},
 {"version":"2.36.741","fixes":true,"changes":[{"key":"ai-modify-result","meaningful":true,"text":"Apply AI revisions as changed-field-only updates against the last successful run, skipping unchanged controls and full template/routing checks on the same draft."}]},
 {"version":"2.36.740","fixes":true,"changes":[{"key":"ticket-command-recovery","meaningful":true,"text":"Explicit ticket commands can replace a confirmed closed owned Event using native IMS navigation; pause and Continue still never create duplicate drafts."},{"key":"ai-modify-result","meaningful":true,"text":"Keep successful AI results open with Ask AI to Modify, an instruction box and Done, independently of feedback settings."}]},
@@ -1861,6 +1862,23 @@ const snAIChatDisplayNames=(()=>{
     :host-context(sn-form-internal-attachments-list) .now-template-message-empty-state-actions { text-align:center!important; }
     /* Button captions/icons are interaction targets, never selectable text.
        This shared sheet is also installed into component shadow roots. */
+    /* A nearly opaque paint group uses grayscale text antialiasing instead
+       of LCD RGB fringes. No transform or persistent will-change GPU layer.
+       Keep disabled opacity and existing hover filters untouched. */
+    :is(.now-button.-primary,.sn-ai-plain-modal-action[data-primary],
+      .sn-ai-record-sla button,button[style*="linear-gradient"],
+      #local-sn-inspector-root button:not(.secondary))
+      :is(span,slot) { text-shadow:none!important;-webkit-font-smoothing:antialiased; }
+    :is(.now-button.-primary,.sn-ai-plain-modal-action[data-primary],
+      .sn-ai-record-sla button,button[style*="linear-gradient"],
+      #local-sn-inspector-root button:not(.secondary)) {
+      text-shadow:none!important;-webkit-font-smoothing:antialiased;
+    }
+    :is(.now-button.-primary,.sn-ai-plain-modal-action[data-primary],
+      .sn-ai-record-sla button,button[style*="linear-gradient"],
+      #local-sn-inspector-root button:not(.secondary)):not(:disabled):not([aria-disabled="true"]):not(.is-disabled) {
+      opacity:0.999!important;
+    }
     :is(button,[role="button"],input[type="button"],input[type="submit"],input[type="reset"],now-button,now-button-iconic),
     :is(button,[role="button"],now-button,now-button-iconic) *,
     :host-context(button) *,:host-context([role="button"]) *,
