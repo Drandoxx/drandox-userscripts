@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.743
+// @version      2.36.744
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.744","fixes":true,"changes":[{"key":"chat-api-join-recovery","meaningful":true,"text":"Read agent join events in text and rich API formats, and try the matching durable transcript before scrolling when the API boundary is missing."}]},
 {"version":"2.36.743","fixes":true,"changes":[{"key":"button-text-rendering","meaningful":true,"text":"Use neutral text rendering on gradient buttons to suppress red and blue subpixel fringes without changing gradient or hover colors."}]},
 {"version":"2.36.742","fixes":true,"changes":[{"key":"ai-modify-result","meaningful":false,"text":"Place Done last, to the right of Ask AI to Modify and Give feedback."}]},
 {"version":"2.36.741","fixes":true,"changes":[{"key":"ai-modify-result","meaningful":true,"text":"Apply AI revisions as changed-field-only updates against the last successful run, skipping unchanged controls and full template/routing checks on the same draft."}]},
@@ -13434,7 +13435,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         confirmedActive: activeSelectedIMS() === requestedIMS,
         chat: chatResult.chat,
         currentEvent,
-        reusedOpenNewEvent: reopened,
+        reusedOpenNewEvent: Boolean(hadOpenNewEvent),
         plan,
         requiredDynamicData: dynamicSchema,
         dataCommandTemplate: profile === 'HP'
@@ -17158,7 +17159,12 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
 
   // ServiceNow Bot Integration API documents uiType as extensible strings:
   // https://www.servicenow.com/docs/r/api-reference/rest-apis/bot-api.html
-  function nativeAPIMessageText(row,payload){
+  function nativeAPIChatPayload(row){
+    if(row.messageType==='text')return null;
+    if(row.payload&&typeof row.payload==='object')return row.payload;
+    try{let value=JSON.parse(row.payload);if(typeof value==='string'){try{value=JSON.parse(value);}catch{}}return value;}catch{return null;}
+  }
+  function nativeAPIMessageText(row,payload=nativeAPIChatPayload(row)){
     // These are generated "ticket sent" confirmations, not conversation.
     // Match ServiceNow's card structure, never arbitrary ticket mentions.
     if(payload?.uiType==='OutputHtml'){
@@ -17203,19 +17209,19 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   }
   function nativeAPIChatMessages(records, transcriptMessages = []) {
     const rows = [...records].sort((a, b) => String(a.sequence).localeCompare(String(b.sequence)));
-    const payloadOf = row => {
-      if (row.messageType === 'text') return null;
-      if(row.payload&&typeof row.payload==='object')return row.payload;
-      try { let value=JSON.parse(row.payload);if(typeof value==='string'){try{value=JSON.parse(value);}catch{}}return value; } catch { return null; }
+    const payloadOf = nativeAPIChatPayload;
+    const joinOf = row => {
+      const payload=payloadOf(row);
+      return joinMarkerMatch(normalise(payload?.message || nativeAPIMessageText(row,payload)));
     };
-    const boundary = rows.findIndex(row => row.system && joinMarkerMatch(payloadOf(row)?.message));
+    const boundary = rows.findIndex(row => row.system && joinOf(row));
     if (boundary < 0) return null;
     const agents = new Set();
     const messages = [];
     for (const row of rows.slice(boundary)) {
       const payload = payloadOf(row);
       if (row.system) {
-        const join = joinMarkerMatch(payload?.message);
+        const join = joinOf(row);
         if (join) agents.add(normalise(join[1]).toLowerCase());
         continue;
       }
@@ -17323,7 +17329,33 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         chat=nativeAPIChatMessages([...records.values()],parseTranscriptMessages(json.result.transcript));
         addLog('info','chat-api-authors-recovered',{ims,source:'transcript'});
       }
-      if (!chat || chat.length < 2) throw new Error('CHAT_API_JOIN_OR_MESSAGES_MISSING');
+      if (!chat || chat.length < 2) {
+        addLog('warn','chat-api-boundary-missing',{ims,records:records.size,systemRows:[...records.values()].filter(row=>row.system).length,pages:pages+1});
+        // A live conversation may expose its join only in the interaction's
+        // durable transcript. Read it through the API before using the UI.
+        // The parser still requires a real join; an active transcript must
+        // also contain the latest actual participant utterance to avoid
+        // accepting a stale saved transcript as a complete live chat.
+        const json=await read(`/api/now/table/interaction/${context.interactionId}?sysparm_fields=number,state,active,transcript&sysparm_display_value=false`);
+        const record=json.result;
+        if(normaliseIMS(record?.number)!==ims)throw new Error('CHAT_API_RECORD_MISMATCH');
+        const transcript=parseTranscriptMessages(record.transcript);
+        const latest=[...records.values()].sort((a,b)=>String(a.sequence).localeCompare(String(b.sequence))).reverse().find(row=>{
+          if(row.system||row.internal||row.transitory||row.isBotMessage||/^(?:virtual[ ._]agent|system)$/i.test(row.createdBy||''))return false;
+          const payload=nativeAPIChatPayload(row);
+          if(payload?.uiType==='ContextualAction')return false;
+          const text=normalise(nativeAPIMessageText(row,payload));
+          return Boolean(normalise(row.createdBy||row.senderName)&&text&&!isChatSummaryText(text));
+        });
+        const latestText=latest?normalise(nativeAPIMessageText(latest)):'';
+        const current=record.active===false||record.active==='false'||/^closed/.test(record.state||'')
+          ||Boolean(latestText&&transcript.some(message=>normalise(message.text)===latestText));
+        if(transcript.length>=2&&current){
+          addLog('info','chat-api-transcript-boundary-recovered',{ims,blocks:transcript.length,records:records.size,durationMs:Math.round(performance.now()-started)});
+          return transcript;
+        }
+        throw new Error('CHAT_API_JOIN_OR_MESSAGES_MISSING');
+      }
       addLog('info', 'chat-api-messages-complete', { ims, pages: pages + 1, records: records.size, blocks: chat.length, durationMs: Math.round(performance.now() - started) });
       return chat;
     } catch (error) {
