@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.751
+// @version      2.36.752
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.752","fixes":true,"changes":[{"key":"stable-record-actions","meaningful":true,"text":"Restore pointer interaction on custom header actions and overflow menus, overriding the native header's non-interactive container."}]},
 {"version":"2.36.751","fixes":true,"changes":[{"key":"stable-record-actions","meaningful":true,"text":"Reserve a 10px title gap and move trailing actions into a responsive three-dot dropdown when the single-row header runs out of space."}]},
 {"version":"2.36.750","fixes":true,"changes":[{"key":"stable-record-actions","meaningful":false,"text":"Keep record action buttons on one line, with horizontal scrolling rather than wrapping when space is limited."}]},
 {"version":"2.36.749","fixes":true,"changes":[{"key":"stable-record-actions","meaningful":true,"text":"Show ready or cached action rows immediately on tab activation, with lightweight 250 ms background checks for later changes."}]},
@@ -3065,6 +3066,7 @@ const snAIChatDisplayNames=(()=>{
     .sn-ai-stable-record-actions button:hover:not(:disabled) { background:var(--sn-theme-49365a); }
     .sn-ai-stable-record-actions button:focus-visible { outline:2px solid var(--sn-theme-ac94ec);outline-offset:2px; }
     .sn-ai-stable-record-actions button:disabled { opacity:.5;cursor:default; }
+    .sn-ai-stable-record-actions,.sn-ai-stable-record-actions button,.sn-ai-stable-record-actions .sn-ai-action-overflow-menu { pointer-events:auto!important; }
     .sn-heading-container {
       width:100%!important;max-width:100%!important;min-width:0!important;
       flex:0 1 auto!important;box-sizing:border-box!important;
