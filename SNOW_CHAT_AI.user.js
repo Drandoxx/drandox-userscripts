@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.747
+// @version      2.36.748
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.748","fixes":true,"changes":[{"key":"stable-record-actions","meaningful":true,"text":"Render a stable custom record-action row from ServiceNow's native action model, checking once per second and dispatching through the original native handler."}]},
 {"version":"2.36.747","fixes":true,"changes":[{"key":"incident-header-actions","meaningful":true,"text":"Reconcile restored action bars on tab selection and ignore hidden incident menu entries before deciding whether the three-dot trigger is needed."}]},
 {"version":"2.36.746","fixes":true,"changes":[{"key":"incident-header-actions","meaningful":true,"text":"Exclude intentionally hidden incident actions before native width calculation so Resolve appears beside Save when space permits."}]},
 {"version":"2.36.745","fixes":true,"changes":[{"key":"chat-api-join-recovery","meaningful":true,"text":"When no human join marker exists, use the Virtual Agent's exact Welcome to Service Desk handover as the chat boundary in API, transcript and live readers."}]},
@@ -3046,6 +3047,14 @@ const snAIChatDisplayNames=(()=>{
     .sn-ai-event-incident-actions button { position:relative!important;z-index:4!important;pointer-events:auto!important; }
     now-record-common-header,:host(now-record-common-header) { width:100%!important;min-width:0!important;max-width:100%!important; }
     now-record-common-uiactionbar,:host(now-record-common-uiactionbar) { display:block!important;width:100%!important;min-width:0!important; }
+    :host([data-sn-ai-custom-actions]) .sn-header-layout-row[data-sn-ai-record-rows] .sn-header-layout-content.-last > now-record-common-uiactionbar,
+    :host([data-sn-ai-actions-managed]) .sn-header-layout-row[data-sn-ai-record-rows] .sn-header-layout-content.-last > now-record-common-uiactionbar { display:none!important; }
+    :host-context([data-sn-ai-actions-managed]):host(now-record-common-uiactionbar) { display:none!important; }
+    .sn-ai-stable-record-actions { display:flex!important;flex:1 1 0!important;min-width:0;justify-content:flex-end;align-items:center;flex-wrap:wrap;gap:8px; }
+    .sn-ai-stable-record-actions button { display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:6px 16px;white-space:nowrap;font:600 16px/20px "Source Sans Pro",Arial,sans-serif;border:1px solid var(--sn-theme-806493);border-radius:5px;background:var(--sn-theme-392e48);color:var(--sn-theme-eee4ff);cursor:pointer;text-shadow:none; }
+    .sn-ai-stable-record-actions button:hover:not(:disabled) { background:var(--sn-theme-49365a); }
+    .sn-ai-stable-record-actions button:focus-visible { outline:2px solid var(--sn-theme-ac94ec);outline-offset:2px; }
+    .sn-ai-stable-record-actions button:disabled { opacity:.5;cursor:default; }
     .sn-heading-container {
       width:100%!important;max-width:100%!important;min-width:0!important;
       flex:0 1 auto!important;box-sizing:border-box!important;
@@ -5724,6 +5733,7 @@ const snAIChatDisplayNames=(()=>{
     // not consume native responsive button slots or get restored by the parent.
     let owner=host;
     while(owner&&owner.localName!=='sn-form-internal-header-layout')owner=owner.parentElement||owner.getRootNode?.().host;
+    if(owner)installStableRecordActions(owner);
     if(owner)filterNativeIncidentActionNodes(owner);
     syncRecordOverflowMenus(root);
     // Leave fixedButtonNumber to the native responsive action bar. Forcing
@@ -5902,6 +5912,85 @@ const snAIChatDisplayNames=(()=>{
     '807e83d1878010100e3dd61e36cb0b89', // Refresh Impacted Services
     'd566c8c9eb703010e0ef83c45e5228be', // Book walk-up appointment
   ]);
+  // SN_AI_STABLE_RECORD_ACTIONS_BEGIN
+  const stableRecordActionRows=new Map();
+  let stableRecordActionTimer=0;
+  function stableRecordActionModel(host){
+    const props=host.getProperties?.();
+    if(!props||!['incident','new_call','interaction','sc_req_item','sc_task'].includes(props.table)||!Array.isArray(props.actionNodes))return null;
+    let form=host;
+    while(form&&form.localName!=='sn-form-internal-workspace-form-layout')form=form.parentElement||form.getRootNode?.().host;
+    const formProps=form?.getProperties?.();
+    if(typeof formProps?.handleUiActionClick!=='function'&&typeof props.handleClick!=='function')return null;
+    const actions=[];let unsupported=false;
+    const walk=(nodes,disabled=false)=>{
+      for(const node of nodes){
+        if(!node||node.hidden===true||node.visible===false||['separator','divider'].includes(String(node.type).toLowerCase()))continue;
+        if(props.table==='incident'&&hiddenIncidentActionIds.has(String(node.id)))continue;
+        if(Array.isArray(node.children)){
+          if(node.type&&String(node.type).toLowerCase()!=='button'){unsupported=true;continue;}
+          walk(node.children,disabled||node.disabled===true);continue;
+        }
+        if(!node.id||typeof node.label!=='string'||!node.label.trim()){unsupported=true;continue;}
+        actions.push({id:String(node.id),label:node.label,hint:String(node.hint||''),disabled:disabled||node.disabled===true});
+      }
+    };
+    walk(props.actionNodes);
+    if(unsupported)return null;
+    return {identity:JSON.stringify([props.table,props.sysId]),actions,loading:Boolean(formProps?.isLoadingRecord||formProps?.isReloading),props,formProps};
+  }
+  function refreshStableRecordActions(host,entry){
+    if(!host.isConnected){entry.row?.remove();stableRecordActionRows.delete(host);return;}
+    if(host.getBoundingClientRect().width<=0)return;
+    const model=stableRecordActionModel(host);
+    if(!model){host.removeAttribute('data-sn-ai-actions-managed');host.removeAttribute('data-sn-ai-custom-actions');entry.row?.remove();entry.row=null;entry.signature='';return;}
+    host.setAttribute('data-sn-ai-actions-managed','');
+    if(entry.identity&&entry.identity!==model.identity){entry.row?.remove();entry.row=null;entry.signature='';entry.pending='';host.removeAttribute('data-sn-ai-custom-actions');}
+    entry.identity=model.identity;
+    if(model.loading){
+      entry.pending='';
+      for(const button of entry.row?.children||[])button.disabled=true;
+      return;
+    }
+    const signature=JSON.stringify(model.actions);
+    if(signature!==entry.signature){
+      // Confirm on two one-second samples, not DOM-mutation frequency.
+      if(entry.pending!==signature){entry.pending=signature;return;}
+      const parent=host.shadowRoot?.querySelector('.sn-header-layout-content.-last');
+      if(!parent)return;
+      if(!entry.row){entry.row=document.createElement('div');entry.row.className='sn-ai-stable-record-actions';entry.row.setAttribute('role','group');entry.row.setAttribute('aria-label','Record actions');}
+      const buttons=model.actions.map(action=>{
+        const button=document.createElement('button');button.type='button';button.textContent=action.label;button.title=action.hint;button.disabled=action.disabled;button.dataset.actionId=action.id;
+        button.addEventListener('click',async()=>{
+          const current=stableRecordActionModel(host),available=current?.actions.find(item=>item.id===action.id);
+          if(!current||current.loading||current.identity!==entry.identity||!available||available.disabled||entry.invoking)return;
+          entry.invoking=true;button.disabled=true;
+          try{
+            const handler=current.formProps?.handleUiActionClick||current.props.handleClick;
+            await handler({id:action.id});
+          }catch(error){console.error('SN AI native action failed',error);button.title=String(error?.message||error);}
+          finally{entry.invoking=false;button.disabled=available.disabled;}
+        });return button;
+      });
+      entry.row.replaceChildren(...buttons);entry.signature=signature;entry.pending='';
+    }
+    if(entry.row){
+      const parent=host.shadowRoot?.querySelector('.sn-header-layout-content.-last');
+      if(parent&&entry.row.parentNode!==parent)parent.append(entry.row);
+      host.setAttribute('data-sn-ai-custom-actions','');
+      for(const button of entry.row.children)button.disabled=entry.invoking||Boolean(model.actions.find(action=>action.id===button.dataset.actionId)?.disabled);
+    }
+  }
+  function installStableRecordActions(host){
+    if(!host||stableRecordActionRows.has(host))return;
+    if(stableRecordActionModel(host))host.setAttribute('data-sn-ai-actions-managed','');
+    stableRecordActionRows.set(host,{signature:'',pending:'',identity:'',row:null,invoking:false});
+    if(!stableRecordActionTimer)stableRecordActionTimer=setInterval(()=>{
+      for(const [owner,entry] of stableRecordActionRows)refreshStableRecordActions(owner,entry);
+      if(!stableRecordActionRows.size){clearInterval(stableRecordActionTimer);stableRecordActionTimer=0;}
+    },1000);
+  }
+  // SN_AI_STABLE_RECORD_ACTIONS_END
   // SN_AI_EMPTY_ACTION_MENU_BEGIN
   function filterNativeIncidentActionNodes(host){
     if(host?.localName!=='sn-form-internal-header-layout')return;
