@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.752
+// @version      2.36.753
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.753","fixes":true,"changes":[{"key":"button-edge-rendering","meaningful":true,"text":"Remove native border, shadow and pseudo-element edge overlays from gradient primary buttons while keeping their fill and keyboard focus indicator."}]},
 {"version":"2.36.752","fixes":true,"changes":[{"key":"stable-record-actions","meaningful":true,"text":"Restore pointer interaction on custom header actions and overflow menus, overriding the native header's non-interactive container."}]},
 {"version":"2.36.751","fixes":true,"changes":[{"key":"stable-record-actions","meaningful":true,"text":"Reserve a 10px title gap and move trailing actions into a responsive three-dot dropdown when the single-row header runs out of space."}]},
 {"version":"2.36.750","fixes":true,"changes":[{"key":"stable-record-actions","meaningful":false,"text":"Keep record action buttons on one line, with horizontal scrolling rather than wrapping when space is limited."}]},
@@ -3211,6 +3212,20 @@ const snAIChatDisplayNames=(()=>{
     }
     :host(now-button.now-modal-footer-button) .now-button.-primary:hover:not(:disabled) { filter:brightness(1.08); }
     :host(now-button.now-modal-footer-button) .now-button.-primary :is(slot,span) { color:inherit!important; }
+    /* The gradient owns the whole button edge: do not blend a native
+       transparent border, inset shadow or state-overlay ring over it. */
+    .now-button.-primary,.sn-ai-plain-modal-action[data-primary] {
+      border-color:transparent!important;border-image:none!important;
+      box-shadow:none!important;background-clip:padding-box!important;
+      outline:none!important;
+    }
+    .now-button.-primary::before,.now-button.-primary::after,
+    .sn-ai-plain-modal-action[data-primary]::before,.sn-ai-plain-modal-action[data-primary]::after {
+      content:none!important;box-shadow:none!important;border:0!important;
+    }
+    .now-button.-primary:focus-visible,.sn-ai-plain-modal-action[data-primary]:focus-visible {
+      outline:2px solid var(--sn-theme-ac94ec)!important;outline-offset:2px!important;
+    }
     :host(now-button.now-modal-footer-button) .now-button.-secondary {
       background:transparent!important;border:1px solid var(--sn-theme-655573)!important;
       color:var(--sn-theme-e6edf9)!important;
