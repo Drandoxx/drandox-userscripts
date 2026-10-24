@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.748
+// @version      2.36.749
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.749","fixes":true,"changes":[{"key":"stable-record-actions","meaningful":true,"text":"Show ready or cached action rows immediately on tab activation, with lightweight 250 ms background checks for later changes."}]},
 {"version":"2.36.748","fixes":true,"changes":[{"key":"stable-record-actions","meaningful":true,"text":"Render a stable custom record-action row from ServiceNow's native action model, checking once per second and dispatching through the original native handler."}]},
 {"version":"2.36.747","fixes":true,"changes":[{"key":"incident-header-actions","meaningful":true,"text":"Reconcile restored action bars on tab selection and ignore hidden incident menu entries before deciding whether the three-dot trigger is needed."}]},
 {"version":"2.36.746","fixes":true,"changes":[{"key":"incident-header-actions","meaningful":true,"text":"Exclude intentionally hidden incident actions before native width calculation so Resolve appears beside Save when space permits."}]},
@@ -5939,7 +5940,7 @@ const snAIChatDisplayNames=(()=>{
     if(unsupported)return null;
     return {identity:JSON.stringify([props.table,props.sysId]),actions,loading:Boolean(formProps?.isLoadingRecord||formProps?.isReloading),props,formProps};
   }
-  function refreshStableRecordActions(host,entry){
+  function refreshStableRecordActions(host,entry,activation=false){
     if(!host.isConnected){entry.row?.remove();stableRecordActionRows.delete(host);return;}
     if(host.getBoundingClientRect().width<=0)return;
     const model=stableRecordActionModel(host);
@@ -5947,6 +5948,12 @@ const snAIChatDisplayNames=(()=>{
     host.setAttribute('data-sn-ai-actions-managed','');
     if(entry.identity&&entry.identity!==model.identity){entry.row?.remove();entry.row=null;entry.signature='';entry.pending='';host.removeAttribute('data-sn-ai-custom-actions');}
     entry.identity=model.identity;
+    // Workspace can clear/reparent a tab's header while loading. Put its
+    // existing row back synchronously rather than waiting for the next timer.
+    if(entry.row){
+      const parent=host.shadowRoot?.querySelector('.sn-header-layout-content.-last');
+      if(parent&&entry.row.parentNode!==parent)parent.append(entry.row);
+    }
     if(model.loading){
       entry.pending='';
       for(const button of entry.row?.children||[])button.disabled=true;
@@ -5954,8 +5961,9 @@ const snAIChatDisplayNames=(()=>{
     }
     const signature=JSON.stringify(model.actions);
     if(signature!==entry.signature){
-      // Confirm on two one-second samples, not DOM-mutation frequency.
-      if(entry.pending!==signature){entry.pending=signature;return;}
+      // Initial ready data renders immediately. Later list changes need two
+      // background samples; mutation frequency must not bypass confirmation.
+      if(entry.row&&(activation||entry.pending!==signature)){if(!activation)entry.pending=signature;return;}
       const parent=host.shadowRoot?.querySelector('.sn-header-layout-content.-last');
       if(!parent)return;
       if(!entry.row){entry.row=document.createElement('div');entry.row.className='sn-ai-stable-record-actions';entry.row.setAttribute('role','group');entry.row.setAttribute('aria-label','Record actions');}
@@ -5982,13 +5990,18 @@ const snAIChatDisplayNames=(()=>{
     }
   }
   function installStableRecordActions(host){
-    if(!host||stableRecordActionRows.has(host))return;
+    if(!host)return;
+    const existing=stableRecordActionRows.get(host);
+    if(existing){refreshStableRecordActions(host,existing,true);return;}
     if(stableRecordActionModel(host))host.setAttribute('data-sn-ai-actions-managed','');
-    stableRecordActionRows.set(host,{signature:'',pending:'',identity:'',row:null,invoking:false});
+    const entry={signature:'',pending:'',identity:'',row:null,invoking:false};
+    stableRecordActionRows.set(host,entry);
+    refreshStableRecordActions(host,entry,true);
     if(!stableRecordActionTimer)stableRecordActionTimer=setInterval(()=>{
+      if(document.hidden)return;
       for(const [owner,entry] of stableRecordActionRows)refreshStableRecordActions(owner,entry);
       if(!stableRecordActionRows.size){clearInterval(stableRecordActionTimer);stableRecordActionTimer=0;}
-    },1000);
+    },250);
   }
   // SN_AI_STABLE_RECORD_ACTIONS_END
   // SN_AI_EMPTY_ACTION_MENU_BEGIN
