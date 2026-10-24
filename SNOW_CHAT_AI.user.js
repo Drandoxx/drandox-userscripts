@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.753
+// @version      2.36.754
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.754","fixes":true,"changes":[{"key":"stable-record-actions","meaningful":true,"text":"Give unsaved New Event actions the space remaining after the title and hide Create Incident on interaction Details."}]},
 {"version":"2.36.753","fixes":true,"changes":[{"key":"button-edge-rendering","meaningful":true,"text":"Remove native border, shadow and pseudo-element edge overlays from gradient primary buttons while keeping their fill and keyboard focus indicator."}]},
 {"version":"2.36.752","fixes":true,"changes":[{"key":"stable-record-actions","meaningful":true,"text":"Restore pointer interaction on custom header actions and overflow menus, overriding the native header's non-interactive container."}]},
 {"version":"2.36.751","fixes":true,"changes":[{"key":"stable-record-actions","meaningful":true,"text":"Reserve a 10px title gap and move trailing actions into a responsive three-dot dropdown when the single-row header runs out of space."}]},
@@ -3056,6 +3057,9 @@ const snAIChatDisplayNames=(()=>{
     :host([data-sn-ai-actions-managed]) .sn-header-layout-row[data-sn-ai-record-rows] .sn-header-layout-content.-last > now-record-common-uiactionbar { display:none!important; }
     :host-context([data-sn-ai-actions-managed]):host(now-record-common-uiactionbar) { display:none!important; }
     :host([data-sn-ai-actions-managed]) .sn-header-layout-content.-last { gap:10px!important;z-index:5!important; }
+    :host([data-sn-ai-actions-managed]) .sn-header-layout-row:not([data-sn-ai-record-rows]) { flex-wrap:nowrap!important;gap:10px!important;align-items:center!important; }
+    :host([data-sn-ai-actions-managed]) .sn-header-layout-row:not([data-sn-ai-record-rows]) > .sn-header-layout-content:not(.-last) { flex:0 1 auto!important;width:max-content!important;min-width:0!important; }
+    :host([data-sn-ai-actions-managed]) .sn-header-layout-row:not([data-sn-ai-record-rows]) > .sn-header-layout-content.-last { flex:1 1 0!important;width:0!important;min-width:36px!important;display:flex!important; }
     :host([data-sn-ai-actions-managed]) .sn-ai-header-record-number { min-width:0;max-width:calc(100% - 46px);flex:0 1 auto; }
     :host([data-sn-ai-actions-managed]) .sn-ai-header-number-text { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
     .sn-ai-stable-record-actions { position:relative;display:flex!important;flex:1 1 0!important;min-width:36px;justify-content:flex-end;align-items:center;flex-wrap:nowrap!important;gap:8px;overflow:visible;box-sizing:border-box; }
@@ -5994,6 +5998,7 @@ const snAIChatDisplayNames=(()=>{
           walk(node.children,disabled||node.disabled===true);continue;
         }
         if(!node.id||typeof node.label!=='string'||!node.label.trim()){unsupported=true;continue;}
+        if(props.table==='interaction'&&/^(?:create|new)\s+incident(?:\s*\/\s*request)?$/i.test(node.label.trim()))continue;
         actions.push({id:String(node.id),label:node.label,hint:String(node.hint||''),disabled:disabled||node.disabled===true});
       }
     };
@@ -6029,7 +6034,7 @@ const snAIChatDisplayNames=(()=>{
       if(!parent)return;
       if(!entry.row){entry.row=document.createElement('div');entry.row.className='sn-ai-stable-record-actions';entry.row.setAttribute('role','group');entry.row.setAttribute('aria-label','Record actions');}
       const buttons=model.actions.map(action=>{
-        const button=document.createElement('button');button.type='button';button.textContent=action.label;button.title=action.hint;button.disabled=action.disabled;button.dataset.actionId=action.id;
+        const button=document.createElement('button');button.type='button';button.className='now-button';button.setAttribute('aria-label',action.label);button.textContent=action.label;button.title=action.hint;button.disabled=action.disabled;button.dataset.actionId=action.id;
         button.addEventListener('click',async()=>{
           entry.closeMenu?.();
           const current=stableRecordActionModel(host),available=current?.actions.find(item=>item.id===action.id);
