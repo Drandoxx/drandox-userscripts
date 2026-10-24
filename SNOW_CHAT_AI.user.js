@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.750
+// @version      2.36.751
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.751","fixes":true,"changes":[{"key":"stable-record-actions","meaningful":true,"text":"Reserve a 10px title gap and move trailing actions into a responsive three-dot dropdown when the single-row header runs out of space."}]},
 {"version":"2.36.750","fixes":true,"changes":[{"key":"stable-record-actions","meaningful":false,"text":"Keep record action buttons on one line, with horizontal scrolling rather than wrapping when space is limited."}]},
 {"version":"2.36.749","fixes":true,"changes":[{"key":"stable-record-actions","meaningful":true,"text":"Show ready or cached action rows immediately on tab activation, with lightweight 250 ms background checks for later changes."}]},
 {"version":"2.36.748","fixes":true,"changes":[{"key":"stable-record-actions","meaningful":true,"text":"Render a stable custom record-action row from ServiceNow's native action model, checking once per second and dispatching through the original native handler."}]},
@@ -3052,7 +3053,14 @@ const snAIChatDisplayNames=(()=>{
     :host([data-sn-ai-custom-actions]) .sn-header-layout-row[data-sn-ai-record-rows] .sn-header-layout-content.-last > now-record-common-uiactionbar,
     :host([data-sn-ai-actions-managed]) .sn-header-layout-row[data-sn-ai-record-rows] .sn-header-layout-content.-last > now-record-common-uiactionbar { display:none!important; }
     :host-context([data-sn-ai-actions-managed]):host(now-record-common-uiactionbar) { display:none!important; }
-    .sn-ai-stable-record-actions { display:flex!important;flex:1 1 0!important;min-width:0;justify-content:safe flex-end;align-items:center;flex-wrap:nowrap!important;gap:8px;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;padding:2px;box-sizing:border-box; }
+    :host([data-sn-ai-actions-managed]) .sn-header-layout-content.-last { gap:10px!important;z-index:5!important; }
+    :host([data-sn-ai-actions-managed]) .sn-ai-header-record-number { min-width:0;max-width:calc(100% - 46px);flex:0 1 auto; }
+    :host([data-sn-ai-actions-managed]) .sn-ai-header-number-text { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+    .sn-ai-stable-record-actions { position:relative;display:flex!important;flex:1 1 0!important;min-width:36px;justify-content:flex-end;align-items:center;flex-wrap:nowrap!important;gap:8px;overflow:visible;box-sizing:border-box; }
+    .sn-ai-stable-record-actions .sn-ai-action-overflow-trigger { width:36px;min-width:36px;padding:6px; }
+    .sn-ai-stable-record-actions .sn-ai-action-overflow-menu { position:absolute;right:0;top:calc(100% + 6px);z-index:1000;display:flex;flex-direction:column;gap:3px;min-width:200px;max-width:min(400px,80vw);padding:5px;border:1px solid var(--sn-theme-806493);border-radius:7px;background:var(--sn-theme-251f31);box-shadow:0 6px 18px #0005; }
+    .sn-ai-stable-record-actions .sn-ai-action-overflow-menu[hidden] { display:none!important; }
+    .sn-ai-stable-record-actions .sn-ai-action-overflow-menu button { width:100%;justify-content:flex-start;white-space:normal;text-align:left;border:0;background:transparent; }
     .sn-ai-stable-record-actions button { display:inline-flex;flex:0 0 auto;align-items:center;justify-content:center;min-height:34px;padding:6px 16px;white-space:nowrap;font:600 16px/20px "Source Sans Pro",Arial,sans-serif;border:1px solid var(--sn-theme-806493);border-radius:5px;background:var(--sn-theme-392e48);color:var(--sn-theme-eee4ff);cursor:pointer;text-shadow:none; }
     .sn-ai-stable-record-actions button:hover:not(:disabled) { background:var(--sn-theme-49365a); }
     .sn-ai-stable-record-actions button:focus-visible { outline:2px solid var(--sn-theme-ac94ec);outline-offset:2px; }
@@ -5917,6 +5925,41 @@ const snAIChatDisplayNames=(()=>{
   // SN_AI_STABLE_RECORD_ACTIONS_BEGIN
   const stableRecordActionRows=new Map();
   let stableRecordActionTimer=0;
+  function stableActionVisibleCount(width,widths,gap=8,moreWidth=36){
+    if(widths.reduce((sum,value)=>sum+value,0)+Math.max(0,widths.length-1)*gap<=width)return widths.length;
+    let used=moreWidth,count=0;
+    for(const value of widths){if(used+gap+value>width)break;used+=gap+value;count++;}
+    return count;
+  }
+  function layoutStableActionOverflow(entry){
+    if(!entry.row?.isConnected||!entry.buttons?.length)return;
+    const width=Math.floor(entry.row.getBoundingClientRect().width);
+    if(width<=0)return;
+    if(!entry.buttonWidths)entry.buttonWidths=entry.buttons.map(button=>button.getBoundingClientRect().width);
+    if(entry.buttonWidths.some(value=>value<=0)){entry.buttonWidths=null;return;}
+    const count=stableActionVisibleCount(width,entry.buttonWidths);
+    if(count===entry.visibleCount)return;
+    entry.visibleCount=count;entry.closeMenu?.();
+    if(!entry.more){
+      entry.more=document.createElement('button');entry.more.type='button';entry.more.className='sn-ai-action-overflow-trigger';
+      entry.more.setAttribute('aria-label','More actions');entry.more.setAttribute('aria-haspopup','menu');
+      entry.more.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>';
+      entry.menu=document.createElement('div');entry.menu.className='sn-ai-action-overflow-menu';entry.menu.setAttribute('role','menu');entry.menu.hidden=true;
+      const outside=event=>{if(!event.composedPath().includes(entry.row))entry.closeMenu();};
+      entry.closeMenu=()=>{entry.menu.hidden=true;entry.more.setAttribute('aria-expanded','false');document.removeEventListener('pointerdown',outside,true);};
+      entry.more.addEventListener('click',()=>{const open=entry.menu.hidden;entry.closeMenu();if(open){entry.menu.hidden=false;entry.more.setAttribute('aria-expanded','true');document.addEventListener('pointerdown',outside,true);}});
+      entry.menu.addEventListener('keydown',event=>{
+        const items=[...entry.menu.children].filter(button=>!button.disabled),index=items.findIndex(button=>button===event.target);
+        if(event.key==='Escape'){entry.closeMenu();entry.more.focus();event.preventDefault();}
+        if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)&&items.length){event.preventDefault();const next=event.key==='Home'?0:event.key==='End'?items.length-1:(index+(event.key==='ArrowDown'?1:-1)+items.length)%items.length;items[next].focus();}
+      });
+      entry.more.addEventListener('keydown',event=>{if(event.key==='ArrowDown'){event.preventDefault();if(entry.menu.hidden)entry.more.click();[...entry.menu.children].find(button=>!button.disabled)?.focus();}});
+    }
+    entry.menu.replaceChildren();
+    const direct=[];
+    entry.buttons.forEach((button,index)=>{if(index<count){button.removeAttribute('role');direct.push(button);}else{button.setAttribute('role','menuitem');entry.menu.append(button);}});
+    entry.row.replaceChildren(...direct,...(count<entry.buttons.length?[entry.more,entry.menu]:[]));
+  }
   function stableRecordActionModel(host){
     const props=host.getProperties?.();
     if(!props||!['incident','new_call','interaction','sc_req_item','sc_task'].includes(props.table)||!Array.isArray(props.actionNodes))return null;
@@ -5942,12 +5985,12 @@ const snAIChatDisplayNames=(()=>{
     return {identity:JSON.stringify([props.table,props.sysId]),actions,loading:Boolean(formProps?.isLoadingRecord||formProps?.isReloading),props,formProps};
   }
   function refreshStableRecordActions(host,entry,activation=false){
-    if(!host.isConnected){entry.row?.remove();stableRecordActionRows.delete(host);return;}
+    if(!host.isConnected){entry.closeMenu?.();entry.resizeObserver?.disconnect();entry.row?.remove();stableRecordActionRows.delete(host);return;}
     if(host.getBoundingClientRect().width<=0)return;
     const model=stableRecordActionModel(host);
-    if(!model){host.removeAttribute('data-sn-ai-actions-managed');host.removeAttribute('data-sn-ai-custom-actions');entry.row?.remove();entry.row=null;entry.signature='';return;}
+    if(!model){entry.closeMenu?.();entry.resizeObserver?.disconnect();entry.resizeObserver=null;host.removeAttribute('data-sn-ai-actions-managed');host.removeAttribute('data-sn-ai-custom-actions');entry.row?.remove();entry.row=null;entry.signature='';return;}
     host.setAttribute('data-sn-ai-actions-managed','');
-    if(entry.identity&&entry.identity!==model.identity){entry.row?.remove();entry.row=null;entry.signature='';entry.pending='';host.removeAttribute('data-sn-ai-custom-actions');}
+    if(entry.identity&&entry.identity!==model.identity){entry.closeMenu?.();entry.resizeObserver?.disconnect();entry.resizeObserver=null;entry.row?.remove();entry.row=null;entry.signature='';entry.pending='';host.removeAttribute('data-sn-ai-custom-actions');}
     entry.identity=model.identity;
     // Workspace can clear/reparent a tab's header while loading. Put its
     // existing row back synchronously rather than waiting for the next timer.
@@ -5957,7 +6000,7 @@ const snAIChatDisplayNames=(()=>{
     }
     if(model.loading){
       entry.pending='';
-      for(const button of entry.row?.children||[])button.disabled=true;
+      for(const button of entry.buttons||entry.row?.children||[])button.disabled=true;
       return;
     }
     const signature=JSON.stringify(model.actions);
@@ -5971,6 +6014,7 @@ const snAIChatDisplayNames=(()=>{
       const buttons=model.actions.map(action=>{
         const button=document.createElement('button');button.type='button';button.textContent=action.label;button.title=action.hint;button.disabled=action.disabled;button.dataset.actionId=action.id;
         button.addEventListener('click',async()=>{
+          entry.closeMenu?.();
           const current=stableRecordActionModel(host),available=current?.actions.find(item=>item.id===action.id);
           if(!current||current.loading||current.identity!==entry.identity||!available||available.disabled||entry.invoking)return;
           entry.invoking=true;button.disabled=true;
@@ -5981,13 +6025,16 @@ const snAIChatDisplayNames=(()=>{
           finally{entry.invoking=false;button.disabled=available.disabled;}
         });return button;
       });
+      entry.closeMenu?.();entry.buttons=buttons;entry.buttonWidths=null;entry.visibleCount=-1;
       entry.row.replaceChildren(...buttons);entry.signature=signature;entry.pending='';
     }
     if(entry.row){
       const parent=host.shadowRoot?.querySelector('.sn-header-layout-content.-last');
       if(parent&&entry.row.parentNode!==parent)parent.append(entry.row);
       host.setAttribute('data-sn-ai-custom-actions','');
-      for(const button of entry.row.children)button.disabled=entry.invoking||Boolean(model.actions.find(action=>action.id===button.dataset.actionId)?.disabled);
+      for(const button of entry.buttons||entry.row.children)button.disabled=entry.invoking||Boolean(model.actions.find(action=>action.id===button.dataset.actionId)?.disabled);
+      if(typeof ResizeObserver!=='undefined'&&!entry.resizeObserver){entry.resizeObserver=new ResizeObserver(()=>layoutStableActionOverflow(entry));entry.resizeObserver.observe(entry.row);}
+      layoutStableActionOverflow(entry);
     }
   }
   function installStableRecordActions(host){
