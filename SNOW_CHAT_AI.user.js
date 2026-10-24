@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.746
+// @version      2.36.747
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.747","fixes":true,"changes":[{"key":"incident-header-actions","meaningful":true,"text":"Reconcile restored action bars on tab selection and ignore hidden incident menu entries before deciding whether the three-dot trigger is needed."}]},
 {"version":"2.36.746","fixes":true,"changes":[{"key":"incident-header-actions","meaningful":true,"text":"Exclude intentionally hidden incident actions before native width calculation so Resolve appears beside Save when space permits."}]},
 {"version":"2.36.745","fixes":true,"changes":[{"key":"chat-api-join-recovery","meaningful":true,"text":"When no human join marker exists, use the Virtual Agent's exact Welcome to Service Desk handover as the chat boundary in API, transcript and live readers."}]},
 {"version":"2.36.744","fixes":true,"changes":[{"key":"chat-api-join-recovery","meaningful":true,"text":"Read agent join events in text and rich API formats, and try the matching durable transcript before scrolling when the API boundary is missing."}]},
@@ -4989,6 +4990,7 @@ const snAIChatDisplayNames=(()=>{
       // theme activation. No page-wide polling or extension debugger calls.
       for (const root of spaceRoots) {
         for (const tab of root.querySelectorAll?.('.sn-chrome-one-tab') || []) measureThemeTab(tab);
+        if(['sn-form-internal-header-layout','now-record-common-uiactionbar','sn-form-internal-uiactionbar'].includes(root.host?.localName))syncNativeActionWidth(root);
       }
     });
   }
@@ -5720,7 +5722,9 @@ const snAIChatDisplayNames=(()=>{
     if(!host||!['sn-form-internal-header-layout','now-record-common-uiactionbar','sn-form-internal-uiactionbar'].includes(host.localName))return;
     // Filter at the owning header, not its child props, so hidden actions do
     // not consume native responsive button slots or get restored by the parent.
-    if(host.localName==='sn-form-internal-header-layout')filterNativeIncidentActionNodes(host);
+    let owner=host;
+    while(owner&&owner.localName!=='sn-form-internal-header-layout')owner=owner.parentElement||owner.getRootNode?.().host;
+    if(owner)filterNativeIncidentActionNodes(owner);
     syncRecordOverflowMenus(root);
     // Leave fixedButtonNumber to the native responsive action bar. Forcing
     // it to actionNodes.length defeats its More-menu overflow calculation.
@@ -5728,7 +5732,7 @@ const snAIChatDisplayNames=(()=>{
     let entry=actionWidthObservers.get(host);
     if(!entry){
       const update=()=>{
-        requestAnimationFrame(()=>{if(host.isConnected)syncRecordOverflowMenus(host.shadowRoot);});
+        requestAnimationFrame(()=>{if(host.isConnected){if(owner)filterNativeIncidentActionNodes(owner);syncRecordOverflowMenus(host.shadowRoot);}});
         const width=Math.floor(host.getBoundingClientRect().width);
         if(width>0&&Math.abs(Number(host.width||0)-width)>=1)host.width=width;
         if(width<=0||host.hasAttribute('data-sn-ai-actions-ready')||entry.pending)return;
@@ -5913,10 +5917,11 @@ const snAIChatDisplayNames=(()=>{
     const filtered=clean(props.actionNodes);
     if(filtered.length!==props.actionNodes.length||filtered.some((node,index)=>node!==props.actionNodes[index]))host.actionNodes=filtered;
   }
-  function recordActionMenuHasItems(items){
+  function recordActionMenuHasItems(items,excludedIds=null){
     return items.some(item=>{
       if(!item||item.hidden===true||item.visible===false||['separator','divider'].includes(item.type))return false;
-      if(Array.isArray(item.children))return recordActionMenuHasItems(item.children);
+      if(excludedIds?.has(String(item.id)))return false;
+      if(Array.isArray(item.children))return recordActionMenuHasItems(item.children,excludedIds);
       // Disabled actions still belong in the menu. Unknown native item shapes
       // are kept rather than accidentally hiding a usable action.
       return true;
@@ -5925,7 +5930,10 @@ const snAIChatDisplayNames=(()=>{
   function syncEmptyRecordActionMenu(node){
     if(!node?.matches?.('now-dropdown.uiaction-bar-dropdown'))return;
     const items=node.items;
-    const empty=Array.isArray(items)&&!recordActionMenuHasItems(items);
+    let owner=node;
+    while(owner&&owner.localName!=='sn-form-internal-header-layout')owner=owner.parentElement||owner.getRootNode?.().host;
+    const excluded=(owner?.table||owner?.getProperties?.().table)==='incident'?hiddenIncidentActionIds:null;
+    const empty=Array.isArray(items)&&!recordActionMenuHasItems(items,excluded);
     node.toggleAttribute('data-sn-ai-empty-action-menu',empty);
     // Fail closed during native hydration/remount. The stylesheet hides a new
     // trigger before first paint, not only after someone opens its lazy menu.
