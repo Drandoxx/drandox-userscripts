@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.749
+// @version      2.36.750
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.750","fixes":true,"changes":[{"key":"stable-record-actions","meaningful":false,"text":"Keep record action buttons on one line, with horizontal scrolling rather than wrapping when space is limited."}]},
 {"version":"2.36.749","fixes":true,"changes":[{"key":"stable-record-actions","meaningful":true,"text":"Show ready or cached action rows immediately on tab activation, with lightweight 250 ms background checks for later changes."}]},
 {"version":"2.36.748","fixes":true,"changes":[{"key":"stable-record-actions","meaningful":true,"text":"Render a stable custom record-action row from ServiceNow's native action model, checking once per second and dispatching through the original native handler."}]},
 {"version":"2.36.747","fixes":true,"changes":[{"key":"incident-header-actions","meaningful":true,"text":"Reconcile restored action bars on tab selection and ignore hidden incident menu entries before deciding whether the three-dot trigger is needed."}]},
@@ -3051,8 +3052,8 @@ const snAIChatDisplayNames=(()=>{
     :host([data-sn-ai-custom-actions]) .sn-header-layout-row[data-sn-ai-record-rows] .sn-header-layout-content.-last > now-record-common-uiactionbar,
     :host([data-sn-ai-actions-managed]) .sn-header-layout-row[data-sn-ai-record-rows] .sn-header-layout-content.-last > now-record-common-uiactionbar { display:none!important; }
     :host-context([data-sn-ai-actions-managed]):host(now-record-common-uiactionbar) { display:none!important; }
-    .sn-ai-stable-record-actions { display:flex!important;flex:1 1 0!important;min-width:0;justify-content:flex-end;align-items:center;flex-wrap:wrap;gap:8px; }
-    .sn-ai-stable-record-actions button { display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:6px 16px;white-space:nowrap;font:600 16px/20px "Source Sans Pro",Arial,sans-serif;border:1px solid var(--sn-theme-806493);border-radius:5px;background:var(--sn-theme-392e48);color:var(--sn-theme-eee4ff);cursor:pointer;text-shadow:none; }
+    .sn-ai-stable-record-actions { display:flex!important;flex:1 1 0!important;min-width:0;justify-content:safe flex-end;align-items:center;flex-wrap:nowrap!important;gap:8px;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;padding:2px;box-sizing:border-box; }
+    .sn-ai-stable-record-actions button { display:inline-flex;flex:0 0 auto;align-items:center;justify-content:center;min-height:34px;padding:6px 16px;white-space:nowrap;font:600 16px/20px "Source Sans Pro",Arial,sans-serif;border:1px solid var(--sn-theme-806493);border-radius:5px;background:var(--sn-theme-392e48);color:var(--sn-theme-eee4ff);cursor:pointer;text-shadow:none; }
     .sn-ai-stable-record-actions button:hover:not(:disabled) { background:var(--sn-theme-49365a); }
     .sn-ai-stable-record-actions button:focus-visible { outline:2px solid var(--sn-theme-ac94ec);outline-offset:2px; }
     .sn-ai-stable-record-actions button:disabled { opacity:.5;cursor:default; }
