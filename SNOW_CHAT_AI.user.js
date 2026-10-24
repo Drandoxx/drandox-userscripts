@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.739
+// @version      2.36.740
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.740","fixes":true,"changes":[{"key":"ticket-command-recovery","meaningful":true,"text":"Explicit ticket commands can replace a confirmed closed owned Event using native IMS navigation; pause and Continue still never create duplicate drafts."},{"key":"ai-modify-result","meaningful":true,"text":"Keep successful AI results open with Ask AI to Modify, an instruction box and Done, independently of feedback settings."}]},
 {"version":"2.36.739","fixes":true,"changes":[{"key":"hp-printer-site","meaningful":true,"text":"Replace missing HP printer site locations with Next to tills for Invoice or Next to Manager's PC for Picking, preserving specific AI locations in both description and form fields."}]},
 {"version":"2.36.738","fixes":true,"changes":[{"key":"nova-tic-tac-toe","meaningful":true,"text":"Keep the game board above page backgrounds while Nova draws instead of moving it to a negative stacking layer."}]},
 {"version":"2.36.737","fixes":true,"changes":[{"key":"auto-greet","meaningful":true,"text":"Recognize common short greetings, use W for clearly greeting-only messages, Q for issue-focused messages and skip uncertain mixtures with logged ratios."}]},
@@ -8976,12 +8977,27 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     if(state.incomingPause&&state.incomingResume?.ims===ims)state.incomingResume.event={...token};
     addLog('info','ticket-draft-owned',token);return token;
   }
-  async function restoreTicketDraft(token){
+  async function restoreTicketDraft(token,options={}){
     if(!token?.tabId||!token.parentId)throw Error('No owned Event identity is available. Resume will not create a replacement.');
     await clickIMSFast(token.ims);
-    const main=snWorkspacePrimary(),parent=main?.props.tabList.find(t=>String(t.tab_id)===token.parentId&&t.sys_id===token.interactionId);
+    const main=snWorkspacePrimary(),parent=main?.props.tabList.find(t=>String(t.tab_id)===token.parentId&&t.sys_id===token.interactionId)
+      ||(options.allowReplacement?main?.props.tabList.find(t=>t.table==='interaction'&&t.sys_id===token.interactionId):null);
     const tab=parent?.tabList?.find(t=>String(t.tab_id)===token.tabId&&t.contentId===token.contentId&&t.table==='new_call'&&t.type==='new_record');
-    if(!tab)throw Error('The Event owned by this bubble is no longer open. No replacement Event was created.');
+    if(!tab){
+      if(!options.allowReplacement||state.incomingPause)throw Error('The Event owned by this bubble is no longer open. No replacement Event was created.');
+      // Only an explicit new command/revision may replace a closed draft.
+      // Continue remains navigation-only, and a present but unready tab is
+      // never treated as a closed draft.
+      if(!parent)throw Error('The original IMS tab identity could not be confirmed. No replacement Event was created.');
+      const dialog=runningTicketDialog(token.ims);
+      if(dialog?.snAiPendingDraft)throw Error('Draft creation is not yet confirmed. No additional Event will be opened.');
+      if(dialog)delete dialog.snAiOwnedEvent;
+      if(state.createdEvent?.tabId===token.tabId&&state.createdEvent?.parentId===token.parentId)state.createdEvent=null;
+      state.startContext={...state.startContext,ims:token.ims};
+      addLog('info','ticket-draft-replacement-requested',{ims:token.ims,tabId:token.tabId});
+      await createNewEventFromWorkspace();
+      return;
+    }
     const navigationStarted=performance.now();while(!snWorkspaceFocusSubtab(token.parentId,token.tabId)){if(performance.now()-navigationStarted>4000)throw Error('Native Event navigation is not ready. Try Continue again.');await rawSleep(60);assertAutomationNotStopped();}
     const started=performance.now();while(performance.now()-started<12000){assertAutomationNotStopped();if(ticketDraftSelected(token)){token.path=location.pathname;state.createdEvent=token;const dialog=runningTicketDialog(token.ims);if(dialog)dialog.snAiOwnedEvent=token;return;}await rawSleep(60);}
     throw Error('The owned Event did not become ready. Automation remains paused.');
@@ -13600,14 +13616,14 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       return autoTEXT(rawData);
     }
     const data = withoutIMS(rawData);
-    const owned=ownedTicketDraft(requestedIMS);if(owned&&!ticketDraftSelected(owned))await restoreTicketDraft(owned);
+    const owned=ownedTicketDraft(requestedIMS);if(owned&&!ticketDraftSelected(owned))await restoreTicketDraft(owned,{allowReplacement:true});
     const currentEvent = checkCurrentEvent();
     let preparation = state.autoSession?.profile === profile
       && normaliseIMS(state.autoSession?.ims) === requestedIMS
       && newEventMatchesIMS(currentEvent, requestedIMS)
       ? { sessionReused: true, currentEvent }
       : await prepareTicketSessionFromCache(profile, requestedIMS, {
-        requireChat: !['CPC', 'ILS_PRNT'].includes(profile),
+        requireChat: profile === 'TEXT',
       });
     if (!preparation) {
       addLog('info', 'chat-cache-miss-start-fallback', { profile, ims: requestedIMS });
@@ -17737,6 +17753,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         #${ROOT_ID} .local-sn-cpc-dialog.is-success.is-feedback .local-sn-cpc-content { max-height: 260px; padding: 14px; opacity: 1; }
         #${ROOT_ID} .local-sn-cpc-dialog.is-success.is-feedback .local-sn-cpc-content > :is(.local-sn-case-instruction,[data-ticket-content],[data-ticket-ai-returned],[data-ticket-manual-ai-panel],.local-sn-cpc-actions):not([data-ticket-completion-actions]) { display:none!important; }
         #${ROOT_ID} .local-sn-cpc-dialog.is-success.is-feedback .local-sn-ticket-feedback { margin:0; }
+        #${ROOT_ID} .local-sn-cpc-dialog.is-success.is-feedback.is-modifying .local-sn-cpc-content > [data-ticket-manual-ai-panel] { display:block!important; }
         #${ROOT_ID} .local-sn-cpc-dialog.is-success .local-sn-case-instruction { display: none; }
         #${ROOT_ID} .local-sn-cpc-dialog.is-error .local-sn-cpc-drag { background: #7d211a; }
         #${ROOT_ID} .local-sn-cpc-dialog.is-error .local-sn-cpc-content { max-height: min(calc(100vh - 92px), 1100px); overflow-y: auto; overscroll-behavior: contain; }
@@ -19307,7 +19324,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           dialog.classList.add('is-success');
           titleMain.textContent = `${incidentNumber} - ${mode} complete`;
           setProgress(100);
-          if (state.feedbackEnabled && shell.showFeedback()) shell.feedbackClose = closeAndRemove;
+          if (shell.showFeedback()) shell.feedbackClose = closeAndRemove;
           else successTimer = setTimeout(() => closeAndRemove('success'), 5000);
         } catch (error) {
           aiRequest = null;
@@ -20280,6 +20297,13 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       const completionActions=document.createElement('div');completionActions.className='local-sn-cpc-actions';completionActions.dataset.ticketCompletionActions='';completionActions.hidden=true;
       const feedbackButton=document.createElement('button');feedbackButton.type='button';feedbackButton.textContent='Give feedback';
       const doneButton=document.createElement('button');doneButton.type='button';doneButton.textContent='Done';completionActions.append(feedbackButton,doneButton);refs.feedbackPanel.before(completionActions);
+      const modifyButton=document.createElement('button');modifyButton.type='button';modifyButton.textContent='Ask AI to Modify';completionActions.append(modifyButton);
+      let modifyingSuccess=false;
+      modifyButton.addEventListener('click',()=>{
+        modifyingSuccess=true;completionActions.hidden=true;refs.content.hidden=true;
+        refs.dialog.classList.add('is-modifying');refs.manualAIPanel.hidden=false;
+        refs.manualAIInput.value='';refs.manualAIInput.focus();
+      });
       feedbackButton.addEventListener('click',()=>{completionActions.hidden=true;refs.feedbackPanel.hidden=false;refs.feedbackInput.focus();});
       doneButton.addEventListener('click',()=>refs.closeButton.click());
       refs.runButton.addEventListener('click',()=>{completionActions.hidden=true;refs.feedbackPanel.hidden=true;dialog.classList.remove('is-feedback');});
@@ -20763,14 +20787,23 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       refs.feedbackCancelButton.addEventListener('click', finishFeedback);
       refs.feedbackInput.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); refs.feedbackSendButton.click(); } });
       refs.manualAIButton.addEventListener('click', () => { refs.manualAIPanel.hidden = false; refs.manualAIInput.focus(); });
-      refs.manualAICancelButton.addEventListener('click', () => { refs.manualAIPanel.hidden = true; refs.manualAIInput.value = ''; });
+      refs.manualAICancelButton.addEventListener('click', () => { refs.manualAIPanel.hidden = true; refs.manualAIInput.value = ''; if(modifyingSuccess){modifyingSuccess=false;refs.showFeedback();} });
       refs.manualAISendButton.addEventListener('click', async () => {
         const instruction = String(refs.manualAIInput.value || '').trim();
         if (!instruction) { refs.errorLine.textContent = 'Enter an instruction for the AI.'; return; }
         refs.manualAISendButton.disabled = true;
         try {
-          if (state.ai.provider === 'web') { state.webContinueNext = true; state.webCorrectionPrompt = instruction; state.webManualPromptOnly = true; }
+          refs.forceFreshAI = true;
+          if(modifyingSuccess&&refs.dialog.snAiOwnedEvent){
+            await restoreTicketDraft(refs.dialog.snAiOwnedEvent,{allowReplacement:true});
+            if(state.createdEvent?.ims===refs.dialog.dataset.pinnedIms)refs.dialog.snAiOwnedEvent=state.createdEvent;
+          }
+          if (state.ai.provider === 'web') { state.webContinueNext = true; state.webCorrectionPrompt = instruction; state.webManualPromptOnly = false; }
+          else if(modifyingSuccess&&refs.caseInstruction){refs.caseInstruction.value=[refs.caseInstruction.value,instruction].filter(Boolean).join('\n');}
           else throw new Error('Manual AI instructions require ChatGPT Web. Nothing was stored.');
+          modifyingSuccess=false;
+          refs.content.hidden=false;refs.runButton.hidden=false;refs.runButton.disabled=false;
+          refs.cancelButton.hidden=false;refs.dialog.classList.remove('is-feedback','is-success','is-modifying');
           refs.manualAIPanel.hidden = true;
           refs.manualAIInput.value = '';
           refs.runButton.click();
@@ -20799,6 +20832,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       refs.feedbackClose = null;
       refs.showFeedback = () => {
         if (!refs.aiMode) return false;
+        refs.dialog.classList.remove('is-modifying');
         feedbackButton.hidden=!state.feedbackEnabled;
         refs.dialog.classList.add('is-feedback');
         refs.content.hidden = true;
@@ -21386,8 +21420,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           progressText.textContent = '100%';
           await clearCachedAICommand('CPC', pinnedIMS);
           reusableAICommand = '';
-          if (!chatCacheReleased) { chatCacheReleased = true; if (useAI) releaseAIChatCache(pinnedIMS); }
-          if (useAI && state.feedbackEnabled && cpcShell.showFeedback()) { cpcShell.feedbackClose = closeAndRemove; } else successTimer = setTimeout(() => closeAndRemove('success'), 5000);
+          if (useAI && cpcShell.showFeedback()) { cpcShell.feedbackClose = closeAndRemove; } else successTimer = setTimeout(() => closeAndRemove('success'), 5000);
         } catch (error) {
           aiRequest = null;
           if (stoppedFromWindow || error?.code === 'AI_STOPPED') {
@@ -21640,10 +21673,9 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           if (useAI) {
             await clearCachedAICommand('ILS_PRNT', pinnedIMS);
             reusableAICommand = '';
-            if (!chatCacheReleased) { chatCacheReleased = true; if (useAI) releaseAIChatCache(pinnedIMS); }
           }
           if(finalStatus.result.reviewBeforeSave?.length){ /* Keep the completed reminder visible until dismissed. */ }
-          else if (useAI && state.feedbackEnabled && shell.showFeedback()) { shell.feedbackClose = closeAndRemove; } else successTimer = setTimeout(() => closeAndRemove('success'), 5000);
+          else if (useAI && shell.showFeedback()) { shell.feedbackClose = closeAndRemove; } else successTimer = setTimeout(() => closeAndRemove('success'), 5000);
         } catch (error) {
           aiRequest = null;
           if (stoppedFromWindow || error?.code === 'AI_STOPPED') {
@@ -21902,8 +21934,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           clearIgnoredAutomationFields('FTF', pinnedIMS);
           await clearCachedAICommand('FTF', pinnedIMS);
           reusableAICommand = '';
-          if (!chatCacheReleased) { chatCacheReleased = true; releaseAIChatCache(pinnedIMS); }
-          if (state.feedbackEnabled && ftfShell.showFeedback()) { ftfShell.feedbackClose = closeAndRemove; } else successTimer = setTimeout(() => closeAndRemove('success'), 5000);
+          if (ftfShell.showFeedback()) { ftfShell.feedbackClose = closeAndRemove; } else successTimer = setTimeout(() => closeAndRemove('success'), 5000);
         } catch (error) {
           aiRequest = null;
           if (stoppedFromWindow || error?.code === 'AI_STOPPED') {
@@ -22165,8 +22196,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             : `No matching CI selected - printer model:\n${finalStatus.result.printerModel || 'Not provided'}`;
           completeNote.hidden = false;
           await clearCachedAICommand('HP', pinnedIMS); reusableAICommand = '';
-          if (!chatCacheReleased) { chatCacheReleased = true; releaseAIChatCache(pinnedIMS); }
-          if (state.feedbackEnabled && shell.showFeedback()) shell.feedbackClose = closeAndRemove;
+          if (shell.showFeedback()) shell.feedbackClose = closeAndRemove;
           else successTimer = setTimeout(() => closeAndRemove('success'), 5000);
         } catch (error) {
           aiRequest = null;
@@ -22462,8 +22492,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           errorLine.style.color = completionWarning ? '#f0a63a' : '';
           await clearCachedAICommand('DESCRIPTION', pinnedIMS);
           reusableAICommand = '';
-          if (!chatCacheReleased) { chatCacheReleased = true; releaseAIChatCache(pinnedIMS); }
-          if (state.feedbackEnabled && descriptionShell.showFeedback()) { descriptionShell.feedbackClose = closeAndRemove; } else successTimer = setTimeout(() => closeAndRemove('success'), 5000);
+          if (descriptionShell.showFeedback()) { descriptionShell.feedbackClose = closeAndRemove; } else successTimer = setTimeout(() => closeAndRemove('success'), 5000);
         } catch (error) {
           aiRequest = null;
           if (stoppedFromWindow || error?.code === 'AI_STOPPED') {
