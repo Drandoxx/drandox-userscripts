@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.745
+// @version      2.36.746
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.746","fixes":true,"changes":[{"key":"incident-header-actions","meaningful":true,"text":"Exclude intentionally hidden incident actions before native width calculation so Resolve appears beside Save when space permits."}]},
 {"version":"2.36.745","fixes":true,"changes":[{"key":"chat-api-join-recovery","meaningful":true,"text":"When no human join marker exists, use the Virtual Agent's exact Welcome to Service Desk handover as the chat boundary in API, transcript and live readers."}]},
 {"version":"2.36.744","fixes":true,"changes":[{"key":"chat-api-join-recovery","meaningful":true,"text":"Read agent join events in text and rich API formats, and try the matching durable transcript before scrolling when the API boundary is missing."}]},
 {"version":"2.36.743","fixes":true,"changes":[{"key":"button-text-rendering","meaningful":true,"text":"Use neutral text rendering on gradient buttons to suppress red and blue subpixel fringes without changing gradient or hover colors."}]},
@@ -5717,8 +5718,9 @@ const snAIChatDisplayNames=(()=>{
     syncRecordHeaderRows(root);
     const host=root.host;
     if(!host||!['sn-form-internal-header-layout','now-record-common-uiactionbar','sn-form-internal-uiactionbar'].includes(host.localName))return;
-    // The header owns actionNodes. Rewriting its child props causes the
-    // parent to restore its original array on every native layout pass.
+    // Filter at the owning header, not its child props, so hidden actions do
+    // not consume native responsive button slots or get restored by the parent.
+    if(host.localName==='sn-form-internal-header-layout')filterNativeIncidentActionNodes(host);
     syncRecordOverflowMenus(root);
     // Leave fixedButtonNumber to the native responsive action bar. Forcing
     // it to actionNodes.length defeats its More-menu overflow calculation.
@@ -5898,8 +5900,18 @@ const snAIChatDisplayNames=(()=>{
   ]);
   // SN_AI_EMPTY_ACTION_MENU_BEGIN
   function filterNativeIncidentActionNodes(host){
-    // Compatibility no-op: native action data must remain owned by SNOW.
-    // filterIncidentActions hides button hosts and empty overflow menus.
+    if(host?.localName!=='sn-form-internal-header-layout')return;
+    const props=host?.getProperties?.();
+    if((props?.table||host?.table)!=='incident'||!Array.isArray(props?.actionNodes))return;
+    const clean=nodes=>nodes.flatMap(node=>{
+      if(!node||hiddenIncidentActionIds.has(String(node.id)))return [];
+      if(!Array.isArray(node.children))return [node];
+      const children=clean(node.children);
+      if(!children.length)return [];
+      return children.length===node.children.length&&children.every((child,index)=>child===node.children[index])?[node]:[{...node,children}];
+    });
+    const filtered=clean(props.actionNodes);
+    if(filtered.length!==props.actionNodes.length||filtered.some((node,index)=>node!==props.actionNodes[index]))host.actionNodes=filtered;
   }
   function recordActionMenuHasItems(items){
     return items.some(item=>{
