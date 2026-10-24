@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.741
+// @version      2.36.742
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.742","fixes":true,"changes":[{"key":"ai-modify-result","meaningful":false,"text":"Place Done last, to the right of Ask AI to Modify and Give feedback."}]},
 {"version":"2.36.741","fixes":true,"changes":[{"key":"ai-modify-result","meaningful":true,"text":"Apply AI revisions as changed-field-only updates against the last successful run, skipping unchanged controls and full template/routing checks on the same draft."}]},
 {"version":"2.36.740","fixes":true,"changes":[{"key":"ticket-command-recovery","meaningful":true,"text":"Explicit ticket commands can replace a confirmed closed owned Event using native IMS navigation; pause and Continue still never create duplicate drafts."},{"key":"ai-modify-result","meaningful":true,"text":"Keep successful AI results open with Ask AI to Modify, an instruction box and Done, independently of feedback settings."}]},
 {"version":"2.36.739","fixes":true,"changes":[{"key":"hp-printer-site","meaningful":true,"text":"Replace missing HP printer site locations with Next to tills for Invoice or Next to Manager's PC for Picking, preserving specific AI locations in both description and form fields."}]},
@@ -20399,7 +20400,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       const completionActions=document.createElement('div');completionActions.className='local-sn-cpc-actions';completionActions.dataset.ticketCompletionActions='';completionActions.hidden=true;
       const feedbackButton=document.createElement('button');feedbackButton.type='button';feedbackButton.textContent='Give feedback';
       const doneButton=document.createElement('button');doneButton.type='button';doneButton.textContent='Done';completionActions.append(feedbackButton,doneButton);refs.feedbackPanel.before(completionActions);
-      const modifyButton=document.createElement('button');modifyButton.type='button';modifyButton.textContent='Ask AI to Modify';completionActions.append(modifyButton);
+      const modifyButton=document.createElement('button');modifyButton.type='button';modifyButton.textContent='Ask AI to Modify';completionActions.append(modifyButton,doneButton);
       let modifyingSuccess=false;
       modifyButton.addEventListener('click',()=>{
         modifyingSuccess=true;completionActions.hidden=true;refs.content.hidden=true;
