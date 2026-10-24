@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.754
+// @version      2.36.755
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.755","fixes":true,"changes":[{"key":"button-edge-rendering","meaningful":false,"text":"Remove the fractional transparent modal-primary border and opacity workaround; paint the gradient to the outer edge."}]},
 {"version":"2.36.754","fixes":true,"changes":[{"key":"stable-record-actions","meaningful":true,"text":"Give unsaved New Event actions the space remaining after the title and hide Create Incident on interaction Details."}]},
 {"version":"2.36.753","fixes":true,"changes":[{"key":"button-edge-rendering","meaningful":true,"text":"Remove native border, shadow and pseudo-element edge overlays from gradient primary buttons while keeping their fill and keyboard focus indicator."}]},
 {"version":"2.36.752","fixes":true,"changes":[{"key":"stable-record-actions","meaningful":true,"text":"Restore pointer interaction on custom header actions and overflow menus, overriding the native header's non-interactive container."}]},
@@ -1888,7 +1889,7 @@ const snAIChatDisplayNames=(()=>{
     :is(.now-button.-primary,.sn-ai-plain-modal-action[data-primary],
       .sn-ai-record-sla button,button[style*="linear-gradient"],
       #local-sn-inspector-root button:not(.secondary)):not(:disabled):not([aria-disabled="true"]):not(.is-disabled) {
-      opacity:0.999!important;
+      opacity:1!important;
     }
     :is(button,[role="button"],input[type="button"],input[type="submit"],input[type="reset"],now-button,now-button-iconic),
     :is(button,[role="button"],now-button,now-button-iconic) *,
@@ -3212,7 +3213,7 @@ const snAIChatDisplayNames=(()=>{
     :host(now-button.now-modal-footer-button) .now-button.-primary,
     :host(now-button.now-modal-footer-button) .now-button.-primary:hover:not(:disabled) {
       background:linear-gradient(115deg,var(--sn-theme-9de2f5),var(--sn-theme-ac94ec))!important;
-      color:var(--sn-theme-14121c)!important;border:1px solid transparent!important;
+      color:var(--sn-theme-14121c)!important;border:0!important;background-clip:border-box!important;
     }
     :host(now-button.now-modal-footer-button) .now-button.-primary:hover:not(:disabled) { filter:brightness(1.08); }
     :host(now-button.now-modal-footer-button) .now-button.-primary :is(slot,span) { color:inherit!important; }
