@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.757
+// @version      2.36.758
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.758","fixes":true,"changes":[{"key":"record-action-alignment","meaningful":true,"text":"Use a consistent 24px right inset for record headers and remove the Event-only trailing button margin."}]},
 {"version":"2.36.757","fixes":true,"changes":[{"key":"button-shape-consistency","meaningful":false,"text":"Keep gradient buttons borderless; apply the matching inset outline only to normal buttons."}]},
 {"version":"2.36.756","fixes":true,"changes":[{"key":"button-shape-consistency","meaningful":true,"text":"Match normal text buttons to gradient buttons in size, typography, padding and corner radius while retaining their existing colors."}]},
 {"version":"2.36.755","fixes":true,"changes":[{"key":"button-edge-rendering","meaningful":false,"text":"Remove the fractional transparent modal-primary border and opacity workaround; paint the gradient to the outer edge."}]},
@@ -3060,6 +3061,9 @@ const snAIChatDisplayNames=(()=>{
     :host([data-sn-ai-actions-managed]) .sn-header-layout-row[data-sn-ai-record-rows] .sn-header-layout-content.-last > now-record-common-uiactionbar { display:none!important; }
     :host-context([data-sn-ai-actions-managed]):host(now-record-common-uiactionbar) { display:none!important; }
     :host([data-sn-ai-actions-managed]) .sn-header-layout-content.-last { gap:10px!important;z-index:5!important; }
+    :host([data-sn-ai-actions-managed]) .sn-header-layout { padding-inline-end:24px!important;box-sizing:border-box!important; }
+    :host([data-sn-ai-actions-managed]) .sn-header-layout-content.-last { margin-inline-end:0!important;padding-inline-end:0!important; }
+    .sn-ai-stable-record-actions > button:last-of-type { margin-inline-end:0!important; }
     :host([data-sn-ai-actions-managed]) .sn-header-layout-row:not([data-sn-ai-record-rows]) { flex-wrap:nowrap!important;gap:10px!important;align-items:center!important; }
     :host([data-sn-ai-actions-managed]) .sn-header-layout-row:not([data-sn-ai-record-rows]) > .sn-header-layout-content:not(.-last) { flex:0 1 auto!important;width:max-content!important;min-width:0!important; }
     :host([data-sn-ai-actions-managed]) .sn-header-layout-row:not([data-sn-ai-record-rows]) > .sn-header-layout-content.-last { flex:1 1 0!important;width:0!important;min-width:36px!important;display:flex!important; }
@@ -4037,7 +4041,7 @@ const snAIChatDisplayNames=(()=>{
       border-radius:6px!important;font-weight:600!important;
       box-shadow:none!important;outline:none!important;
     }
-    button.now-button[aria-label="Send incident details to chat"] { margin-inline-end:12px!important; }
+    button.now-button[aria-label="Send incident details to chat"] { margin-inline-end:0!important; }
     button.now-button[aria-label="Create a new Event"] *,
     button.now-button[aria-label="Send incident details to chat"] *,
     button.now-button[aria-label="Save & Reassign"] * {
