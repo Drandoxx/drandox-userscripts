@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.782
+// @version      2.36.783
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.783","fixes":true,"changes":[{"key":"bubble-opening-performance","meaningful":true,"text":"Exclude internal machine-readable JSON blocks from the accessibility tree to reduce measured bubble-opening stalls without hiding real controls or status messages."}]},
 {"version":"2.36.782","fixes":true,"changes":[{"key":"ticket-fill-performance","meaningful":true,"text":"Reduce measured field-lookup overhead by filtering controls before containment checks and caching background Reporting User controls between ticks."}]},
 {"version":"2.36.781","fixes":true,"changes":[{"key":"diagnostic-agent-identity","meaningful":true,"text":"Use the ServiceNow login ID in diagnostic reporter userID and keep the internal record identifier separately as sysId."}]},
 {"version":"2.36.780","fixes":false,"changes":[{"key":"diagnostic-agent-identity","meaningful":true,"text":"Include the signed-in ServiceNow agent name and user ID in each uploaded report, separate from the random browser label."}]},
@@ -18698,13 +18699,13 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           </div>
         </div>
       </div>
-      <pre class="local-sn-ai-machine-data" id="local-sn-inspector-ai-instructions" data-ai-protocol="sn-ai-automation-v2" aria-label="ServiceNow AI Automation Instructions"></pre>
-      <pre class="local-sn-ai-machine-data" id="local-sn-inspector-ai-cache" data-ai-protocol="sn-ai-cache-v1" aria-label="ServiceNow AI IMS Chat Cache">{"status":"No cached IMS chat yet"}</pre>
-      <pre class="local-sn-ai-machine-data" id="local-sn-inspector-ai-chat" data-ai-protocol="sn-ai-chat-v1" aria-label="ServiceNow AI Chat Data">{"status":"Run START mode IMS..."}</pre>
-      <pre class="local-sn-ai-machine-data" id="local-sn-inspector-ai-request" data-ai-protocol="sn-ai-request-v1" aria-label="ServiceNow AI Requested Data">{"status":"Run START mode IMS..."}</pre>
-      <pre class="local-sn-ai-machine-data" id="local-sn-inspector-ai-result" data-ai-protocol="sn-ai-result-v1" aria-label="ServiceNow AI Command Result">{"status":"idle"}</pre>
-      <pre class="local-sn-ai-machine-data" id="local-sn-inspector-ai-command-door" data-ai-protocol="sn-ai-command-door-v1" aria-label="ServiceNow AI Console Command Door"></pre>
-      <pre class="local-sn-ai-machine-data" id="local-sn-inspector-ai-logs" data-ai-protocol="sn-ai-logs-v1" aria-label="ServiceNow AI Helper Logs"></pre>`;
+      <pre class="local-sn-ai-machine-data" aria-hidden="true" id="local-sn-inspector-ai-instructions" data-ai-protocol="sn-ai-automation-v2" aria-label="ServiceNow AI Automation Instructions"></pre>
+      <pre class="local-sn-ai-machine-data" aria-hidden="true" id="local-sn-inspector-ai-cache" data-ai-protocol="sn-ai-cache-v1" aria-label="ServiceNow AI IMS Chat Cache">{"status":"No cached IMS chat yet"}</pre>
+      <pre class="local-sn-ai-machine-data" aria-hidden="true" id="local-sn-inspector-ai-chat" data-ai-protocol="sn-ai-chat-v1" aria-label="ServiceNow AI Chat Data">{"status":"Run START mode IMS..."}</pre>
+      <pre class="local-sn-ai-machine-data" aria-hidden="true" id="local-sn-inspector-ai-request" data-ai-protocol="sn-ai-request-v1" aria-label="ServiceNow AI Requested Data">{"status":"Run START mode IMS..."}</pre>
+      <pre class="local-sn-ai-machine-data" aria-hidden="true" id="local-sn-inspector-ai-result" data-ai-protocol="sn-ai-result-v1" aria-label="ServiceNow AI Command Result">{"status":"idle"}</pre>
+      <pre class="local-sn-ai-machine-data" aria-hidden="true" id="local-sn-inspector-ai-command-door" data-ai-protocol="sn-ai-command-door-v1" aria-label="ServiceNow AI Console Command Door"></pre>
+      <pre class="local-sn-ai-machine-data" aria-hidden="true" id="local-sn-inspector-ai-logs" data-ai-protocol="sn-ai-logs-v1" aria-label="ServiceNow AI Helper Logs"></pre>`;
 
     const controls = host.querySelector('[data-controls]');
     controls.append(
