@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.775
+// @version      2.36.776
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.776","fixes":true,"changes":[{"key":"diagnostic-background-upload","meaningful":true,"text":"Retry diagnostic uploads every minute and drain queued batches up to the server limit, without escalating local retry delays."}]},
 {"version":"2.36.775","fixes":false,"changes":[{"key":"diagnostic-upload-notice","meaningful":false,"text":"Show a single non-stacking confirmed-upload notification for Laszlo Akim only."}]},
 {"version":"2.36.774","fixes":true,"changes":[{"key":"diagnostic-background-upload","meaningful":true,"text":"Record background upload attempts and failures locally, recover aborted requests, and upload status-only events without requiring chat data."}]},
 {"version":"2.36.773","fixes":true,"changes":[{"key":"presence-diagnostics","meaningful":true,"text":"Report agent-list changes and refresh failures, distinguish manual presence selections from script restoration and external status changes."}]},
@@ -9019,7 +9020,8 @@ function startSNAI(tabIdentity) {
       error.status=response.status;error.code=response.status===429?'rate-limited':response.status===401?'credential-rejected':response.status>=500?'server-error':'http-or-response-error';
       const retry=String(response.responseHeaders||'').match(/^Retry-After:\s*(.+)$/im)?.[1];
       if(retry){const seconds=Number(retry);error.retryAt=Number.isFinite(seconds)?Date.now()+Math.max(0,seconds)*1000:Date.parse(retry);}
-      diagnosticUploadHealth('failed',{phase,status:response.status,code:error.code,durationMs:Date.now()-startedAt});throw error;
+      const reason=['Invalid batch','Invalid diagnostic format','Upload credential rejected','Upload unavailable','Registration unavailable','Upload limit reached; retry after 60 seconds'].includes(body.error)?body.error:body.ok===false?'server-rejected-request':'non-JSON-or-unexpected-response';
+      diagnosticUploadHealth('failed',{phase,status:response.status,code:error.code,reason,durationMs:Date.now()-startedAt});throw error;
     }
     diagnosticUploadHealth('request-confirmed',{phase,status:response.status,durationMs:Date.now()-startedAt});return body;
   }
@@ -9035,7 +9037,8 @@ function startSNAI(tabIdentity) {
       if(!identity)throw new Error('Diagnostic identity could not be saved');
     }
     if(identity.revoked)throw new Error('Diagnostic uploads revoked');
-    if(identity.retryAt>Date.now())throw new Error('Diagnostic uploads waiting to retry');
+    // Old releases escalated all failures up to an hour. Only a server-mandated delay survives.
+    if(identity.retryAt>Date.now()&&identity.serverRetryAfter===true)throw new Error('Diagnostic uploads waiting for server Retry-After');
     if(!identity.registered){
       try{
         const result=await diagnosticRequest('https://drandox.cc/work/diagnostics-register.php','',{schema:1,installationToken:identity.token,label:identity.label});
@@ -9049,7 +9052,8 @@ function startSNAI(tabIdentity) {
   async function diagnosticBackoff(identity,error){
     identity.failures=(identity.failures||0)+1;
     identity.revoked=identity.revoked||error.revoked===true;
-    identity.retryAt=Math.max(Number.isFinite(error.retryAt)?error.retryAt:0,Date.now()+Math.min(3600000,60000*2**Math.min(identity.failures-1,6)));
+    identity.serverRetryAfter=Number.isFinite(error.retryAt)&&error.retryAt>Date.now();
+    identity.retryAt=identity.serverRetryAfter?error.retryAt:0;
     identity.lastFailure={at:Date.now(),code:error.code||'unconfirmed',status:error.status||0};
     // Revalidate the SAME secret after an upload 401, including legacy migrations.
     // Registration will detect revocation; no replacement identity is ever generated.
@@ -9061,7 +9065,7 @@ function startSNAI(tabIdentity) {
     try{
       const ack=await diagnosticRequest('https://drandox.cc/work/diagnostics.php',identity.token,JSON.parse(payload),batchId);
       if(ack.batchId!==batchId)throw new Error('Diagnostic batch acknowledgement mismatch');
-      await GM_setValue(diagnosticIdentityKey,{...identity,failures:0,retryAt:0});
+      await GM_setValue(diagnosticIdentityKey,{...identity,failures:0,retryAt:0,serverRetryAfter:false});
     }catch(error){await diagnosticBackoff(identity,error);throw error;}
   }
   async function uploadDiagnosticBatch(){
@@ -9069,11 +9073,12 @@ function startSNAI(tabIdentity) {
     state.diagnosticUploading=true;
     state.diagnosticUploadAttemptAt=Date.now();
     try{
+      const cycleCutoff=Date.now();
       const run=async()=>{
         const identity=await diagnosticIdentity();
         await flushDailyDiagnostics();const db=await diagnosticDatabase();
         const pending=await new Promise((resolve,reject)=>{const r=db.transaction('uploads').objectStore('uploads').get('pending');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
-        const records=pending||await new Promise((resolve,reject)=>{const rows=[],tx=db.transaction('events'),request=tx.objectStore('events').openCursor();let bytes=0;request.onsuccess=()=>{const c=request.result;if(!c){resolve(rows);return;}const n=new TextEncoder().encode(JSON.stringify(c.value.entry)).length;if(rows.length>=500||bytes+n>950000){if(!rows.length)reject(new Error('Diagnostic entry exceeds upload limit'));else resolve(rows);return;}rows.push({key:c.primaryKey,entry:c.value.entry});bytes+=n;c.continue();};request.onerror=()=>reject(request.error);});
+        const records=pending||await new Promise((resolve,reject)=>{const rows=[],tx=db.transaction('events'),request=tx.objectStore('events').openCursor();let bytes=0;request.onsuccess=()=>{const c=request.result;if(!c){resolve(rows);return;}if(c.value.entry[0]>cycleCutoff){c.continue();return;}const n=new TextEncoder().encode(JSON.stringify(c.value.entry)).length;if(rows.length>=500||bytes+n>950000){if(!rows.length)reject(new Error('Diagnostic entry exceeds upload limit'));else resolve(rows);return;}rows.push({key:c.primaryKey,entry:c.value.entry});bytes+=n;c.continue();};request.onerror=()=>reject(request.error);});
         if(!records.length)return;
         diagnosticUploadHealth('batch-ready',{length:records.length});
         if(!pending)await new Promise((resolve,reject)=>{const tx=db.transaction('uploads','readwrite');tx.objectStore('uploads').put(records,'pending');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});
@@ -9084,7 +9089,7 @@ function startSNAI(tabIdentity) {
         try{showDiagnosticUploadSuccess(records.length);}catch{/* A notification must never invalidate a confirmed upload. */}
         diagnosticUploadHealth('batch-confirmed',{length:records.length,ok:true});state.diagnosticUploadStatus='Uploaded '+new Date().toLocaleTimeString();state.diagnostics?.contents.clear();return true;
       };
-      if(navigator.locks)await navigator.locks.request('sn-ai-diagnostic-upload',{ifAvailable:true},lock=>lock?run():undefined);else throw new Error('Diagnostic uploads require cross-tab locking');
+      if(navigator.locks)await navigator.locks.request('sn-ai-diagnostic-upload',{ifAvailable:true},async lock=>{if(!lock)return;for(let batch=0;batch<10;batch++){if(!await run())break;}});else throw new Error('Diagnostic uploads require cross-tab locking');
     }catch(e){state.diagnosticUploadStatus=e.message+'; local logs retained';diagnosticUploadHealth('cycle-retained',{reason:e.message});}
     finally{state.diagnosticUploading=false;const n=document.querySelector('[data-diagnostic-upload-status]');if(n)n.textContent=state.diagnosticUploadStatus||'Waiting for logs';}
   }
