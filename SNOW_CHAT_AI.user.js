@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.772
+// @version      2.36.773
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.773","fixes":true,"changes":[{"key":"presence-diagnostics","meaningful":true,"text":"Report agent-list changes and refresh failures, distinguish manual presence selections from script restoration and external status changes."}]},
 {"version":"2.36.772","fixes":false,"changes":[{"key":"diagnostic-background-ui","meaningful":false,"text":"Remove Clear logs buttons from settings and developer log controls."}]},
 {"version":"2.36.771","fixes":true,"changes":[{"key":"diagnostic-registration","meaningful":true,"text":"Automatically register diagnostic uploads in the background, preserve existing connections and retry safely without losing pending logs."}]},
 {"version":"2.36.770","fixes":true,"changes":[{"key":"presence-diagnostics","meaningful":true,"text":"Record confirmed Available, Away and Offline transitions in uploaded diagnostics and include a labelled connection-test event after each page start."}]},
@@ -9077,6 +9078,10 @@ function startSNAI(tabIdentity) {
     if(action==='auto-greet'&&/^(incoming-offer-content|offer-accepted)$/.test(details.stage||'')&&/^IMS\d+$/.test(details.ims||'')){log.chats.add(details.ims);updateDiagnosticCount();}
     if(action.startsWith('extension-')&&now<new Date().setHours(0,0,0,0))return;
     for(const [key,value]of Object.entries(details||{})){
+      if(action==='agent-availability'&&key==='evidence'){
+        try{const encoded=JSON.stringify(value);safe.evidence=encoded.length<=24000?JSON.parse(encoded):{omitted:true,reason:'availability-evidence-size-limit'};}catch{safe.evidence={omitted:true};}continue;
+      }
+      if(action==='presence-status-changed'&&key==='previousStatus'){safe.previousStatus=String(value).slice(0,40);continue;}
       if(key==='decisionEvidence'&&action==='auto-greet'&&details.stage==='greeting-decision'){
         try{const encoded=JSON.stringify(value);safe[key]=encoded.length<=12000?JSON.parse(encoded):{omitted:true,reason:'decision-evidence-size-limit'};}catch{safe[key]={omitted:true,reason:'decision-evidence-unserializable'};}continue;
       }
@@ -9114,6 +9119,7 @@ function startSNAI(tabIdentity) {
   }
   // Passive, bounded capture: never alters requests, responses or authentication.
   if (workspacePage) document.addEventListener('sn-ai-greet-diagnostic',event=>recordCompactDiagnostic('info','auto-greet',event.detail||{}));
+  if (workspacePage) document.addEventListener('sn-ai-agent-availability-diagnostic',event=>recordCompactDiagnostic(event.detail?.stage==='refresh-failed'?'warn':'info','agent-availability',event.detail||{}));
   if (workspacePage) document.addEventListener('sn-ai-ci-search-diagnostic',event=>recordCompactDiagnostic('info','ci-search',{stage:event.detail?.stage,count:event.detail?.count,reason:event.detail?.reason||`requests=${event.detail?.requests||0}; truncated=${!!event.detail?.truncated}`}));
   function formNetworkSafe(value,depth=0,key='') {
     if(/authorization|cookie|token|password|secret|credential|session|csrf|api.?key/i.test(key))return '[redacted]';
@@ -23778,7 +23784,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       choice.addEventListener('pointerup', () => paintChoice(hoveredChoice || choice));
       choice.addEventListener('pointercancel', () => { hoveredChoice = null; restoreChoice(); });
       choice.addEventListener('focus', () => { if (!hoveredChoice) paintChoice(choice); });
-      choice.addEventListener('click', () => {
+      choice.addEventListener('click', event => {
+        presencePreference.manualSelection = event.isTrusted ? {status:name,at:Date.now()} : null;
         closeMenu(true); select.value = name;
         select.dispatchEvent(new Event('change', { bubbles: true }));
       });
@@ -23840,7 +23847,10 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       const confirmedStatus=confirmedNativePresence(container);
       if(confirmedStatus&&state.lastDiagnosticPresence!==confirmedStatus){
         const previousStatus=state.lastDiagnosticPresence||'';state.lastDiagnosticPresence=confirmedStatus;
-        addLog('info','presence-status-changed',{status:confirmedStatus,previousStatus,message:'Status -> '+confirmedStatus});
+        const intent=presencePreference.manualSelection;
+        const source=!previousStatus?'initial-observation':intent?.status===confirmedStatus&&Date.now()-intent.at<15000?'agent-manual':presencePreference.busy&&presencePreference.desired===confirmedStatus?'script-restore':'snow-external';
+        addLog('info','presence-status-changed',{status:confirmedStatus,previousStatus,source,reason:source==='snow-external'?'No matching local manual selection or script restore; server-side cause unknown':'',message:'Status -> '+confirmedStatus});
+        if(intent?.status===confirmedStatus)presencePreference.manualSelection=null;
       }
       // Native select popups must remain untouched while the user chooses.
       // Reassigning value/styles on each poll can blank or dismiss the popup.
@@ -23881,6 +23891,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     }
     select.addEventListener('change', () => {
       presencePreference.desired = select.value; presencePreference.failures = 0;
+      addLog('info','presence-selection-requested',{status:select.value,source:presencePreference.manualSelection?'agent-manual':'programmatic',message:'Requested status -> '+select.value});
       inboxLog('presence-preference-user-selected', { desired: select.value });
       applyDesired();
     });
@@ -25046,6 +25057,8 @@ function installAgentDashboardPopup() {
   };
   refreshButton.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>';
   let timer=null,pending=false,controller=null,failures=0,lastSuccess=0,retryAt=0,dockObserver=null;
+  let rosterSnapshot=null,lastRosterReport=0,rosterSequence=0;
+  const reportRoster=(stage,evidence)=>document.dispatchEvent(new CustomEvent('sn-ai-agent-availability-diagnostic',{detail:{stage,source:'analytics/multivisdata',evidence}}));
   let wasVisible=false,recoveryFrame=0;
   const dashboardVisible=()=>!document.hidden&&!host.hidden&&host.isConnected&&host.getBoundingClientRect().width>0&&host.getBoundingClientRect().height>0;
   const recoverDashboard=()=>{
@@ -25075,14 +25088,17 @@ function installAgentDashboardPopup() {
     if(pending||!dashboardVisible())return;
     if(Date.now()<retryAt){status.textContent='Rate limited · Retry in '+Math.ceil((retryAt-Date.now())/1000)+'s';schedule();return;}
     stop();pending=true;refreshButton.disabled=true;controller=new AbortController();const timeout=setTimeout(()=>controller?.abort(),90000);
+    const startedAt=Date.now(),sequence=++rosterSequence;let httpStatus=0,widgetSummary=[];
     refreshButton.setAttribute('aria-busy','true');
     try{
       const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
       if(!page.g_ck)throw new Error('Session is not ready');
       const response=await fetch('/api/now/analytics/data/multivisdata',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json',Accept:'application/json','X-UserToken':page.g_ck},body:JSON.stringify(payload),signal:controller.signal});
+      httpStatus=response.status;
       if(response.status===429){const header=response.headers.get('Retry-After');const seconds=header&&/^\d+$/.test(header)?Number(header):header?Math.max(0,(Date.parse(header)-Date.now())/1000):60;retryAt=Date.now()+Math.max(60,Number.isFinite(seconds)?seconds:60)*1000;}
       if(!response.ok)throw new Error('HTTP '+response.status);
       const json=await response.json();if(!Array.isArray(json.result))throw new Error('Unexpected analytics response');
+      widgetSummary=json.result.map(item=>({id:item.details?.visualizationId,status:item.statusCode,responses:Array.isArray(item.dataResponses)?item.dataResponses.map(r=>({hasData:Array.isArray(r.response?.data),rowCount:Array.isArray(r.response?.data)?Math.max(0,r.response.data.length-1):0})):null}));
       const activeResult=json.result.find(item=>item.details?.visualizationId===activeChatsId);
       if(!activeResult||activeResult.statusCode!==200||!Array.isArray(activeResult.dataResponses))throw new Error('Missing active chat counts');
       agentChatQuery=activeResult.dataResponses.find(result=>result.response?.metadata?.filterQuery)?.response.metadata.filterQuery||'';
@@ -25092,6 +25108,16 @@ function installAgentDashboardPopup() {
         if(name&&Number.isFinite(count))chatCounts.set(name,(chatCounts.get(name)||0)+count);
       }
       const lists=widgets.map(([,id])=>{const item=json.result.find(r=>r.details?.visualizationId===id);if(!item||item.statusCode!==200||!Array.isArray(item.dataResponses))throw new Error('Missing agent results');return item.dataResponses.flatMap(r=>(r.response?.data||[]).slice(1)).map(row=>({name:String(row[0]||''),count:Number(row[1]||1)})).filter(row=>row.name);});
+      const snapshot=lists.map(rows=>[...new Set(rows.map(row=>row.name.trim()).filter(Boolean))].sort());
+      const previous=new Map((rosterSnapshot||[]).flatMap((names,index)=>names.map(name=>[name,widgets[index][0]])));
+      const current=new Map(snapshot.flatMap((names,index)=>names.map(name=>[name,widgets[index][0]])));
+      const changes=[];
+      for(const name of new Set([...previous.keys(),...current.keys()]))if(previous.get(name)!==current.get(name))changes.push({name,from:previous.get(name)||'not-returned',to:current.get(name)||'not-returned'});
+      if(!rosterSnapshot||changes.length||failures||Date.now()-lastRosterReport>=60000){
+        reportRoster(!rosterSnapshot?'initial-snapshot':changes.length?'roster-changed':failures?'refresh-recovered':'snapshot',{sequence,startedAt,completedAt:Date.now(),durationMs:Date.now()-startedAt,httpStatus,widgets:widgetSummary,available:snapshot[0],away:snapshot[1],changes,previousSuccessfulAt:lastSuccess||null,interpretation:'Not-returned means absent from these filtered analytics results, not confirmed Offline. Other agents manual/external causes require their own status logs.'});
+        lastRosterReport=Date.now();
+      }
+      rosterSnapshot=snapshot;
       const table=root.querySelector('.columns'),oldHeight=table.getBoundingClientRect().height;
       lists.forEach((rows,index)=>{
         const list=root.querySelectorAll('ul')[index];
@@ -25120,7 +25146,7 @@ function installAgentDashboardPopup() {
       failures=0;lastSuccess=Date.now();status.textContent=age();
       if(manual===true)animateAgentRefreshSuccess(refreshButton).catch(()=>{});
       positionAgentChats();
-    }catch(error){failures=Math.min(2,failures+1);status.textContent='Refresh failed · '+age();status.title=error.message;}
+    }catch(error){reportRoster('refresh-failed',{sequence,startedAt,completedAt:Date.now(),durationMs:Date.now()-startedAt,httpStatus,widgets:widgetSummary,error:error.name==='AbortError'?'timeout-or-aborted':String(error.message).slice(0,180),previousSuccessfulAt:lastSuccess||null,retainedPreviousList:true});failures=Math.min(2,failures+1);status.textContent='Refresh failed · '+age();status.title=error.message;}
     finally{clearTimeout(timeout);controller=null;pending=false;refreshButton.disabled=false;refreshButton.removeAttribute('aria-busy');schedule();}
   }
   refreshButton.addEventListener('click',()=>load(true));
