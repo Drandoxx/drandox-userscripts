@@ -8913,9 +8913,9 @@ function startSNAI(tabIdentity) {
   function diagnosticDay(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
   function diagnosticDatabase(){
     if(!state.diagnosticDB)state.diagnosticDB=new Promise((resolve,reject)=>{
-      const request=indexedDB.open('sn-ai-daily-diagnostics',1);
-      request.onupgradeneeded=()=>{const store=request.result.createObjectStore('events',{autoIncrement:true});store.createIndex('day','day');};
-      request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
+      const request=indexedDB.open('sn-ai-daily-diagnostics',2);
+      request.onupgradeneeded=()=>{if(!request.result.objectStoreNames.contains('events')){const store=request.result.createObjectStore('events',{autoIncrement:true});store.createIndex('day','day');}if(!request.result.objectStoreNames.contains('uploads'))request.result.createObjectStore('uploads');};
+      request.onsuccess=()=>{request.result.onversionchange=()=>{request.result.close();state.diagnosticDB=null;};resolve(request.result);};request.onerror=()=>reject(request.error);
     }).catch(error=>{state.diagnosticDB=null;throw error;});
     return state.diagnosticDB;
   }
@@ -8960,11 +8960,13 @@ function startSNAI(tabIdentity) {
     try{
       const run=async()=>{
         await flushDailyDiagnostics();const db=await diagnosticDatabase();
-        const records=await new Promise((resolve,reject)=>{const rows=[],tx=db.transaction('events'),request=tx.objectStore('events').openCursor();let bytes=0;request.onsuccess=()=>{const c=request.result;if(!c){resolve(rows);return;}const n=new TextEncoder().encode(JSON.stringify(c.value.entry)).length;if(rows.length>=500||bytes+n>950000){if(!rows.length)reject(new Error('Diagnostic entry exceeds upload limit'));else resolve(rows);return;}rows.push({key:c.primaryKey,entry:c.value.entry});bytes+=n;c.continue();};request.onerror=()=>reject(request.error);});
+        const pending=await new Promise((resolve,reject)=>{const r=db.transaction('uploads').objectStore('uploads').get('pending');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+        const records=pending||await new Promise((resolve,reject)=>{const rows=[],tx=db.transaction('events'),request=tx.objectStore('events').openCursor();let bytes=0;request.onsuccess=()=>{const c=request.result;if(!c){resolve(rows);return;}const n=new TextEncoder().encode(JSON.stringify(c.value.entry)).length;if(rows.length>=500||bytes+n>950000){if(!rows.length)reject(new Error('Diagnostic entry exceeds upload limit'));else resolve(rows);return;}rows.push({key:c.primaryKey,entry:c.value.entry});bytes+=n;c.continue();};request.onerror=()=>reject(request.error);});
         if(!records.length)return;
+        if(!pending)await new Promise((resolve,reject)=>{const tx=db.transaction('uploads','readwrite');tx.objectStore('uploads').put(records,'pending');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});
         const payload=JSON.stringify({schema:1,events:records.map(r=>r.entry)}),digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(payload)),batchId=[...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');
         await diagnosticUploadRequest(token,batchId,payload);
-        await new Promise((resolve,reject)=>{const tx=db.transaction('events','readwrite'),store=tx.objectStore('events');for(const row of records)store.delete(row.key);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});
+        await new Promise((resolve,reject)=>{const tx=db.transaction(['events','uploads'],'readwrite'),store=tx.objectStore('events');for(const row of records)store.delete(row.key);tx.objectStore('uploads').delete('pending');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});
         state.diagnosticUploadStatus='Uploaded '+new Date().toLocaleTimeString();state.diagnostics?.contents.clear();return true;
       };
       if(navigator.locks)await navigator.locks.request('sn-ai-diagnostic-upload',{ifAvailable:true},lock=>lock?run():undefined);else await run();
