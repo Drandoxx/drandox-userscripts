@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.774
+// @version      2.36.775
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.775","fixes":false,"changes":[{"key":"diagnostic-upload-notice","meaningful":false,"text":"Show a single non-stacking confirmed-upload notification for Laszlo Akim only."}]},
 {"version":"2.36.774","fixes":true,"changes":[{"key":"diagnostic-background-upload","meaningful":true,"text":"Record background upload attempts and failures locally, recover aborted requests, and upload status-only events without requiring chat data."}]},
 {"version":"2.36.773","fixes":true,"changes":[{"key":"presence-diagnostics","meaningful":true,"text":"Report agent-list changes and refresh failures, distinguish manual presence selections from script restoration and external status changes."}]},
 {"version":"2.36.772","fixes":false,"changes":[{"key":"diagnostic-background-ui","meaningful":false,"text":"Remove Clear logs buttons from settings and developer log controls."}]},
@@ -8975,6 +8976,25 @@ function startSNAI(tabIdentity) {
     return log.flushing;
   }
   const diagnosticIdentityKey='sn-ai-diagnostic-installation';
+  function showDiagnosticUploadSuccess(count){
+    const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
+    const user=page.NOW?.user||page.g_user||{};
+    const names=[user.name,user.fullName,user.displayName,[user.firstName,user.lastName].filter(Boolean).join(' '),[user.first_name,user.last_name].filter(Boolean).join(' '),document.getElementById('sn-ai-nova-companion')?.novaDisplayName];
+    const normalize=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().replace(/\s+/g,' ').toLowerCase();
+    if(!names.some(name=>['laszlo akim','akim laszlo'].includes(normalize(name)))||!document.body)return;
+    let notice=document.getElementById('sn-ai-diagnostic-upload-success');
+    if(!notice){
+      notice=document.createElement('div');notice.id='sn-ai-diagnostic-upload-success';
+      notice.style.cssText='position:fixed;right:20px;bottom:20px;z-index:2147483647;max-width:calc(100vw - 40px)';
+      const root=notice.attachShadow({mode:'open'});
+      root.innerHTML='<style>:host{font:13px/1.4 system-ui}.notice{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid #448a70;border-radius:8px;background:var(--sn-theme-251f31,#241c33);color:var(--sn-theme-e6edf9,#eee6ff);box-shadow:0 4px 16px #0004}button{display:grid;place-items:center;width:22px;height:22px;padding:0;border:0;background:transparent;color:inherit;cursor:pointer}button:focus-visible{outline:2px solid #ac94ec;border-radius:4px}</style><div class="notice"><span role="status" aria-live="polite"></span><button type="button" aria-label="Dismiss upload confirmation"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>';
+      root.querySelector('button').onclick=()=>{clearTimeout(state.diagnosticSuccessNoticeTimer);notice.remove();};
+      document.body.append(notice);
+    }
+    notice.shadowRoot.querySelector('[role="status"]').textContent='Logs uploaded successfully - '+count+' events - '+new Date().toLocaleTimeString();
+    clearTimeout(state.diagnosticSuccessNoticeTimer);
+    state.diagnosticSuccessNoticeTimer=setTimeout(()=>notice.remove(),7000);
+  }
   function diagnosticUploadHealth(stage,details={}){
     // Deliberately whitelist metadata: never log credentials, request bodies or server response text.
     const safe={stage,source:'background-diagnostic-upload'};
@@ -9061,6 +9081,7 @@ function startSNAI(tabIdentity) {
         await diagnosticUploadRequest(identity,batchId,payload);
         setDiagnosticDownloadFallback(false);
         await new Promise((resolve,reject)=>{const tx=db.transaction(['events','uploads'],'readwrite'),store=tx.objectStore('events');for(const row of records)store.delete(row.key);tx.objectStore('uploads').delete('pending');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});
+        try{showDiagnosticUploadSuccess(records.length);}catch{/* A notification must never invalidate a confirmed upload. */}
         diagnosticUploadHealth('batch-confirmed',{length:records.length,ok:true});state.diagnosticUploadStatus='Uploaded '+new Date().toLocaleTimeString();state.diagnostics?.contents.clear();return true;
       };
       if(navigator.locks)await navigator.locks.request('sn-ai-diagnostic-upload',{ifAvailable:true},lock=>lock?run():undefined);else throw new Error('Diagnostic uploads require cross-tab locking');
