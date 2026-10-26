@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.762
+// @version      2.36.763
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.763","fixes":true,"changes":[{"key":"text-commit-verification","meaningful":true,"text":"Extend slow-read confirmation to subordinate fields and reference clearing; avoid redundant custom-action DOM writes and mutation-driven model scans."}]},
 {"version":"2.36.762","fixes":true,"changes":[{"key":"text-commit-verification","meaningful":true,"text":"Allow a bounded final exact-value confirmation after slow control reads or delayed timers instead of falsely rejecting committed text at the polling deadline."}]},
 {"version":"2.36.761","fixes":true,"changes":[{"key":"record-action-alignment","meaningful":false,"text":"Set the shared header right inset to 20px while keeping extra action-row padding and margins removed."}]},
 {"version":"2.36.760","fixes":true,"changes":[{"key":"record-action-alignment","meaningful":false,"text":"Remove right padding and margins from the record header and action row."}]},
@@ -6036,7 +6037,7 @@ const snAIChatDisplayNames=(()=>{
     if(host.getBoundingClientRect().width<=0)return;
     const model=stableRecordActionModel(host);
     if(!model){entry.closeMenu?.();entry.resizeObserver?.disconnect();entry.resizeObserver=null;host.removeAttribute('data-sn-ai-actions-managed');host.removeAttribute('data-sn-ai-custom-actions');entry.row?.remove();entry.row=null;entry.signature='';return;}
-    host.setAttribute('data-sn-ai-actions-managed','');
+    if(!host.hasAttribute('data-sn-ai-actions-managed'))host.setAttribute('data-sn-ai-actions-managed','');
     if(entry.identity&&entry.identity!==model.identity){entry.closeMenu?.();entry.resizeObserver?.disconnect();entry.resizeObserver=null;entry.row?.remove();entry.row=null;entry.signature='';entry.pending='';host.removeAttribute('data-sn-ai-custom-actions');}
     entry.identity=model.identity;
     // Workspace can clear/reparent a tab's header while loading. Put its
@@ -6078,8 +6079,8 @@ const snAIChatDisplayNames=(()=>{
     if(entry.row){
       const parent=host.shadowRoot?.querySelector('.sn-header-layout-content.-last');
       if(parent&&entry.row.parentNode!==parent)parent.append(entry.row);
-      host.setAttribute('data-sn-ai-custom-actions','');
-      for(const button of entry.buttons||entry.row.children)button.disabled=entry.invoking||Boolean(model.actions.find(action=>action.id===button.dataset.actionId)?.disabled);
+      if(!host.hasAttribute('data-sn-ai-custom-actions'))host.setAttribute('data-sn-ai-custom-actions','');
+      for(const button of entry.buttons||entry.row.children){const disabled=entry.invoking||Boolean(model.actions.find(action=>action.id===button.dataset.actionId)?.disabled);if(button.disabled!==disabled)button.disabled=disabled;}
       if(typeof ResizeObserver!=='undefined'&&!entry.resizeObserver){entry.resizeObserver=new ResizeObserver(()=>layoutStableActionOverflow(entry));entry.resizeObserver.observe(entry.row);}
       layoutStableActionOverflow(entry);
     }
@@ -6087,7 +6088,11 @@ const snAIChatDisplayNames=(()=>{
   function installStableRecordActions(host){
     if(!host)return;
     const existing=stableRecordActionRows.get(host);
-    if(existing){refreshStableRecordActions(host,existing,true);return;}
+    if(existing){
+      const parent=host.shadowRoot?.querySelector('.sn-header-layout-content.-last');
+      if(existing.row&&parent&&existing.row.parentNode!==parent)parent.append(existing.row);
+      return;
+    }
     if(stableRecordActionModel(host))host.setAttribute('data-sn-ai-actions-managed','');
     const entry={signature:'',pending:'',identity:'',row:null,invoking:false};
     stableRecordActionRows.set(host,entry);
@@ -14982,16 +14987,21 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       const callback=host?.onValueChange||props?.onValueChange;
       if(!props||typeof callback!=='function'||props.readonly)automationFailure(code,`${fieldLabel} cannot be cleared.`);
       callback.call(host,{value:'',displayValue:''});
-      let stableSince=0;const started=automationNow();
-      while(automationNow()-started<2500){
+      let stableSince=null,matchingSamples=0,deadlineConfirmation=false;const started=automationNow();
+      while(true){
         const current=findControlByLabel(fieldLabel,currentFormElements());
         const value=current?matrixReferenceHost(current)?.dAProps:null;
         // A mandatory-field error is expected: verify the reference ID and
         // display value, not aria-invalid. Never suppress native validation.
         if(value&&!String(value.value||'').trim()&&!String(value.displayValue||'').trim()){
-          if(!stableSince)stableSince=automationNow();
-          if(automationNow()-stableSince>=450)return;
-        }else stableSince=0;
+          matchingSamples++;
+          if(stableSince===null)stableSince=automationNow();
+          if(matchingSamples>=2&&automationNow()-stableSince>=450)return;
+        }else {stableSince=null;matchingSamples=0;}
+        if(automationNow()-started>=2500){
+          if(stableSince===null||deadlineConfirmation)break;
+          deadlineConfirmation=true;await sleep(Math.max(50,450-(automationNow()-stableSince)));continue;
+        }
         await sleep(50);
       }
     }
@@ -15827,18 +15837,25 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       trace('model-commit-start');
       const modelCommitted = await commitTextToFormModel(field, text, resolveField, trace);
       trace('model-commit-finished', { modelCommitted });
-      let stableSince = 0;
-      const committed = await waitUntil(() => {
+      let stableSince = null,matchingSamples=0,deadlineConfirmation=false,committed=null;
+      const verificationStarted=automationNow();
+      while(true){
         const current = resolveField();
         const actual = readableElementValue(current);
         if (!current || current.getAttribute('aria-invalid') === 'true'
           || !subordinateFieldMatchesExpected(actual, text, fieldMetadata.label)) {
-          stableSince = 0;
-          return null;
+          stableSince = null;matchingSamples=0;
+        }else{
+          matchingSamples++;
+          if(stableSince===null)stableSince=automationNow();
+          if(matchingSamples>=2&&automationNow()-stableSince>=450){committed={actual};break;}
         }
-        if (!stableSince) stableSince = Date.now();
-        return Date.now() - stableSince >= 450 ? { actual } : null;
-      }, 2200, 150);
+        if(automationNow()-verificationStarted>=2200){
+          if(stableSince===null||deadlineConfirmation)break;
+          deadlineConfirmation=true;await sleep(Math.max(150,450-(automationNow()-stableSince)));continue;
+        }
+        await sleep(150);
+      }
       addLog(committed && modelCommitted ? 'info' : 'warn', 'auto-description-field-attempt', { field: fieldMetadata.label, name: fieldMetadata.name || '', attempt, expectedLength: text.length, actualLength: readableElementValue(resolveField()).length, modelCommitted, stable: Boolean(committed) });
       if (modelCommitted && committed) return committed.actual;
       await sleep(retryPause(attempt));
