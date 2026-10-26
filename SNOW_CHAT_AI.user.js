@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.779
+// @version      2.36.780
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.780","fixes":false,"changes":[{"key":"diagnostic-agent-identity","meaningful":true,"text":"Include the signed-in ServiceNow agent name and user ID in each uploaded report, separate from the random browser label."}]},
 {"version":"2.36.779","fixes":true,"changes":[{"key":"ticket-fill-performance","meaningful":true,"text":"Batch presentation observers during ticket logging and skip progress-bubble mutations to reduce repeated DOM and layout work."}]},
 {"version":"2.36.778","fixes":true,"changes":[{"key":"automation-visibility-pause","meaningful":true,"text":"Fix stale paused labels after returning to a visible ServiceNow window and consolidate conflicting visibility handlers."}]},
 {"version":"2.36.777","fixes":true,"changes":[{"key":"diagnostic-noise-reduction","meaningful":true,"text":"Reduce routine UI and upload chatter and summarize idle successful API traffic while retaining errors, status changes and ticket diagnostics."}]},
@@ -9012,6 +9013,21 @@ function startSNAI(tabIdentity) {
     return log.flushing;
   }
   const diagnosticIdentityKey='sn-ai-diagnostic-installation';
+  async function diagnosticReportingAgent(){
+    const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
+    const user=page.NOW?.user||page.g_user||{};
+    const userId=String(user.userID||user.sys_id||page.g_user?.userID||'');
+    if(!/^[a-f0-9]{32}$/i.test(userId))return {name:'Unavailable',userId:'',source:'signed-in ServiceNow account unavailable',role:'uploading-agent'};
+    if(state.diagnosticReportingAgent?.userId===userId)return state.diagnosticReportingAgent;
+    let name=String(user.fullName||user.displayName||user.name||[user.firstName||user.first_name,user.lastName||user.last_name].filter(Boolean).join(' ')||'').trim();
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);
+    try{
+      if(page.g_ck){const response=await fetch('/api/now/table/sys_user/'+userId+'?sysparm_fields=name&sysparm_display_value=false',{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':page.g_ck},signal:controller.signal});if(response.ok){const data=await response.json();if(typeof data.result?.name==='string'&&data.result.name.trim())name=data.result.name.trim();}}
+    }catch{/* Identity lookup failure must not block diagnostic delivery. */}finally{clearTimeout(timer);}
+    const result={name:name.slice(0,160)||'Unavailable',userId,source:'signed-in ServiceNow account',role:'uploading-agent'};
+    if(name)state.diagnosticReportingAgent=result;
+    return result;
+  }
   function showDiagnosticUploadSuccess(count){
     const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
     const user=page.NOW?.user||page.g_user||{};
@@ -9123,7 +9139,11 @@ function startSNAI(tabIdentity) {
         if(!records.length)return;
         diagnosticUploadHealth('batch-ready',{length:records.length});
         if(!pending)await new Promise((resolve,reject)=>{const tx=db.transaction('uploads','readwrite');tx.objectStore('uploads').put(records,'pending');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});
-        const payload=JSON.stringify({schema:1,events:records.map(r=>r.entry)}),digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(payload)),batchId=[...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');
+        const reporter=await diagnosticReportingAgent();
+        // Keep the strict schema/events contract. Stamp one event per batch,
+        // explicitly as uploader context, not authorship of historical events.
+        const events=records.map((r,index)=>index?r.entry:[...r.entry.slice(0,4),{...(r.entry[4]||{}),reportingAgent:reporter},...r.entry.slice(5)]);
+        const payload=JSON.stringify({schema:1,events}),digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(payload)),batchId=[...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');
         await diagnosticUploadRequest(identity,batchId,payload);
         setDiagnosticDownloadFallback(false);
         await new Promise((resolve,reject)=>{const tx=db.transaction(['events','uploads'],'readwrite'),store=tx.objectStore('events');for(const row of records)store.delete(row.key);tx.objectStore('uploads').delete('pending');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});
