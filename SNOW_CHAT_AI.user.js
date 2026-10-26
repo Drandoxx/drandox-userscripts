@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.784
+// @version      2.36.785
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.785","fixes":true,"changes":[{"key":"ticket-fill-performance","meaningful":true,"text":"Reuse short-lived active-form discovery and measure visibility only on matching field candidates, while keeping exact value verification and pause safety."}]},
 {"version":"2.36.784","fixes":true,"changes":[{"key":"ticket-fill-performance","meaningful":true,"text":"Keep minute memory sampling lightweight during ticket runs and yield within large DOM roots instead of scanning them in one uninterrupted pass."}]},
 {"version":"2.36.783","fixes":true,"changes":[{"key":"bubble-opening-performance","meaningful":true,"text":"Exclude internal machine-readable JSON blocks from the accessibility tree to reduce measured bubble-opening stalls without hiding real controls or status messages."}]},
 {"version":"2.36.782","fixes":true,"changes":[{"key":"ticket-fill-performance","meaningful":true,"text":"Reduce measured field-lookup overhead by filtering controls before containment checks and caching background Reporting User controls between ticks."}]},
@@ -12489,11 +12490,14 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     return all;
   }
 
+  let formElementSnapshot=null;
   function currentFormElements() {
     const panel = activeWorkspaceRecordPanel();
-    if (!panel?.isConnected) return allPageElements();
+    if (!panel?.isConnected) {formElementSnapshot=null;return allPageElements();}
+    if(formElementSnapshot?.panel===panel&&formElementSnapshot.route===location.href&&performance.now()-formElementSnapshot.at<250)return formElementSnapshot.elements.filter(el=>el.isConnected);
     const elements = [];
     addDeep(panel, elements, new Set());
+    formElementSnapshot={panel,route:location.href,at:performance.now(),elements};
     return elements;
   }
 
@@ -12528,16 +12532,16 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const wanted = comparableLabel(label);
     const sourceElements = elements || currentFormElements();
     const matchingControl = (controls) => {
-      const exact = controls.find((el) => comparableLabel(elementLabel(el)) === wanted);
-      if (exact) return exact;
-      const startsWith = controls.find((el) => comparableLabel(elementLabel(el)).startsWith(wanted));
-      if (startsWith) return startsWith;
-      return controls.find((el) => comparableLabel(elementLabel(el)).includes(wanted));
+      // Label matching is cheap. Layout reads are not: only measure controls
+      // which can actually satisfy this lookup, preserving exact/prefix/partial order.
+      const ranked=[[],[],[]];
+      for(const el of controls){const label=comparableLabel(elementLabel(el));if(label===wanted)ranked[0].push(el);else if(label.startsWith(wanted))ranked[1].push(el);else if(label.includes(wanted))ranked[2].push(el);}
+      for(const candidates of ranked){const match=candidates.find(isVisible);if(match)return match;}
+      return undefined;
     };
     // Most mounted nodes are decoration. Never walk their shadow ancestry
     // merely to discard them afterward as non-controls.
-    const controls = activeEventElements(sourceElements.filter(isUsefulControl))
-      .filter(isVisible);
+    const controls = activeEventElements(sourceElements.filter(isUsefulControl));
     const scopedMatch = matchingControl(controls);
     if (scopedMatch) return scopedMatch;
     // Workspace can project Attached Knowledge through a shadow boundary that
@@ -15983,7 +15987,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         const visited = new Set();
         while (node && !visited.has(node)) {
           visited.add(node);
-          if (node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement) {
+          if ((node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement)&&node.hasAttribute('maxlength')) {
             node.removeAttribute('maxlength');
             try { node.maxLength = -1; } catch { /* Browser-specific host. */ }
           }
@@ -16004,12 +16008,12 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       };
       const modelCommitted = await commitTextToFormModel(field, text, resolveTextControl, trace);
       trace('model-commit-finished', { modelCommitted, durationMs: Math.round(performance.now() - modelStarted),
-        controlReplaced: findControlByLabel(fieldLabel) !== field });
+        controlReplaced: resolveTextControl() !== field });
       trace('stability-check-start');
       const committed = await waitStableValue(fieldLabel, text, 'exact', 2200, 450, field, resolveTextControl);
       addLog(committed.stable ? 'info' : 'warn', 'auto-text-attempt', { field: fieldLabel, attempt, expectedLength: text.length, actualLength: String(committed.actual ?? '').length, modelCommitted, stable: committed.stable });
       trace('stability-check-finished', { stable: committed.stable, modelCommitted });
-      if (modelCommitted && committed.stable && findControlByLabel(fieldLabel)?.getAttribute('aria-invalid') !== 'true') { traceSucceeded = true; return committed.actual; }
+      if (modelCommitted && committed.stable && resolveTextControl()?.getAttribute('aria-invalid') !== 'true') { traceSucceeded = true; return committed.actual; }
       trace('retry-wait');
       await sleep(retryPause(attempt));
     }
