@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.777
+// @version      2.36.778
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.778","fixes":true,"changes":[{"key":"automation-visibility-pause","meaningful":true,"text":"Fix stale paused labels after returning to a visible ServiceNow window and consolidate conflicting visibility handlers."}]},
 {"version":"2.36.777","fixes":true,"changes":[{"key":"diagnostic-noise-reduction","meaningful":true,"text":"Reduce routine UI and upload chatter and summarize idle successful API traffic while retaining errors, status changes and ticket diagnostics."}]},
 {"version":"2.36.776","fixes":true,"changes":[{"key":"diagnostic-background-upload","meaningful":true,"text":"Retry diagnostic uploads every minute and drain queued batches up to the server limit, without escalating local retry delays."}]},
 {"version":"2.36.775","fixes":false,"changes":[{"key":"diagnostic-upload-notice","meaningful":false,"text":"Show a single non-stacking confirmed-upload notification for Laszlo Akim only."}]},
@@ -14595,7 +14596,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   function updatePausePanel() {
     const root=document.getElementById(ROOT_ID);
     for(const dialog of root?.querySelectorAll('[data-pinned-ims]')||[]){
-      const paused=Boolean(dialog.classList.contains('is-running')&&((state.incomingPause&&dialog.dataset.pinnedIms===state.incomingResume?.ims)||(!state.incomingPause&&state.autoVisibilityPause)));
+      const paused=Boolean(dialog.classList.contains('is-running')&&((state.incomingPause&&dialog.dataset.pinnedIms===state.incomingResume?.ims)||(!state.incomingPause&&state.pause.paused&&state.autoVisibilityPause)));
       dialog.classList.toggle('is-paused',paused);
       let label=dialog.querySelector('[data-ticket-pause-label]');
       if(paused&&!label){label=document.createElement('span');label.dataset.ticketPauseLabel='';label.setAttribute('role','status');dialog.querySelector('.local-sn-cpc-title-block')?.append(label);}
@@ -14651,7 +14652,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       assertAutomationNotStopped();
       reason = pauseReason();
     }
-    if (state.pause.paused) {
+    if (state.pause.paused || state.autoVisibilityPause) {
       if(state.autoVisibilityPause){finishPauseClock();state.autoVisibilityPause=false;}
       state.pause.paused = false;
       state.pause.reason = '';
@@ -23358,19 +23359,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
 
   function handleVisibilityChange() {
     if (document.hidden && !state.busy && !state.commandRunning) releaseChatTailReferences();
-    if (!state.busy) return;
-    const reason = pauseReason();
-    if (reason) {
-      state.pause.paused = true;
-      state.pause.reason = reason;
-      updatePausePanel();
-      addLog('info', 'automation-visibility-pause', { reason, ims: state.autoSession?.ims });
-    } else if (state.pause.paused) {
-      state.pause.paused = false;
-      state.pause.reason = '';
-      updatePausePanel();
-      addLog('info', 'automation-visibility-resume', { ims: state.autoSession?.ims });
-    }
+    // Automation pause/resume is owned by the visibility handler next to
+    // waitForAutomationResume. Never clear half of its state here.
   }
   document.addEventListener('visibilitychange', handleVisibilityChange);
 
