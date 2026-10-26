@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.768
+// @version      2.36.769
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.769","fixes":true,"changes":[{"key":"diagnostic-server-upload","meaningful":true,"text":"Fix synchronous Tampermonkey storage handling in upload status so settings startup no longer prevents presence, snippets and Nova from initializing."}]},
 {"version":"2.36.768","fixes":true,"changes":[{"key":"diagnostic-server-upload","meaningful":true,"text":"Hide manual log downloads until the first-minute server availability check fails, retry availability a bounded number of times, and retain automatic authenticated uploads with clear connection status."}]},
 {"version":"2.36.767","fixes":true,"changes":[]},
 {"version":"2.36.766","fixes":true,"changes":[{"key":"diagnostic-server-upload","meaningful":true,"text":"Upload diagnostic batches every minute with a private browser upload key; clear acknowledged local batches and retain server logs for seven days."}]},
@@ -19325,7 +19326,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const diagnosticActions=document.createElement('div');diagnosticActions.dataset.diagnosticActions='true';diagnosticActions.style.cssText='display:flex;align-items:stretch;gap:10px;width:100%;';
     for(const button of [clearLogButton]){button.style.setProperty('height','42px','important');button.style.setProperty('min-height','42px','important');button.style.setProperty('padding','8px 14px','important');button.style.setProperty('width','auto','important');button.style.setProperty('margin','0','important');button.style.setProperty('font-size','14px','important');button.style.setProperty('line-height','20px','important');button.style.setProperty('white-space','nowrap','important');button.style.setProperty('border-radius','8px','important');}
     clearLogButton.style.flex='0 0 auto';diagnosticActions.append(downloadLogButton,clearLogButton);generalPanel.append(diagnosticActions);
-    GM_getValue('sn-ai-diagnostic-upload-key','').then(key=>{uploadKeyButton.textContent=/^[a-f0-9]{64}$/.test(key)?'Change diagnostic upload connection':'Connect diagnostic uploads';uploadStatus.textContent=state.diagnosticUploadStatus||(/^[a-f0-9]{64}$/.test(key)?'Upload key configured - awaiting confirmed upload.':'Not connected - local logs retained. Connect uploads to send them automatically.');});
+    gmGetValue('sn-ai-diagnostic-upload-key','').then(key=>{uploadKeyButton.textContent=/^[a-f0-9]{64}$/.test(key)?'Change diagnostic upload connection':'Connect diagnostic uploads';uploadStatus.textContent=state.diagnosticUploadStatus||(/^[a-f0-9]{64}$/.test(key)?'Upload key configured - awaiting confirmed upload.':'Not connected - local logs retained. Connect uploads to send them automatically.');}).catch(error=>{uploadStatus.textContent='Upload connection unavailable - local logs retained.';console.warn('[SN AI diagnostics]',error);});
     const settingsTabs = [...settingsDialog.querySelectorAll('[data-settings-tab]')];
     tabList.style.setProperty('--sn-segment-index',String(Math.max(0,settingsTabs.findIndex(tab=>tab.getAttribute('aria-selected')==='true'))));
     const settingsPanels = [...settingsDialog.querySelectorAll('[data-settings-panel]')];
