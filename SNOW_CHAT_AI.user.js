@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.771
+// @version      2.36.772
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.772","fixes":false,"changes":[{"key":"diagnostic-background-ui","meaningful":false,"text":"Remove Clear logs buttons from settings and developer log controls."}]},
 {"version":"2.36.771","fixes":true,"changes":[{"key":"diagnostic-registration","meaningful":true,"text":"Automatically register diagnostic uploads in the background, preserve existing connections and retry safely without losing pending logs."}]},
 {"version":"2.36.770","fixes":true,"changes":[{"key":"presence-diagnostics","meaningful":true,"text":"Record confirmed Available, Away and Offline transitions in uploaded diagnostics and include a labelled connection-test event after each page start."}]},
 {"version":"2.36.769","fixes":true,"changes":[{"key":"diagnostic-server-upload","meaningful":true,"text":"Fix synchronous Tampermonkey storage handling in upload status so settings startup no longer prevents presence, snippets and Nova from initializing."}]},
@@ -19368,11 +19369,6 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     tabList.after(generalPanel);
     diagnosticStore();
     const fallbackStyle=document.createElement('style');fallbackStyle.textContent='[data-diagnostic-download-fallback][hidden]{display:none!important}';generalPanel.append(fallbackStyle);
-    const clearLogButton=document.createElement('button');clearLogButton.type='button';clearLogButton.textContent='Clear logs';clearLogButton.dataset.clearDiagnostics='true';
-    clearLogButton.addEventListener('click',async()=>{if(!confirm('Clear stored SN AI diagnostic logs and reset the collected-chat count? Unuploaded logs will be lost. This cannot be undone. Tickets and settings will not change.'))return;clearLogButton.disabled=true;try{await clearDailyDiagnostics();}catch(error){showAISettingsError(error);}finally{clearLogButton.disabled=false;}});generalPanel.append(clearLogButton);
-    const diagnosticActions=document.createElement('div');diagnosticActions.dataset.diagnosticActions='true';diagnosticActions.style.cssText='display:flex;align-items:stretch;gap:10px;width:100%;';
-    for(const button of [clearLogButton]){button.style.setProperty('height','42px','important');button.style.setProperty('min-height','42px','important');button.style.setProperty('padding','8px 14px','important');button.style.setProperty('width','auto','important');button.style.setProperty('margin','0','important');button.style.setProperty('font-size','14px','important');button.style.setProperty('line-height','20px','important');button.style.setProperty('white-space','nowrap','important');button.style.setProperty('border-radius','8px','important');}
-    clearLogButton.style.flex='0 0 auto';diagnosticActions.append(clearLogButton);generalPanel.append(diagnosticActions);
     const settingsTabs = [...settingsDialog.querySelectorAll('[data-settings-tab]')];
     tabList.style.setProperty('--sn-segment-index',String(Math.max(0,settingsTabs.findIndex(tab=>tab.getAttribute('aria-selected')==='true'))));
     const settingsPanels = [...settingsDialog.querySelectorAll('[data-settings-panel]')];
@@ -24156,7 +24152,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     secondsUnit.style.cssText = 'padding:0 4px 0 2px;color:var(--sn-theme-a8b8d1,#a9c7ba);font-size:12px;transform:translateX(-3px)';
     acceptDescription.append(label,delayLabel);
     acceptRow.append(acceptDescription,acceptSwitch);
-    logControls.append(playPause,clearLogs);
+    logControls.append(playPause);
     developerLogs.append(logStatus,logControls);
     const greetSetting=content.querySelector('[data-general-auto-greet]');
     row.append(acceptRow);
