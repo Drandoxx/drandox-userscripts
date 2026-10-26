@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.769
+// @version      2.36.770
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.770","fixes":true,"changes":[{"key":"presence-diagnostics","meaningful":true,"text":"Record confirmed Available, Away and Offline transitions in uploaded diagnostics and include a labelled connection-test event after each page start."}]},
 {"version":"2.36.769","fixes":true,"changes":[{"key":"diagnostic-server-upload","meaningful":true,"text":"Fix synchronous Tampermonkey storage handling in upload status so settings startup no longer prevents presence, snippets and Nova from initializing."}]},
 {"version":"2.36.768","fixes":true,"changes":[{"key":"diagnostic-server-upload","meaningful":true,"text":"Hide manual log downloads until the first-minute server availability check fails, retry availability a bounded number of times, and retain automatic authenticated uploads with clear connection status."}]},
 {"version":"2.36.767","fixes":true,"changes":[]},
@@ -9006,6 +9007,7 @@ function startSNAI(tabIdentity) {
       setInterval(()=>{diagnosticStore();},30000);
       setInterval(()=>{uploadDiagnosticBatch().catch(()=>{});},60000);
       setTimeout(()=>checkDiagnosticServerAvailability(),60000);
+      setTimeout(()=>recordCompactDiagnostic('info','diagnostic-connection-test',{status:'Test log - automatic diagnostic uploader started',at:Date.now()}),0);
     }
     const log=state.diagnostics;if(log.day!==diagnosticDay()){log.day=diagnosticDay();log.chats.clear();log.contents.clear();log.sleepCount=0;log.sleepMs=0;state.diagnosticWorkerSeen?.clear();state.diagnosticCompanionResults?.clear();updateDiagnosticCount();}
     return state.diagnostics;
@@ -23795,6 +23797,11 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     }
     function sync() {
       const current = actual();
+      const confirmedStatus=confirmedNativePresence(container);
+      if(confirmedStatus&&state.lastDiagnosticPresence!==confirmedStatus){
+        const previousStatus=state.lastDiagnosticPresence||'';state.lastDiagnosticPresence=confirmedStatus;
+        addLog('info','presence-status-changed',{status:confirmedStatus,previousStatus,message:'Status -> '+confirmedStatus});
+      }
       // Native select popups must remain untouched while the user chooses.
       // Reassigning value/styles on each poll can blank or dismiss the popup.
       if (current && ![...select.options].some(option => option.value === current)) {
