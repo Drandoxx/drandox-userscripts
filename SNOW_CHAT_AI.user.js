@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.773
+// @version      2.36.774
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.774","fixes":true,"changes":[{"key":"diagnostic-background-upload","meaningful":true,"text":"Record background upload attempts and failures locally, recover aborted requests, and upload status-only events without requiring chat data."}]},
 {"version":"2.36.773","fixes":true,"changes":[{"key":"presence-diagnostics","meaningful":true,"text":"Report agent-list changes and refresh failures, distinguish manual presence selections from script restoration and external status changes."}]},
 {"version":"2.36.772","fixes":false,"changes":[{"key":"diagnostic-background-ui","meaningful":false,"text":"Remove Clear logs buttons from settings and developer log controls."}]},
 {"version":"2.36.771","fixes":true,"changes":[{"key":"diagnostic-registration","meaningful":true,"text":"Automatically register diagnostic uploads in the background, preserve existing connections and retry safely without losing pending logs."}]},
@@ -8974,17 +8975,33 @@ function startSNAI(tabIdentity) {
     return log.flushing;
   }
   const diagnosticIdentityKey='sn-ai-diagnostic-installation';
+  function diagnosticUploadHealth(stage,details={}){
+    // Deliberately whitelist metadata: never log credentials, request bodies or server response text.
+    const safe={stage,source:'background-diagnostic-upload'};
+    for(const key of ['phase','status','code','reason','durationMs','length','attempt','waitMs','ok'])if(typeof details[key]==='number'||typeof details[key]==='boolean'||typeof details[key]==='string')safe[key]=details[key];
+    recordCompactDiagnostic(stage==='failed'?'warn':'info','diagnostic-upload',safe);
+  }
   async function diagnosticRequest(url,token,data,batchId){
-    const response=await new Promise((resolve,reject)=>GM_xmlhttpRequest({method:'POST',url,anonymous:true,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{}),...(batchId?{'X-SN-Batch':batchId}:{})},data:JSON.stringify(data),timeout:30000,onload:resolve,onerror:()=>reject(new Error('Diagnostic network unavailable')),ontimeout:()=>reject(new Error('Diagnostic request timed out'))}));
+    const phase=batchId?'upload':'registration',startedAt=Date.now();
+    diagnosticUploadHealth('request-started',{phase,length:batchId?data.events?.length:0});
+    let response;
+    try{response=await new Promise((resolve,reject)=>{
+      let done=false,request;
+      const finish=(error,result)=>{if(done)return;done=true;clearTimeout(watchdog);error?reject(error):resolve(result);};
+      const failure=(message,code)=>Object.assign(new Error(message),{code,phase});
+      const watchdog=setTimeout(()=>{finish(failure('Diagnostic transport watchdog timed out','transport-watchdog'));try{request?.abort();}catch{}},35000);
+      try{request=GM_xmlhttpRequest({method:'POST',url,anonymous:true,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{}),...(batchId?{'X-SN-Batch':batchId}:{})},data:JSON.stringify(data),timeout:30000,onload:r=>finish(null,r),onerror:()=>finish(failure('Diagnostic network unavailable','network-error')),ontimeout:()=>finish(failure('Diagnostic request timed out','timeout')),onabort:()=>finish(failure('Diagnostic request aborted','aborted'))});}catch{finish(failure('Diagnostic request could not start','request-start-failed'));}
+    });}catch(error){diagnosticUploadHealth('failed',{phase,code:error.code,reason:error.message,durationMs:Date.now()-startedAt});throw error;}
     let body;try{body=JSON.parse(response.responseText);}catch{body={};}
-    if(response.status===403&&body.code==='revoked'){const error=new Error('Diagnostic uploads revoked');error.revoked=true;throw error;}
+    if(response.status===403&&body.code==='revoked'){const error=new Error('Diagnostic uploads revoked');error.revoked=true;error.status=403;diagnosticUploadHealth('failed',{phase,status:403,code:'revoked'});throw error;}
     if(response.status<200||response.status>=300||body.ok!==true){
       const error=new Error('Diagnostic request not confirmed ('+response.status+')');
+      error.status=response.status;error.code=response.status===429?'rate-limited':response.status===401?'credential-rejected':response.status>=500?'server-error':'http-or-response-error';
       const retry=String(response.responseHeaders||'').match(/^Retry-After:\s*(.+)$/im)?.[1];
       if(retry){const seconds=Number(retry);error.retryAt=Number.isFinite(seconds)?Date.now()+Math.max(0,seconds)*1000:Date.parse(retry);}
-      throw error;
+      diagnosticUploadHealth('failed',{phase,status:response.status,code:error.code,durationMs:Date.now()-startedAt});throw error;
     }
-    return body;
+    diagnosticUploadHealth('request-confirmed',{phase,status:response.status,durationMs:Date.now()-startedAt});return body;
   }
   async function diagnosticIdentity(){
     let identity=await GM_getValue(diagnosticIdentityKey,null);
@@ -9013,7 +9030,12 @@ function startSNAI(tabIdentity) {
     identity.failures=(identity.failures||0)+1;
     identity.revoked=identity.revoked||error.revoked===true;
     identity.retryAt=Math.max(Number.isFinite(error.retryAt)?error.retryAt:0,Date.now()+Math.min(3600000,60000*2**Math.min(identity.failures-1,6)));
+    identity.lastFailure={at:Date.now(),code:error.code||'unconfirmed',status:error.status||0};
+    // Revalidate the SAME secret after an upload 401, including legacy migrations.
+    // Registration will detect revocation; no replacement identity is ever generated.
+    if(error.status===401)identity.registered=false;
     await GM_setValue(diagnosticIdentityKey,identity);
+    diagnosticUploadHealth('retry-scheduled',{code:identity.lastFailure.code,status:identity.lastFailure.status,attempt:identity.failures,waitMs:Math.max(0,identity.retryAt-Date.now())});
   }
   async function diagnosticUploadRequest(identity,batchId,payload){
     try{
@@ -9025,6 +9047,7 @@ function startSNAI(tabIdentity) {
   async function uploadDiagnosticBatch(){
     if(!workspacePage||state.diagnosticUploading||state.diagnostics?.clearing)return;
     state.diagnosticUploading=true;
+    state.diagnosticUploadAttemptAt=Date.now();
     try{
       const run=async()=>{
         const identity=await diagnosticIdentity();
@@ -9032,15 +9055,16 @@ function startSNAI(tabIdentity) {
         const pending=await new Promise((resolve,reject)=>{const r=db.transaction('uploads').objectStore('uploads').get('pending');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
         const records=pending||await new Promise((resolve,reject)=>{const rows=[],tx=db.transaction('events'),request=tx.objectStore('events').openCursor();let bytes=0;request.onsuccess=()=>{const c=request.result;if(!c){resolve(rows);return;}const n=new TextEncoder().encode(JSON.stringify(c.value.entry)).length;if(rows.length>=500||bytes+n>950000){if(!rows.length)reject(new Error('Diagnostic entry exceeds upload limit'));else resolve(rows);return;}rows.push({key:c.primaryKey,entry:c.value.entry});bytes+=n;c.continue();};request.onerror=()=>reject(request.error);});
         if(!records.length)return;
+        diagnosticUploadHealth('batch-ready',{length:records.length});
         if(!pending)await new Promise((resolve,reject)=>{const tx=db.transaction('uploads','readwrite');tx.objectStore('uploads').put(records,'pending');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});
         const payload=JSON.stringify({schema:1,events:records.map(r=>r.entry)}),digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(payload)),batchId=[...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');
         await diagnosticUploadRequest(identity,batchId,payload);
         setDiagnosticDownloadFallback(false);
         await new Promise((resolve,reject)=>{const tx=db.transaction(['events','uploads'],'readwrite'),store=tx.objectStore('events');for(const row of records)store.delete(row.key);tx.objectStore('uploads').delete('pending');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});
-        state.diagnosticUploadStatus='Uploaded '+new Date().toLocaleTimeString();state.diagnostics?.contents.clear();return true;
+        diagnosticUploadHealth('batch-confirmed',{length:records.length,ok:true});state.diagnosticUploadStatus='Uploaded '+new Date().toLocaleTimeString();state.diagnostics?.contents.clear();return true;
       };
       if(navigator.locks)await navigator.locks.request('sn-ai-diagnostic-upload',{ifAvailable:true},lock=>lock?run():undefined);else throw new Error('Diagnostic uploads require cross-tab locking');
-    }catch(e){state.diagnosticUploadStatus=e.message+'; local logs retained';}
+    }catch(e){state.diagnosticUploadStatus=e.message+'; local logs retained';diagnosticUploadHealth('cycle-retained',{reason:e.message});}
     finally{state.diagnosticUploading=false;const n=document.querySelector('[data-diagnostic-upload-status]');if(n)n.textContent=state.diagnosticUploadStatus||'Waiting for logs';}
   }
   function diagnosticStore() {
@@ -9051,6 +9075,7 @@ function startSNAI(tabIdentity) {
       state.diagnostics={day:diagnosticDay(),events:[],chats:new Set(),contents:new Map(),sleepCount:0,sleepMs:0,timer:0,flushing:null};
       window.addEventListener('pagehide',()=>{flushDailyDiagnostics().catch(()=>{});});
       document.addEventListener('visibilitychange',()=>{if(document.hidden)flushDailyDiagnostics().catch(()=>{});});
+      document.addEventListener('visibilitychange',()=>{if(!document.hidden&&Date.now()-(state.diagnosticUploadAttemptAt||0)>=60000)uploadDiagnosticBatch().catch(()=>{});});
       const log=state.diagnostics;
       const loadedDay=log.day;
       // Keep failed uploads across midnight until the server confirms receipt.
