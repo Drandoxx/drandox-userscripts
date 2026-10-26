@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.766
+// @version      2.36.768
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,8 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.768","fixes":true,"changes":[{"key":"diagnostic-server-upload","meaningful":true,"text":"Hide manual log downloads until the first-minute server availability check fails, retry availability a bounded number of times, and retain automatic authenticated uploads with clear connection status."}]},
+{"version":"2.36.767","fixes":true,"changes":[]},
 {"version":"2.36.766","fixes":true,"changes":[{"key":"diagnostic-server-upload","meaningful":true,"text":"Upload diagnostic batches every minute with a private browser upload key; clear acknowledged local batches and retain server logs for seven days."}]},
 {"version":"2.36.765","fixes":true,"changes":[{"key":"incoming-auto-accept","meaningful":true,"text":"Choose a fixed random 0-5 second delay per incoming offer and remove manual delay controls; ignore saved custom delays."}]},
 {"version":"2.36.764","fixes":true,"changes":[{"key":"automation-visibility-pause","meaningful":true,"text":"Show hidden-page pauses in ticket bubbles, exclude automatic pause time from field deadlines, and resume only when visible on the matching ticket; manual and incoming pauses remain latched."}]},
@@ -8932,6 +8934,20 @@ function startSNAI(tabIdentity) {
   async function storedDailyDiagnostics(day){const db=await diagnosticDatabase();return new Promise((resolve,reject)=>{const request=db.transaction('events').objectStore('events').index('day').getAll(day);request.onsuccess=()=>resolve(deduplicateWorkerDiagnostics(request.result.map(row=>row.entry)));request.onerror=()=>reject(request.error);});}
   async function prunePreviousDiagnosticDays(day){const db=await diagnosticDatabase();return new Promise((resolve,reject)=>{const tx=db.transaction('events','readwrite');const request=tx.objectStore('events').index('day').openCursor(IDBKeyRange.upperBound(day,true));request.onsuccess=()=>{const cursor=request.result;if(cursor){cursor.delete();cursor.continue();}};tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});}
   function updateDiagnosticCount(){const log=state.diagnostics;if(!log)return;const button=document.querySelector('#local-sn-ai-settings-template [data-download-diagnostics]');if(button)button.textContent='Download logs ['+log.chats.size+' incoming chats]';}
+  function setDiagnosticDownloadFallback(unavailable){
+    state.diagnosticServerUnavailable=unavailable;
+    for(const button of document.querySelectorAll('[data-diagnostic-download-fallback]'))button.hidden=!unavailable;
+  }
+  async function checkDiagnosticServerAvailability(attempt=0){
+    try{
+      await new Promise((resolve,reject)=>GM_xmlhttpRequest({method:'GET',url:'https://drandox.cc/work/diagnostics.php',anonymous:true,timeout:10000,
+        onload:response=>{try{const data=JSON.parse(response.responseText);if([200,401,405].includes(response.status)&&typeof data.ok==='boolean')resolve();else reject(new Error('Diagnostic server unavailable'));}catch(error){reject(error);}},onerror:()=>reject(new Error('Network unavailable')),ontimeout:()=>reject(new Error('Server timed out'))}));
+      setDiagnosticDownloadFallback(false);
+    }catch{
+      setDiagnosticDownloadFallback(true);
+      if(attempt<3)setTimeout(()=>checkDiagnosticServerAvailability(attempt+1),15000);
+    }
+  }
   async function clearDailyDiagnostics(){
     const log=diagnosticStore();if(log.clearing)return;
     log.clearing=true;state.diagnosticClearedAt=Date.now();
@@ -8939,7 +8955,7 @@ function startSNAI(tabIdentity) {
       if(log.timer){clearTimeout(log.timer);log.timer=0;}
       if(log.flushing)await log.flushing;
       const db=await diagnosticDatabase();
-      await new Promise((resolve,reject)=>{const tx=db.transaction('events','readwrite');tx.objectStore('events').clear();tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});
+      await new Promise((resolve,reject)=>{const tx=db.transaction(['events','uploads'],'readwrite');tx.objectStore('events').clear();tx.objectStore('uploads').clear();tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});
       log.events.length=0;log.chats.clear();log.contents.clear();log.sleepCount=0;log.sleepMs=0;
       updateDiagnosticCount();
     }finally{log.clearing=false;}
@@ -8955,7 +8971,7 @@ function startSNAI(tabIdentity) {
   function diagnosticUploadRequest(token,batchId,payload){return new Promise((resolve,reject)=>{GM_xmlhttpRequest({method:'POST',url:'https://drandox.cc/work/diagnostics.php',anonymous:true,headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'X-SN-Batch':batchId},data:payload,timeout:30000,onload:r=>{try{const ack=JSON.parse(r.responseText);if(r.status!==200||ack.ok!==true||ack.batchId!==batchId)throw new Error('Upload not confirmed ('+r.status+')');resolve();}catch(e){reject(e);}},onerror:()=>reject(new Error('Upload network error')),ontimeout:()=>reject(new Error('Upload timed out'))});});}
   async function uploadDiagnosticBatch(){
     if(!workspacePage||state.diagnosticUploading||state.diagnostics?.clearing)return;
-    const token=await GM_getValue('sn-ai-diagnostic-upload-key','');if(!/^[a-f0-9]{64}$/.test(token))return;
+    const token=await GM_getValue('sn-ai-diagnostic-upload-key','');if(!/^[a-f0-9]{64}$/.test(token)){state.diagnosticUploadStatus='Not connected - logs remain on this browser until an upload key is configured.';const status=document.querySelector('[data-diagnostic-upload-status]');if(status)status.textContent=state.diagnosticUploadStatus;return;}
     state.diagnosticUploading=true;
     try{
       const run=async()=>{
@@ -8966,6 +8982,7 @@ function startSNAI(tabIdentity) {
         if(!pending)await new Promise((resolve,reject)=>{const tx=db.transaction('uploads','readwrite');tx.objectStore('uploads').put(records,'pending');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});
         const payload=JSON.stringify({schema:1,events:records.map(r=>r.entry)}),digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(payload)),batchId=[...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');
         await diagnosticUploadRequest(token,batchId,payload);
+        setDiagnosticDownloadFallback(false);
         await new Promise((resolve,reject)=>{const tx=db.transaction(['events','uploads'],'readwrite'),store=tx.objectStore('events');for(const row of records)store.delete(row.key);tx.objectStore('uploads').delete('pending');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});
         state.diagnosticUploadStatus='Uploaded '+new Date().toLocaleTimeString();state.diagnostics?.contents.clear();return true;
       };
@@ -8987,6 +9004,7 @@ function startSNAI(tabIdentity) {
       const loadedAt=Date.now();storedDailyDiagnostics(loadedDay).then(rows=>{if(log.day!==loadedDay||log.clearing||state.diagnosticClearedAt>=loadedAt)return;for(const entry of rows)if(entry[2]==='auto-greet'&&/^(incoming-offer-content|offer-accepted)$/.test(entry[4]?.stage||'')&&/^IMS\d+$/.test(entry[4]?.ims||''))log.chats.add(entry[4].ims);updateDiagnosticCount();}).catch(()=>{});
       setInterval(()=>{diagnosticStore();},30000);
       setInterval(()=>{uploadDiagnosticBatch().catch(()=>{});},60000);
+      setTimeout(()=>checkDiagnosticServerAvailability(),60000);
     }
     const log=state.diagnostics;if(log.day!==diagnosticDay()){log.day=diagnosticDay();log.chats.clear();log.contents.clear();log.sleepCount=0;log.sleepMs=0;state.diagnosticWorkerSeen?.clear();state.diagnosticCompanionResults?.clear();updateDiagnosticCount();}
     return state.diagnostics;
@@ -19297,14 +19315,17 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       });developerPanel.append(matrixSetting,matrixStatus);
     }
     tabList.after(generalPanel);
-    const downloadLogButton=document.createElement('button');downloadLogButton.type='button';downloadLogButton.dataset.downloadDiagnostics='true';downloadLogButton.textContent='Download logs ['+diagnosticStore().chats.size+' chats]';downloadLogButton.title='Download today’s chat content, modes, errors and timings. Contains customer data; store and share securely.';
-    downloadLogButton.addEventListener('click',async()=>{downloadLogButton.disabled=true;try{await downloadDiagnostics();}catch(error){showAISettingsError(error);}finally{downloadLogButton.disabled=false;}});generalPanel.append(downloadLogButton);
+    diagnosticStore();
+    const fallbackStyle=document.createElement('style');fallbackStyle.textContent='[data-diagnostic-download-fallback][hidden]{display:none!important}';generalPanel.append(fallbackStyle);
+    const downloadLogButton=document.createElement('button');downloadLogButton.type='button';downloadLogButton.dataset.downloadDiagnostics='true';downloadLogButton.dataset.diagnosticDownloadFallback='true';downloadLogButton.hidden=state.diagnosticServerUnavailable!==true;downloadLogButton.textContent='Download logs ['+diagnosticStore().chats.size+' incoming chats]';
+    downloadLogButton.addEventListener('click',async()=>{downloadLogButton.disabled=true;try{await downloadDiagnostics();}catch(error){showAISettingsError(error);}finally{downloadLogButton.disabled=false;}});
     const uploadKeyButton=document.createElement('button');uploadKeyButton.type='button';uploadKeyButton.textContent='Connect diagnostic uploads';uploadKeyButton.onclick=async()=>{const key=prompt('Paste the browser upload key created by your Drandox administrator. Full diagnostic logs, including chat content, upload every minute and expire after seven days.');if(key===null)return;if(!/^[a-f0-9]{64}$/.test(key.trim())){showAISettingsError(new Error('Enter a valid upload key.'));return;}await GM_setValue('sn-ai-diagnostic-upload-key',key.trim());uploadKeyButton.textContent='Diagnostic uploads connected';};generalPanel.append(uploadKeyButton);const uploadStatus=document.createElement('p');uploadStatus.dataset.diagnosticUploadStatus='true';uploadStatus.textContent=state.diagnosticUploadStatus||'Diagnostic uploads require a browser upload key.';generalPanel.append(uploadStatus);
     const clearLogButton=document.createElement('button');clearLogButton.type='button';clearLogButton.textContent='Clear logs';clearLogButton.dataset.clearDiagnostics='true';
-    clearLogButton.addEventListener('click',async()=>{if(!confirm('Clear stored SN AI diagnostic logs and reset the collected-chat count? This cannot be undone. Download first if you need them. Tickets and settings will not change.'))return;clearLogButton.disabled=true;downloadLogButton.disabled=true;try{await clearDailyDiagnostics();}catch(error){showAISettingsError(error);}finally{clearLogButton.disabled=false;downloadLogButton.disabled=false;}});generalPanel.append(clearLogButton);
+    clearLogButton.addEventListener('click',async()=>{if(!confirm('Clear stored SN AI diagnostic logs and reset the collected-chat count? Unuploaded logs will be lost. This cannot be undone. Tickets and settings will not change.'))return;clearLogButton.disabled=true;try{await clearDailyDiagnostics();}catch(error){showAISettingsError(error);}finally{clearLogButton.disabled=false;}});generalPanel.append(clearLogButton);
     const diagnosticActions=document.createElement('div');diagnosticActions.dataset.diagnosticActions='true';diagnosticActions.style.cssText='display:flex;align-items:stretch;gap:10px;width:100%;';
-    for(const button of [downloadLogButton,clearLogButton]){button.style.setProperty('height','42px','important');button.style.setProperty('min-height','42px','important');button.style.setProperty('padding','8px 14px','important');button.style.setProperty('width','auto','important');button.style.setProperty('margin','0','important');button.style.setProperty('font-size','14px','important');button.style.setProperty('line-height','20px','important');button.style.setProperty('white-space','nowrap','important');button.style.setProperty('border-radius','8px','important');}
-    downloadLogButton.style.flex='1';clearLogButton.style.flex='0 0 auto';diagnosticActions.append(downloadLogButton,clearLogButton);generalPanel.append(diagnosticActions);
+    for(const button of [clearLogButton]){button.style.setProperty('height','42px','important');button.style.setProperty('min-height','42px','important');button.style.setProperty('padding','8px 14px','important');button.style.setProperty('width','auto','important');button.style.setProperty('margin','0','important');button.style.setProperty('font-size','14px','important');button.style.setProperty('line-height','20px','important');button.style.setProperty('white-space','nowrap','important');button.style.setProperty('border-radius','8px','important');}
+    clearLogButton.style.flex='0 0 auto';diagnosticActions.append(downloadLogButton,clearLogButton);generalPanel.append(diagnosticActions);
+    GM_getValue('sn-ai-diagnostic-upload-key','').then(key=>{uploadKeyButton.textContent=/^[a-f0-9]{64}$/.test(key)?'Change diagnostic upload connection':'Connect diagnostic uploads';uploadStatus.textContent=state.diagnosticUploadStatus||(/^[a-f0-9]{64}$/.test(key)?'Upload key configured - awaiting confirmed upload.':'Not connected - local logs retained. Connect uploads to send them automatically.');});
     const settingsTabs = [...settingsDialog.querySelectorAll('[data-settings-tab]')];
     tabList.style.setProperty('--sn-segment-index',String(Math.max(0,settingsTabs.findIndex(tab=>tab.getAttribute('aria-selected')==='true'))));
     const settingsPanels = [...settingsDialog.querySelectorAll('[data-settings-panel]')];
@@ -24064,16 +24085,9 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     playPause.addEventListener('click',() => incomingController?.toggle().catch(console.warn));
     const clearLogs = document.createElement('button');clearLogs.type = 'button';clearLogs.textContent = 'Clear logs';
     clearLogs.addEventListener('click',() => incomingController?.clear().catch(console.warn));
-    const download = document.createElement('button');
-    download.type = 'button';
-    download.textContent = 'Download logs';
-    download.title = 'Page diagnostics may contain customer data. Review before sharing.';
-    download.style.cssText = 'display:block;padding:8px 12px;border:1px solid var(--sn-theme-655573,#48695d);background:var(--sn-theme-251f31,#203e32);color:var(--sn-theme-e6edf9,#ddf3e8);border-radius:7px;cursor:pointer';
-    download.addEventListener('click', () => {
-      incomingController?.download().catch(console.warn);
-    });
     const help = document.createElement('small');
-    help.textContent = 'Incoming chats and logging state are saved locally across reloads. The optional screenshot companion adds a PNG of visible incoming cards; unavailable captures include a reason. Preview chats are excluded. Download pauses collection and waits for pending captures. Logs and images may contain customer data.';
+    const download=document.createElement('button');download.type='button';download.textContent='Download logs';download.dataset.diagnosticDownloadFallback='true';download.hidden=state.diagnosticServerUnavailable!==true;download.addEventListener('click',()=>incomingController?.download().catch(console.warn));
+    help.textContent = 'Full diagnostics upload automatically every minute when connected. Failed batches stay local for retry. Connection status is in General settings. Manual downloads appear only if the first-minute server check fails. Incoming screenshot captures remain separate and local.';
     help.style.display = 'block';
     const acceptRow = document.createElement('div');
     acceptRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap';
