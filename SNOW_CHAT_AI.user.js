@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.776
+// @version      2.36.777
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.777","fixes":true,"changes":[{"key":"diagnostic-noise-reduction","meaningful":true,"text":"Reduce routine UI and upload chatter and summarize idle successful API traffic while retaining errors, status changes and ticket diagnostics."}]},
 {"version":"2.36.776","fixes":true,"changes":[{"key":"diagnostic-background-upload","meaningful":true,"text":"Retry diagnostic uploads every minute and drain queued batches up to the server limit, without escalating local retry delays."}]},
 {"version":"2.36.775","fixes":false,"changes":[{"key":"diagnostic-upload-notice","meaningful":false,"text":"Show a single non-stacking confirmed-upload notification for Laszlo Akim only."}]},
 {"version":"2.36.774","fixes":true,"changes":[{"key":"diagnostic-background-upload","meaningful":true,"text":"Record background upload attempts and failures locally, recover aborted requests, and upload status-only events without requiring chat data."}]},
@@ -8997,6 +8998,12 @@ function startSNAI(tabIdentity) {
     state.diagnosticSuccessNoticeTimer=setTimeout(()=>notice.remove(),7000);
   }
   function diagnosticUploadHealth(stage,details={}){
+    if(['request-started','request-confirmed','batch-ready'].includes(stage))return;
+    if(stage==='cycle-retained'&&/waiting.*Retry-After|waiting to retry/.test(details.reason||''))return;
+    if(stage==='batch-confirmed'){
+      if(Date.now()-(state.lastDiagnosticUploadSummaryAt||0)<300000)return;
+      state.lastDiagnosticUploadSummaryAt=Date.now();
+    }
     // Deliberately whitelist metadata: never log credentials, request bodies or server response text.
     const safe={stage,source:'background-diagnostic-upload'};
     for(const key of ['phase','status','code','reason','durationMs','length','attempt','waitMs','ok'])if(typeof details[key]==='number'||typeof details[key]==='boolean'||typeof details[key]==='string')safe[key]=details[key];
@@ -9124,6 +9131,7 @@ function startSNAI(tabIdentity) {
   }
   function recordCompactDiagnostic(level,action,details={}) {
     if (!workspacePage) return;
+    if(level!=='error'&&level!=='warn'&&/^(launcher-position-restored|launcher-menu-opened|launcher-menu-closed|bubble-open-request|action-window-opened|action-window-closed|field-wait-complete|extension-job-response-progress)$/.test(action))return;
     if(state.diagnostics?.clearing||(action.startsWith('extension-')&&details.at&&details.at<=state.diagnosticClearedAt))return;
     const log=diagnosticStore(),now=action.startsWith('extension-')&&Number.isFinite(details.at)?details.at:Date.now(),safe={};
     if(action==='auto-greet'&&/^(incoming-offer-content|offer-accepted)$/.test(details.stage||'')&&/^IMS\d+$/.test(details.ims||'')){log.chats.add(details.ims);updateDiagnosticCount();}
@@ -9183,7 +9191,7 @@ function startSNAI(tabIdentity) {
   function installFormNetworkDiagnostics() {
     if (!workspacePage) return;
     const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
-    const seen=new Map(),captureId=Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);let sequence=0;
+    const seen=new Map(),idleSummaries=new Map(),captureId=Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);let sequence=0;
     const relevant=url=>{
       try{const u=new URL(url,location.href);return u.origin===location.origin&&/\/api\/(?:now\/(?:graphql|ui|table\/(?:new_call|sys_template|sys_dictionary|sys_choice|cmdb_ci|kb_knowledge))|.*(?:form|layout|reference|template|choice))|(?:xmlhttp|ref_list)\.do/i.test(u.pathname)?u:null;}catch{return null;}
     };
@@ -9210,7 +9218,18 @@ function startSNAI(tabIdentity) {
           if(seen.has(fingerprint))data={sameAs:seen.get(fingerprint)};
           else{data=serialized.length<=16000?safe:{omitted:'sanitized payload exceeds 16 KiB',length:serialized.length,keys:safe&&typeof safe==='object'?Object.keys(safe):[]};seen.set(fingerprint,info.id);if(seen.size>256)seen.delete(seen.keys().next().value);}
         }
-        recordCompactDiagnostic(info.status>=400||info.error?'error':'info','form-network',{network:{...info,response:data}});
+        const failed=info.status>=400||!!info.error;
+        if(!failed&&!info.commandId){
+          const key=info.method+':'+info.url,previous=idleSummaries.get(key),now=Date.now();
+          if(previous&&now-previous.at<60000){previous.count++;return;}
+          const count=(previous?.count||0)+1;
+          idleSummaries.set(key,{at:now,count:0});
+          if(idleSummaries.size>64)idleSummaries.delete(idleSummaries.keys().next().value);
+          recordCompactDiagnostic('info','form-network',{network:{url:info.url,method:info.method,status:info.status,durationMs:info.durationMs,summary:true,requestsSincePreviousSummary:count}});
+          return;
+        }
+        if(!failed&&data?.sameAs)return;
+        recordCompactDiagnostic(failed?'error':'info','form-network',{network:{...info,response:data}});
       }catch{/* Diagnostics must never disrupt the form. */}
     };
     const info=(url,method,request)=>({id:captureId+'-'+(++sequence),url:url.pathname,query:formNetworkSafe(Object.fromEntries(url.searchParams)),method:method||'GET',request:body(request),at:Date.now(),commandId:state.activeCommandId||''});
