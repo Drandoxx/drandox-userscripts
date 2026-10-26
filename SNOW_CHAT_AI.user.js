@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.778
+// @version      2.36.779
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.779","fixes":true,"changes":[{"key":"ticket-fill-performance","meaningful":true,"text":"Batch presentation observers during ticket logging and skip progress-bubble mutations to reduce repeated DOM and layout work."}]},
 {"version":"2.36.778","fixes":true,"changes":[{"key":"automation-visibility-pause","meaningful":true,"text":"Fix stale paused labels after returning to a visible ServiceNow window and consolidate conflicting visibility handlers."}]},
 {"version":"2.36.777","fixes":true,"changes":[{"key":"diagnostic-noise-reduction","meaningful":true,"text":"Reduce routine UI and upload chatter and summarize idle successful API traffic while retaining errors, status changes and ticket diagnostics."}]},
 {"version":"2.36.776","fixes":true,"changes":[{"key":"diagnostic-background-upload","meaningful":true,"text":"Retry diagnostic uploads every minute and drain queued batches up to the server limit, without escalating local retry delays."}]},
@@ -1020,16 +1021,41 @@ const snAIChatDisplayNames=(()=>{
   const roots = new WeakSet();
   const spaceRoots = new Set();
   const themeRootObservers = new WeakMap();
+  // SN_AI_PRESENTATION_BATCH_BEGIN
+  const ticketPresentationQueue=new Map();let ticketPresentationTimer=0;
+  function flushTicketPresentation(){
+    ticketPresentationTimer=0;
+    const started=performance.now();
+    for(const [root,item] of ticketPresentationQueue){
+      ticketPresentationQueue.delete(root);
+      if(root!==document&&!root.host?.isConnected)continue;
+      item.run(item.overflow?[{type:'childList',addedNodes:[root],target:root}]:item.records);
+      if(performance.now()-started>=8)break;
+    }
+    if(ticketPresentationQueue.size)ticketPresentationTimer=setTimeout(flushTicketPresentation,16);
+  }
+  function queueTicketPresentation(root,records,run){
+    const queued=ticketPresentationQueue.get(root);
+    if(!queued&&!document.querySelector('[data-sn-automation-frozen]')){run(records);return;}
+    const item=queued||{records:[],run,overflow:false};
+    if(!item.overflow){if(item.records.length+records.length<=64)item.records.push(...records);else{item.records=[];item.overflow=true;}}
+    ticketPresentationQueue.set(root,item);
+    if(!ticketPresentationTimer)ticketPresentationTimer=setTimeout(flushTicketPresentation,100);
+  }
+  function clearTicketPresentation(){clearTimeout(ticketPresentationTimer);ticketPresentationTimer=0;ticketPresentationQueue.clear();}
+  // SN_AI_PRESENTATION_BATCH_END
   function pruneDetachedThemeRoots() {
     for (const root of spaceRoots) {
       if (root === document || (root.host ? root.host.isConnected : root.defaultView?.frameElement?.isConnected)) continue;
       themeRootObservers.get(root)?.observer.disconnect();
+      ticketPresentationQueue.delete(root);
       spaceRoots.delete(root);
       spaceStyles.delete(root);
     }
   }
   const themeRootCleanupTimer = setInterval(pruneDetachedThemeRoots, 5000);
   window.addEventListener('pagehide', () => {
+    clearTicketPresentation();
     clearInterval(themeRootCleanupTimer);
     for (const root of spaceRoots) themeRootObservers.get(root)?.observer.disconnect();
     spaceRoots.clear(); spaceStyles.clear();
@@ -6835,7 +6861,7 @@ const snAIChatDisplayNames=(()=>{
     style.snAiPersistentCss=style.textContent.slice(css.length);
     (root.nodeType === 9 ? (root.head || root.documentElement) : root)?.prepend(style);
     shareActionStyle(root,style,css+(style.snAiPersistentCss||''));
-    const observer = new MutationObserver(records => {
+    const processPresentationRecords = records => {
       // Workspace sometimes clears a mounted root's children, including our
       // style. Restore only this changed root; never rescan the whole page.
       ensureSpaceRoot(root);
@@ -6876,6 +6902,13 @@ const snAIChatDisplayNames=(()=>{
       syncNativeActionWidth(root);
       eventFieldShortcut(root);
       installReopenTabButtons(root);
+    };
+    const observer = new MutationObserver(records => {
+      const relevant=records.filter(record=>{
+        const target=record.target?.nodeType===1?record.target:record.target?.parentElement;
+        return !target?.closest?.('#local-sn-inspector-root,[data-sn-automation-frozen]');
+      });
+      if(relevant.length)queueTicketPresentation(root,relevant,processPresentationRecords);
     });
     const observationOptions = { childList: true, subtree: true,
       ...(root.host?.localName?.startsWith('sn-form-internal-header-label-')?{characterData:true}:{}),
