@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.781
+// @version      2.36.782
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.782","fixes":true,"changes":[{"key":"ticket-fill-performance","meaningful":true,"text":"Reduce measured field-lookup overhead by filtering controls before containment checks and caching background Reporting User controls between ticks."}]},
 {"version":"2.36.781","fixes":true,"changes":[{"key":"diagnostic-agent-identity","meaningful":true,"text":"Use the ServiceNow login ID in diagnostic reporter userID and keep the internal record identifier separately as sysId."}]},
 {"version":"2.36.780","fixes":false,"changes":[{"key":"diagnostic-agent-identity","meaningful":true,"text":"Include the signed-in ServiceNow agent name and user ID in each uploaded report, separate from the random browser label."}]},
 {"version":"2.36.779","fixes":true,"changes":[{"key":"ticket-fill-performance","meaningful":true,"text":"Batch presentation observers during ticket logging and skip progress-bubble mutations to reduce repeated DOM and layout work."}]},
@@ -12516,8 +12517,10 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       if (startsWith) return startsWith;
       return controls.find((el) => comparableLabel(elementLabel(el)).includes(wanted));
     };
-    const controls = activeEventElements(sourceElements)
-      .filter((el) => isUsefulControl(el) && isVisible(el));
+    // Most mounted nodes are decoration. Never walk their shadow ancestry
+    // merely to discard them afterward as non-controls.
+    const controls = activeEventElements(sourceElements.filter(isUsefulControl))
+      .filter(isVisible);
     const scopedMatch = matchingControl(controls);
     if (scopedMatch) return scopedMatch;
     // Workspace can project Attached Knowledge through a shadow boundary that
@@ -18246,13 +18249,19 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
 
   const reportingUserEdited = new WeakSet();
   const reportingUserPending=new WeakSet(),reportingUserAttempts=new WeakMap();
+  let reportingUserControlCache=null;
   async function fillVisibleReportingUserFromName() {
-    if (!workspacePage || document.hidden || state.busy || !/\/sub\/new_record\/new_call(?:\/|$)/.test(location.pathname)) return;
-    const elements = currentFormElements();
-    const field = findControlByLabel('Reporting User', elements);
+    if(reportingUserControlCache&&(reportingUserControlCache.route!==location.href||!reportingUserControlCache.field?.isConnected||!reportingUserControlCache.source?.isConnected))reportingUserControlCache=null;
+    if (!workspacePage || document.hidden || state.busy || state.commandRunning || automationFreezeRunning() || !/\/sub\/new_record\/new_call(?:\/|$)/.test(location.pathname)) return;
+    let cached=reportingUserControlCache;
+    if(!cached||cached.route!==location.href||!cached.field?.isConnected||!cached.source?.isConnected||!isVisible(cached.field)||!isVisible(cached.source)){
+      const elements=currentFormElements();
+      cached={route:location.href,field:findControlByLabel('Reporting User',elements),source:findControlByLabel('Name',elements)};
+      reportingUserControlCache=cached.field&&cached.source?cached:null;
+    }
+    const {field,source}=cached;
     if (!field || !('value' in field) || field.disabled || field.readOnly || field.getAttribute('role') === 'combobox'
       || reportingUserEdited.has(field) || reportingUserPending.has(field)) return;
-    const source = findControlByLabel('Name', elements);
     const name = String(source?.value || '').trim();
     if (!name || name === '\u2014' || name === '-') return;
     const visible=String(field.value||'').trim();
@@ -18264,7 +18273,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const attempt=(reportingUserAttempts.get(field)||0)+1;if(attempt>3)return;
     reportingUserAttempts.set(field,attempt);reportingUserPending.add(field);
     const path=location.pathname;
-    const resolve=()=>location.pathname===path&&!state.busy&&!reportingUserEdited.has(field)&&field.isConnected?field:null;
+    const resolve=()=>location.pathname===path&&!state.busy&&!state.commandRunning&&!reportingUserEdited.has(field)&&field.isConnected?field:null;
     try{
       const modelCommitted=await commitTextToFormModel(field,name,resolve);
       addLog(modelCommitted?'info':'warn','auto-text-attempt',{field:'Reporting User',attempt,modelCommitted,stable:reportingUserHasCommittedValue(field,name),expectedLength:name.length,actualLength:String(field.value||'').length});
