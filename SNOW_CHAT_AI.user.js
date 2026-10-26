@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.783
+// @version      2.36.784
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.784","fixes":true,"changes":[{"key":"ticket-fill-performance","meaningful":true,"text":"Keep minute memory sampling lightweight during ticket runs and yield within large DOM roots instead of scanning them in one uninterrupted pass."}]},
 {"version":"2.36.783","fixes":true,"changes":[{"key":"bubble-opening-performance","meaningful":true,"text":"Exclude internal machine-readable JSON blocks from the accessibility tree to reduce measured bubble-opening stalls without hiding real controls or status messages."}]},
 {"version":"2.36.782","fixes":true,"changes":[{"key":"ticket-fill-performance","meaningful":true,"text":"Reduce measured field-lookup overhead by filtering controls before containment checks and caching background Reporting User controls between ticks."}]},
 {"version":"2.36.781","fixes":true,"changes":[{"key":"diagnostic-agent-identity","meaningful":true,"text":"Use the ServiceNow login ID in diagnostic reporter userID and keep the internal record identifier separately as sysId."}]},
@@ -617,11 +618,11 @@ SN_AI_RELEASE_NOTES_END */
 })();
 
 // SN_AI_WORKSPACE_NAV_BEGIN
-async function snMeasureMemoryFootprint(doc = document) {
-  const started=performance.now(),queue=[doc],resources=new Map();
-  const result={roots:0,nodes:0,styles:0,actionCssChars:0,themeCssChars:0,otherCssChars:0,partial:false};
+async function snMeasureMemoryFootprint(doc = document, options = {}) {
+  const started=performance.now(),queue=options.heapOnly?[]:[doc],resources=new Map();
+  const result={roots:0,nodes:0,styles:0,actionCssChars:0,themeCssChars:0,otherCssChars:0,partial:Boolean(options.heapOnly),domScanDeferred:Boolean(options.heapOnly)};
   while(queue.length){
-    const slice=performance.now();
+    let slice=performance.now();
     do {
       const root=queue.pop();result.roots++;
       for(const node of root.querySelectorAll('*')){
@@ -635,6 +636,12 @@ async function snMeasureMemoryFootprint(doc = document) {
           const key=node.hasAttribute('data-sn-ai-action-style')?'actionCssChars':node.hasAttribute('data-sn-ai-space-theme')?'themeCssChars':'otherCssChars';
           result[key]+=length;
         }
+        // A single root may contain thousands of nodes. Bound that pass too,
+        // not just the gaps between shadow roots.
+        if(result.nodes%32===0&&performance.now()-slice>=4){
+          await new Promise(resolve=>setTimeout(resolve,0));slice=performance.now();
+        }
+        if(result.nodes>100000||performance.now()-started>1000){result.partial=true;queue.length=0;break;}
       }
       if(result.nodes>100000||result.roots>5000||performance.now()-started>1000){result.partial=true;queue.length=0;break;}
     }while(queue.length&&performance.now()-slice<4);
@@ -9312,12 +9319,21 @@ function startSNAI(tabIdentity) {
     proto.send=function(payload){const item=requests.get(this);if(item){item.request=body(payload);const started=performance.now();this.addEventListener('loadend',()=>{try{const text=this.responseType==='json'?JSON.stringify(this.response):!this.responseType||this.responseType==='text'?this.responseText:undefined;emit({...item,status:this.status,durationMs:Math.round(performance.now()-started)},text);}catch{emit({...item,status:this.status,error:'capture-unavailable'});}},{once:true});}return Reflect.apply(send,this,[payload]);};
   }
   try{installFormNetworkDiagnostics();}catch{/* Logging is optional; native form operation is not. */}
-  let memorySampling=false,memoryStopped=false,memoryPeak=0;
+  let memorySampling=false,memoryStopped=false,memoryPeak=0,memoryLastDOM=null,memoryLastDOMAt=0;
   const memoryTimer=workspacePage?setInterval(async()=>{
     if(memorySampling||memoryStopped)return;
     memorySampling=true;
     try{
-      const metrics=await snMeasureMemoryFootprint();
+      const heapOnly=Boolean(state.busy||state.commandRunning||automationFreezeRunning());
+      const metrics=await snMeasureMemoryFootprint(document,{heapOnly});
+      const domKeys=['roots','nodes','styles','actionCssChars','themeCssChars','otherCssChars','sharedCssResourceCount','sharedCssSourceChars'];
+      if(heapOnly){
+        for(const key of domKeys)metrics[key]=memoryLastDOM?.[key]??null;
+        metrics.domCountsAgeMs=memoryLastDOMAt?Date.now()-memoryLastDOMAt:null;
+      }else{
+        memoryLastDOM=Object.fromEntries(domKeys.map(key=>[key,metrics[key]]));memoryLastDOMAt=Date.now();
+        metrics.domCountsAgeMs=0;
+      }
       if(memoryStopped)return;
       memoryPeak=Math.max(memoryPeak,metrics.heapUsedBytes||0);
       metrics.sessionPeakHeapBytes=memoryPeak||null;
