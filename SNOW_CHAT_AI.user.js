@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.763
+// @version      2.36.764
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.764","fixes":true,"changes":[{"key":"automation-visibility-pause","meaningful":true,"text":"Show hidden-page pauses in ticket bubbles, exclude automatic pause time from field deadlines, and resume only when visible on the matching ticket; manual and incoming pauses remain latched."}]},
 {"version":"2.36.763","fixes":true,"changes":[{"key":"text-commit-verification","meaningful":true,"text":"Extend slow-read confirmation to subordinate fields and reference clearing; avoid redundant custom-action DOM writes and mutation-driven model scans."}]},
 {"version":"2.36.762","fixes":true,"changes":[{"key":"text-commit-verification","meaningful":true,"text":"Allow a bounded final exact-value confirmation after slow control reads or delayed timers instead of falsely rejecting committed text at the polling deadline."}]},
 {"version":"2.36.761","fixes":true,"changes":[{"key":"record-action-alignment","meaningful":false,"text":"Set the shared header right inset to 20px while keeping extra action-row padding and margins removed."}]},
@@ -14376,7 +14377,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   }
 
   const rawSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  function automationNow(){return performance.now()-(state.pauseClockTotal||0)-(state.incomingPause&&state.pauseClockStarted!=null?performance.now()-state.pauseClockStarted:0);}
+  function automationNow(){return performance.now()-(state.pauseClockTotal||0)-((state.incomingPause||state.autoVisibilityPause)&&state.pauseClockStarted!=null?performance.now()-state.pauseClockStarted:0);}
   function finishPauseClock(){if(state.pauseClockStarted!=null){state.pauseClockTotal=(state.pauseClockTotal||0)+performance.now()-state.pauseClockStarted;state.pauseClockStarted=null;}}
 
   function updateStopButtons() {
@@ -14423,12 +14424,12 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   function updatePausePanel() {
     const root=document.getElementById(ROOT_ID);
     for(const dialog of root?.querySelectorAll('[data-pinned-ims]')||[]){
-      const paused=Boolean(state.incomingPause&&dialog.classList.contains('is-running')&&dialog.dataset.pinnedIms===state.incomingResume?.ims);
+      const paused=Boolean(dialog.classList.contains('is-running')&&((state.incomingPause&&dialog.dataset.pinnedIms===state.incomingResume?.ims)||(!state.incomingPause&&state.autoVisibilityPause)));
       dialog.classList.toggle('is-paused',paused);
       let label=dialog.querySelector('[data-ticket-pause-label]');
       if(paused&&!label){label=document.createElement('span');label.dataset.ticketPauseLabel='';label.setAttribute('role','status');dialog.querySelector('.local-sn-cpc-title-block')?.append(label);}
-      if(label){label.hidden=!paused;label.textContent=state.incomingResume?.kind==='incoming-chat'?'Paused for new incoming chats':'Paused';}
-      const button=dialog.querySelector('[data-ticket-stop]');if(button)button.textContent=paused?'Continue':'Pause';
+      if(label){label.hidden=!paused;label.textContent=state.incomingPause?(state.incomingResume?.kind==='incoming-chat'?'Paused for new incoming chats':'Paused'):(state.pause.reason||'Paused - return to ServiceNow to resume automatically');}
+      const button=dialog.querySelector('[data-ticket-stop]');if(button)button.textContent=paused&&state.incomingPause?'Continue':'Pause';
     }
     updateStopButtons();
     const panel = document.getElementById('local-sn-inspector-pause');
@@ -14462,11 +14463,12 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
 
   async function waitForAutomationResume() {
     assertAutomationNotStopped();
-    if (!state.busy&&!state.incomingPause) return;
+    if (!state.busy&&!state.commandRunning&&!automationFreezeRunning()&&!state.incomingPause) return;
     let reason = pauseReason();
     while (reason) {
       assertAutomationNotStopped();
       if (!state.pause.paused || state.pause.reason !== reason) {
+        if(!state.incomingPause){state.autoVisibilityPause=true;if(state.pauseClockStarted==null)state.pauseClockStarted=performance.now();}
         state.pause.paused = true;
         state.pause.reason = reason;
         state.pause.manualRequested = false;
@@ -14479,6 +14481,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       reason = pauseReason();
     }
     if (state.pause.paused) {
+      if(state.autoVisibilityPause){finishPauseClock();state.autoVisibilityPause=false;}
       state.pause.paused = false;
       state.pause.reason = '';
       state.pause.manualRequested = false;
@@ -14487,6 +14490,21 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       addLog('info', 'automation-resumed', { ims: state.autoSession?.ims });
     }
   }
+
+  document.addEventListener('visibilitychange',()=>{
+    if(!state.busy&&!state.commandRunning&&!automationFreezeRunning())return;
+    if(document.visibilityState!=='visible'&&!state.incomingPause){
+      state.autoVisibilityPause=true;
+      if(state.pauseClockStarted==null)state.pauseClockStarted=performance.now();
+      state.pause.paused=true;state.pause.dismissed=false;
+      state.pause.reason='Paused - page hidden. Return to this ServiceNow tab to resume automatically.';
+      updatePausePanel();
+    }
+    if(!state.visibilityResumeWaiting){
+      state.visibilityResumeWaiting=true;
+      waitForAutomationResume().catch(error=>addLog('warn','visibility-resume-failed',{message:error.message})).finally(()=>{state.visibilityResumeWaiting=false;});
+    }
+  });
 
   async function sleep(ms) {
     const diagnostics=diagnosticStore();diagnostics.sleepCount++;diagnostics.sleepMs+=Math.max(0,Number(ms)||0);
