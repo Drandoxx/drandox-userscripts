@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.761
+// @version      2.36.762
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.762","fixes":true,"changes":[{"key":"text-commit-verification","meaningful":true,"text":"Allow a bounded final exact-value confirmation after slow control reads or delayed timers instead of falsely rejecting committed text at the polling deadline."}]},
 {"version":"2.36.761","fixes":true,"changes":[{"key":"record-action-alignment","meaningful":false,"text":"Set the shared header right inset to 20px while keeping extra action-row padding and margins removed."}]},
 {"version":"2.36.760","fixes":true,"changes":[{"key":"record-action-alignment","meaningful":false,"text":"Remove right padding and margins from the record header and action row."}]},
 {"version":"2.36.759","fixes":true,"changes":[{"key":"record-action-alignment","meaningful":false,"text":"Reduce the shared record-header right inset to 10px."}]},
@@ -14614,10 +14615,12 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
 
   async function waitStableValue(fieldLabel, expected, match = 'exact', timeoutMs = 3200, stableMs = 650, lockedControl = null, resolveControl = null) {
     const wanted = normalisedFieldValue(expected);
-    let stableSince = 0;
+    let stableSince = null;
+    let matchingSamples = 0;
+    let deadlineConfirmation = false;
     let actual = '';
     const started = automationNow();
-    while (automationNow() - started < timeoutMs) {
+    while (true) {
       // Always prefer the currently visible labelled control. Classification
       // can keep its old button connected while projecting a replacement button,
       // so waiting for isConnected=false reads stale/blank state and triggers
@@ -14630,10 +14633,21 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       const got = normalisedFieldValue(actual);
       const matches = match === 'prefix' ? got.startsWith(wanted) : (match === 'contains' ? got.includes(wanted) : got === wanted);
       if (matches) {
-        if (!stableSince) stableSince = automationNow();
-        if (automationNow() - stableSince >= stableMs) return { actual, stable: true };
+        matchingSamples += 1;
+        if (stableSince === null) stableSince = automationNow();
+        if (matchingSamples >= 2 && automationNow() - stableSince >= stableMs) return { actual, stable: true };
       } else {
-        stableSince = 0;
+        stableSince = null;
+        matchingSamples = 0;
+      }
+      // A resolver can itself consume the polling deadline. Always inspect
+      // the value after that read, and permit just one final spaced reread
+      // when it matches. Never accept length-only evidence or a stale sample.
+      if (automationNow() - started >= timeoutMs) {
+        if (!matches || deadlineConfirmation) break;
+        deadlineConfirmation = true;
+        await sleep(Math.max(35, stableMs - (automationNow() - stableSince)));
+        continue;
       }
       await sleep(35);
     }
