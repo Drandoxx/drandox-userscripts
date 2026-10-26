@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.764
+// @version      2.36.765
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.765","fixes":true,"changes":[{"key":"incoming-auto-accept","meaningful":true,"text":"Choose a fixed random 0-5 second delay per incoming offer and remove manual delay controls; ignore saved custom delays."}]},
 {"version":"2.36.764","fixes":true,"changes":[{"key":"automation-visibility-pause","meaningful":true,"text":"Show hidden-page pauses in ticket bubbles, exclude automatic pause time from field deadlines, and resume only when visible on the matching ticket; manual and incoming pauses remain latched."}]},
 {"version":"2.36.763","fixes":true,"changes":[{"key":"text-commit-verification","meaningful":true,"text":"Extend slow-read confirmation to subordinate fields and reference clearing; avoid redundant custom-action DOM writes and mutation-driven model scans."}]},
 {"version":"2.36.762","fixes":true,"changes":[{"key":"text-commit-verification","meaningful":true,"text":"Allow a bounded final exact-value confirmation after slow control reads or delayed timers instead of falsely rejecting committed text at the polling deadline."}]},
@@ -23968,6 +23969,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const delayInput = document.createElement('input');
     inboxPolicy.delayInput=delayInput;
     delayInput.type = 'number';
+    delayInput.disabled=true;delayInput.readOnly=true;
     delayInput.min = '0'; delayInput.max = '25'; delayInput.step = '1';
     delayInput.setAttribute('aria-label', 'Automatic chat acceptance delay in seconds');
     delayInput.value = String(inboxPolicy.acceptDelaySeconds);
@@ -23992,7 +23994,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       });
       return button;
     };
-    delayControl.append(stepButton('−', -1), delayInput, stepButton('+', 1));
+    delayControl.textContent='0–5 s (random)';
     delayLabel.append('Delay (seconds)', delayControl);
     const rejectLabel = document.createElement('label');
     rejectLabel.className = 'sn-ai-general-toggle';
@@ -24057,11 +24059,10 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     acceptSwitch.style.cssText = 'margin-left:auto;flex:0 0 auto';
     acceptSwitch.append(checkbox);
     delayLabel.replaceChildren(delayControl);
-    delayLabel.title = 'Acceptance delay in seconds; 0 = immediate';
+    delayLabel.title = 'A random delay between 0 and 5 seconds is chosen separately for each incoming chat.';
     const secondsUnit = document.createElement('span');
     secondsUnit.textContent = 's';
     secondsUnit.style.cssText = 'padding:0 4px 0 2px;color:var(--sn-theme-a8b8d1,#a9c7ba);font-size:12px;transform:translateX(-3px)';
-    delayControl.insertBefore(secondsUnit,delayInput.nextSibling);
     acceptDescription.append(label,delayLabel);
     acceptRow.append(acceptDescription,acceptSwitch);
     logControls.append(playPause,clearLogs,download);
@@ -24169,6 +24170,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         inboxLog('accept-button-found', { html: button.outerHTML, enabled: !button.disabled, autoAccept: inboxPolicy.autoAccept });
         if (!inboxPolicy.autoAccept) continue;
         const detectedAt = Date.now();
+        const acceptDelayMs=Math.floor(Math.random()*5001);
         let card = button;
         while (card instanceof Element && !card.matches('sn-inbox-card')) card = deepParentElement(card);
         // Cache this offer's timer roots once; no page-wide polling/scanning.
@@ -24202,12 +24204,10 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           const remaining = values.length ? Math.max(...values) : null;
           if (remaining !== lastCountdown) { lastCountdown = remaining;countdownChangedAt = Date.now(); }
           const countdownStalled = remaining != null && Date.now()-countdownChangedAt >= 5000;
-          const setting=inboxPolicy.delayInput?.isConnected ? inboxPolicy.delayInput : null;
-          const acceptDelayMs=normaliseInboxAcceptDelay(setting?.value?.trim() ? setting.value : inboxPolicy.acceptDelaySeconds)*1000;
           const countdownReached = remaining != null && remaining <= 30-acceptDelayMs/1000;
           // Native countdown is authoritative, including offers detected late.
           // Only absent/invalid or demonstrably frozen timers allow fallback.
-          if (remaining != null && !countdownStalled ? !countdownReached : Date.now()-detectedAt < acceptDelayMs) return;
+          if (Date.now()-detectedAt < acceptDelayMs) return;
           accepted = true;
           const acceptedAt=Date.now();
           clearInterval(inboxPolicy.timers.get(button)); inboxPolicy.timers.delete(button);
