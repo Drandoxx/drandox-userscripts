@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.780
+// @version      2.36.781
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.781","fixes":true,"changes":[{"key":"diagnostic-agent-identity","meaningful":true,"text":"Use the ServiceNow login ID in diagnostic reporter userID and keep the internal record identifier separately as sysId."}]},
 {"version":"2.36.780","fixes":false,"changes":[{"key":"diagnostic-agent-identity","meaningful":true,"text":"Include the signed-in ServiceNow agent name and user ID in each uploaded report, separate from the random browser label."}]},
 {"version":"2.36.779","fixes":true,"changes":[{"key":"ticket-fill-performance","meaningful":true,"text":"Batch presentation observers during ticket logging and skip progress-bubble mutations to reduce repeated DOM and layout work."}]},
 {"version":"2.36.778","fixes":true,"changes":[{"key":"automation-visibility-pause","meaningful":true,"text":"Fix stale paused labels after returning to a visible ServiceNow window and consolidate conflicting visibility handlers."}]},
@@ -9017,15 +9018,16 @@ function startSNAI(tabIdentity) {
     const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
     const user=page.NOW?.user||page.g_user||{};
     const userId=String(user.userID||user.sys_id||page.g_user?.userID||'');
-    if(!/^[a-f0-9]{32}$/i.test(userId))return {name:'Unavailable',userId:'',source:'signed-in ServiceNow account unavailable',role:'uploading-agent'};
-    if(state.diagnosticReportingAgent?.userId===userId)return state.diagnosticReportingAgent;
+    if(!/^[a-f0-9]{32}$/i.test(userId))return {name:'Unavailable',userID:'',sysId:'',source:'signed-in ServiceNow account unavailable',role:'uploading-agent'};
+    if(state.diagnosticReportingAgent?.sysId===userId)return state.diagnosticReportingAgent;
+    let login=String(user.userName||user.user_name||page.g_user?.userName||page.g_user?.user_name||'').trim();
     let name=String(user.fullName||user.displayName||user.name||[user.firstName||user.first_name,user.lastName||user.last_name].filter(Boolean).join(' ')||'').trim();
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);
     try{
-      if(page.g_ck){const response=await fetch('/api/now/table/sys_user/'+userId+'?sysparm_fields=name&sysparm_display_value=false',{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':page.g_ck},signal:controller.signal});if(response.ok){const data=await response.json();if(typeof data.result?.name==='string'&&data.result.name.trim())name=data.result.name.trim();}}
+      if(page.g_ck){const response=await fetch('/api/now/table/sys_user/'+userId+'?sysparm_fields=name,user_name&sysparm_display_value=false',{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':page.g_ck},signal:controller.signal});if(response.ok){const data=await response.json();if(typeof data.result?.name==='string'&&data.result.name.trim())name=data.result.name.trim();if(typeof data.result?.user_name==='string'&&data.result.user_name.trim())login=data.result.user_name.trim();}}
     }catch{/* Identity lookup failure must not block diagnostic delivery. */}finally{clearTimeout(timer);}
-    const result={name:name.slice(0,160)||'Unavailable',userId,source:'signed-in ServiceNow account',role:'uploading-agent'};
-    if(name)state.diagnosticReportingAgent=result;
+    const result={name:name.slice(0,160)||'Unavailable',userID:login.slice(0,160),sysId:userId,source:'signed-in ServiceNow account',role:'uploading-agent'};
+    if(name&&login)state.diagnosticReportingAgent=result;
     return result;
   }
   function showDiagnosticUploadSuccess(count){
