@@ -300,16 +300,16 @@ const SnAISettingsSync=(()=>{
  class Sync {
   constructor({bindingId,tokenProvider,transport,storage,onSettings=()=>{},onStatus=()=>{},onConflict=()=>{},debounceMs=1000}){
    if(!/^[a-f0-9]{32}$/.test(bindingId)||typeof tokenProvider!=='function'||typeof transport!=='function'||!storage)throw Error('Settings sync configuration required');
-   Object.assign(this,{bindingId,tokenProvider,transport,storage,onSettings,onStatus,onConflict});this.key='sn-ai-settings-sync:v1:'+bindingId;this.debounceMs=Math.max(500,debounceMs);this.settings={};this.pending={};this.revision=0;this.inflight=null;this.conflict=null;this.initialized=false;this.sending=false;this.closed=false;this.timer=null;this.lastAttempt=0;this.retry=1000;this.persistTail=Promise.resolve();this.localSeed=null;this.authorizationBlocked=false;this.online=()=>this.schedule(0);globalThis.addEventListener?.('online',this.online);
+   Object.assign(this,{bindingId,tokenProvider,transport,storage,onSettings,onStatus,onConflict});this.key='sn-ai-settings-sync:v1:'+bindingId;this.debounceMs=Math.max(500,debounceMs);this.settings={};this.pending={};this.revision=0;this.inflight=null;this.conflict=null;this.initialized=false;this.sending=false;this.closed=false;this.timer=null;this.lastAttempt=0;this.retry=1000;this.persistTail=Promise.resolve();this.localSeed=null;this.authorizationBlocked=false;this.rejected=false;this.online=()=>this.schedule(0);globalThis.addEventListener?.('online',this.online);
   }
-  persist(){const saved=clone({schema:1,bindingId:this.bindingId,settings:this.settings,revision:this.revision,pending:this.pending,inflight:this.inflight,conflict:this.conflict});this.persistTail=this.persistTail.catch(()=>{}).then(()=>this.storage.set(this.key,saved));return this.persistTail;}
+  persist(){const saved=clone({schema:1,bindingId:this.bindingId,settings:this.settings,revision:this.revision,pending:this.pending,inflight:this.inflight,conflict:this.conflict,rejected:this.rejected});this.persistTail=this.persistTail.catch(()=>{}).then(()=>this.storage.set(this.key,saved));return this.persistTail;}
   emit(){this.onSettings(merge(merge(this.settings,this.inflight?.body.changes||{}),this.pending),{revision:this.revision,conflict:!!this.conflict});}
   async request(method,body){if(this.closed)throw Error('Settings sync closed');const token=await this.tokenProvider();if(!/^[a-f0-9]{64}$/.test(token))throw Error('Installation credential unavailable');return this.transport({url:root+'?bindingId='+encodeURIComponent(this.bindingId),method,headers:{Authorization:'Bearer '+token,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});}
   schedule(delay=this.debounceMs){if(this.closed)return;clearTimeout(this.timer);this.timer=setTimeout(()=>{this.timer=null;this.flush().catch(()=>this.failed());},delay);}
   failed(delay){this.onStatus('offline');this.schedule(delay??this.retry+Math.floor(Math.random()*250));this.retry=Math.min(60000,this.retry*2);}
   stopForAuth(status){this.authorizationBlocked=true;this.onStatus(status===401?'authentication-required':'binding-approval-required');clearTimeout(this.timer);}
   async start(localSettings={}){
-   this.localSeed=clone(localSettings);const saved=await this.storage.get(this.key);if(saved?.schema===1&&saved.bindingId===this.bindingId){this.settings=saved.settings||{};this.revision=saved.revision||0;this.pending=saved.pending||{};this.inflight=saved.inflight||null;this.conflict=saved.conflict||null;}else this.settings=clone(localSettings);
+   this.localSeed=clone(localSettings);const saved=await this.storage.get(this.key);if(saved?.schema===1&&saved.bindingId===this.bindingId){this.settings=saved.settings||{};this.revision=saved.revision||0;this.pending=saved.pending||{};this.inflight=saved.inflight||null;this.conflict=saved.conflict||null;this.rejected=!!saved.rejected;}else this.settings=clone(localSettings);
    return this.initialize();
   }
   async initialize(){
@@ -318,14 +318,14 @@ const SnAISettingsSync=(()=>{
     if(server.exists&&!this.inflight&&!this.conflict&&Object.keys(this.pending).length){const paths=conflicts(this.settings,server.settings,this.pending);if(paths.length)this.conflict={base:clone(this.settings),remote:clone(server.settings),paths};}
     this.settings=clone(server.settings);this.revision=server.revision;this.initialized=true;this.retry=1000;
     if(!server.exists&&!this.inflight&&!this.conflict){this.inflight={baseSettings:clone(server.settings),body:{schema:1,baseRevision:0,mutationId:crypto.randomUUID(),seedOnly:true,changes:merge(this.localSeed||{},this.pending)}};this.pending={};}
-    await this.persist();this.emit();if(this.conflict){this.onStatus('conflict');this.onConflict({paths:this.conflict.paths,current:clone(this.settings),pending:clone(this.pending)});}else if(this.inflight||Object.keys(this.pending).length)this.schedule(0);else this.onStatus('saved');return true;
+    await this.persist();this.emit();if(this.conflict){this.onStatus('conflict');this.onConflict({paths:this.conflict.paths,current:clone(this.settings),pending:clone(this.pending)});}else if(this.rejected)this.onStatus('rejected');else if(this.inflight||Object.keys(this.pending).length)this.schedule(0);else this.onStatus('saved');return true;
    }catch(error){this.failed();return false;}
   }
   async resume(){return this.initialize();}
-  async update(changes){if(!object(changes))throw Error('Settings patch must be an object');this.pending=combine(this.pending,changes);await this.persist();this.emit();this.onStatus(this.conflict?'conflict':'pending');if(!this.conflict)this.schedule();}
-  async resolveConflict(chosenChanges){if(!object(chosenChanges))throw Error('Settings patch must be an object');if(!this.conflict)throw Error('No settings conflict');this.pending=combine({},chosenChanges);this.conflict=null;this.inflight=null;await this.persist();this.emit();if(Object.keys(this.pending).length)this.schedule();else this.onStatus('saved');}
+  async update(changes){if(!object(changes))throw Error('Settings patch must be an object');if(this.rejected&&this.inflight){const combined=combine(combine(this.inflight.body.changes,this.pending),changes),paths=conflicts(this.inflight.baseSettings,this.settings,combined);this.pending=combined;this.inflight=null;this.rejected=false;if(paths.length)this.conflict={remote:clone(this.settings),paths};}else this.pending=combine(this.pending,changes);await this.persist();this.emit();this.onStatus(this.conflict?'conflict':'pending');if(!this.conflict)this.schedule();}
+  async resolveConflict(chosenChanges){if(!object(chosenChanges))throw Error('Settings patch must be an object');if(!this.conflict)throw Error('No settings conflict');this.pending=combine({},chosenChanges);this.conflict=null;this.inflight=null;this.rejected=false;await this.persist();this.emit();if(Object.keys(this.pending).length)this.schedule();else this.onStatus('saved');}
   async flush(){
-   if(this.closed||this.sending||this.conflict||this.authorizationBlocked)return;if(!this.initialized){await this.initialize();return;}if(!this.inflight&&!Object.keys(this.pending).length)return;
+   if(this.closed||this.sending||this.conflict||this.authorizationBlocked||this.rejected)return;if(!this.initialized){await this.initialize();return;}if(!this.inflight&&!Object.keys(this.pending).length)return;
    const wait=2000-(Date.now()-this.lastAttempt);if(wait>0){this.schedule(wait);return;}this.sending=true;
    try{
     if(!this.inflight){this.inflight={baseSettings:clone(this.settings),body:{schema:1,baseRevision:this.revision,mutationId:crypto.randomUUID(),changes:clone(this.pending)}};this.pending={};}
@@ -340,7 +340,7 @@ const SnAISettingsSync=(()=>{
     if(r.status===200&&r.json?.ok&&r.json.mutationId===this.inflight.body.mutationId&&Number.isSafeInteger(r.json.savedRevision)&&Number.isSafeInteger(r.json.revision)&&r.json.savedRevision<=r.json.revision){const paths=conflicts(merge(this.inflight.baseSettings,this.inflight.body.changes),r.json.settings,this.pending);this.settings=clone(r.json.settings);this.revision=r.json.revision;this.inflight=null;this.retry=1000;if(paths.length){this.conflict={remote:clone(this.settings),paths};this.onConflict({paths,current:clone(this.settings),pending:clone(this.pending)});}await this.persist();this.emit();this.onStatus(this.conflict?'conflict':Object.keys(this.pending).length?'pending':'saved');if(Object.keys(this.pending).length)this.schedule();return;}
     if(r.status===200){this.failed();return;}
     if(r.status===429||r.status>=500){this.failed(r.status===429?Math.max(1000,(r.json?.retryAfter||60)*1000):undefined);return;}
-    this.onStatus('rejected'); // Keep the persisted body for inspection/correction, without an automatic retry loop.
+    this.rejected=true;await this.persist();this.onStatus('rejected'); // Keep the persisted body for inspection/correction, without an automatic retry loop.
    }catch(error){this.failed();}finally{this.sending=false;}
   }
   close(){this.closed=true;clearTimeout(this.timer);globalThis.removeEventListener?.('online',this.online);}
