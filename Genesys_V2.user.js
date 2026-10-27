@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.586.0
+// @version      1.587.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -6610,7 +6610,9 @@
       @media(max-width:800px){.panel{max-height:calc(100vh - 130px);max-height:calc(100dvh - 130px)}}
     `;root.append(readableRowsStyle);
     const modernStyle=document.createElement('style');modernStyle.textContent=`
-      :host{--panel:#1b2027;--head:#242b35;--line:#374151;--muted:#aebaca;--call-row:#1b2027;--call-stripe:#222933}
+      :host{--panel:#252d38;--head:#303b49;--line:#526778;--muted:#b4c4d4;--call-row:#252d38;--call-stripe:#2c3542;color:#f1f5f9}
+      :host(:not([data-theme="light"])) .panel{border:1px solid #607085;border-top:2px solid #22d3ee;box-shadow:0 16px 40px #0009,0 0 20px #22d3ee38,0 0 4px #22d3ee55}
+      :host(:not([data-theme="light"])) h2{color:#67e8f9}
       .panel{border-radius:14px;border-color:#445364;box-shadow:0 12px 36px #0005}header{padding:14px 16px}h2{font-size:18px;font-weight:650}.table-wrap{padding:0 10px 10px}th,td{padding:9px 8px;vertical-align:middle}th{font-size:11px;text-transform:uppercase;letter-spacing:.045em}td{font-variant-numeric:tabular-nums}.copy:hover{background:#67e8f91a;border-radius:6px}.copy-all{display:inline-flex;align-items:center;gap:5px;padding:5px 8px;color:#a5e6ef;background:transparent;border-color:#445364;white-space:nowrap}.copy-all svg{width:15px;height:15px}.duration{color:inherit}.status{padding:9px 16px}
       :host([data-theme="light"]){--panel:#fff;--head:#edf2f7;--line:#cbd5e1;--muted:#475569;--call-row:#fff;--call-stripe:#f4f7fa}:host([data-theme="light"]) .copy-all{color:#006878}
     `;root.append(modernStyle);
