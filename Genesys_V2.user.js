@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.584.0
+// @version      1.585.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -6518,6 +6518,15 @@
     const location=customers.map(p=>p.name).find(value=>value && !/^\+?[\d ()-]+$/.test(value) && !/^(tel|sip):/i.test(value)) || '';
     return {phone,location};
   }
+  function myCallQueue(c,userId,cache) {
+    const live=cache?.conversations?.[c.conversationId]?.live;
+    const agent=c.participants.find(p=>p.userId===userId);
+    const queueId=agent?.queueId || agent?.sessions?.flatMap(s=>s.segments || []).find(s=>s.queueId)?.queueId;
+    const direct=agent?.queueName || live?.participants.find(p=>p.userId===userId)?.queueName;
+    if(direct)return direct;
+    const acd=live?.participants.find(p=>p.purpose==='acd' && (!queueId || p.queueId===queueId));
+    return acd?.name || c.participants.find(p=>p.purpose==='acd' && p.name)?.name || '';
+  }
   function myCallDurationText(ms) {
     if(!Number.isFinite(ms))return '—';
     const seconds=Math.max(0,Math.round(ms/1000));
@@ -6560,11 +6569,15 @@
       }
     }
     const columns=[
-      ['Start time','clock','<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>'],
-      ['Phone number','phone','<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.96.36 1.91.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.58 2.81.7A2 2 0 0 1 22 16.92z"/>'],
+      ['Time','clock','<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>'],
+      ['Number','phone','<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.96.36 1.91.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.58 2.81.7A2 2 0 0 1 22 16.92z"/>'],
       ['Duration','timer','<path d="M10 2h4M12 14v-4M4.93 4.93l1.42 1.42"/><circle cx="12" cy="14" r="8"/>'],
-      ['Location','map-pin','<path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="3"/>']
+      ['Location','map-pin','<path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="3"/>'],
+      ['Queue','list','<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>'],
+      ['Copy All','copy','<rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16H2V2h14v2"/>']
     ];
+    const headingRow=root.querySelector('thead tr');
+    while(headingRow.children.length<columns.length)headingRow.append(document.createElement('th'));
     root.querySelectorAll('th').forEach((heading,index)=>{
       const [label,name,paths]=columns[index];heading.scope='col';
       heading.innerHTML=`<span class="column-heading"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-${name}" aria-hidden="true">${paths}</svg><span>${label}</span></span>`;
@@ -6583,6 +6596,11 @@
       tbody tr:nth-child(even)>td{background:var(--call-stripe)!important}
       @media(max-width:800px){.panel{max-height:calc(100vh - 130px);max-height:calc(100dvh - 130px)}}
     `;root.append(readableRowsStyle);
+    const modernStyle=document.createElement('style');modernStyle.textContent=`
+      :host{--panel:#1b2027;--head:#242b35;--line:#374151;--muted:#aebaca;--call-row:#1b2027;--call-stripe:#222933}
+      .panel{border-radius:14px;border-color:#445364;box-shadow:0 12px 36px #0005}header{padding:14px 16px}h2{font-size:18px;font-weight:650}.table-wrap{padding:0 10px 10px}th,td{padding:9px 8px;vertical-align:middle}th{font-size:11px;text-transform:uppercase;letter-spacing:.045em}td{font-variant-numeric:tabular-nums}.copy:hover{background:#67e8f91a;border-radius:6px}.copy-all{display:inline-flex;align-items:center;gap:5px;padding:5px 8px;color:#a5e6ef;background:transparent;border-color:#445364;white-space:nowrap}.copy-all svg{width:15px;height:15px}.duration{color:inherit}.status{padding:9px 16px}
+      :host([data-theme="light"]){--panel:#fff;--head:#edf2f7;--line:#cbd5e1;--muted:#475569;--call-row:#fff;--call-stripe:#f4f7fa}:host([data-theme="light"]) .copy-all{color:#006878}
+    `;root.append(modernStyle);
     document.body.append(host);
     const panel=root.querySelector('.panel'),launcher=root.querySelector('.launcher'),status=root.querySelector('.status'),tbody=root.querySelector('tbody');
     function copyCell(value,label) {
@@ -6615,9 +6633,13 @@
         duration.className='duration '+(timing?.confirmed?'confirmed':'estimated');
         const own=c.participants.find(p=>p.userId===(currentAgentApiId || fresh.userId)),connected=Date.parse(own?.connectedTime || own?.calls?.find(x=>x.connectedTime)?.connectedTime);
         duration.textContent=myCallDurationText(timing?.confirmed?timing.talkMs:Number.isFinite(connected)?Math.max(0,Date.now()-connected):timing?.talkMs);duration.title=timing?.confirmed?'Genesys-confirmed agent talk duration':'Provisional agent duration; awaiting completed analytics';
-        row.append(date,copyCell(phone,'phone number'),duration,copyCell(location,'location'));tbody.append(row);
+        const queue=myCallQueue(c,currentAgentApiId || fresh.userId,fresh),all=document.createElement('td');
+        const copyAll=document.createElement('button');copyAll.type='button';copyAll.className='copy-all';copyAll.setAttribute('aria-label','Copy all details for call at '+date.textContent);
+        copyAll.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="lucide lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16H2V2h14v2"/></svg><span>Copy All</span>';outlineLucide(copyAll);
+        copyAll.addEventListener('click',async()=>{const text=[['Time',date.textContent],['Number',phone],['Duration',duration.textContent],['Location',location],['Queue',queue]].filter(([,value])=>value && value!=='—').map(([label,value])=>label+' - '+String(value).replace(/[\r\n]+/g,' ')).join('\n');try{await navigator.clipboard.writeText(text);copyAll.innerHTML='<svg viewBox="0 0 24 24" class="lucide lucide-check"><path d="M20 6 9 17l-5-5"/></svg><span>Copied</span>';outlineLucide(copyAll);}catch(_){copyAll.title='Copy failed; try again';}});all.append(copyAll);
+        row.append(date,copyCell(phone,'phone number'),duration,copyCell(location,'location'),copyCell(queue,'queue'),all);tbody.append(row);
       }
-      if(!rows.length) {const row=document.createElement('tr'),cell=document.createElement('td');cell.colSpan=4;cell.textContent='No calls recorded for you today.';row.append(cell);tbody.append(row);}
+      if(!rows.length) {const row=document.createElement('tr'),cell=document.createElement('td');cell.colSpan=6;cell.textContent='No calls recorded for you today.';row.append(cell);tbody.append(row);}
       paintCallRows();
       status.textContent=`${fresh.userName || currentAgentName(document)} • ${rows.length} calls • ${fresh.refreshedAt?'Updated '+new Date(fresh.refreshedAt).toLocaleTimeString():'Cached data'}${fresh.truncated?' • cache limit reached':''}`;
     };
