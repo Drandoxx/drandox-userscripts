@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.793
+// @version      2.36.794
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.794","fixes":true,"changes":[{"key":"personal-settings-sync","meaningful":true,"text":"Journal local settings edits before background saves and recover interrupted edits on reload before reconciling server revisions, preserving offline and conflict protection."}]},
 {"version":"2.36.793","fixes":true,"changes":[{"key":"personal-settings-sync","meaningful":true,"text":"Automatically sync trusted installations by the signed-in ServiceNow full name and userID, with no login or device keys, preserving local data when identity migration is ambiguous."}]},
 {"version":"2.36.792","fixes":true,"changes":[{"key":"personal-settings-sync","meaningful":true,"text":"Keep healthy settings sync invisible in the toolbar and move device linking into Settings; actionable sync failures remain visible."}]},
 {"version":"2.36.791","fixes":true,"changes":[{"key":"personal-settings-sync","meaningful":true,"text":"Migrate legacy snippet IDs to the server format without changing names, messages or order, and recover rejected saves while preserving revision and seed-only protection."}]},
@@ -446,6 +447,9 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
     }finally{ctx.applying=false;}
   };
   function show(next){status=next;render();}
+  const journalKey=ctx=>'sn-ai-personal-settings-local-edits-v1:'+ctx.account;
+  const readJournal=ctx=>{try{return JSON.parse(localStorage.getItem(journalKey(ctx))||'null');}catch{return null;}};
+  const clearJournal=(ctx,token)=>{if(token&&readJournal(ctx)?.token===token)localStorage.removeItem(journalKey(ctx));};
   function render(){
     if(!document.body)return;
     const parent=document.getElementById('tm-toolbar')||document.querySelector('#local-sn-inspector-root [data-settings-panel="general"]');
@@ -464,7 +468,7 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
     }
     panel.hidden=!snPersonalStatusVisible(status);panel.style.display=panel.hidden?'none':'flex';
     const labels={connecting:'Settings: connecting',saved:'Settings: saved',pending:'Settings: saving',saving:'Settings: saving',offline:'Settings: offline - saved locally',conflict:'Settings: conflict',
-      'ambiguous-identity':'Settings: identity conflict - local data kept','queue-reconciliation':'Settings: previous unsaved changes need reconciliation','access-unavailable':'Settings: access unavailable','binding-revoked':'Settings: access revoked','authentication-required':'Settings: access unavailable',rejected:'Settings: save rejected - kept locally','identity-required':'Settings: waiting for signed-in name and userID',standby:'Settings: synced by another tab','account-changed':'Settings: another account is active in this browser'};
+      'local-save-failed':'Settings: local save failed - keep this page open','ambiguous-identity':'Settings: identity conflict - local data kept','queue-reconciliation':'Settings: previous unsaved changes need reconciliation','access-unavailable':'Settings: access unavailable','binding-revoked':'Settings: access revoked','authentication-required':'Settings: access unavailable',rejected:'Settings: save rejected - kept locally','identity-required':'Settings: waiting for signed-in name and userID',standby:'Settings: synced by another tab','account-changed':'Settings: another account is active in this browser'};
     panel.firstChild.textContent=labels[status]||'Settings: '+status;
     panel.title=context?.sync?.conflict?'Conflicting fields: '+context.sync.conflict.paths.join(', '):'Personal settings sync - '+(context?.userID||'');
     panel.querySelector('[data-sync-retry]').hidden=!['offline','access-unavailable','authentication-required','rejected'].includes(status);
@@ -472,19 +476,22 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
   }
   const changed=async()=>{
     const ctx=context;if(!valid(ctx)||ctx.applying||!ctx.previous)return;
+    const journal=readJournal(ctx);
     const next=await snapshot(ctx);if(!valid(ctx)||ctx.applying)return;
-    const patch=snPersonalSettingsDiff(ctx.previous,next);if(!Object.keys(patch).length)return;
-    ctx.previous=next;
+    const patch=snPersonalSettingsDiff(ctx.previous,next);if(!Object.keys(patch).length){if(ctx.sync)clearJournal(ctx,journal?.token);return;}
     await GM_setValue(ctx.cacheKey,next);
     // Followers signal the leader; actual settings already have durable local storage.
     if(!ctx.sync){
       if(!ctx.binding){
         const key=ctx.cacheKey+':waiting',saved=await GM_getValue(key,null);
         await GM_setValue(key,{base:saved?.base||ctx.initial,patch:{...(saved?.patch||{}),...patch}});
+        clearJournal(ctx,journal?.token);
       }
+      ctx.previous=next;
       localStorage.setItem('sn-ai-personal-settings-dirty',String(Date.now()));return;
     }
     await ctx.sync.update(patch);
+    ctx.previous=next;clearJournal(ctx,journal?.token);
   };
   const startLeader=async ctx=>{
     if(!valid(ctx))return;
@@ -573,15 +580,25 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
         const cache=await GM_getValue(ctx.cacheKey,null),owner=await GM_getValue('sn-ai-personal-settings-local-owner',null);
         if(!valid(ctx))return;
         ctx.seedAllowed=!owner||owner===account;
-        if(cache){await apply(ctx,cache);ctx.seedAllowed=true;}
+        const journal=readJournal(ctx);
+        if(cache&&!journal){await apply(ctx,cache);ctx.seedAllowed=true;}
         // No local UI clearing or owner change before successful linking/GET.
-        ctx.previous=await snapshot(ctx);ctx.initial=clone(ctx.previous);await connect(ctx);
+        ctx.previous=journal?.schema===1&&journal.account===account?journal.base:await snapshot(ctx);ctx.initial=clone(ctx.previous);
+        if(journal)await changed();
+        await connect(ctx);
       }else if(context.binding&&!context.sync)claim(context);
       else if(!context.sync&&!context.leader&&!context.authorizationBlocked&&Date.now()>=(context.retryAt||0))await connect(context);
       render();
     }finally{checking=false;}
   }
-  const dirty=()=>changed().catch(()=>show('offline'));
+  const dirty=()=>{
+    const ctx=context;if(!valid(ctx)||ctx.applying||!ctx.previous)return;
+    // Synchronous marker precedes asynchronous GM persistence and upload.
+    // Native preference/snippet handlers have already saved their local values.
+    try{const previous=readJournal(ctx);localStorage.setItem(journalKey(ctx),JSON.stringify({schema:1,account:ctx.account,base:previous?.base||ctx.previous,token:crypto.randomUUID(),editedAt:Date.now()}));}
+    catch{show('local-save-failed');return;}
+    ctx.changeTail=(ctx.changeTail||Promise.resolve()).catch(()=>{}).then(()=>changed()).catch(()=>show('offline'));
+  };
   document.addEventListener('sn-ai-personal-settings-change',dirty);
   const storage=event=>{if(['snippets_manager_v1','snippets_manager_theme_v1','sn-ai-personal-settings-dirty'].includes(event.key))dirty();
     if(event.key==='sn-ai-personal-settings-state'){try{const next=JSON.parse(event.newValue);if(next.account===context?.account&&!context?.leader){show(next.status);if(next.status==='saved')notify();}}catch{}}
