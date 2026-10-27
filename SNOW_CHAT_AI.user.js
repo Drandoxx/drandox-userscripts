@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.788
+// @version      2.36.789
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.789","fixes":true,"changes":[{"key":"personal-settings-sync","meaningful":true,"text":"Autosave reusable snippets, theme, enabled modes and NOVA friendly-message preference across approved devices with offline queues and explicit conflict resolution."}]},
 {"version":"2.36.788","fixes":true,"changes":[{"key":"com-plus-mode","meaningful":true,"text":"Add .COM+ order tickets with a dedicated New Event, fixed routing, priority 3 and KB 5859, followed by the normal Description AI and contact/extra-field workflow."}]},
 {"version":"2.36.787","fixes":true,"changes":[{"key":"hp-contact-number","meaningful":true,"text":"Fill the main HP Contact Number from supplied contact details when the existing field contains a placeholder, preserving genuine entered numbers."}]},
 {"version":"2.36.786","fixes":true,"changes":[{"key":"diagnostic-noise-reduction","meaningful":true,"text":"Stop healthy idle API summaries, unchanged roster snapshots and routine memory uploads while preserving errors, status changes and ticket-run diagnostics."}]},
@@ -283,6 +284,245 @@
 ,{"version":"2.36.645","fixes":true,"changes":[{"key":"nova-games","meaningful":true,"text":"Drawing turns are instant and the front pose restores before jumping back. Saber occlusion follows only the body silhouette without changing strokes."}]}
 ]}
 SN_AI_RELEASE_NOTES_END */
+
+/* SN_PERSONAL_SETTINGS_BEGIN - pinned backend helper plus explicit adapters */
+'use strict';
+// Optional userscript adapter. Supply GM transport/storage; no credentials are persisted here.
+const SnAISettingsSync=(()=>{
+ const root='https://drandox.cc/wuwa/sn-ai-settings.php';
+ const object=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
+ const clone=v=>JSON.parse(JSON.stringify(v));
+ function keys(v){const list=Object.keys(v);if(list.some(k=>['__proto__','prototype','constructor'].includes(k)))throw Error('Unsafe settings key');return list;}
+ function merge(base,patch){const out=object(base)?clone(base):{};for(const k of keys(patch)){const v=patch[k];if(v===null)delete out[k];else out[k]=object(v)?merge(out[k],v):clone(v);}return out;}
+ function combine(a,b){const out=clone(a);for(const k of keys(b))out[k]=object(b[k])?combine(object(out[k])?out[k]:{},b[k]):clone(b[k]);return out;}
+ const equal=(a,b)=>{if(a===b)return true;if(typeof a!==typeof b||a===null||b===null)return false;if(Array.isArray(a)||Array.isArray(b))return Array.isArray(a)&&Array.isArray(b)&&a.length===b.length&&a.every((v,i)=>equal(v,b[i]));if(object(a)&&object(b)){const ak=Object.keys(a).sort(),bk=Object.keys(b).sort();return equal(ak,bk)&&ak.every(k=>equal(a[k],b[k]));}return false;};
+ function conflicts(base,current,patch,path=''){const out=[];for(const k of keys(patch)){const p=path?path+'.'+k:k,wanted=patch[k];if(object(wanted))out.push(...conflicts(object(base?.[k])?base[k]:{},object(current?.[k])?current[k]:{},wanted,p));else if(!equal(base?.[k],current?.[k])&&!equal(wanted===null?undefined:wanted,current?.[k]))out.push(p);}return out;}
+ class Sync {
+  constructor({bindingId,tokenProvider,transport,storage,onSettings=()=>{},onStatus=()=>{},onConflict=()=>{},debounceMs=1000}){
+   if(!/^[a-f0-9]{32}$/.test(bindingId)||typeof tokenProvider!=='function'||typeof transport!=='function'||!storage)throw Error('Settings sync configuration required');
+   Object.assign(this,{bindingId,tokenProvider,transport,storage,onSettings,onStatus,onConflict});this.key='sn-ai-settings-sync:v1:'+bindingId;this.debounceMs=Math.max(500,debounceMs);this.settings={};this.pending={};this.revision=0;this.inflight=null;this.conflict=null;this.initialized=false;this.sending=false;this.closed=false;this.timer=null;this.lastAttempt=0;this.retry=1000;this.persistTail=Promise.resolve();this.localSeed=null;this.authorizationBlocked=false;this.online=()=>this.schedule(0);globalThis.addEventListener?.('online',this.online);
+  }
+  persist(){const saved=clone({schema:1,bindingId:this.bindingId,settings:this.settings,revision:this.revision,pending:this.pending,inflight:this.inflight,conflict:this.conflict});this.persistTail=this.persistTail.catch(()=>{}).then(()=>this.storage.set(this.key,saved));return this.persistTail;}
+  emit(){this.onSettings(merge(merge(this.settings,this.inflight?.body.changes||{}),this.pending),{revision:this.revision,conflict:!!this.conflict});}
+  async request(method,body){if(this.closed)throw Error('Settings sync closed');const token=await this.tokenProvider();if(!/^[a-f0-9]{64}$/.test(token))throw Error('Installation credential unavailable');return this.transport({url:root+'?bindingId='+encodeURIComponent(this.bindingId),method,headers:{Authorization:'Bearer '+token,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});}
+  schedule(delay=this.debounceMs){if(this.closed)return;clearTimeout(this.timer);this.timer=setTimeout(()=>{this.timer=null;this.flush().catch(()=>this.failed());},delay);}
+  failed(delay){this.onStatus('offline');this.schedule(delay??this.retry+Math.floor(Math.random()*250));this.retry=Math.min(60000,this.retry*2);}
+  stopForAuth(status){this.authorizationBlocked=true;this.onStatus(status===401?'authentication-required':'binding-approval-required');clearTimeout(this.timer);}
+  async start(localSettings={}){
+   this.localSeed=clone(localSettings);const saved=await this.storage.get(this.key);if(saved?.schema===1&&saved.bindingId===this.bindingId){this.settings=saved.settings||{};this.revision=saved.revision||0;this.pending=saved.pending||{};this.inflight=saved.inflight||null;this.conflict=saved.conflict||null;}else this.settings=clone(localSettings);
+   return this.initialize();
+  }
+  async initialize(){
+   this.authorizationBlocked=false;try{const r=await this.request('GET');if([401,403].includes(r.status)){this.stopForAuth(r.status);return false;}if(r.status!==200||!r.json?.ok){this.failed(r.status===429?Math.max(1000,(r.json?.retryAfter||60)*1000):undefined);return false;}
+    const server=r.json;
+    if(server.exists&&!this.inflight&&!this.conflict&&Object.keys(this.pending).length){const paths=conflicts(this.settings,server.settings,this.pending);if(paths.length)this.conflict={base:clone(this.settings),remote:clone(server.settings),paths};}
+    this.settings=clone(server.settings);this.revision=server.revision;this.initialized=true;this.retry=1000;
+    if(!server.exists&&!this.inflight&&!this.conflict){this.inflight={baseSettings:clone(server.settings),body:{schema:1,baseRevision:0,mutationId:crypto.randomUUID(),seedOnly:true,changes:merge(this.localSeed||{},this.pending)}};this.pending={};}
+    await this.persist();this.emit();if(this.conflict){this.onStatus('conflict');this.onConflict({paths:this.conflict.paths,current:clone(this.settings),pending:clone(this.pending)});}else if(this.inflight||Object.keys(this.pending).length)this.schedule(0);else this.onStatus('saved');return true;
+   }catch(error){this.failed();return false;}
+  }
+  async resume(){return this.initialize();}
+  async update(changes){if(!object(changes))throw Error('Settings patch must be an object');this.pending=combine(this.pending,changes);await this.persist();this.emit();this.onStatus(this.conflict?'conflict':'pending');if(!this.conflict)this.schedule();}
+  async resolveConflict(chosenChanges){if(!object(chosenChanges))throw Error('Settings patch must be an object');if(!this.conflict)throw Error('No settings conflict');this.pending=combine({},chosenChanges);this.conflict=null;this.inflight=null;await this.persist();this.emit();if(Object.keys(this.pending).length)this.schedule();else this.onStatus('saved');}
+  async flush(){
+   if(this.closed||this.sending||this.conflict||this.authorizationBlocked)return;if(!this.initialized){await this.initialize();return;}if(!this.inflight&&!Object.keys(this.pending).length)return;
+   const wait=2000-(Date.now()-this.lastAttempt);if(wait>0){this.schedule(wait);return;}this.sending=true;
+   try{
+    if(!this.inflight){this.inflight={baseSettings:clone(this.settings),body:{schema:1,baseRevision:this.revision,mutationId:crypto.randomUUID(),changes:clone(this.pending)}};this.pending={};}
+    await this.persist();this.lastAttempt=Date.now();this.onStatus('saving');const r=await this.request('PATCH',this.inflight.body);
+    if([401,403].includes(r.status)){this.stopForAuth(r.status);return;}
+    if(r.status===409&&r.json?.current){const server=r.json.current,flight=this.inflight;
+     if(flight.body.seedOnly&&r.json.code==='already_seeded'){const paths=conflicts(flight.baseSettings,server.settings,this.pending);this.inflight=null;this.settings=clone(server.settings);this.revision=server.revision;if(paths.length){this.conflict={base:flight.baseSettings,remote:clone(server.settings),paths};this.onStatus('conflict');this.onConflict({paths,current:clone(this.settings),pending:clone(this.pending)});}else{this.onStatus('saved');if(Object.keys(this.pending).length)this.schedule();}await this.persist();this.emit();return;}
+     const combined=combine(flight.body.changes,this.pending),paths=conflicts(flight.baseSettings,server.settings,combined);this.pending=combined;this.inflight=null;this.settings=clone(server.settings);this.revision=server.revision;
+     if(paths.length){this.conflict={base:flight.baseSettings,remote:clone(server.settings),paths};this.onStatus('conflict');this.onConflict({paths,current:clone(server.settings),pending:clone(this.pending)});}else this.schedule(2000);
+     await this.persist();this.emit();return;
+    }
+    if(r.status===200&&r.json?.ok&&r.json.mutationId===this.inflight.body.mutationId&&Number.isSafeInteger(r.json.savedRevision)&&Number.isSafeInteger(r.json.revision)&&r.json.savedRevision<=r.json.revision){const paths=conflicts(merge(this.inflight.baseSettings,this.inflight.body.changes),r.json.settings,this.pending);this.settings=clone(r.json.settings);this.revision=r.json.revision;this.inflight=null;this.retry=1000;if(paths.length){this.conflict={remote:clone(this.settings),paths};this.onConflict({paths,current:clone(this.settings),pending:clone(this.pending)});}await this.persist();this.emit();this.onStatus(this.conflict?'conflict':Object.keys(this.pending).length?'pending':'saved');if(Object.keys(this.pending).length)this.schedule();return;}
+    if(r.status===200){this.failed();return;}
+    if(r.status===429||r.status>=500){this.failed(r.status===429?Math.max(1000,(r.json?.retryAfter||60)*1000):undefined);return;}
+    this.onStatus('rejected'); // Keep the persisted body for inspection/correction, without an automatic retry loop.
+   }catch(error){this.failed();}finally{this.sending=false;}
+  }
+  close(){this.closed=true;clearTimeout(this.timer);globalThis.removeEventListener?.('online',this.online);}
+ }
+ Sync.merge=merge;Sync.conflicts=conflicts;return Sync;
+})();
+
+// Explicit adapters only. Never enumerate GM/localStorage or serialize runtime state.
+function snPersonalSnippetExport(rows){
+  if(!Array.isArray(rows))return [];
+  return rows.map((row,order)=>({id:String(row.id),name:String(row.title||''),text:String(row.message||''),order}));
+}
+function snPersonalSettingsDiff(previous,next){
+  const patch={};
+  for(const key of ['snippets','appearance','enabledModes','nova']){
+    if(JSON.stringify(previous?.[key])!==JSON.stringify(next?.[key]))patch[key]=next[key]??null;
+  }
+  return patch;
+}
+function installPersonalSettingsSync({identity,reporter,readModes,writeModes,defaultModes}){
+  if(!location.pathname.startsWith('/now/workspace/'))return;
+  let stopped=false,checking=false,context=null,generation=0,status='connecting',panel=null,refreshing=false;
+  const clone=value=>JSON.parse(JSON.stringify(value));
+  const notify=()=>document.dispatchEvent(new CustomEvent('sn-ai-personal-settings-applied'));
+  const userStamp=()=>{
+    const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
+    const user=page.NOW?.user||page.g_user||{};
+    return String(user.userID||user.sys_id||page.g_user?.userID||'');
+  };
+  const request=(url,token,method='GET',body)=>new Promise((resolve,reject)=>{
+    GM_xmlhttpRequest({method,url,headers:{Authorization:'Bearer '+token,...(body?{'Content-Type':'application/json'}:{})},data:body?JSON.stringify(body):undefined,
+      anonymous:true,timeout:20000,onload:r=>{let json=null;try{json=JSON.parse(r.responseText);}catch{}
+        if(r.status===429){const header=String(r.responseHeaders||'').match(/^Retry-After:\s*(.+)$/im)?.[1]?.trim();if(header){const seconds=/^\d+$/.test(header)?Number(header):Math.max(0,(Date.parse(header)-Date.now())/1000);json={...(json||{}),retryAfter:Math.max(Number(json?.retryAfter)||0,Number.isFinite(seconds)?seconds:60)};}}
+        resolve({status:r.status,json});},
+      onerror:()=>reject(Error('Settings network error')),ontimeout:()=>reject(Error('Settings request timed out'))});
+  });
+  const snapshot=async ctx=>{
+    let rows=[];try{rows=JSON.parse(localStorage.getItem('snippets_manager_v1')||'[]');}catch{}
+    const modes=await readModes(),nova=localStorage.getItem('sn-ai-nova-messages-v1:'+ctx.sysId);
+    return {snippets:snPersonalSnippetExport(rows),appearance:{theme:localStorage.getItem('snippets_manager_theme_v1')==='light'?'light':'dark'},
+      enabledModes:Object.keys(defaultModes).filter(key=>modes?.[key]!==false),...(nova===null?{}:{nova:{suggestions:nova==='yes'}})};
+  };
+  const valid=ctx=>!stopped&&context===ctx&&ctx.stamp===userStamp();
+  const apply=async(ctx,settings)=>{
+    if(!valid(ctx))return;
+    ctx.applying=true;
+    try{
+      if(Array.isArray(settings.snippets))localStorage.setItem('snippets_manager_v1',JSON.stringify(settings.snippets.map(row=>({id:String(row.id),title:row.name,message:row.text}))));
+      else localStorage.setItem('snippets_manager_v1','[]');
+      localStorage.setItem('snippets_manager_theme_v1',settings.appearance?.theme==='light'?'light':'dark');
+      const enabled=Array.isArray(settings.enabledModes)?settings.enabledModes:Object.keys(defaultModes);
+      await writeModes(Object.fromEntries(Object.keys(defaultModes).map(key=>[key,enabled.includes(key)])));
+      if(!valid(ctx))return;
+      if(typeof settings.nova?.suggestions==='boolean')localStorage.setItem('sn-ai-nova-messages-v1:'+ctx.sysId,settings.nova.suggestions?'yes':'no');
+      else localStorage.removeItem('sn-ai-nova-messages-v1:'+ctx.sysId);
+      notify();ctx.previous=await snapshot(ctx);
+      await GM_setValue(ctx.cacheKey,settings);
+    }finally{ctx.applying=false;}
+  };
+  function show(next){status=next;render();}
+  function render(){
+    if(!document.body)return;
+    const parent=document.getElementById('tm-toolbar')||document.querySelector('#local-sn-inspector-root [data-settings-panel="general"]');
+    if(!parent)return;
+    if(!panel?.isConnected){
+      panel=document.createElement('div');panel.id='sn-ai-personal-settings-status';
+      panel.style.cssText='display:flex;align-items:center;gap:5px;font:12px system-ui;flex:0 0 auto;color:inherit';
+      const label=document.createElement('span');label.setAttribute('role','status');panel.append(label);
+      const retry=document.createElement('button');retry.type='button';retry.textContent='Retry';retry.dataset.syncRetry='';
+      retry.onclick=()=>{if(context?.sync)context.sync.resume();else if(context){context.binding=null;context.authorizationBlocked=false;connect(context);}else check();};panel.append(retry);
+      for(const [text,keepLocal]of [['Keep my changes',true],['Use server settings',false]]){
+        const button=document.createElement('button');button.type='button';button.textContent=text;button.dataset.syncConflict='';
+        button.onclick=()=>{const ctx=context;if(ctx?.sync?.conflict&&valid(ctx))ctx.sync.resolveConflict(keepLocal?clone(ctx.sync.pending):{}).catch(()=>show('offline'));};panel.append(button);
+      }
+      parent.append(panel);
+    }
+    const labels={connecting:'Settings: connecting',saved:'Settings: saved',pending:'Settings: saving',saving:'Settings: saving',offline:'Settings: offline - saved locally',conflict:'Settings: conflict',
+      'binding-approval-required':'Settings: approval required','authentication-required':'Settings: access unavailable',rejected:'Settings: save rejected - kept locally','identity-required':'Settings: waiting for userID',standby:'Settings: synced by another tab'};
+    panel.firstChild.textContent=labels[status]||'Settings: '+status;
+    panel.title=context?.sync?.conflict?'Conflicting fields: '+context.sync.conflict.paths.join(', '):'Personal settings sync - '+(context?.userID||'');
+    panel.querySelector('[data-sync-retry]').hidden=!['offline','binding-approval-required','authentication-required','rejected'].includes(status);
+    panel.querySelectorAll('[data-sync-conflict]').forEach(button=>button.hidden=status!=='conflict');
+  }
+  const changed=async()=>{
+    const ctx=context;if(!valid(ctx)||ctx.applying||!ctx.previous)return;
+    const next=await snapshot(ctx);if(!valid(ctx)||ctx.applying)return;
+    const patch=snPersonalSettingsDiff(ctx.previous,next);if(!Object.keys(patch).length)return;
+    ctx.previous=next;
+    await GM_setValue(ctx.cacheKey,next);
+    // Followers signal the leader; actual settings already have durable local storage.
+    if(!ctx.sync){
+      if(!ctx.binding){
+        const key=ctx.cacheKey+':waiting',saved=await GM_getValue(key,null);
+        await GM_setValue(key,{base:saved?.base||ctx.initial,patch:{...(saved?.patch||{}),...patch}});
+      }
+      localStorage.setItem('sn-ai-personal-settings-dirty',String(Date.now()));return;
+    }
+    await ctx.sync.update(patch);
+  };
+  const startLeader=async ctx=>{
+    if(!valid(ctx))return;
+    const waiting=await GM_getValue(ctx.cacheKey+':waiting',null),queueKey='sn-ai-settings-sync:v1:'+ctx.binding;
+    if(waiting){
+      const queue=await GM_getValue(queueKey,null);
+      if(!queue)await GM_setValue(queueKey,{schema:1,bindingId:ctx.binding,settings:waiting.base||{},revision:0,pending:waiting.patch,inflight:null,conflict:null});
+      else queue.pending=SnAISettingsSync.merge(queue.pending||{},waiting.patch);
+      if(queue)await GM_setValue(queueKey,queue);
+      await GM_deleteValue(ctx.cacheKey+':waiting');
+    }
+    ctx.sync=new SnAISettingsSync({bindingId:ctx.binding,tokenProvider:async()=>{if(!valid(ctx))throw Error('Account changed');const credential=await identity();return credential.token;},
+      storage:{get:key=>GM_getValue(key,null),set:(key,value)=>GM_setValue(key,value)},
+      transport:r=>request(r.url,ctx.token,r.method,r.body?JSON.parse(r.body):undefined),
+      onSettings:settings=>{if(valid(ctx))ctx.applyTail=(ctx.applyTail||Promise.resolve()).then(()=>apply(ctx,settings));},
+      onStatus:next=>{if(valid(ctx)){show(next);localStorage.setItem('sn-ai-personal-settings-state',JSON.stringify({account:ctx.account,status:next}));}},
+      onConflict:()=>{if(valid(ctx))show('conflict');}});
+    const seed=await snapshot(ctx);ctx.previous=seed;
+    await ctx.sync.start(seed);await ctx.applyTail;
+    ctx.refreshTimer=setInterval(async()=>{
+      if(!valid(ctx)||document.hidden||ctx.sync.sending||ctx.sync.inflight||Object.keys(ctx.sync.pending).length||ctx.sync.conflict||ctx.sync.authorizationBlocked)return;
+      if(refreshing)return;refreshing=true;try{await ctx.sync.resume();await ctx.applyTail;}finally{refreshing=false;}
+    },60000);
+  };
+  async function connect(ctx){
+    if(!valid(ctx)||ctx.connecting||ctx.authorizationBlocked)return;ctx.connecting=true;
+    try{
+      const credential=await identity();if(!valid(ctx))return;ctx.token=credential.token;
+      const result=await request('https://drandox.cc/wuwa/sn-ai-settings-bindings.php',ctx.token,'POST',{schema:1,instance:location.origin,userID:ctx.userID,displayName:ctx.name});
+      if(!valid(ctx))return;
+      if(result.status===429){ctx.retryAt=Date.now()+Math.max(60,Number(result.json?.retryAfter)||60)*1000;show('offline');return;}
+      if([401,403].includes(result.status)){ctx.authorizationBlocked=true;show('authentication-required');return;}
+      if(!result.json?.ok||!/^[a-f0-9]{32}$/.test(result.json.bindingId||'')){show('offline');ctx.retryAt=Date.now()+60000;return;}
+      if(result.json.status!=='approved'){ctx.authorizationBlocked=true;show('binding-approval-required');return;}
+      ctx.binding=result.json.bindingId;
+      if(!navigator.locks){show('offline');return;}
+      claim(ctx);
+    }catch{if(valid(ctx)){show('offline');ctx.retryAt=Date.now()+60000;}}
+    finally{ctx.connecting=false;}
+  }
+  function claim(ctx){
+      if(ctx.claiming||ctx.leader||!valid(ctx))return;
+      ctx.claiming=true;
+      navigator.locks.request('sn-ai-personal-settings:'+ctx.binding,{ifAvailable:true},async lock=>{
+        if(!lock||!valid(ctx)){if(valid(ctx))show('standby');return;}
+        ctx.leader=true;
+        try{await startLeader(ctx);await new Promise(resolve=>{ctx.release=resolve;if(!valid(ctx))resolve();});}
+        finally{ctx.sync?.close();clearInterval(ctx.refreshTimer);ctx.leader=false;}
+      }).catch(()=>{if(valid(ctx))show('offline');}).finally(()=>{ctx.claiming=false;});
+  }
+  async function check(){
+    if(stopped||checking)return;checking=true;
+    try{
+      const stamp=userStamp();
+      if(context&&context.stamp!==stamp){context.sync?.close();context.release?.();clearInterval(context.refreshTimer);context=null;generation++;}
+      if(!stamp){show('identity-required');return;}
+      if(!context){
+        const epoch=generation,agent=await reporter();if(stopped||epoch!==generation||stamp!==userStamp())return;
+        const userID=String(agent.userID||'').trim().toUpperCase();if(!userID||/^[a-f0-9]{32}$/i.test(userID)){show('identity-required');return;}
+        const account=location.hostname.toLowerCase()+'|'+userID;
+        const ctx=context={account,userID,name:agent.name,sysId:agent.sysId,stamp,cacheKey:'sn-ai-personal-settings-cache:'+account};
+        const cache=await GM_getValue(ctx.cacheKey,null),owner=await GM_getValue('sn-ai-personal-settings-local-owner',null);
+        if(cache)await apply(ctx,cache);
+        else if(owner&&owner!==account)await apply(ctx,{snippets:[],enabledModes:Object.keys(defaultModes),appearance:{theme:'dark'}});
+        await GM_setValue('sn-ai-personal-settings-local-owner',account);
+        ctx.previous=await snapshot(ctx);ctx.initial=clone(ctx.previous);await connect(ctx);
+      }else if(context.binding&&!context.sync)claim(context);
+      else if(!context.sync&&!context.leader&&!context.authorizationBlocked&&Date.now()>=(context.retryAt||0))await connect(context);
+      render();
+    }finally{checking=false;}
+  }
+  const dirty=()=>changed().catch(()=>show('offline'));
+  document.addEventListener('sn-ai-personal-settings-change',dirty);
+  const storage=event=>{if(['snippets_manager_v1','snippets_manager_theme_v1','sn-ai-personal-settings-dirty'].includes(event.key))dirty();
+    if(event.key==='sn-ai-personal-settings-state'){try{const next=JSON.parse(event.newValue);if(next.account===context?.account&&!context?.leader){show(next.status);if(next.status==='saved')notify();}}catch{}}
+  };
+  window.addEventListener('storage',storage);
+  const modeListener=typeof GM_addValueChangeListener==='function'?GM_addValueChangeListener('local-sn-inspector-enabled-modes-v1',dirty):null;
+  const timer=setInterval(()=>check().catch(()=>show('offline')),5000);check().catch(()=>show('offline'));
+  const dispose=()=>{stopped=true;clearInterval(timer);context?.sync?.close();context?.release?.();clearInterval(context?.refreshTimer);document.removeEventListener('sn-ai-personal-settings-change',dirty);window.removeEventListener('storage',storage);if(modeListener!==null&&typeof GM_removeValueChangeListener==='function')GM_removeValueChangeListener(modeListener);panel?.remove();};
+  window.addEventListener('pagehide',dispose,{once:true});document.addEventListener('sn-ai-runtime-dispose',dispose,{once:true});
+}
+/* SN_PERSONAL_SETTINGS_END */
+
 /*
 <SN_AI_HELPER_GUIDE version="8">
   This block is intended for an AI assistant that has been given this source
@@ -7286,6 +7526,7 @@ function installChatSnippets() {
 
     const saveSnippets = () => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(snippets));
+        document.dispatchEvent(new CustomEvent('sn-ai-personal-settings-change'));
     };
 
     let snippets = loadSnippets();
@@ -7396,12 +7637,12 @@ function installChatSnippets() {
     }
 
     applyTheme(currentTheme);
+    themeButton.addEventListener('click',()=>queueMicrotask(()=>document.dispatchEvent(new CustomEvent('sn-ai-personal-settings-change'))));
 
     const container = document.createElement('div');
     container.id = 'tm-snippet-container';
 
     toolbar.appendChild(addButton);
-    toolbar.appendChild(exportButton);
     toolbar.appendChild(themeButton);
     toolbar.appendChild(container);
 
@@ -7742,8 +7983,13 @@ function installChatSnippets() {
       if (event.key === THEME_KEY) applyTheme(event.newValue === 'light' ? 'light' : 'dark');
     };
     window.addEventListener('storage', sync);
+    const applyPersonal=()=>{
+      const saved=loadSnippets();if(Array.isArray(saved)){snippets=saved;renderSnippets();}
+      applyTheme(localStorage.getItem(THEME_KEY)==='light'?'light':'dark');
+    };
+    document.addEventListener('sn-ai-personal-settings-applied',applyPersonal);
     document.addEventListener('sn-ai-runtime-dispose', () => {
-      clearInterval(scrollLockTimer); window.removeEventListener('storage', sync); toolbar.remove(); style.remove();
+      clearInterval(scrollLockTimer); window.removeEventListener('storage', sync);document.removeEventListener('sn-ai-personal-settings-applied',applyPersonal); toolbar.remove(); style.remove();
     }, {once:true});
     renderSnippets();
 
@@ -9356,6 +9602,11 @@ function startSNAI(tabIdentity) {
   },60000):0;
   window.addEventListener('pagehide',()=>{memoryStopped=true;clearInterval(memoryTimer);},{once:true});
   try{if(workspacePage)installCISearch();}catch{/* Preserve native lookup if enhancement cannot initialize. */}
+  if(workspacePage)setTimeout(()=>installPersonalSettingsSync({
+    identity:diagnosticIdentity,reporter:diagnosticReportingAgent,defaultModes:DEFAULT_ENABLED_MODES,
+    readModes:()=>gmGetValue(ENABLED_MODES_KEY,DEFAULT_ENABLED_MODES),
+    writeModes:async modes=>{await gmSetValue(ENABLED_MODES_KEY,modes);state.enabledModes={...modes};},
+  }),0);
   async function downloadDiagnostics(){
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
@@ -19689,6 +19940,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const aiProviderDisplayName = () => state.ai.provider === 'codex'
       ? CODEX_AI_PROFILES[state.ai.codexProfile].label
       : (state.ai.provider === 'web' ? (state.ai.webService === 'gemini' ? 'Gemini Web' : 'ChatGPT Web') : 'OpenAI API');
+    document.addEventListener('sn-ai-personal-settings-applied',()=>{loadAISettings().then(()=>{syncAISettingsUI();refresh();}).catch(()=>{});});
     const syncAISettingsUI = () => {
       const previewToggle=settingsDialog.querySelector('[data-ai-response-preview]');
       if(previewToggle)previewToggle.checked=Boolean(state.aiResponsePreview);
@@ -20121,6 +20373,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         try {
           state.enabledModes = { ...state.enabledModes, [mode]: modeSwitch.checked };
           await gmSetValue(ENABLED_MODES_KEY, state.enabledModes);
+          document.dispatchEvent(new CustomEvent('sn-ai-personal-settings-change'));
           aiSettingsError.textContent = '';
           syncAISettingsUI();
         } catch (error) {
@@ -26558,9 +26811,10 @@ avatarRoot.querySelector('.nova')?.addEventListener('contextmenu',event=>{event.
     const revealActions=typingDone;typingDone=()=>{for(const reveal of revealMedia)reveal();if(revealActions)revealActions();};
     schedule();
   }
-  function save(enabled){try{localStorage.setItem(key,enabled?'yes':'no');}catch{}toggle.checked=enabled;}
+  function save(enabled){try{localStorage.setItem(key,enabled?'yes':'no');}catch{}toggle.checked=enabled;document.dispatchEvent(new CustomEvent('sn-ai-personal-settings-change'));}
   function reply(enabled){save(enabled);setExpression(enabled?'happy':'friendly');show({paragraphs:[enabled?'Sounds good. I’ll pop by with a little encouragement or something fun now and then. For now, this is just our first hello. 💜':'No worries at all. If you change your mind, open SN AI settings → AI settings and turn on “Nova friendly messages”. I’ll be happy to say hello again.']});}
   toggle.addEventListener('change',()=>{save(toggle.checked);dismissed=true;stopTyping();card.hidden=true;tail.hidden=true;avatar.hidden=true;});
+  document.addEventListener('sn-ai-personal-settings-applied',()=>{if(key){toggle.checked=localStorage.getItem(key)==='yes';}});
   // Shared cutout rig promoted from the approved animation workshop.
   (()=>{
     const nova=avatar,root=avatarRoot;
