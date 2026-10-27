@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.785
+// @version      2.36.786
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.786","fixes":true,"changes":[{"key":"diagnostic-noise-reduction","meaningful":true,"text":"Stop healthy idle API summaries, unchanged roster snapshots and routine memory uploads while preserving errors, status changes and ticket-run diagnostics."}]},
 {"version":"2.36.785","fixes":true,"changes":[{"key":"ticket-fill-performance","meaningful":true,"text":"Reuse short-lived active-form discovery and measure visibility only on matching field candidates, while keeping exact value verification and pause safety."}]},
 {"version":"2.36.784","fixes":true,"changes":[{"key":"ticket-fill-performance","meaningful":true,"text":"Keep minute memory sampling lightweight during ticket runs and yield within large DOM roots instead of scanning them in one uninterrupted pass."}]},
 {"version":"2.36.783","fixes":true,"changes":[{"key":"bubble-opening-performance","meaningful":true,"text":"Exclude internal machine-readable JSON blocks from the accessibility tree to reduce measured bubble-opening stalls without hiding real controls or status messages."}]},
@@ -9195,8 +9196,19 @@ function startSNAI(tabIdentity) {
     if(log.contents.get(ims)===text){recordCompactDiagnostic('info','chat-request',{mode,ims});return;}
     log.contents.set(ims,text);recordCompactDiagnostic('info','chat-data-collected',{mode,ims,chatContent:text});
   }
+  function diagnosticShouldRecord(level,action,details={},active=false){
+    // Warnings and errors are never silenced by the healthy-idle policy.
+    if(level==='error'||level==='warn')return true;
+    if(action==='diagnostic-connection-test')return false;
+    if(action==='diagnostic-upload'&&details.stage==='batch-confirmed')return false;
+    if(action==='agent-availability'&&details.stage==='snapshot')return false;
+    if(!active&&action==='memory-sample')return false;
+    if(!active&&action==='form-network'&&!details.network?.error&&details.network?.status>0&&details.network.status<400)return false;
+    return true;
+  }
   function recordCompactDiagnostic(level,action,details={}) {
     if (!workspacePage) return;
+    if(!diagnosticShouldRecord(level,action,details,Boolean(state.busy||state.commandRunning||state.activeCommandId)))return;
     if(level!=='error'&&level!=='warn'&&/^(launcher-position-restored|launcher-menu-opened|launcher-menu-closed|bubble-open-request|action-window-opened|action-window-closed|field-wait-complete|extension-job-response-progress)$/.test(action))return;
     if(state.diagnostics?.clearing||(action.startsWith('extension-')&&details.at&&details.at<=state.diagnosticClearedAt))return;
     const log=diagnosticStore(),now=action.startsWith('extension-')&&Number.isFinite(details.at)?details.at:Date.now(),safe={};
@@ -9257,7 +9269,7 @@ function startSNAI(tabIdentity) {
   function installFormNetworkDiagnostics() {
     if (!workspacePage) return;
     const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
-    const seen=new Map(),idleSummaries=new Map(),captureId=Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);let sequence=0;
+    const seen=new Map(),captureId=Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);let sequence=0;
     const relevant=url=>{
       try{const u=new URL(url,location.href);return u.origin===location.origin&&/\/api\/(?:now\/(?:graphql|ui|table\/(?:new_call|sys_template|sys_dictionary|sys_choice|cmdb_ci|kb_knowledge))|.*(?:form|layout|reference|template|choice))|(?:xmlhttp|ref_list)\.do/i.test(u.pathname)?u:null;}catch{return null;}
     };
@@ -9284,16 +9296,10 @@ function startSNAI(tabIdentity) {
           if(seen.has(fingerprint))data={sameAs:seen.get(fingerprint)};
           else{data=serialized.length<=16000?safe:{omitted:'sanitized payload exceeds 16 KiB',length:serialized.length,keys:safe&&typeof safe==='object'?Object.keys(safe):[]};seen.set(fingerprint,info.id);if(seen.size>256)seen.delete(seen.keys().next().value);}
         }
-        const failed=info.status>=400||!!info.error;
-        if(!failed&&!info.commandId){
-          const key=info.method+':'+info.url,previous=idleSummaries.get(key),now=Date.now();
-          if(previous&&now-previous.at<60000){previous.count++;return;}
-          const count=(previous?.count||0)+1;
-          idleSummaries.set(key,{at:now,count:0});
-          if(idleSummaries.size>64)idleSummaries.delete(idleSummaries.keys().next().value);
-          recordCompactDiagnostic('info','form-network',{network:{url:info.url,method:info.method,status:info.status,durationMs:info.durationMs,summary:true,requestsSincePreviousSummary:count}});
-          return;
-        }
+        // GraphQL may report application errors with HTTP 200.
+        const apiErrors=(Array.isArray(safe)?safe:[safe]).some(part=>Array.isArray(part?.errors)&&part.errors.length||part?.error);
+        const failed=info.status===0||info.status>=400||!!info.error||!!apiErrors;
+        if(!failed&&!info.commandId)return;
         if(!failed&&data?.sameAs)return;
         recordCompactDiagnostic(failed?'error':'info','form-network',{network:{...info,response:data}});
       }catch{/* Diagnostics must never disrupt the form. */}
@@ -25258,7 +25264,7 @@ function installAgentDashboardPopup() {
       const current=new Map(snapshot.flatMap((names,index)=>names.map(name=>[name,widgets[index][0]])));
       const changes=[];
       for(const name of new Set([...previous.keys(),...current.keys()]))if(previous.get(name)!==current.get(name))changes.push({name,from:previous.get(name)||'not-returned',to:current.get(name)||'not-returned'});
-      if(!rosterSnapshot||changes.length||failures||Date.now()-lastRosterReport>=60000){
+      if(!rosterSnapshot||changes.length||failures){
         reportRoster(!rosterSnapshot?'initial-snapshot':changes.length?'roster-changed':failures?'refresh-recovered':'snapshot',{sequence,startedAt,completedAt:Date.now(),durationMs:Date.now()-startedAt,httpStatus,widgets:widgetSummary,available:snapshot[0],away:snapshot[1],changes,previousSuccessfulAt:lastSuccess||null,interpretation:'Not-returned means absent from these filtered analytics results, not confirmed Offline. Other agents manual/external causes require their own status logs.'});
         lastRosterReport=Date.now();
       }
