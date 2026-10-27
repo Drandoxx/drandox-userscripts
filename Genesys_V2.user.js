@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.585.0
+// @version      1.586.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -1001,6 +1001,19 @@
   let themeTransitionUntil = 0;
 
   const CSS = `
+    /* Raised call surfaces: static glow avoids extra animation/paint loops. */
+    :is(#gbs-call-information,#gbs-last-call-data,[id^="gbs-earlier-call-"]) {
+      background:#252d38!important;color:#f1f5f9!important;
+      border:1px solid #607085!important;border-top:2px solid #22d3ee!important;
+      box-shadow:0 16px 40px #0009,0 0 20px #22d3ee38,0 0 4px #22d3ee55!important;
+      isolation:isolate;
+    }
+    :is(#gbs-call-information,#gbs-last-call-data,[id^="gbs-earlier-call-"])> :first-child {
+      background:#303b49!important;color:#67e8f9!important;border-bottom-color:#526778!important;
+    }
+    :is(#gbs-call-information,#gbs-last-call-data,[id^="gbs-earlier-call-"]) .gbs-call-information-body {color:#f1f5f9!important;}
+    /* Dragging keeps the same contrast with a cheaper shadow. */
+    :is(#gbs-call-information,#gbs-last-call-data,[id^="gbs-earlier-call-"]):active {box-shadow:0 10px 24px #0008,0 0 12px #22d3ee30!important;}
     /* Export panel theme: scoped so other forms retain their native semantics. */
     .ember-engine-queues-export-panel { background:#242a30!important;color:#e5e7eb!important;color-scheme:dark; }
     .ember-engine-queues-export-panel .export-panel,
