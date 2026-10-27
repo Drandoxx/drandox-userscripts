@@ -383,7 +383,7 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
     return {snippets:snPersonalSnippetExport(rows),appearance:{theme:localStorage.getItem('snippets_manager_theme_v1')==='light'?'light':'dark'},
       enabledModes:Object.keys(defaultModes).filter(key=>modes?.[key]!==false),...(nova===null?{}:{nova:{suggestions:nova==='yes'}})};
   };
-  const valid=ctx=>!stopped&&context===ctx&&ctx.stamp===userStamp();
+  const valid=ctx=>!stopped&&context===ctx&&ctx.stamp===userStamp()&&localStorage.getItem('sn-ai-personal-settings-active-account')===ctx.account;
   const apply=async(ctx,settings)=>{
     if(!valid(ctx))return;
     ctx.applying=true;
@@ -418,7 +418,7 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
       parent.append(panel);
     }
     const labels={connecting:'Settings: connecting',saved:'Settings: saved',pending:'Settings: saving',saving:'Settings: saving',offline:'Settings: offline - saved locally',conflict:'Settings: conflict',
-      'binding-approval-required':'Settings: approval required','authentication-required':'Settings: access unavailable',rejected:'Settings: save rejected - kept locally','identity-required':'Settings: waiting for userID',standby:'Settings: synced by another tab'};
+      'binding-approval-required':'Settings: approval required','authentication-required':'Settings: access unavailable',rejected:'Settings: save rejected - kept locally','identity-required':'Settings: waiting for userID',standby:'Settings: synced by another tab','account-changed':'Settings: another account is active in this browser'};
     panel.firstChild.textContent=labels[status]||'Settings: '+status;
     panel.title=context?.sync?.conflict?'Conflicting fields: '+context.sync.conflict.paths.join(', '):'Personal settings sync - '+(context?.userID||'');
     panel.querySelector('[data-sync-retry]').hidden=!['offline','binding-approval-required','authentication-required','rejected'].includes(status);
@@ -494,13 +494,16 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
     try{
       const stamp=userStamp();
       if(context&&context.stamp!==stamp){context.sync?.close();context.release?.();clearInterval(context.refreshTimer);context=null;generation++;}
+      if(context&&!valid(context)){context.sync?.close();context.release?.();clearInterval(context.refreshTimer);show('account-changed');return;}
       if(!stamp){show('identity-required');return;}
       if(!context){
         const epoch=generation,agent=await reporter();if(stopped||epoch!==generation||stamp!==userStamp())return;
         const userID=String(agent.userID||'').trim().toUpperCase();if(!userID||/^[a-f0-9]{32}$/i.test(userID)){show('identity-required');return;}
         const account=location.hostname.toLowerCase()+'|'+userID;
         const ctx=context={account,userID,name:agent.name,sysId:agent.sysId,stamp,cacheKey:'sn-ai-personal-settings-cache:'+account};
+        localStorage.setItem('sn-ai-personal-settings-active-account',account);
         const cache=await GM_getValue(ctx.cacheKey,null),owner=await GM_getValue('sn-ai-personal-settings-local-owner',null);
+        if(!valid(ctx))return;
         if(cache)await apply(ctx,cache);
         else if(owner&&owner!==account)await apply(ctx,{snippets:[],enabledModes:Object.keys(defaultModes),appearance:{theme:'dark'}});
         await GM_setValue('sn-ai-personal-settings-local-owner',account);
@@ -19940,7 +19943,9 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const aiProviderDisplayName = () => state.ai.provider === 'codex'
       ? CODEX_AI_PROFILES[state.ai.codexProfile].label
       : (state.ai.provider === 'web' ? (state.ai.webService === 'gemini' ? 'Gemini Web' : 'ChatGPT Web') : 'OpenAI API');
-    document.addEventListener('sn-ai-personal-settings-applied',()=>{loadAISettings().then(()=>{syncAISettingsUI();refresh();}).catch(()=>{});});
+    const applyPersonalSettingsUI=()=>{if(host.isConnected)loadAISettings().then(()=>{syncAISettingsUI();refresh();}).catch(()=>{});};
+    document.addEventListener('sn-ai-personal-settings-applied',applyPersonalSettingsUI);
+    document.addEventListener('sn-ai-runtime-dispose',()=>document.removeEventListener('sn-ai-personal-settings-applied',applyPersonalSettingsUI),{once:true});
     const syncAISettingsUI = () => {
       const previewToggle=settingsDialog.querySelector('[data-ai-response-preview]');
       if(previewToggle)previewToggle.checked=Boolean(state.aiResponsePreview);
@@ -26814,7 +26819,9 @@ avatarRoot.querySelector('.nova')?.addEventListener('contextmenu',event=>{event.
   function save(enabled){try{localStorage.setItem(key,enabled?'yes':'no');}catch{}toggle.checked=enabled;document.dispatchEvent(new CustomEvent('sn-ai-personal-settings-change'));}
   function reply(enabled){save(enabled);setExpression(enabled?'happy':'friendly');show({paragraphs:[enabled?'Sounds good. I’ll pop by with a little encouragement or something fun now and then. For now, this is just our first hello. 💜':'No worries at all. If you change your mind, open SN AI settings → AI settings and turn on “Nova friendly messages”. I’ll be happy to say hello again.']});}
   toggle.addEventListener('change',()=>{save(toggle.checked);dismissed=true;stopTyping();card.hidden=true;tail.hidden=true;avatar.hidden=true;});
-  document.addEventListener('sn-ai-personal-settings-applied',()=>{if(key){toggle.checked=localStorage.getItem(key)==='yes';}});
+  const applyNovaPersonalSettings=()=>{if(key){toggle.checked=localStorage.getItem(key)==='yes';}};
+  document.addEventListener('sn-ai-personal-settings-applied',applyNovaPersonalSettings);
+  document.addEventListener('sn-ai-runtime-dispose',()=>document.removeEventListener('sn-ai-personal-settings-applied',applyNovaPersonalSettings),{once:true});
   // Shared cutout rig promoted from the approved animation workshop.
   (()=>{
     const nova=avatar,root=avatarRoot;
