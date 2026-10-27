@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.787
+// @version      2.36.788
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.788","fixes":true,"changes":[{"key":"com-plus-mode","meaningful":true,"text":"Add .COM+ order tickets with a dedicated New Event, fixed routing, priority 3 and KB 5859, followed by the normal Description AI and contact/extra-field workflow."}]},
 {"version":"2.36.787","fixes":true,"changes":[{"key":"hp-contact-number","meaningful":true,"text":"Fill the main HP Contact Number from supplied contact details when the existing field contains a placeholder, preserving genuine entered numbers."}]},
 {"version":"2.36.786","fixes":true,"changes":[{"key":"diagnostic-noise-reduction","meaningful":true,"text":"Stop healthy idle API summaries, unchanged roster snapshots and routine memory uploads while preserving errors, status changes and ticket-run diagnostics."}]},
 {"version":"2.36.785","fixes":true,"changes":[{"key":"ticket-fill-performance","meaningful":true,"text":"Reuse short-lived active-form discovery and measure visibility only on matching field candidates, while keeping exact value verification and pause safety."}]},
@@ -7816,9 +7817,9 @@ function startSNAI(tabIdentity) {
     smart: Object.freeze({ label: 'Smart', model: 'gpt-5.6-sol', effort: 'medium', tooltip: 'GPT-5.6 Sol · Medium' }),
   });
   const DEFAULT_CODEX_MODEL = CODEX_AI_PROFILES[DEFAULT_CODEX_PROFILE].model;
-  const DEFAULT_ENABLED_MODES = Object.freeze({ CPC: true, ILS_PRNT: true, DESCRIPTION: true, FTF: true, HP: true, STACK: true, HP_STACK: true });
+  const DEFAULT_ENABLED_MODES = Object.freeze({ CPC: true, ILS_PRNT: true, DESCRIPTION: true, COM_PLUS: true, FTF: true, HP: true, STACK: true, HP_STACK: true });
   const DEFAULT_ACTION_COLOR = '#167d5f';
-  const ACTION_COLOR_NAMES = Object.freeze(['CPC', 'ILS_PRNT', 'DESCRIPTION', 'FTF', 'HP', 'STACK', 'HP_STACK', 'CMD']);
+  const ACTION_COLOR_NAMES = Object.freeze(['CPC', 'ILS_PRNT', 'DESCRIPTION', 'COM_PLUS', 'FTF', 'HP', 'STACK', 'HP_STACK', 'CMD']);
   const DEFAULT_ACTION_COLORS = Object.freeze({ enabled: false, colors: Object.freeze(Object.fromEntries(ACTION_COLOR_NAMES.map((name) => [name, DEFAULT_ACTION_COLOR])) ) });
   const AI_SPARKLE_ICON = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/></svg>';
   const CODEX_APP_SERVER_URL = 'ws://127.0.0.1:4501';
@@ -16709,6 +16710,23 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     });
   }
 
+  async function prepareCOMPlusBaseForm(){
+    const prepared=await prepareTemplateBackedForm({
+      profile:'TEXT',templateName:'SOFTWARE - .COM+ - Order Issues',
+      routing:[{field:'Category',value:'APPQ'},{field:'Sub Category',value:'APPQ-COM'},{field:'Symptom',value:'APPQ-COM-OTHER'}],
+    });
+    await autoLookup('Assignment Group','E-Commerce App Supp UK',{expected:'E-Commerce App Supp UK',code:'COM_PLUS_ASSIGNMENT_GROUP_COMMIT_FAILED'});
+    await autoSelect('Priority','3 - Moderate','COM_PLUS_PRIORITY_COMMIT_FAILED');
+    await autoLookup('Attached Knowledge','5859',{expected:'KB0005859',match:'prefix',first:true,code:'COM_PLUS_KB_COMMIT_FAILED'});
+    const expected={
+      Category:'APPQ','Sub Category':'APPQ-COM',Symptom:'APPQ-COM-OTHER',
+      'Template Name':'SOFTWARE - .COM+ - Order Issues',
+      'Assignment Group':'E-Commerce App Supp UK',Priority:'3 - Moderate',
+    };
+    const mismatches=Object.entries(expected).filter(([field,value])=>!fieldMatchesExpected(verifiedControlValue(field),value,field));
+    if(mismatches.length)automationFailure('COM_PLUS_ROUTING_VERIFICATION_FAILED','.COM+ routing did not pass verification.',{fields:mismatches.map(([field])=>field)});
+    return prepared;
+  }
   function prepareHPBaseForm(issueType,deferSchema=false) {
     const templateName = issueType === 'Toner order'
       ? 'HARDWARE - HP UK - Toner Issue / Order'
@@ -19377,6 +19395,18 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const ilsPrntAction = host.querySelector('[data-action="open-ils-prnt-dialog"]');
     const ilsPrntActionAIIcon = ilsPrntAction.querySelector('[data-action-ai-icon]');
     const descriptionAction = host.querySelector('[data-action="open-description-dialog"]');
+    const comPlusAction=descriptionAction.cloneNode(true);
+    comPlusAction.dataset.action='open-com-plus-dialog';
+    comPlusAction.lastElementChild.textContent='.COM+';
+    descriptionAction.after(comPlusAction);
+    actionButtons.push(comPlusAction);
+    const descriptionOption=host.querySelector('[data-ticket-mode="DESCRIPTION"]').closest('.local-sn-mode-option');
+    const comPlusOption=descriptionOption.cloneNode(true);
+    for(const element of comPlusOption.querySelectorAll('*')){
+      for(const attribute of [...element.attributes])if(attribute.value.includes('DESCRIPTION')||attribute.value.includes('Description'))element.setAttribute(attribute.name,attribute.value.replaceAll('DESCRIPTION','COM_PLUS').replaceAll('Description','.COM+'));
+    }
+    comPlusOption.querySelectorAll('span').forEach(element=>{if(element.textContent==='Description')element.textContent='.COM+';});
+    descriptionOption.after(comPlusOption);
     const ftfAction = host.querySelector('[data-action="open-ftf-dialog"]');
     const hpAction = host.querySelector('[data-action="open-hp-dialog"]');
     const testAction = host.querySelector('[data-action="open-test-dialog"]');
@@ -19602,7 +19632,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     aiSetupPowerShell.value = CODEX_SETUP_POWERSHELL;
     aiSetupCMD.value = CODEX_SETUP_CMD;
     aiSetupPrompt.value = CODEX_SETUP_AI_PROMPT;
-    const actionButtonByColourName = Object.freeze({ CPC: cpcAction, ILS_PRNT: ilsPrntAction, DESCRIPTION: descriptionAction, FTF: ftfAction, HP: hpAction, STACK: stackAction, HP_STACK: hpStackAction, CMD: cmdActionButton });
+    const actionButtonByColourName = Object.freeze({ CPC: cpcAction, ILS_PRNT: ilsPrntAction, DESCRIPTION: descriptionAction, COM_PLUS: comPlusAction, FTF: ftfAction, HP: hpAction, STACK: stackAction, HP_STACK: hpStackAction, CMD: cmdActionButton });
     const validColour = (value) => /^#[0-9a-f]{6}$/i.test(String(value || '').trim());
     const currentActionColour = (name) => state.actionColors.enabled && validColour(state.actionColors.colors[name]) ? String(state.actionColors.colors[name]).toUpperCase() : DEFAULT_ACTION_COLOR;
     const syncActionColourControls = () => {
@@ -19712,6 +19742,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       ilsPrntActionAIIcon.hidden = !state.ilsPrntAI;
       ilsPrntAction.hidden = classicIncidentMode || !(state.enabledModes.ILS_PRNT && (!state.ilsPrntAI || aiReady));
       descriptionAction.hidden = classicIncidentMode || !(state.enabledModes.DESCRIPTION && aiReady);
+      comPlusAction.hidden = classicIncidentMode || !(state.enabledModes.COM_PLUS && aiReady);
       ftfAction.hidden = classicIncidentMode || !(state.enabledModes.FTF && aiReady);
       hpAction.hidden = classicIncidentMode || !(state.enabledModes.HP && aiReady);
       testAction.hidden = classicIncidentMode || !state.testEnabled || !aiReady;
@@ -22958,9 +22989,10 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     }));
 
     let descriptionWindowSequence = 0;
-    const createDescriptionWindow = async (actionButton) => {
+    const createDescriptionWindow = async (actionButton, mode='DESCRIPTION') => {
+      const comPlus=mode==='COM_PLUS',modeLabel=comPlus?'.COM+':'Description';
       await loadAISettings();
-      if (!state.enabledModes.DESCRIPTION) return;
+      if (!state.enabledModes[mode]) return;
       if (!state.ai.enabled || (state.ai.provider === 'api' && !state.ai.keySaved)) {
         state.lastAction = 'Turn on AI power and configure the selected AI connection in SN AI settings before using Description mode.';
         syncAISettingsUI();
@@ -22976,17 +23008,18 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       }
       retainAIChatCache(pinnedIMS);
       let chatCacheReleased = false;
-      let reusableAICommand = await readCachedAICommand('DESCRIPTION', pinnedIMS);
+      let reusableAICommand = await readCachedAICommand(mode, pinnedIMS);
+      let comPlusPrepared=false;
       let capturedDescriptionSchema = null;
       descriptionWindowSequence += 1;
       const suffix = `${Date.now()}-${descriptionWindowSequence}`;
       const descriptionShell = createTicketWindowShell({
-        mode: 'DESCRIPTION',
+        mode,
         aiMode: true,
         suffix,
-        title: `Description mode - ${pinnedIMS}`,
+        title: `${modeLabel} mode - ${pinnedIMS}`,
         user: openedForDisplay,
-        closeLabel: 'Close Description mode',
+        closeLabel: `Close ${modeLabel} mode`,
         contentHTML: '<div class="local-sn-ftf-message">Create a Description ticket with the help of AI</div><div class="local-sn-model-note" data-description-model></div>',
       });
       const { dialog: descriptionDialog, titleMain, progressText, errorLine, stopButton, runButton, closeButton, cancelButton } = descriptionShell;
@@ -23010,7 +23043,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       let aiMessageAccepted = false;
       descriptionShell.onFullRetry = async () => {
         reusableAICommand = ''; lastAIResponse = null;
-        await clearCachedAICommand('DESCRIPTION', pinnedIMS);
+        await clearCachedAICommand(mode, pinnedIMS);
         modelLine.textContent = `AI mode: ${aiProviderDisplayName()}`;
       };
       const setProgress = (nextProgress) => {
@@ -23059,7 +23092,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       const showError = (error) => {
         descriptionDialog.classList.remove('is-running', 'is-success');
         descriptionDialog.classList.add('is-error');
-        titleMain.textContent = `${pinnedIMS} - Description error`;
+        titleMain.textContent = `${pinnedIMS} - ${modeLabel} error`;
         progressText.textContent = '';
         errorLine.textContent = error?.message || 'Description automation failed.';
         errorLine.style.color = '';
@@ -23075,7 +23108,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         }
         descriptionShell.showAIRecovery(returned, async (providedCommand) => {
           try {
-            reusableAICommand = await writeCachedAICommand('DESCRIPTION', pinnedIMS, JSON.stringify(materialiseDescriptionCommand(providedCommand, capturedDescriptionSchema)));
+            reusableAICommand = await writeCachedAICommand(mode, pinnedIMS, JSON.stringify(materialiseDescriptionCommand(providedCommand, capturedDescriptionSchema)));
             lastAIResponse = providedCommand;
             modelLine.textContent = 'Provided data cached · retry uses no AI tokens';
             descriptionShell.hideAIReturned();
@@ -23092,7 +23125,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         document.removeEventListener('sn-ai-progress', automationProgress);
         document.removeEventListener('sn-ai-web-progress', aiWebProgress);
         reusableAICommand = '';
-        await clearCachedAICommand('DESCRIPTION', pinnedIMS);
+        await clearCachedAICommand(mode, pinnedIMS);
         if (!chatCacheReleased) { chatCacheReleased = true; releaseAIChatCache(pinnedIMS); }
         await closeWindowToAction(descriptionDialog, reason);
         closeTicketBubbleWithUndo(descriptionDialog, reason);
@@ -23109,7 +23142,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             const textCommand = cachedCommand?.TEXT || cachedCommand?.DESCRIPTION;
             if (!textCommand || typeof textCommand !== 'object') throw new Error('The cached Description command is invalid.');
             textCommand['Skip Optional Fields'] = true;
-            reusableAICommand = await writeCachedAICommand('DESCRIPTION', pinnedIMS, JSON.stringify(cachedCommand));
+            reusableAICommand = await writeCachedAICommand(mode, pinnedIMS, JSON.stringify(cachedCommand));
             modelLine.textContent = 'Validated command cached · retry uses no AI tokens';
           }
           errorLine.textContent = 'Retrying without the problematic fields beneath Description.';
@@ -23155,6 +23188,16 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           document.addEventListener('sn-ai-web-progress', aiWebProgress);
           if (descriptionShell.forceFreshAI) { reusableAICommand = ''; descriptionShell.forceFreshAI = false; }
           let cacheEntry = null;
+          if(comPlus&&!ticketRevisionBaseline(descriptionDialog,'TEXT')){
+            if(!comPlusPrepared){
+              // The bubble owns exactly one draft. A retry restores it instead
+              // of opening another Event or replacing an unrelated draft.
+              if(descriptionDialog.snAiOwnedEvent)await restoreTicketDraft(descriptionDialog.snAiOwnedEvent);
+              else await runWorkflow({ims:pinnedIMS,createNewEvent:true,forceNewEvent:true,openDetails:false});
+              await prepareCOMPlusBaseForm();
+              comPlusPrepared=true;
+            }else if(descriptionDialog.snAiOwnedEvent)await restoreTicketDraft(descriptionDialog.snAiOwnedEvent);
+          }
           const preparation = ticketRevisionBaseline(descriptionDialog,'TEXT')?{revision:true}:await prepareDescriptionAcrossWorkspaceTabs(pinnedIMS, {
             forceChat: !reusableAICommand && !chatLoadedForWindow,
             preloadedSchema: capturedDescriptionSchema,
@@ -23168,7 +23211,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           chatLoadedForWindow = Boolean(cacheEntry?.complete);
           if (!reusableAICommand && !cacheEntry?.complete) throw new Error(`No complete transcript details were found for ${pinnedIMS}.`);
           if (reusableAICommand) {
-            reusableAICommand = await writeCachedAICommand('DESCRIPTION', pinnedIMS, JSON.stringify(materialiseDescriptionCommand(JSON.parse(reusableAICommand), capturedDescriptionSchema)));
+            reusableAICommand = await writeCachedAICommand(mode, pinnedIMS, JSON.stringify(materialiseDescriptionCommand(JSON.parse(reusableAICommand), capturedDescriptionSchema)));
             setProgress(58);
             titleMain.textContent = `${pinnedIMS} - Retrying cached Description…`;
             collapsedCommandInput.value = reusableAICommand;
@@ -23199,7 +23242,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           if (skipOptionalFields) descriptionCommand.TEXT['Skip Optional Fields'] = true;
           setProgress(58);
           titleMain.textContent = `${pinnedIMS} - Running Description…`;
-          reusableAICommand = await writeCachedAICommand('DESCRIPTION', pinnedIMS, JSON.stringify(materialiseDescriptionCommand(descriptionCommand, capturedDescriptionSchema)));
+          reusableAICommand = await writeCachedAICommand(mode, pinnedIMS, JSON.stringify(materialiseDescriptionCommand(descriptionCommand, capturedDescriptionSchema)));
           collapsedCommandInput.value = reusableAICommand;
           }
           const finalStatus = await runCommandInput(collapsedCommandInput);
@@ -23224,11 +23267,11 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           setProgress(100);
           descriptionDialog.classList.remove('is-running', 'is-error');
           descriptionDialog.classList.add('is-success');
-          titleMain.textContent = `${pinnedIMS} - Description complete`;
+          titleMain.textContent = `${pinnedIMS} - ${modeLabel} complete`;
           const completionWarning = finalStatus?.result?.warnings?.[0]?.message || '';
           errorLine.textContent = completionWarning;
           errorLine.style.color = completionWarning ? '#f0a63a' : '';
-          await clearCachedAICommand('DESCRIPTION', pinnedIMS);
+          await clearCachedAICommand(mode, pinnedIMS);
           reusableAICommand = '';
           if (descriptionShell.showFeedback()) { descriptionShell.feedbackClose = closeAndRemove; } else successTimer = setTimeout(() => closeAndRemove('success'), 5000);
         } catch (error) {
@@ -23252,6 +23295,9 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         if (reusableAICommand) runButton.textContent = 'Continue';
       await openWindowFromAction(actionButton, descriptionDialog, { pinnedIMS });
     };
+    comPlusAction.addEventListener('click',event=>createDescriptionWindow(event.currentTarget,'COM_PLUS').catch(error=>{
+      state.lastAction=error.message;addLog('error','com-plus-window-open-failed',{message:error.message});refresh();
+    }));
     descriptionAction.addEventListener('click', (event) => createDescriptionWindow(event.currentTarget).catch((error) => {
       state.lastAction = error.message;
       addLog('error', 'description-window-open-failed', { message: error.message });
