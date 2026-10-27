@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.791
+// @version      2.36.792
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.792","fixes":true,"changes":[{"key":"personal-settings-sync","meaningful":true,"text":"Keep healthy settings sync invisible in the toolbar and move device linking into Settings; actionable sync failures remain visible."}]},
 {"version":"2.36.791","fixes":true,"changes":[{"key":"personal-settings-sync","meaningful":true,"text":"Migrate legacy snippet IDs to the server format without changing names, messages or order, and recover rejected saves while preserving revision and seed-only protection."}]},
 {"version":"2.36.790","fixes":true,"changes":[{"key":"personal-settings-sync","meaningful":true,"text":"Register personal settings automatically using a separate private account key, with explicit device linking and no admin approval; retain offline edits and conflict protection."}]},
 {"version":"2.36.789","fixes":true,"changes":[{"key":"personal-settings-sync","meaningful":true,"text":"Autosave reusable snippets, theme, enabled modes and NOVA friendly-message preference across approved devices with offline queues and explicit conflict resolution."}]},
@@ -384,6 +385,7 @@ function snPersonalSettingsDiff(previous,next){
   }
   return patch;
 }
+function snPersonalStatusVisible(status){return !['saved','standby','pending','saving'].includes(status);}
 async function snPersonalAccountSyncKey(account,options={}){
   const storageKey='sn-ai-personal-settings-account-secret-v1:'+account;
   if(!navigator.locks)throw Error('Secure account-key storage requires browser locking');
@@ -405,7 +407,7 @@ async function snPersonalAccountSyncKey(account,options={}){
 }
 function installPersonalSettingsSync({identity,reporter,readModes,writeModes,defaultModes}){
   if(!location.pathname.startsWith('/now/workspace/'))return;
-  let stopped=false,checking=false,context=null,generation=0,status='connecting',panel=null,refreshing=false,linkDialog=null,linkTimer=0;
+  let stopped=false,checking=false,context=null,generation=0,status='connecting',panel=null,refreshing=false,linkDialog=null,linkTimer=0,settingsLink=null;
   const clone=value=>JSON.parse(JSON.stringify(value));
   const notify=()=>document.dispatchEvent(new CustomEvent('sn-ai-personal-settings-applied'));
   const userStamp=()=>{
@@ -488,6 +490,8 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
   }
   function render(){
     if(!document.body)return;
+    const general=document.querySelector('#local-sn-inspector-root [data-settings-panel="general"]');
+    if(general&&!settingsLink?.isConnected){settingsLink=document.createElement('button');settingsLink.type='button';settingsLink.id='sn-ai-link-device-settings';settingsLink.textContent='Link another device';settingsLink.onclick=openLink;general.append(settingsLink);}
     const parent=document.getElementById('tm-toolbar')||document.querySelector('#local-sn-inspector-root [data-settings-panel="general"]');
     if(!parent)return;
     if(!panel?.isConnected){
@@ -496,13 +500,13 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
       const label=document.createElement('span');label.setAttribute('role','status');panel.append(label);
       const retry=document.createElement('button');retry.type='button';retry.textContent='Retry';retry.dataset.syncRetry='';
       retry.onclick=()=>{if(context?.sync)context.sync.resume();else if(context){context.binding=null;context.authorizationBlocked=false;connect(context);}else check();};panel.append(retry);
-      const link=document.createElement('button');link.type='button';link.textContent='Link another device';link.onclick=openLink;panel.append(link);
       for(const [text,keepLocal]of [['Keep my changes',true],['Use server settings',false]]){
         const button=document.createElement('button');button.type='button';button.textContent=text;button.dataset.syncConflict='';
         button.onclick=()=>{const ctx=context;if(ctx?.sync?.conflict&&valid(ctx))ctx.sync.resolveConflict(keepLocal?clone(ctx.sync.pending):{}).catch(()=>show('offline'));};panel.append(button);
       }
       parent.append(panel);
     }
+    panel.hidden=!snPersonalStatusVisible(status);panel.style.display=panel.hidden?'none':'flex';
     const labels={connecting:'Settings: connecting',saved:'Settings: saved',pending:'Settings: saving',saving:'Settings: saving',offline:'Settings: offline - saved locally',conflict:'Settings: conflict',
       'link-required':'Settings: link this device','owner-link-required':'Settings: link from the original device first','access-unavailable':'Settings: access unavailable','binding-revoked':'Settings: access revoked','authentication-required':'Settings: access unavailable',rejected:'Settings: save rejected - kept locally','identity-required':'Settings: waiting for userID',standby:'Settings: synced by another tab','account-changed':'Settings: another account is active in this browser'};
     panel.firstChild.textContent=labels[status]||'Settings: '+status;
@@ -620,7 +624,7 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
   window.addEventListener('storage',storage);
   const modeListener=typeof GM_addValueChangeListener==='function'?GM_addValueChangeListener('local-sn-inspector-enabled-modes-v1',dirty):null;
   const timer=setInterval(()=>check().catch(()=>show('offline')),5000);check().catch(()=>show('offline'));
-  const dispose=()=>{stopped=true;closeLink();clearInterval(timer);context?.sync?.close();context?.release?.();clearInterval(context?.refreshTimer);document.removeEventListener('sn-ai-personal-settings-change',dirty);window.removeEventListener('storage',storage);if(modeListener!==null&&typeof GM_removeValueChangeListener==='function')GM_removeValueChangeListener(modeListener);panel?.remove();};
+  const dispose=()=>{stopped=true;closeLink();clearInterval(timer);context?.sync?.close();context?.release?.();clearInterval(context?.refreshTimer);document.removeEventListener('sn-ai-personal-settings-change',dirty);window.removeEventListener('storage',storage);if(modeListener!==null&&typeof GM_removeValueChangeListener==='function')GM_removeValueChangeListener(modeListener);panel?.remove();settingsLink?.remove();};
   window.addEventListener('pagehide',dispose,{once:true});document.addEventListener('sn-ai-runtime-dispose',dispose,{once:true});
 }
 /* SN_PERSONAL_SETTINGS_END */
