@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.786
+// @version      2.36.787
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.787","fixes":true,"changes":[{"key":"hp-contact-number","meaningful":true,"text":"Fill the main HP Contact Number from supplied contact details when the existing field contains a placeholder, preserving genuine entered numbers."}]},
 {"version":"2.36.786","fixes":true,"changes":[{"key":"diagnostic-noise-reduction","meaningful":true,"text":"Stop healthy idle API summaries, unchanged roster snapshots and routine memory uploads while preserving errors, status changes and ticket-run diagnostics."}]},
 {"version":"2.36.785","fixes":true,"changes":[{"key":"ticket-fill-performance","meaningful":true,"text":"Reuse short-lived active-form discovery and measure visibility only on matching field candidates, while keeping exact value verification and pause safety."}]},
 {"version":"2.36.784","fixes":true,"changes":[{"key":"ticket-fill-performance","meaningful":true,"text":"Keep minute memory sampling lightweight during ticket runs and yield within large DOM roots instead of scanning them in one uninterrupted pass."}]},
@@ -14134,7 +14135,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       text('Short Description',data.shortDescription,80);
       text('Description',buildHPDescription(data.issueType,values));
       plan.push({kind:'select',field:'Priority',value:values['no-other-working-printer']===true?'3 - Moderate':'4 - Low'});
-      const phone=String(values['contact-name-phone']||'').match(/(?:\+44\s?|0)\d(?:[\s()-]?\d){8,12}/)?.[0]?.trim();
+      const phone=hpMainContactNumber(values,data.fieldsUnderDescription);
       if(phone)text('Contact Number',phone,40);
       plan.push({kind:'ci',field:'Configuration Item',value:String(values['model-number']||values['printer-model']||'')});
       const extras={...data.fieldsUnderDescription};
@@ -16575,6 +16576,21 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     }
   }
 
+  function hpMainContactNumber(values={},extra={},...existing){
+    // Template placeholders such as "-" and "Not provided" are not numbers.
+    const valid=value=>{
+      const text=String(value??'').trim();
+      return (text.match(/\d/g)||[]).length>=7&&!/^(?:not provided|unknown|n\/?a|none)\b/i.test(text)?text:'';
+    };
+    for(const value of existing){const number=valid(value);if(number)return number;}
+    const candidates=[values['contact-number'],values['contact-name-phone'],
+      ...Object.entries(extra||{}).filter(([label])=>/contact.*(?:number|phone)|(?:phone|telephone|mobile)/i.test(label)).map(([,value])=>value)];
+    for(const value of candidates){
+      const number=String(value??'').match(/(?:\+\d{1,3}[\s()-]*|0)\d(?:[\s()-]?\d){8,12}/)?.[0]?.trim();
+      if(number)return number;
+    }
+    return '';
+  }
   async function autoHP(rawData) {
     const data = validateAndNormaliseWizardData('HP', rawData);
     if (!state.autoSession || state.autoSession.profile !== 'HP') automationFailure('HP_SESSION_NOT_READY', 'Run START HP IMS... first.');
@@ -16593,8 +16609,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       const description = buildHPDescription(data.issueType, data.values);
       // The template's contact detail is separate from the main Event control.
       // Preserve an operator-entered number, otherwise reuse the HP contact.
-      const contactNumber=existingContactNumber || String(readableControlValue('Contact Number')||'').trim()
-        || String(data.values['contact-name-phone']||'').match(/(?:\+44\s?|0)\d(?:[\s()-]?\d){8,12}/)?.[0]?.trim() || '';
+      const contactNumber=hpMainContactNumber(data.values,data.fieldsUnderDescription,existingContactNumber,readableControlValue('Contact Number'));
       if(contactNumber)await autoText('Contact Number',contactNumber,'HP_CONTACT_NUMBER_COMMIT_FAILED',40);
       await autoText('Short Description', data.shortDescription, 'HP_SHORT_DESCRIPTION_COMMIT_FAILED', 80);
       await autoText('Description', description, 'HP_DESCRIPTION_COMMIT_FAILED');
