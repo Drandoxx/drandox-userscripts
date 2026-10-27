@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.790
+// @version      2.36.791
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.791","fixes":true,"changes":[{"key":"personal-settings-sync","meaningful":true,"text":"Migrate legacy snippet IDs to the server format without changing names, messages or order, and recover rejected saves while preserving revision and seed-only protection."}]},
 {"version":"2.36.790","fixes":true,"changes":[{"key":"personal-settings-sync","meaningful":true,"text":"Register personal settings automatically using a separate private account key, with explicit device linking and no admin approval; retain offline edits and conflict protection."}]},
 {"version":"2.36.789","fixes":true,"changes":[{"key":"personal-settings-sync","meaningful":true,"text":"Autosave reusable snippets, theme, enabled modes and NOVA friendly-message preference across approved devices with offline queues and explicit conflict resolution."}]},
 {"version":"2.36.788","fixes":true,"changes":[{"key":"com-plus-mode","meaningful":true,"text":"Add .COM+ order tickets with a dedicated New Event, fixed routing, priority 3 and KB 5859, followed by the normal Description AI and contact/extra-field workflow."}]},
@@ -350,9 +351,31 @@ const SnAISettingsSync=(()=>{
 })();
 
 // Explicit adapters only. Never enumerate GM/localStorage or serialize runtime state.
+function snPersonalNormalizeSnippetIDs(rows){
+  const seen=new Set();
+  return (Array.isArray(rows)?rows:[]).map(row=>{
+    let id=String(row.id??'');
+    if(!/^[A-Za-z0-9_-]{1,64}$/.test(id)||seen.has(id)){
+      let hash=2166136261;for(const char of id)hash=Math.imul(hash^char.charCodeAt(0),16777619);
+      const base='legacy-'+(hash>>>0).toString(36);id=base;
+      for(let suffix=2;seen.has(id);suffix++)id=base+'-'+suffix;
+    }
+    seen.add(id);return {...row,id};
+  });
+}
+function snPersonalRepairRejectedSnippetIDs(queue){
+  // Only a definitively rejected request may be rebuilt. Lost-response retries
+  // keep their original mutation ID and bytes, even for a legacy payload.
+  const rows=queue?.inflight?.body?.changes?.snippets;
+  if(!queue?.rejected||!Array.isArray(rows))return queue;
+  const normalized=snPersonalNormalizeSnippetIDs(rows);
+  if(JSON.stringify(rows.map(row=>row.id))===JSON.stringify(normalized.map(row=>row.id)))return queue;
+  return {...queue,rejected:false,inflight:{...queue.inflight,body:{...queue.inflight.body,
+    mutationId:crypto.randomUUID(),changes:{...queue.inflight.body.changes,snippets:normalized}}}};
+}
 function snPersonalSnippetExport(rows){
   if(!Array.isArray(rows))return [];
-  return rows.map((row,order)=>({id:String(row.id),name:String(row.title||''),text:String(row.message||''),order}));
+  return snPersonalNormalizeSnippetIDs(rows).map((row,order)=>({id:row.id,name:String(row.title||''),text:String(row.message||''),order}));
 }
 function snPersonalSettingsDiff(previous,next){
   const patch={};
@@ -399,6 +422,8 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
   });
   const snapshot=async ctx=>{
     let rows=[];try{rows=JSON.parse(localStorage.getItem('snippets_manager_v1')||'[]');}catch{}
+    const normalized=snPersonalNormalizeSnippetIDs(rows);
+    if(JSON.stringify(rows)!==JSON.stringify(normalized)){rows=normalized;localStorage.setItem('snippets_manager_v1',JSON.stringify(rows));notify();}
     const modes=await readModes(),nova=localStorage.getItem('sn-ai-nova-messages-v1:'+ctx.sysId);
     return {snippets:snPersonalSnippetExport(rows),appearance:{theme:localStorage.getItem('snippets_manager_theme_v1')==='light'?'light':'dark'},
       enabledModes:Object.keys(defaultModes).filter(key=>modes?.[key]!==false),...(nova===null?{}:{nova:{suggestions:nova==='yes'}})};
@@ -504,6 +529,8 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
   const startLeader=async ctx=>{
     if(!valid(ctx))return;
     const waiting=await GM_getValue(ctx.cacheKey+':waiting',null),queueKey='sn-ai-settings-sync:v1:'+ctx.binding;
+    const original=await GM_getValue(queueKey,null),repaired=snPersonalRepairRejectedSnippetIDs(original);
+    if(repaired!==original)await GM_setValue(queueKey,repaired);
     if(waiting){
       const queue=await GM_getValue(queueKey,null);
       if(!queue)await GM_setValue(queueKey,{schema:1,bindingId:ctx.binding,settings:waiting.base||{},revision:0,pending:waiting.patch,inflight:null,conflict:null});
