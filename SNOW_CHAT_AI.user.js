@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.792
+// @version      2.36.793
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.793","fixes":true,"changes":[{"key":"personal-settings-sync","meaningful":true,"text":"Automatically sync trusted installations by the signed-in ServiceNow full name and userID, with no login or device keys, preserving local data when identity migration is ambiguous."}]},
 {"version":"2.36.792","fixes":true,"changes":[{"key":"personal-settings-sync","meaningful":true,"text":"Keep healthy settings sync invisible in the toolbar and move device linking into Settings; actionable sync failures remain visible."}]},
 {"version":"2.36.791","fixes":true,"changes":[{"key":"personal-settings-sync","meaningful":true,"text":"Migrate legacy snippet IDs to the server format without changing names, messages or order, and recover rejected saves while preserving revision and seed-only protection."}]},
 {"version":"2.36.790","fixes":true,"changes":[{"key":"personal-settings-sync","meaningful":true,"text":"Register personal settings automatically using a separate private account key, with explicit device linking and no admin approval; retain offline edits and conflict protection."}]},
@@ -386,36 +387,33 @@ function snPersonalSettingsDiff(previous,next){
   return patch;
 }
 function snPersonalStatusVisible(status){return !['saved','standby','pending','saving'].includes(status);}
-async function snPersonalAccountSyncKey(account,options={}){
-  const storageKey='sn-ai-personal-settings-account-secret-v1:'+account;
-  if(!navigator.locks)throw Error('Secure account-key storage requires browser locking');
-  return navigator.locks.request('sn-ai-personal-settings-account-secret:'+account,async()=>{
-    if(Object.prototype.hasOwnProperty.call(options,'importKey')){
-      const key=String(options.importKey||'').trim();
-      if(!/^[a-f0-9]{64}$/.test(key))throw Error('Enter the 64-character lowercase linking key from your other device.');
-      await GM_setValue(storageKey,key);return key;
-    }
-    const existing=await GM_getValue(storageKey,null);
-    if(existing!==null){if(!/^[a-f0-9]{64}$/.test(existing))throw Error('Saved linking key is invalid. Import your original key; it was not replaced.');return existing;}
-    if(options.existingOnly)throw Error('No linking key saved on this device yet.');
-    const key=Array.from(crypto.getRandomValues(new Uint8Array(32)),byte=>byte.toString(16).padStart(2,'0')).join('');
-    await GM_setValue(storageKey,key);
-    const saved=await GM_getValue(storageKey,null);
-    if(saved!==key)throw Error('Linking key could not be saved safely');
-    return saved;
-  });
+function snPersonalApprovedPage(){return location.protocol==='https:'&&location.hostname==='kingfisher.service-now.com'&&location.pathname.startsWith('/now/workspace/');}
+async function snPersonalCurrentAccount(){
+  if(!snPersonalApprovedPage())return null;
+  const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window,user=page.NOW?.user||page.g_user||{};
+  const sysId=String(user.userID||user.sys_id||page.g_user?.userID||'');
+  let userID=String(user.userName||user.user_name||page.g_user?.userName||page.g_user?.user_name||'').trim();
+  let fullName=String(user.fullName||user.displayName||user.name||[user.firstName||user.first_name,user.lastName||user.last_name].filter(Boolean).join(' ')).trim();
+  if(/^[a-f0-9]{32}$/i.test(sysId)&&page.g_ck){
+    const response=await fetch('/api/now/table/sys_user/'+sysId+'?sysparm_fields=name,user_name&sysparm_display_value=false',{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':page.g_ck},signal:AbortSignal.timeout(5000)});
+    if(!response.ok)return null;const data=await response.json();
+    userID=typeof data.result?.user_name==='string'?data.result.user_name:'';
+    fullName=typeof data.result?.name==='string'?data.result.name:'';
+  }
+  return {userID,fullName,sysId:/^[a-f0-9]{32}$/i.test(sysId)?sysId:''};
 }
 function installPersonalSettingsSync({identity,reporter,readModes,writeModes,defaultModes}){
-  if(!location.pathname.startsWith('/now/workspace/'))return;
-  let stopped=false,checking=false,context=null,generation=0,status='connecting',panel=null,refreshing=false,linkDialog=null,linkTimer=0,settingsLink=null;
+  if(!snPersonalApprovedPage())return;
+  let stopped=false,checking=false,context=null,generation=0,status='connecting',panel=null,refreshing=false;
   const clone=value=>JSON.parse(JSON.stringify(value));
   const notify=()=>document.dispatchEvent(new CustomEvent('sn-ai-personal-settings-applied'));
   const userStamp=()=>{
     const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
     const user=page.NOW?.user||page.g_user||{};
-    return String(user.userID||user.sys_id||page.g_user?.userID||'');
+    return JSON.stringify([user.userID||user.sys_id||page.g_user?.userID||'',user.userName||user.user_name||page.g_user?.userName||'',user.fullName||user.displayName||user.name||'']);
   };
   const request=(url,token,method='GET',body)=>new Promise((resolve,reject)=>{
+    if(!snPersonalApprovedPage()){reject(Error('Unapproved settings page'));return;}
     GM_xmlhttpRequest({method,url,headers:{Authorization:'Bearer '+token,...(body?{'Content-Type':'application/json'}:{})},data:body?JSON.stringify(body):undefined,
       anonymous:true,timeout:20000,onload:r=>{let json=null;try{json=JSON.parse(r.responseText);}catch{}
         if(r.status===429){const header=String(r.responseHeaders||'').match(/^Retry-After:\s*(.+)$/im)?.[1]?.trim();if(header){const seconds=/^\d+$/.test(header)?Number(header):Math.max(0,(Date.parse(header)-Date.now())/1000);json={...(json||{}),retryAfter:Math.max(Number(json?.retryAfter)||0,Number.isFinite(seconds)?seconds:60)};}}
@@ -430,7 +428,7 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
     return {snippets:snPersonalSnippetExport(rows),appearance:{theme:localStorage.getItem('snippets_manager_theme_v1')==='light'?'light':'dark'},
       enabledModes:Object.keys(defaultModes).filter(key=>modes?.[key]!==false),...(nova===null?{}:{nova:{suggestions:nova==='yes'}})};
   };
-  const valid=ctx=>!stopped&&context===ctx&&ctx.stamp===userStamp()&&localStorage.getItem('sn-ai-personal-settings-active-account')===ctx.account;
+  const valid=ctx=>!stopped&&snPersonalApprovedPage()&&context===ctx&&ctx.stamp===userStamp()&&localStorage.getItem('sn-ai-personal-settings-active-account')===ctx.account;
   const apply=async(ctx,settings)=>{
     if(!valid(ctx))return;
     ctx.applying=true;
@@ -448,50 +446,8 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
     }finally{ctx.applying=false;}
   };
   function show(next){status=next;render();}
-  function closeLink(){clearTimeout(linkTimer);if(linkDialog){for(const input of linkDialog.querySelectorAll('input'))input.value='';linkDialog.remove();linkDialog=null;}}
-  function openLink(){
-    const ctx=context;if(!valid(ctx))return;closeLink();
-    const box=linkDialog=document.createElement('div');box.setAttribute('role','dialog');box.setAttribute('aria-label','Link another device');
-    box.style.cssText='position:fixed;right:20px;top:90px;z-index:2147483647;max-width:420px;padding:18px;display:grid;gap:10px;border:1px solid #74618b;border-radius:12px;background:#241c33;color:#eee6ff;font:14px system-ui';
-    const title=document.createElement('strong');title.textContent='Link another device - '+ctx.userID;
-    const help=document.createElement('p');help.textContent='Treat this key as a password. Share it only with your own devices. Import the original key on your other device; never put it in chat or logs.';
-    const feedback=document.createElement('span');feedback.setAttribute('role','status');
-    const makeInput=label=>{const row=document.createElement('label');row.textContent=label;const input=document.createElement('input');input.type='password';input.autocomplete='off';input.spellcheck=false;input.maxLength=64;input.setAttribute('aria-label',label);row.append(input);box.append(row);return input;};
-    box.append(title,help);
-    const exported=makeInput('This device linking key');exported.readOnly=true;
-    const exportButton=document.createElement('button');exportButton.type='button';exportButton.textContent='Load my linking key';
-    exportButton.onclick=async()=>{if(['invalid_account_sync_key','account_sync_key_required','account_owner_link_required'].includes(ctx.linkError)){feedback.textContent='This device is not linked. Export the key from the original linked device instead.';return;}try{const key=await snPersonalAccountSyncKey(ctx.account,{existingOnly:true});if(valid(ctx)&&linkDialog===box){exported.value=key;feedback.textContent='Key loaded. Copy only to your other device.';}}catch{feedback.textContent='No valid key is saved here. Use the original device or import its key.';}};
-    const copy=document.createElement('button');copy.type='button';copy.textContent='Copy linking key';
-    copy.onclick=async()=>{if(!valid(ctx)||!exported.value)return;try{await GM_setClipboard(exported.value);exported.value='';feedback.textContent='Copied. Keep it private and clear your clipboard after linking.';}catch{feedback.textContent='Clipboard unavailable. Select and copy the masked field manually.';}};
-    box.append(exportButton,copy);
-    const imported=makeInput('Import key from your other device');
-    const save=document.createElement('button');save.type='button';save.textContent='Link this device';
-    save.onclick=async()=>{
-      const key=imported.value.trim();imported.value='';
-      if(!/^[a-f0-9]{64}$/.test(key)){feedback.textContent='Use the original 64-character lowercase linking key.';return;}
-      if(!valid(ctx)||ctx.connecting)return;
-      if(ctx.linkError==='binding_revoked'){feedback.textContent='This device binding is revoked. Linking cannot re-enable it.';return;}
-      if(ctx.sync&&(ctx.sync.sending||ctx.sync.inflight||Object.keys(ctx.sync.pending).length||ctx.sync.conflict)){feedback.textContent='Resolve or finish pending settings changes before changing this device link. Your edits are preserved.';return;}
-      save.disabled=true;
-      try{
-        const credential=await identity();if(!valid(ctx))return;
-        const result=await bindingRequest(ctx,credential.token,key);
-        if(!valid(ctx)||linkDialog!==box)return;
-        if(result.status!==200||!result.json?.ok||result.json.status!=='approved'||!/^[a-f0-9]{32}$/.test(result.json.bindingId||'')){handleBindingFailure(ctx,result);feedback.textContent='Device was not linked. Your saved key and settings were kept. Check the original key or account access.';return;}
-        await snPersonalAccountSyncKey(ctx.account,{importKey:key});if(!valid(ctx))return;
-        ctx.sync?.close();ctx.sync=null;ctx.release?.();clearInterval(ctx.refreshTimer);
-        ctx.binding=result.json.bindingId;ctx.token=credential.token;ctx.authorizationBlocked=false;ctx.linkError='';ctx.retryAt=0;
-        closeLink();show('connecting');setTimeout(()=>claim(ctx),0);
-      }catch{feedback.textContent='Linking failed. Local settings were kept. Check your saved linking key before retrying.';}
-      finally{imported.value='';save.disabled=false;}
-    };
-    const cancel=document.createElement('button');cancel.type='button';cancel.textContent='Close';cancel.onclick=closeLink;
-    box.append(save,feedback,cancel);document.body.append(box);linkTimer=setTimeout(closeLink,120000);
-  }
   function render(){
     if(!document.body)return;
-    const general=document.querySelector('#local-sn-inspector-root [data-settings-panel="general"]');
-    if(general&&!settingsLink?.isConnected){settingsLink=document.createElement('button');settingsLink.type='button';settingsLink.id='sn-ai-link-device-settings';settingsLink.textContent='Link another device';settingsLink.onclick=openLink;general.append(settingsLink);}
     const parent=document.getElementById('tm-toolbar')||document.querySelector('#local-sn-inspector-root [data-settings-panel="general"]');
     if(!parent)return;
     if(!panel?.isConnected){
@@ -508,7 +464,7 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
     }
     panel.hidden=!snPersonalStatusVisible(status);panel.style.display=panel.hidden?'none':'flex';
     const labels={connecting:'Settings: connecting',saved:'Settings: saved',pending:'Settings: saving',saving:'Settings: saving',offline:'Settings: offline - saved locally',conflict:'Settings: conflict',
-      'link-required':'Settings: link this device','owner-link-required':'Settings: link from the original device first','access-unavailable':'Settings: access unavailable','binding-revoked':'Settings: access revoked','authentication-required':'Settings: access unavailable',rejected:'Settings: save rejected - kept locally','identity-required':'Settings: waiting for userID',standby:'Settings: synced by another tab','account-changed':'Settings: another account is active in this browser'};
+      'ambiguous-identity':'Settings: identity conflict - local data kept','queue-reconciliation':'Settings: previous unsaved changes need reconciliation','access-unavailable':'Settings: access unavailable','binding-revoked':'Settings: access revoked','authentication-required':'Settings: access unavailable',rejected:'Settings: save rejected - kept locally','identity-required':'Settings: waiting for signed-in name and userID',standby:'Settings: synced by another tab','account-changed':'Settings: another account is active in this browser'};
     panel.firstChild.textContent=labels[status]||'Settings: '+status;
     panel.title=context?.sync?.conflict?'Conflicting fields: '+context.sync.conflict.paths.join(', '):'Personal settings sync - '+(context?.userID||'');
     panel.querySelector('[data-sync-retry]').hidden=!['offline','access-unavailable','authentication-required','rejected'].includes(status);
@@ -548,21 +504,22 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
       onSettings:settings=>{if(valid(ctx))ctx.applyTail=(ctx.applyTail||Promise.resolve()).then(()=>apply(ctx,settings));},
       onStatus:next=>{if(valid(ctx)){show(next);localStorage.setItem('sn-ai-personal-settings-state',JSON.stringify({account:ctx.account,status:next}));}},
       onConflict:()=>{if(valid(ctx))show('conflict');}});
-    const seed=await snapshot(ctx);ctx.previous=seed;
+    const current=await snapshot(ctx),seed=ctx.seedAllowed?current:{snippets:[],appearance:{theme:'dark'},enabledModes:Object.keys(defaultModes)};ctx.previous=current;
     await ctx.sync.start(seed);await ctx.applyTail;
+    if(valid(ctx)&&ctx.sync.initialized)await GM_setValue('sn-ai-personal-settings-local-owner',ctx.account);
     ctx.refreshTimer=setInterval(async()=>{
       if(!valid(ctx)||document.hidden||ctx.sync.sending||ctx.sync.inflight||Object.keys(ctx.sync.pending).length||ctx.sync.conflict||ctx.sync.authorizationBlocked)return;
       if(refreshing)return;refreshing=true;try{await ctx.sync.resume();await ctx.applyTail;}finally{refreshing=false;}
     },60000);
   };
-  const bindingRequest=(ctx,token,key)=>request('https://drandox.cc/wuwa/sn-ai-settings-bindings.php',token+':'+key,'POST',{schema:1,instance:location.origin+'/',userID:ctx.userID,displayName:ctx.name});
+  const bindingRequest=(ctx,token)=>request('https://drandox.cc/wuwa/sn-ai-settings-bindings.php',token,'POST',{schema:2,userID:ctx.userID,fullName:ctx.name});
   function handleBindingFailure(ctx,result){
     if(result.status===429){ctx.retryAt=Date.now()+Math.max(60,Number(result.json?.retryAfter)||60)*1000;show('offline');return;}
+    if(result.status===409&&result.json?.code==='ambiguous_identity'){ctx.authorizationBlocked=true;show('ambiguous-identity');return;}
     if([401,403].includes(result.status)){
       ctx.authorizationBlocked=true;
       const code=result.json?.code;
-      ctx.linkError=code||'';
-      show(['invalid_account_sync_key','account_sync_key_required'].includes(code)?'link-required':code==='account_owner_link_required'?'owner-link-required':code==='binding_revoked'?'binding-revoked':'authentication-required');return;
+      show(code==='binding_revoked'?'binding-revoked':'authentication-required');return;
     }
     if(result.status>=400&&result.status<500){ctx.authorizationBlocked=true;show('rejected');return;}
     show('offline');ctx.retryAt=Date.now()+60000;
@@ -571,12 +528,17 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
     if(!valid(ctx)||ctx.connecting||ctx.authorizationBlocked)return;ctx.connecting=true;
     try{
       const credential=await identity();if(!valid(ctx))return;ctx.token=credential.token;
-      const key=await snPersonalAccountSyncKey(ctx.account);if(!valid(ctx))return;
-      const result=await bindingRequest(ctx,ctx.token,key);
+      const result=await bindingRequest(ctx,ctx.token);
       if(!valid(ctx))return;
-      if(result.status!==200||!result.json?.ok||!/^[a-f0-9]{32}$/.test(result.json.bindingId||'')||result.json.status!=='approved'){handleBindingFailure(ctx,result);return;}
+      if(result.status!==200||!result.json?.ok||!/^[a-f0-9]{32}$/.test(result.json.bindingId||'')||result.json.status!=='approved'||!/^[a-f0-9]{64}$/.test(result.json.profileId||'')){handleBindingFailure(ctx,result);return;}
       ctx.binding=result.json.bindingId;
-      ctx.linkError='';
+      ctx.profileId=result.json.profileId;
+      const bindingKey='sn-ai-personal-settings-binding-v2:'+ctx.account,previousBinding=await GM_getValue(bindingKey,null);
+      if(previousBinding&&previousBinding!==ctx.binding){
+        const oldQueue=await GM_getValue('sn-ai-settings-sync:v1:'+previousBinding,null);
+        if(oldQueue&&(oldQueue.inflight||oldQueue.conflict||Object.keys(oldQueue.pending||{}).length)){ctx.authorizationBlocked=true;ctx.binding=null;show('queue-reconciliation');return;}
+      }
+      await GM_setValue(bindingKey,ctx.binding);
       if(!navigator.locks){show('offline');return;}
       claim(ctx);
     }catch{if(valid(ctx)){show('offline');ctx.retryAt=Date.now()+60000;}}
@@ -595,21 +557,24 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
   async function check(){
     if(stopped||checking)return;checking=true;
     try{
+      if(!snPersonalApprovedPage()){context?.sync?.close();context?.release?.();clearInterval(context?.refreshTimer);return;}
       const stamp=userStamp();
-      if(context&&context.stamp!==stamp){closeLink();context.sync?.close();context.release?.();clearInterval(context.refreshTimer);context=null;generation++;}
+      if(context&&context.stamp!==stamp){context.sync?.close();context.release?.();clearInterval(context.refreshTimer);context=null;generation++;}
       if(context&&!valid(context)){context.sync?.close();context.release?.();clearInterval(context.refreshTimer);show('account-changed');return;}
       if(!stamp){show('identity-required');return;}
       if(!context){
         const epoch=generation,agent=await reporter();if(stopped||epoch!==generation||stamp!==userStamp())return;
-        const userID=String(agent.userID||'').trim().toUpperCase();if(!userID||/^[a-f0-9]{32}$/i.test(userID)){show('identity-required');return;}
-        const account=location.hostname.toLowerCase()+'|'+userID;
-        const ctx=context={account,userID,name:agent.name,sysId:agent.sysId,stamp,cacheKey:'sn-ai-personal-settings-cache:'+account};
+        const userID=String(agent?.userID||'').trim().toUpperCase();
+        const fullName=String(agent?.fullName||'').normalize('NFC').replace(/\s+/gu,' ').trim();
+        if(!/^[A-Z0-9._@-]{1,100}$/.test(userID)||!fullName||Array.from(fullName).length>120||new TextEncoder().encode(fullName).length>480){show('identity-required');return;}
+        const account=JSON.stringify([userID,fullName.toLowerCase()]);
+        const ctx=context={account,userID,name:fullName,sysId:agent.sysId,stamp,cacheKey:'sn-ai-personal-settings-cache:'+account};
         localStorage.setItem('sn-ai-personal-settings-active-account',account);
         const cache=await GM_getValue(ctx.cacheKey,null),owner=await GM_getValue('sn-ai-personal-settings-local-owner',null);
         if(!valid(ctx))return;
-        if(cache)await apply(ctx,cache);
-        else if(owner&&owner!==account)await apply(ctx,{snippets:[],enabledModes:Object.keys(defaultModes),appearance:{theme:'dark'}});
-        await GM_setValue('sn-ai-personal-settings-local-owner',account);
+        ctx.seedAllowed=!owner||owner===account;
+        if(cache){await apply(ctx,cache);ctx.seedAllowed=true;}
+        // No local UI clearing or owner change before successful linking/GET.
         ctx.previous=await snapshot(ctx);ctx.initial=clone(ctx.previous);await connect(ctx);
       }else if(context.binding&&!context.sync)claim(context);
       else if(!context.sync&&!context.leader&&!context.authorizationBlocked&&Date.now()>=(context.retryAt||0))await connect(context);
@@ -624,7 +589,7 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
   window.addEventListener('storage',storage);
   const modeListener=typeof GM_addValueChangeListener==='function'?GM_addValueChangeListener('local-sn-inspector-enabled-modes-v1',dirty):null;
   const timer=setInterval(()=>check().catch(()=>show('offline')),5000);check().catch(()=>show('offline'));
-  const dispose=()=>{stopped=true;closeLink();clearInterval(timer);context?.sync?.close();context?.release?.();clearInterval(context?.refreshTimer);document.removeEventListener('sn-ai-personal-settings-change',dirty);window.removeEventListener('storage',storage);if(modeListener!==null&&typeof GM_removeValueChangeListener==='function')GM_removeValueChangeListener(modeListener);panel?.remove();settingsLink?.remove();};
+  const dispose=()=>{stopped=true;clearInterval(timer);context?.sync?.close();context?.release?.();clearInterval(context?.refreshTimer);document.removeEventListener('sn-ai-personal-settings-change',dirty);window.removeEventListener('storage',storage);if(modeListener!==null&&typeof GM_removeValueChangeListener==='function')GM_removeValueChangeListener(modeListener);panel?.remove();};
   window.addEventListener('pagehide',dispose,{once:true});document.addEventListener('sn-ai-runtime-dispose',dispose,{once:true});
 }
 /* SN_PERSONAL_SETTINGS_END */
@@ -9709,7 +9674,7 @@ function startSNAI(tabIdentity) {
   window.addEventListener('pagehide',()=>{memoryStopped=true;clearInterval(memoryTimer);},{once:true});
   try{if(workspacePage)installCISearch();}catch{/* Preserve native lookup if enhancement cannot initialize. */}
   if(workspacePage)setTimeout(()=>installPersonalSettingsSync({
-    identity:diagnosticIdentity,reporter:diagnosticReportingAgent,defaultModes:DEFAULT_ENABLED_MODES,
+    identity:diagnosticIdentity,reporter:snPersonalCurrentAccount,defaultModes:DEFAULT_ENABLED_MODES,
     readModes:()=>gmGetValue(ENABLED_MODES_KEY,DEFAULT_ENABLED_MODES),
     writeModes:async modes=>{await gmSetValue(ENABLED_MODES_KEY,modes);state.enabledModes={...modes};},
   }),0);
