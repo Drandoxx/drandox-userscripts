@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.794
+// @version      2.36.795
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.795","fixes":true,"changes":[{"key":"event-user-id-autofocus","meaningful":true,"text":"Prevent User ID autofocus when Event tabs open, without blocking deliberate clicks or keyboard navigation."}]},
 {"version":"2.36.794","fixes":true,"changes":[{"key":"personal-settings-sync","meaningful":true,"text":"Journal local settings edits before background saves and recover interrupted edits on reload before reconciling server revisions, preserving offline and conflict protection."}]},
 {"version":"2.36.793","fixes":true,"changes":[{"key":"personal-settings-sync","meaningful":true,"text":"Automatically sync trusted installations by the signed-in ServiceNow full name and userID, with no login or device keys, preserving local data when identity migration is ambiguous."}]},
 {"version":"2.36.792","fixes":true,"changes":[{"key":"personal-settings-sync","meaningful":true,"text":"Keep healthy settings sync invisible in the toolbar and move device linking into Settings; actionable sync failures remain visible."}]},
@@ -4145,6 +4146,36 @@ const snAIChatDisplayNames=(()=>{
     const text = document.createElement('span');text.className = 'sn-ai-inbox-standby-text';
     standby.append(dot,text);element.append(standby);updateInboxStandby(standby);
   }
+  // Native Event caller typeahead carries autofocus and can focus again during
+  // hydration. Install once per input, using existing shadow-root discovery.
+  // Browser pointer/Tab navigation remains native; no polling or value changes.
+  const eventCallerFocusGuards = new WeakSet();
+  let eventCallerKeyboardUntil = 0;
+  document.addEventListener('keydown', event => {
+    if (event.isTrusted && event.key === 'Tab') eventCallerKeyboardUntil = Date.now() + 1000;
+  }, true);
+  function suppressEventCallerAutofocus(node) {
+    const selector = 'input[name="caller_input"][aria-label="User ID"]';
+    const inputs = [...(node.querySelectorAll?.(selector) || [])];
+    if (node.matches?.(selector)) inputs.unshift(node);
+    for (const input of inputs) {
+      input.removeAttribute('autofocus');
+      if (eventCallerFocusGuards.has(input)) continue;
+      eventCallerFocusGuards.add(input);
+      let deliberateUntil = 0;
+      input.addEventListener('pointerdown', () => { deliberateUntil = Date.now() + 1000; }, true);
+      const root = input.getRootNode();
+      const deliberate = () => Date.now() <= Math.max(deliberateUntil, eventCallerKeyboardUntil);
+      const nativeFocus = input.focus;
+      input.focus = function(...args) {
+        if (deliberate()) return nativeFocus.apply(this, args);
+      };
+      input.addEventListener('focus', () => {
+        if (!deliberate()) input.blur();
+      }, true);
+      if (root.activeElement === input) input.blur();
+    }
+  }
   const announcedPresence = new WeakSet();
   const watchedFrames = new WeakSet();
   // Incoming-card autofocus must not interrupt any editable field.
@@ -6967,6 +6998,7 @@ const snAIChatDisplayNames=(()=>{
     removeWorkspaceTabMenus(node);
     installDurationSummary(node.host || node);
     installUserReferenceEmail(node.host || node);
+    suppressEventCallerAutofocus(node);
     markAcceptedTab(node);
     syncIMSReplyMessage(node);
     styleLoadingText(node.nodeType === 3 ? node.parentElement : node);
