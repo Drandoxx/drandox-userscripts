@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.795
+// @version      2.36.796
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.796","fixes":true,"changes":[{"key":"closed-chat-release","meaningful":true,"text":"Release clean closed chats through native tab navigation, preserving existing reopen history and protecting unsaved forms and ticket jobs."}]},
 {"version":"2.36.795","fixes":true,"changes":[{"key":"event-user-id-autofocus","meaningful":true,"text":"Prevent User ID autofocus when Event tabs open, without blocking deliberate clicks or keyboard navigation."}]},
 {"version":"2.36.794","fixes":true,"changes":[{"key":"personal-settings-sync","meaningful":true,"text":"Journal local settings edits before background saves and recover interrupted edits on reload before reconciling server revisions, preserving offline and conflict protection."}]},
 {"version":"2.36.793","fixes":true,"changes":[{"key":"personal-settings-sync","meaningful":true,"text":"Automatically sync trusted installations by the signed-in ServiceNow full name and userID, with no login or device keys, preserving local data when identity migration is ambiguous."}]},
@@ -1396,6 +1397,7 @@ const snAIChatDisplayNames=(()=>{
       spaceRoots.delete(root);
       spaceStyles.delete(root);
     }
+    scheduleClosedChatRelease();
   }
   const themeRootCleanupTimer = setInterval(pruneDetachedThemeRoots, 5000);
   window.addEventListener('pagehide', () => {
@@ -5557,6 +5559,55 @@ const snAIChatDisplayNames=(()=>{
   }
   const imsPreviewRecords=new Map();
   const imsPreviewRequests=new Map();
+  // SN_AI_CLOSED_CHAT_RELEASE_BEGIN
+  let closedChatBar=null,closedChatReleaseTimer=0;
+  const closedChatKnownState=new Map(),closedChatJustEnded=new Set(),closedChatCloseAttempts=new Set();
+  function canReleaseClosedChat(tab, selectedId, closed, justEnded, protectedJob) {
+    if(!closed || protectedJob || tab?.table!=='interaction' || tab.type!=='chat' || tab.canClose!==true) return false;
+    if(String(tab.tab_id)===String(selectedId) && !justEnded) return false;
+    const clean = item => item.isDirty===false && !/new_record|new_call/i.test(String(item.type||'')+' '+String(item.contentId||''))
+      && /^[a-f0-9]{32}$/i.test(String(item.sys_id||'')) && (item.tabList||[]).every(clean);
+    return clean(tab);
+  }
+  function scheduleClosedChatRelease() {
+    if(!closedChatReleaseTimer)closedChatReleaseTimer=setTimeout(releaseClosedChats,0);
+  }
+  function releaseClosedChats() {
+    closedChatReleaseTimer=0;
+    if(!closedChatBar?.isConnected){closedChatBar=null;return;}
+    const props=closedChatBar.getProperties?.();
+    if(props?.type!=='primary'||typeof props.onCloseTab!=='function')return;
+    const tabs=props.tabList||[],open=new Set(tabs.map(tab=>String(tab.tab_id)));
+    for(const id of closedChatCloseAttempts)if(!open.has(id))closedChatCloseAttempts.delete(id);
+    // Preserve manual/incoming pauses too. An owned draft must not be evicted.
+    const protectedJob=!!document.querySelector('#local-sn-inspector-root [data-pinned-ims].is-running,[data-sn-automation-frozen],now-modal[opened]');
+    for(const tab of tabs){
+      const id=String(tab.sys_id||''),record=imsPreviewRecords.get(id);
+      if(closedChatCloseAttempts.has(String(tab.tab_id))||!canReleaseClosedChat(tab,props.selectedTabId,isInactiveIMS(record),closedChatJustEnded.has(id),protectedJob))continue;
+      // Existing history capture, not a second archive. Native close retains
+      // SNOW's dirty-state/confirmation safeguards; never remove DOM ourselves.
+      captureClosedTabChanges(props);
+      closedChatCloseAttempts.add(String(tab.tab_id));
+      try{props.onCloseTab(tab.tab_id);}catch(error){console.warn('[SN AI closed chat release]',error.message);}
+      break; // Let the native model settle before releasing another parent.
+    }
+  }
+  function forgetReleasedChat(entry) {
+    if(entry.table!=='interaction')return;
+    const id=entry.sys_id,ims=entry.title;
+    imsPreviewRecords.delete(id);imsPreviewRequests.delete(id);
+    closedChatKnownState.delete(id);closedChatJustEnded.delete(id);
+    loadedIMSTabNumbers.delete(ims);queuedIMSTabNumbers.delete(ims);imsTabLookupAttempts.delete(ims);
+    acceptedIMS.delete(ims);lastTypedIMS.delete(ims);
+    imsReplyTimes.delete(id);
+    for(const [key,saved] of imsReplyTimes)if(saved.ims===ims)imsReplyTimes.delete(key);
+    saveIMSReplyTimes();
+    for(const [host] of forcedIMSChats)if(!host.isConnected||host.getProperties?.().interaction===id)forcedIMSChats.delete(host);
+    document.dispatchEvent(new CustomEvent('sn-ai-chat-released',{detail:{sysId:id,ims}}));
+    queueMicrotask(pruneDetachedThemeRoots);
+  }
+  window.addEventListener('pagehide',()=>clearTimeout(closedChatReleaseTimer),{once:true});
+  // SN_AI_CLOSED_CHAT_RELEASE_END
   function restoreIMSChatTabs(root) {
     if(!forceIMSChatEnabled)return;
     const bars=[...(root.querySelectorAll?.('sn-workspace-tab-bar')||[])];
@@ -5599,7 +5650,7 @@ const snAIChatDisplayNames=(()=>{
     const refresh={pending:true,at:Date.now()};endedChatRefreshes.set(host,refresh);
     // Read authoritative state once; never infer closure from customer text.
     fetchIMSRecord('sys_id='+id).then(record=>{
-      if(record){imsPreviewRecords.set(id,record);paintIMSPreview(record);}
+      if(record){if(isInactiveIMS(record))closedChatJustEnded.add(id);imsPreviewRecords.set(id,record);paintIMSPreview(record);}
     }).catch(error=>console.warn('[SN AI ended chat]',error.message)).finally(()=>{refresh.pending=false;});
   }
   async function fetchIMSRecords(condition) {
@@ -5642,6 +5693,12 @@ const snAIChatDisplayNames=(()=>{
   function paintIMSPreview(record,onlyRoot=null) {
     const ims=record.number?.value;
     const inactive=isInactiveIMS(record);
+    const releaseId=record.sys_id?.value;
+    if(releaseId){
+      if(closedChatKnownState.get(releaseId)===false&&inactive)closedChatJustEnded.add(releaseId);
+      closedChatKnownState.set(releaseId,inactive);
+      if(inactive)scheduleClosedChatRelease();
+    }
     const notice=['closed_complete','closed_abandoned'].includes(record.state?.value)?'This chat is closed - history preview':'This is not an active chat - history preview';
     for(const root of onlyRoot?[onlyRoot]:spaceRoots) {
       restoreIMSChatTabs(root);
@@ -5724,6 +5781,7 @@ const snAIChatDisplayNames=(()=>{
         for (const [,entry] of entries) history.unshift({...entry, closedAt:at, id:crypto.randomUUID()});
         try { saveClosedTabs(history); } catch (error) { console.warn('[SN AI reopen history]',error.message); }
       }
+      for(const [key,entry] of removed)if(!key.includes('/'))forgetReleasedChat(entry);
     }
     closedTabSnapshot = next;
   }
@@ -5777,7 +5835,11 @@ const snAIChatDisplayNames=(()=>{
     finally { closedTabBusy=false; button.disabled=false; }
   }
   function installReopenTabButtons(root) {
-    if(root.host?.localName==='sn-workspace-tab-bar') captureClosedTabChanges(root.host.getProperties?.());
+    if(root.host?.localName==='sn-workspace-tab-bar') {
+      const props=root.host.getProperties?.();
+      captureClosedTabChanges(props);
+      if(props?.type==='primary'){closedChatBar=root.host;scheduleClosedChatRelease();}
+    }
     for(const plus of root.querySelectorAll?.('#chrome-add-new-button,[data-sn-ai-subtab-add]')||[]) {
       if(plus.previousElementSibling?.hasAttribute('data-sn-ai-reopen-tab'))continue;
       const button=document.createElement('button');button.type='button';button.dataset.snAiReopenTab='';
@@ -10243,6 +10305,12 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     await forgetChatGPTWebConversation(requestedIMS).catch(() => {});
     publishChatCache();
   }
+
+  document.addEventListener('sn-ai-chat-released',event=>{
+    const ims=normaliseIMS(event.detail?.ims);
+    if(!ims||state.commandRunning||runningTicketDialog(ims))return;
+    void releaseAllIMSData(ims).catch(error=>console.warn('[SN AI released chat cache]',error.message));
+  });
 
   async function purgeAllTransientIMSDataWhenNoBubbles() {
     if (document.querySelector('.local-sn-cpc-dialog[data-ticket-window]')) return false;
