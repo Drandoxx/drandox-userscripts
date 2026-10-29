@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.796
+// @version      2.36.797
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.797","fixes":true,"changes":[{"key":"diagnostic-noise-reduction","meaningful":true,"text":"Exclude native ServiceNow background network logs, retaining SN AI initiated requests and our feature diagnostics."}]},
 {"version":"2.36.796","fixes":true,"changes":[{"key":"closed-chat-release","meaningful":true,"text":"Release clean closed chats through native tab navigation, preserving existing reopen history and protecting unsaved forms and ticket jobs."}]},
 {"version":"2.36.795","fixes":true,"changes":[{"key":"event-user-id-autofocus","meaningful":true,"text":"Prevent User ID autofocus when Event tabs open, without blocking deliberate clicks or keyboard navigation."}]},
 {"version":"2.36.794","fixes":true,"changes":[{"key":"personal-settings-sync","meaningful":true,"text":"Journal local settings edits before background saves and recover interrupted edits on reload before reconciling server revisions, preserving offline and conflict protection."}]},
@@ -9708,6 +9709,12 @@ function startSNAI(tabIdentity) {
       if(value.length>196608)return {omitted:'body exceeds 192 KiB',length:value.length};
       try{const safe=formNetworkSafe(JSON.parse(value)),text=JSON.stringify(safe);return text.length<=16000?safe:{omitted:'sanitized payload exceeds 16 KiB',length:text.length,keys:safe&&typeof safe==='object'?Object.keys(safe):[]};}catch{return {omitted:'non-JSON body',length:value.length};}
     };
+    const ownedRequest=()=>{
+      // The wrapper itself is always in our script. Skip its own frames and
+      // inspect the immediate caller, not any older SN AI event handler frame.
+      const frames=String(new Error().stack||'').split('\n').slice(3);
+      return /userscript\.html\?name=SN-AI(?:\.user\.js)?(?:&|\b)|SNOW_CHAT_AI_v[\d.]+\.js/.test(frames[0]||'');
+    };
     const emit=(info,payload)=>{
       try{
         const safe=body(payload),serialized=JSON.stringify(safe);let data;
@@ -9720,6 +9727,9 @@ function startSNAI(tabIdentity) {
             document.dispatchEvent(new CustomEvent('sn-ai-greet-diagnostic',{detail:{stage:'transfer-accepted-api',reason:'native-agent-transfer',source:'GlideAWA_transfer.accept',id:transfer.document_id}}));
           }
         }
+        // Native transfer recognition above supports auto-greet, but native
+        // request/response payloads and failures never enter our diagnostics.
+        if(!info.snAiOwned)return;
         if(serialized){
           let hash=2166136261;for(let i=0;i<serialized.length;i++)hash=Math.imul(hash^serialized.charCodeAt(i),16777619);
           const fingerprint=info.url+':'+(hash>>>0)+':'+serialized.length;
@@ -9739,7 +9749,7 @@ function startSNAI(tabIdentity) {
     page.fetch=function(...args){
       const url=relevant(typeof args[0]==='string'||args[0] instanceof URL?String(args[0]):args[0]?.url);
       if(!url)return Reflect.apply(nativeFetch,this,args);
-      const item=info(url,args[1]?.method||args[0]?.method,args[1]?.body),started=performance.now();
+      const item={...info(url,args[1]?.method||args[0]?.method,args[1]?.body),snAiOwned:ownedRequest()},started=performance.now();
       const result=Reflect.apply(nativeFetch,this,args);
       Promise.resolve(result).then(response=>{
         const details={...item,status:response.status,durationMs:Math.round(performance.now()-started)};
@@ -9752,7 +9762,7 @@ function startSNAI(tabIdentity) {
     };
     const proto=page.XMLHttpRequest?.prototype;if(!proto)return;
     const open=proto.open,send=proto.send,requests=new WeakMap();
-    proto.open=function(method,url,...rest){requests.delete(this);const u=relevant(url);if(u)requests.set(this,info(u,method));return Reflect.apply(open,this,[method,url,...rest]);};
+    proto.open=function(method,url,...rest){requests.delete(this);const u=relevant(url);if(u)requests.set(this,{...info(u,method),snAiOwned:ownedRequest()});return Reflect.apply(open,this,[method,url,...rest]);};
     proto.send=function(payload){const item=requests.get(this);if(item){item.request=body(payload);const started=performance.now();this.addEventListener('loadend',()=>{try{const text=this.responseType==='json'?JSON.stringify(this.response):!this.responseType||this.responseType==='text'?this.responseText:undefined;emit({...item,status:this.status,durationMs:Math.round(performance.now()-started)},text);}catch{emit({...item,status:this.status,error:'capture-unavailable'});}},{once:true});}return Reflect.apply(send,this,[payload]);};
   }
   try{installFormNetworkDiagnostics();}catch{/* Logging is optional; native form operation is not. */}
