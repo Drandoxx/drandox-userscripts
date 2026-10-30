@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.797
+// @version      2.36.798
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.798","fixes":true,"changes":[{"key":"closed-chat-release","meaningful":true,"text":"Keep ended conversations open for ticket work; clear chat caches only after the IMS tab is closed."},{"key":"diagnostic-noise-reduction","meaningful":true,"text":"Remove passive ServiceNow network logging while preserving SN AI feature errors and transfer recognition."}]},
 {"version":"2.36.797","fixes":true,"changes":[{"key":"diagnostic-noise-reduction","meaningful":true,"text":"Exclude native ServiceNow background network logs, retaining SN AI initiated requests and our feature diagnostics."}]},
 {"version":"2.36.796","fixes":true,"changes":[{"key":"closed-chat-release","meaningful":true,"text":"Release clean closed chats through native tab navigation, preserving existing reopen history and protecting unsaved forms and ticket jobs."}]},
 {"version":"2.36.795","fixes":true,"changes":[{"key":"event-user-id-autofocus","meaningful":true,"text":"Prevent User ID autofocus when Event tabs open, without blocking deliberate clicks or keyboard navigation."}]},
@@ -1398,7 +1399,6 @@ const snAIChatDisplayNames=(()=>{
       spaceRoots.delete(root);
       spaceStyles.delete(root);
     }
-    scheduleClosedChatRelease();
   }
   const themeRootCleanupTimer = setInterval(pruneDetachedThemeRoots, 5000);
   window.addEventListener('pagehide', () => {
@@ -5561,43 +5561,12 @@ const snAIChatDisplayNames=(()=>{
   const imsPreviewRecords=new Map();
   const imsPreviewRequests=new Map();
   // SN_AI_CLOSED_CHAT_RELEASE_BEGIN
-  let closedChatBar=null,closedChatReleaseTimer=0;
-  const closedChatKnownState=new Map(),closedChatJustEnded=new Set(),closedChatCloseAttempts=new Set();
-  function canReleaseClosedChat(tab, selectedId, closed, justEnded, protectedJob) {
-    if(!closed || protectedJob || tab?.table!=='interaction' || tab.type!=='chat' || tab.canClose!==true) return false;
-    if(String(tab.tab_id)===String(selectedId) && !justEnded) return false;
-    const clean = item => item.isDirty===false && !/new_record|new_call/i.test(String(item.type||'')+' '+String(item.contentId||''))
-      && /^[a-f0-9]{32}$/i.test(String(item.sys_id||'')) && (item.tabList||[]).every(clean);
-    return clean(tab);
-  }
-  function scheduleClosedChatRelease() {
-    if(!closedChatReleaseTimer)closedChatReleaseTimer=setTimeout(releaseClosedChats,0);
-  }
-  function releaseClosedChats() {
-    closedChatReleaseTimer=0;
-    if(!closedChatBar?.isConnected){closedChatBar=null;return;}
-    const props=closedChatBar.getProperties?.();
-    if(props?.type!=='primary'||typeof props.onCloseTab!=='function')return;
-    const tabs=props.tabList||[],open=new Set(tabs.map(tab=>String(tab.tab_id)));
-    for(const id of closedChatCloseAttempts)if(!open.has(id))closedChatCloseAttempts.delete(id);
-    // Preserve manual/incoming pauses too. An owned draft must not be evicted.
-    const protectedJob=!!document.querySelector('#local-sn-inspector-root [data-pinned-ims].is-running,[data-sn-automation-frozen],now-modal[opened]');
-    for(const tab of tabs){
-      const id=String(tab.sys_id||''),record=imsPreviewRecords.get(id);
-      if(closedChatCloseAttempts.has(String(tab.tab_id))||!canReleaseClosedChat(tab,props.selectedTabId,isInactiveIMS(record),closedChatJustEnded.has(id),protectedJob))continue;
-      // Existing history capture, not a second archive. Native close retains
-      // SNOW's dirty-state/confirmation safeguards; never remove DOM ourselves.
-      captureClosedTabChanges(props);
-      closedChatCloseAttempts.add(String(tab.tab_id));
-      try{props.onCloseTab(tab.tab_id);}catch(error){console.warn('[SN AI closed chat release]',error.message);}
-      break; // Let the native model settle before releasing another parent.
-    }
-  }
+  // Conversation state never closes a workspace tab. Only confirmed removal
+  // from the native primary tab model invokes forgetReleasedChat below.
   function forgetReleasedChat(entry) {
     if(entry.table!=='interaction')return;
     const id=entry.sys_id,ims=entry.title;
     imsPreviewRecords.delete(id);imsPreviewRequests.delete(id);
-    closedChatKnownState.delete(id);closedChatJustEnded.delete(id);
     loadedIMSTabNumbers.delete(ims);queuedIMSTabNumbers.delete(ims);imsTabLookupAttempts.delete(ims);
     acceptedIMS.delete(ims);lastTypedIMS.delete(ims);
     imsReplyTimes.delete(id);
@@ -5607,7 +5576,6 @@ const snAIChatDisplayNames=(()=>{
     document.dispatchEvent(new CustomEvent('sn-ai-chat-released',{detail:{sysId:id,ims}}));
     queueMicrotask(pruneDetachedThemeRoots);
   }
-  window.addEventListener('pagehide',()=>clearTimeout(closedChatReleaseTimer),{once:true});
   // SN_AI_CLOSED_CHAT_RELEASE_END
   function restoreIMSChatTabs(root) {
     if(!forceIMSChatEnabled)return;
@@ -5651,7 +5619,7 @@ const snAIChatDisplayNames=(()=>{
     const refresh={pending:true,at:Date.now()};endedChatRefreshes.set(host,refresh);
     // Read authoritative state once; never infer closure from customer text.
     fetchIMSRecord('sys_id='+id).then(record=>{
-      if(record){if(isInactiveIMS(record))closedChatJustEnded.add(id);imsPreviewRecords.set(id,record);paintIMSPreview(record);}
+      if(record){imsPreviewRecords.set(id,record);paintIMSPreview(record);}
     }).catch(error=>console.warn('[SN AI ended chat]',error.message)).finally(()=>{refresh.pending=false;});
   }
   async function fetchIMSRecords(condition) {
@@ -5694,12 +5662,6 @@ const snAIChatDisplayNames=(()=>{
   function paintIMSPreview(record,onlyRoot=null) {
     const ims=record.number?.value;
     const inactive=isInactiveIMS(record);
-    const releaseId=record.sys_id?.value;
-    if(releaseId){
-      if(closedChatKnownState.get(releaseId)===false&&inactive)closedChatJustEnded.add(releaseId);
-      closedChatKnownState.set(releaseId,inactive);
-      if(inactive)scheduleClosedChatRelease();
-    }
     const notice=['closed_complete','closed_abandoned'].includes(record.state?.value)?'This chat is closed - history preview':'This is not an active chat - history preview';
     for(const root of onlyRoot?[onlyRoot]:spaceRoots) {
       restoreIMSChatTabs(root);
@@ -5839,7 +5801,6 @@ const snAIChatDisplayNames=(()=>{
     if(root.host?.localName==='sn-workspace-tab-bar') {
       const props=root.host.getProperties?.();
       captureClosedTabChanges(props);
-      if(props?.type==='primary'){closedChatBar=root.host;scheduleClosedChatRelease();}
     }
     for(const plus of root.querySelectorAll?.('#chrome-add-new-button,[data-sn-ai-subtab-add]')||[]) {
       if(plus.previousElementSibling?.hasAttribute('data-sn-ai-reopen-tab'))continue;
@@ -9700,7 +9661,8 @@ function startSNAI(tabIdentity) {
   function installFormNetworkDiagnostics() {
     if (!workspacePage) return;
     const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
-    const seen=new Map(),captureId=Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);let sequence=0;
+    const captureId=Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);let sequence=0;
+    const isUsedTransferRequest=payload=>typeof payload==='string'&&payload.length<=196608&&/GlideAWA_transfer/.test(payload)&&/accept/.test(payload);
     const relevant=url=>{
       try{const u=new URL(url,location.href);return u.origin===location.origin&&/\/api\/(?:now\/(?:graphql|ui|table\/(?:new_call|sys_template|sys_dictionary|sys_choice|cmdb_ci|kb_knowledge))|.*(?:form|layout|reference|template|choice))|(?:xmlhttp|ref_list)\.do/i.test(u.pathname)?u:null;}catch{return null;}
     };
@@ -9709,15 +9671,9 @@ function startSNAI(tabIdentity) {
       if(value.length>196608)return {omitted:'body exceeds 192 KiB',length:value.length};
       try{const safe=formNetworkSafe(JSON.parse(value)),text=JSON.stringify(safe);return text.length<=16000?safe:{omitted:'sanitized payload exceeds 16 KiB',length:text.length,keys:safe&&typeof safe==='object'?Object.keys(safe):[]};}catch{return {omitted:'non-JSON body',length:value.length};}
     };
-    const ownedRequest=()=>{
-      // The wrapper itself is always in our script. Skip its own frames and
-      // inspect the immediate caller, not any older SN AI event handler frame.
-      const frames=String(new Error().stack||'').split('\n').slice(3);
-      return /userscript\.html\?name=SN-AI(?:\.user\.js)?(?:&|\b)|SNOW_CHAT_AI_v[\d.]+\.js/.test(frames[0]||'');
-    };
     const emit=(info,payload)=>{
       try{
-        const safe=body(payload),serialized=JSON.stringify(safe);let data;
+        const safe=body(payload);
         // Native agent-transfer acceptance is authoritative, unlike card wording
         // or a previous outgoing welcome. Inspect before diagnostic deduplication.
         for(const part of Array.isArray(safe)?safe:[safe]){
@@ -9727,29 +9683,16 @@ function startSNAI(tabIdentity) {
             document.dispatchEvent(new CustomEvent('sn-ai-greet-diagnostic',{detail:{stage:'transfer-accepted-api',reason:'native-agent-transfer',source:'GlideAWA_transfer.accept',id:transfer.document_id}}));
           }
         }
-        // Native transfer recognition above supports auto-greet, but native
-        // request/response payloads and failures never enter our diagnostics.
-        if(!info.snAiOwned)return;
-        if(serialized){
-          let hash=2166136261;for(let i=0;i<serialized.length;i++)hash=Math.imul(hash^serialized.charCodeAt(i),16777619);
-          const fingerprint=info.url+':'+(hash>>>0)+':'+serialized.length;
-          if(seen.has(fingerprint))data={sameAs:seen.get(fingerprint)};
-          else{data=serialized.length<=16000?safe:{omitted:'sanitized payload exceeds 16 KiB',length:serialized.length,keys:safe&&typeof safe==='object'?Object.keys(safe):[]};seen.set(fingerprint,info.id);if(seen.size>256)seen.delete(seen.keys().next().value);}
-        }
-        // GraphQL may report application errors with HTTP 200.
-        const apiErrors=(Array.isArray(safe)?safe:[safe]).some(part=>Array.isArray(part?.errors)&&part.errors.length||part?.error);
-        const failed=info.status===0||info.status>=400||!!info.error||!!apiErrors;
-        if(!failed&&!info.commandId)return;
-        if(!failed&&data?.sameAs)return;
-        recordCompactDiagnostic(failed?'error':'info','form-network',{network:{...info,response:data}});
+        // No passive network logging. SN AI features log failures at their
+        // own call sites; native requests cannot be reliably owned by stack.
       }catch{/* Diagnostics must never disrupt the form. */}
     };
     const info=(url,method,request)=>({id:captureId+'-'+(++sequence),url:url.pathname,query:formNetworkSafe(Object.fromEntries(url.searchParams)),method:method||'GET',request:body(request),at:Date.now(),commandId:state.activeCommandId||''});
     const nativeFetch=page.fetch;
     page.fetch=function(...args){
       const url=relevant(typeof args[0]==='string'||args[0] instanceof URL?String(args[0]):args[0]?.url);
-      if(!url)return Reflect.apply(nativeFetch,this,args);
-      const item={...info(url,args[1]?.method||args[0]?.method,args[1]?.body),snAiOwned:ownedRequest()},started=performance.now();
+      if(!url||!isUsedTransferRequest(args[1]?.body))return Reflect.apply(nativeFetch,this,args);
+      const item=info(url,args[1]?.method||args[0]?.method,args[1]?.body),started=performance.now();
       const result=Reflect.apply(nativeFetch,this,args);
       Promise.resolve(result).then(response=>{
         const details={...item,status:response.status,durationMs:Math.round(performance.now()-started)};
@@ -9762,8 +9705,8 @@ function startSNAI(tabIdentity) {
     };
     const proto=page.XMLHttpRequest?.prototype;if(!proto)return;
     const open=proto.open,send=proto.send,requests=new WeakMap();
-    proto.open=function(method,url,...rest){requests.delete(this);const u=relevant(url);if(u)requests.set(this,{...info(u,method),snAiOwned:ownedRequest()});return Reflect.apply(open,this,[method,url,...rest]);};
-    proto.send=function(payload){const item=requests.get(this);if(item){item.request=body(payload);const started=performance.now();this.addEventListener('loadend',()=>{try{const text=this.responseType==='json'?JSON.stringify(this.response):!this.responseType||this.responseType==='text'?this.responseText:undefined;emit({...item,status:this.status,durationMs:Math.round(performance.now()-started)},text);}catch{emit({...item,status:this.status,error:'capture-unavailable'});}},{once:true});}return Reflect.apply(send,this,[payload]);};
+    proto.open=function(method,url,...rest){requests.delete(this);const u=relevant(url);if(u)requests.set(this,info(u,method));return Reflect.apply(open,this,[method,url,...rest]);};
+    proto.send=function(payload){const item=requests.get(this);if(item&&isUsedTransferRequest(payload)){item.request=body(payload);const started=performance.now();this.addEventListener('loadend',()=>{try{const text=this.responseType==='json'?JSON.stringify(this.response):!this.responseType||this.responseType==='text'?this.responseText:undefined;emit({...item,status:this.status,durationMs:Math.round(performance.now()-started)},text);}catch{emit({...item,status:this.status,error:'capture-unavailable'});}},{once:true});}return Reflect.apply(send,this,[payload]);};
   }
   try{installFormNetworkDiagnostics();}catch{/* Logging is optional; native form operation is not. */}
   let memorySampling=false,memoryStopped=false,memoryPeak=0,memoryLastDOM=null,memoryLastDOMAt=0;
