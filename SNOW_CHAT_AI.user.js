@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.800
+// @version      2.36.801
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.801","fixes":true,"changes":[{"key":"matrix-reference-resolution","meaningful":true,"text":"Choose the first exact allowed routing match in ServiceNow's returned order when multiple options exist."}]},
 {"version":"2.36.800","fixes":true,"changes":[{"key":"matrix-reference-resolution","meaningful":true,"text":"Resolve missing or ambiguous cached routing options through ServiceNow's current-form reference lookup, including recent selections, without guessing a record."}]},
 {"version":"2.36.799","fixes":true,"changes":[{"key":"companion-send-diagnostics","meaningful":true,"text":"Preserve bounded companion Send-state and HTTP error evidence in automatic diagnostic uploads without prompt text or credentials."}]},
 {"version":"2.36.798","fixes":true,"changes":[{"key":"closed-chat-release","meaningful":true,"text":"Keep ended conversations open for ticket work; clear chat caches only after the IMS tab is closed."},{"key":"diagnostic-noise-reduction","meaningful":true,"text":"Remove passive ServiceNow network logging while preserving SN AI feature errors and transfer recognition."}]},
@@ -15584,7 +15585,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           // The bulk cache is not the field's authoritative qualifier. Native
           // reference results include recent selections and current parents.
           addLog('info','matrix-native-resolution',{field:fieldLabel,reason:'cached-option-missing-or-ambiguous'});
-          const actual=await commitKnownNativeReference(fieldLabel,expected);
+          const actual=await commitKnownNativeReference(fieldLabel,expected,{first:true});
           const current=await waitForControlByLabel(fieldLabel,1000);
           const id=matrixReferenceHost(current)?.dAProps?.value;
           const next=routingDependentField(fieldLabel);
