@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.798
+// @version      2.36.799
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.799","fixes":true,"changes":[{"key":"companion-send-diagnostics","meaningful":true,"text":"Preserve bounded companion Send-state and HTTP error evidence in automatic diagnostic uploads without prompt text or credentials."}]},
 {"version":"2.36.798","fixes":true,"changes":[{"key":"closed-chat-release","meaningful":true,"text":"Keep ended conversations open for ticket work; clear chat caches only after the IMS tab is closed."},{"key":"diagnostic-noise-reduction","meaningful":true,"text":"Remove passive ServiceNow network logging while preserving SN AI feature errors and transfer recognition."}]},
 {"version":"2.36.797","fixes":true,"changes":[{"key":"diagnostic-noise-reduction","meaningful":true,"text":"Exclude native ServiceNow background network logs, retaining SN AI initiated requests and our feature diagnostics."}]},
 {"version":"2.36.796","fixes":true,"changes":[{"key":"closed-chat-release","meaningful":true,"text":"Release clean closed chats through native tab navigation, preserving existing reopen history and protecting unsaved forms and ticket jobs."}]},
@@ -9627,6 +9628,11 @@ function startSNAI(tabIdentity) {
       if(key==='network'&&action==='form-network'){safe[key]=value;continue;}
       if(action==='ticket-draft-owned'&&/^(parentId|interactionId|tabId|contentId|ordinal|count)$/.test(key)){safe[key]=typeof value==='number'?value:String(value).slice(0,100);continue;}
       if(key==='responseShape'&&action.startsWith('extension-')){safe[key]=value;continue;}
+      if(/^extension-job-send-/.test(action)&&/^(route|visibility|focused|online|composerPresent|composerConnected|editorLength|draftMatchesJob|sendPresent|sendDisabled|buttonType|formPresent|invalidControlCount|loginRequired|userTurnCount|matchedUserTurn|streamMatchesJob|streamTextLength)$/.test(key)){
+        if(typeof value==='boolean'||typeof value==='number'&&Number.isFinite(value))safe[key]=value;
+        else if((key==='route'||key==='visibility'||key==='buttonType')&&typeof value==='string')safe[key]=value.slice(0,40);
+        continue;
+      }
       if(/^(text-fill-|auto-text-attempt|description-fill-|auto-description-field-attempt)/.test(action)
         && /^(modelCommitted|stable|delayMs|expectedLength|actualLength|modelLength|modelMatches|domMatches|connected|controlReplaced|callbackAvailable|bindingName|ariaInvalid|succeeded|budgetMs|callbackMs)$/.test(key)){
         if(typeof value==='number')safe[key]=Number.isFinite(value)?value:0;
