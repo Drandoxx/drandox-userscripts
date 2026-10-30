@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.801
+// @version      2.36.802
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.802","fixes":true,"changes":[{"key":"reopen-tab-placement","meaningful":true,"text":"The sub-row Reopen button restores records under the current main tab without opening or switching a main-row tab."}]},
 {"version":"2.36.801","fixes":true,"changes":[{"key":"matrix-reference-resolution","meaningful":true,"text":"Choose the first exact allowed routing match in ServiceNow's returned order when multiple options exist."}]},
 {"version":"2.36.800","fixes":true,"changes":[{"key":"matrix-reference-resolution","meaningful":true,"text":"Resolve missing or ambiguous cached routing options through ServiceNow's current-form reference lookup, including recent selections, without guessing a record."}]},
 {"version":"2.36.799","fixes":true,"changes":[{"key":"companion-send-diagnostics","meaningful":true,"text":"Preserve bounded companion Send-state and HTTP error evidence in automatic diagnostic uploads without prompt text or credentials."}]},
@@ -5755,8 +5756,16 @@ const snAIChatDisplayNames=(()=>{
     if (closedTabBusy) return;
     closedTabBusy = true; button.disabled = true;
     try {
-      const history = readClosedTabs(), entry = history[0];
+      const history = readClosedTabs();let entry = history[0];
       if (!entry) { saveClosedTabs([]); button.title = 'No closed tabs in the last 24 hours'; return; }
+      const subRow=button.dataset.snAiReopenRow==='sub';
+      if(subRow){
+        const main=snWorkspacePrimary(),parent=main?.props.tabList.find(tab=>String(tab.tab_id)===String(main.props.selectedTabId));
+        if(!parent?.table||!parent.sys_id)throw new Error('Select a main record tab before reopening a sub-tab.');
+        // Placement belongs to the clicked row, not the historical descriptor.
+        // Interaction history is a record here, never a new main chat shell.
+        entry={...entry,type:entry.type==='chat'?'record':entry.type,parent:{table:parent.table,sys_id:String(parent.sys_id),title:parent.title||''}};
+      }
       const focusOrOpen = target => {
         const main=snWorkspacePrimary();
         const existing=main?.props.tabList.find(tab=>tab.table===target.table&&String(tab.sys_id)===target.sys_id);
@@ -5765,7 +5774,7 @@ const snAIChatDisplayNames=(()=>{
       };
       if (entry.parent) {
         // Restore/focus the original parent, not whichever chat is active now.
-        focusOrOpen(entry.parent);
+        if(!subRow)focusOrOpen(entry.parent);
         let parent;
         for (let attempt=0;attempt<40;attempt++) {
           parent=snWorkspacePrimary()?.props.tabList.find(tab=>tab.table===entry.parent.table&&String(tab.sys_id)===entry.parent.sys_id);
@@ -5808,6 +5817,7 @@ const snAIChatDisplayNames=(()=>{
     for(const plus of root.querySelectorAll?.('#chrome-add-new-button,[data-sn-ai-subtab-add]')||[]) {
       if(plus.previousElementSibling?.hasAttribute('data-sn-ai-reopen-tab'))continue;
       const button=document.createElement('button');button.type='button';button.dataset.snAiReopenTab='';
+      button.dataset.snAiReopenRow=plus.hasAttribute('data-sn-ai-subtab-add')?'sub':'main';
       button.className=plus.className;button.style.cssText=plus.style.cssText;
       button.style.cssText='display:flex!important;align-items:center;justify-content:center;width:28px!important;height:28px!important;min-width:28px!important;min-height:28px!important;flex:0 0 28px!important;position:relative!important;right:auto!important;bottom:10px!important;z-index:20!important;margin:0 5px 0 0!important;padding:4px!important;box-sizing:border-box!important;border:0!important;border-radius:8px!important;background:var(--sn-theme-251f31)!important;color:var(--sn-theme-c8d7ef)!important;outline:0!important;box-shadow:none!important;cursor:pointer;';
       button.setAttribute('aria-label','Reopen last closed tab');button.title='Reopen last closed tab';
