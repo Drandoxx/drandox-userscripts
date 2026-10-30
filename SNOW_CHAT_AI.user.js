@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.799
+// @version      2.36.800
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.800","fixes":true,"changes":[{"key":"matrix-reference-resolution","meaningful":true,"text":"Resolve missing or ambiguous cached routing options through ServiceNow's current-form reference lookup, including recent selections, without guessing a record."}]},
 {"version":"2.36.799","fixes":true,"changes":[{"key":"companion-send-diagnostics","meaningful":true,"text":"Preserve bounded companion Send-state and HTTP error evidence in automatic diagnostic uploads without prompt text or credentials."}]},
 {"version":"2.36.798","fixes":true,"changes":[{"key":"closed-chat-release","meaningful":true,"text":"Keep ended conversations open for ticket work; clear chat caches only after the IMS tab is closed."},{"key":"diagnostic-noise-reduction","meaningful":true,"text":"Remove passive ServiceNow network logging while preserving SN AI feature errors and transfer recognition."}]},
 {"version":"2.36.797","fixes":true,"changes":[{"key":"diagnostic-noise-reduction","meaningful":true,"text":"Exclude native ServiceNow background network logs, retaining SN AI initiated requests and our feature diagnostics."}]},
@@ -15578,7 +15579,21 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   async function commitMatrixOption(fieldLabel, expected) {
     for(let attempt=1;attempt<=2;attempt++){
       try{return await commitMatrixOptionOnce(fieldLabel,expected);}
-      catch(error){addLog('warn','matrix-commit-retry',{field:fieldLabel,attempt,message:error.message});if(attempt===2||!/MATRIX_(COMMIT|DEPENDENCY)_FAILED/.test(error.message))throw error;await sleep(120);}
+      catch(error){
+        if(/MATRIX_OPTION_NOT_UNIQUE/.test(error.message)){
+          // The bulk cache is not the field's authoritative qualifier. Native
+          // reference results include recent selections and current parents.
+          addLog('info','matrix-native-resolution',{field:fieldLabel,reason:'cached-option-missing-or-ambiguous'});
+          const actual=await commitKnownNativeReference(fieldLabel,expected);
+          const current=await waitForControlByLabel(fieldLabel,1000);
+          const id=matrixReferenceHost(current)?.dAProps?.value;
+          const next=routingDependentField(fieldLabel);
+          if(!/^[a-f0-9]{32}$/i.test(String(id||'')))throw new Error(`MATRIX_COMMIT_FAILED: ${fieldLabel}`);
+          if(next&&!await waitForRoutingDependency(fieldLabel,next,1,id))throw new Error(`MATRIX_DEPENDENCY_FAILED: ${next}`);
+          return actual;
+        }
+        addLog('warn','matrix-commit-retry',{field:fieldLabel,attempt,message:error.message});if(attempt===2||!/MATRIX_(COMMIT|DEPENDENCY)_FAILED/.test(error.message))throw error;await sleep(120);
+      }
     }
   }
   async function waitNativeReferenceCommit(fieldLabel, id, display, timeoutMs = 8000) {
