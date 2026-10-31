@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.805
+// @version      2.36.806
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.806","fixes":true,"changes":[{"key":"classic-stack-references","meaningful":true,"text":"Preserve native reference XML and column metadata so ranked classic CI suggestions render and can be selected."}]},
 {"version":"2.36.805","fixes":true,"changes":[{"key":"classic-stack-references","meaningful":true,"text":"Apply Workspace-style CI token search and ranking to normal typing in the classic native CI dropdown, not only STACK automation."}]},
 {"version":"2.36.804","fixes":true,"changes":[{"key":"stack-bubble-persistence","meaningful":true,"text":"Restore classic STACK and HP-STACK bubbles with live controls after reload, retain their inputs and save pending edits on page exit without automatically rerunning jobs."}]},
 {"version":"2.36.803","fixes":true,"changes":[{"key":"classic-stack-references","meaningful":true,"text":"Resolve STACK references through classic ServiceNow's native qualified lookup and selection, sharing Workspace CI ranking; tolerate unavailable preview animation cancellation."}]},
@@ -25941,7 +25942,7 @@ async function snClassicCommitReference(name,query,options={}) {
     if(!xml?.getElementsByTagName)throw Error('CLASSIC_REFERENCE_RESPONSE_INVALID: '+name);
     for(const item of [...Array.from(xml.getElementsByTagName('recent')),...Array.from(xml.getElementsByTagName('item'))].slice(0,100)){
       const id=item.getAttribute('name'),label=item.getAttribute('label');
-      if(/^[a-f0-9]{32}$/i.test(id||'')&&label)rows.push({sysId:id,referenceData:[{value:label}]});
+      if(/^[a-f0-9]{32}$/i.test(id||'')&&label)rows.push({sysId:id,referenceData:[{value:label}],nativeItem:{...(typeof ac.copyAttributes==='function'?ac.copyAttributes(item):{}),XML:item}});
     }
   }
   const ranked=name==='cmdb_ci'?ciRankRows(rows,query):rows.filter(row=>row.referenceData[0].value.toLowerCase()===String(query).toLowerCase());
@@ -25966,7 +25967,7 @@ function installClassicCISearch() {
       this.searchChars=query;this.isResolvingFlag=true;this.clearDropDown();
       snClassicCommitReference('cmdb_ci',query,{searchOnly:true,stopped:()=>ticket!==sequence}).then(rows=>{
         if(ticket!==sequence||String(this._getSearchChars()||'').trim()!==query)return;
-        const values=rows.map(row=>({name:row.sysId,label:row.referenceData[0].value}));
+        const values=rows.map(row=>({...row.nativeItem,name:row.sysId,label:row.referenceData[0].value}));
         this.isResolvingFlag=false;
         if(this.hasFocus)this.createDropDown(values,[]);
         else this._processBlurValue(values,[]);
