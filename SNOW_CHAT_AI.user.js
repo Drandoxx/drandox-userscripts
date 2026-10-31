@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.804
+// @version      2.36.805
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.805","fixes":true,"changes":[{"key":"classic-stack-references","meaningful":true,"text":"Apply Workspace-style CI token search and ranking to normal typing in the classic native CI dropdown, not only STACK automation."}]},
 {"version":"2.36.804","fixes":true,"changes":[{"key":"stack-bubble-persistence","meaningful":true,"text":"Restore classic STACK and HP-STACK bubbles with live controls after reload, retain their inputs and save pending edits on page exit without automatically rerunning jobs."}]},
 {"version":"2.36.803","fixes":true,"changes":[{"key":"classic-stack-references","meaningful":true,"text":"Resolve STACK references through classic ServiceNow's native qualified lookup and selection, sharing Workspace CI ranking; tolerate unavailable preview animation cancellation."}]},
 {"version":"2.36.802","fixes":true,"changes":[{"key":"reopen-tab-placement","meaningful":true,"text":"The sub-row Reopen button restores records under the current main tab without opening or switching a main-row tab."}]},
@@ -9756,7 +9757,7 @@ function startSNAI(tabIdentity) {
     finally{memorySampling=false;}
   },60000):0;
   window.addEventListener('pagehide',()=>{memoryStopped=true;clearInterval(memoryTimer);},{once:true});
-  try{if(workspacePage)installCISearch();}catch{/* Preserve native lookup if enhancement cannot initialize. */}
+  try{if(workspacePage)installCISearch();else if(/^\/incident\.do$/i.test(location.pathname))installClassicCISearch();}catch{/* Preserve native lookup if enhancement cannot initialize. */}
   if(workspacePage)setTimeout(()=>installPersonalSettingsSync({
     identity:diagnosticIdentity,reporter:snPersonalCurrentAccount,defaultModes:DEFAULT_ENABLED_MODES,
     readModes:()=>gmGetValue(ENABLED_MODES_KEY,DEFAULT_ENABLED_MODES),
@@ -25944,10 +25945,44 @@ async function snClassicCommitReference(name,query,options={}) {
     }
   }
   const ranked=name==='cmdb_ci'?ciRankRows(rows,query):rows.filter(row=>row.referenceData[0].value.toLowerCase()===String(query).toLowerCase());
+  if(options.searchOnly){check();return ranked.slice(0,100);}
   const chosen=ranked[0];if(!chosen)throw Error('CLASSIC_REFERENCE_NO_MATCH: '+name+' - '+query);
   check();ac.referenceSelect(chosen.sysId,chosen.referenceData[0].value);ac.clearDropDown();ac.hideDropDown();
   if(form.getValue(name)!==chosen.sysId||input.value!==chosen.referenceData[0].value)throw Error('CLASSIC_REFERENCE_COMMIT_FAILED: '+name);
   return input.value;
+}
+function installClassicCISearch() {
+  const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
+  const install=()=>{
+    const input=page.document.getElementById('sys_display.incident.cmdb_ci');
+    if(!input||!page.g_form||typeof page.AJAXTableCompleter!=='function')return;
+    if(!input.ac)new page.AJAXTableCompleter(input,'incident.cmdb_ci','','true');
+    const ac=input.ac;if(!ac||ac.snAiRankedSearch)return;
+    const native=ac.ajaxRequest;let sequence=0;
+    ac.snAiRankedSearch=true;
+    ac.ajaxRequest=function(){
+      const query=String(this._getSearchChars()||'').trim(),ticket=++sequence;
+      if(query.replace(/\*/g,'').length<2)return native.apply(this,arguments);
+      this.searchChars=query;this.isResolvingFlag=true;this.clearDropDown();
+      snClassicCommitReference('cmdb_ci',query,{searchOnly:true,stopped:()=>ticket!==sequence}).then(rows=>{
+        if(ticket!==sequence||String(this._getSearchChars()||'').trim()!==query)return;
+        const values=rows.map(row=>({name:row.sysId,label:row.referenceData[0].value}));
+        this.isResolvingFlag=false;
+        if(this.hasFocus)this.createDropDown(values,[]);
+        else this._processBlurValue(values,[]);
+        if(this.onResolveCallback)this.onResolveCallback();
+      }).catch(error=>{
+        if(ticket!==sequence)return;
+        this.isResolvingFlag=false;
+        if(/STOPPED|CONTEXT_CHANGED/.test(error.message))return;
+        console.warn('[SN AI classic CI search]',error.message);
+        // Preserve the original native lookup on transport failure.
+        native.call(this);
+      });
+    };
+  };
+  install();
+  page.document.addEventListener('focusin',event=>{if(event.target?.id==='sys_display.incident.cmdb_ci')install();});
 }
 function ciSearchWords(value) {
   return String(value||'').slice(0,256).normalize('NFKD').replace(/\p{M}/gu,'').toLowerCase().match(/[\p{L}\p{N}]+/gu)||[];
