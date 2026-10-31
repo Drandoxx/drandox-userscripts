@@ -6502,6 +6502,37 @@
       performanceEvent('call-push-unavailable',{reason:String(error.message).replace(/wss?:\/\/\S+/g,'[socket]').slice(0,120)});
     }finally{callPushBusy=false;}
   }
+  function dailyPresenceTotals(data,userId) {
+    const totals={breakMs:0,mealMs:0};
+    for(const result of data.results || []) {
+      if(result.group?.userId!==userId)continue;
+      for(const bucket of result.data || [])for(const metric of bucket.metrics || []) {
+        if(metric.metric!=='tSystemPresence' || !Number.isFinite(metric.stats?.sum))continue;
+        if(metric.qualifier==='BREAK')totals.breakMs+=Math.max(0,metric.stats.sum);
+        if(metric.qualifier==='MEAL')totals.mealMs+=Math.max(0,metric.stats.sum);
+      }
+    }
+    return totals;
+  }
+  function readDailyPresence() {
+    const data=GM_getValue('genesys-v2-daily-presence',null);
+    return data?.day===callDayKey() && data.userId===currentAgentApiId?data:null;
+  }
+  let dailyPresenceBusy=false,dailyPresenceAttemptAt=0;
+  async function refreshDailyPresence(force=false) {
+    const bridge=readyCallApiBridge(),userId=currentAgentApiId;
+    if(!bridge || !userId || dailyPresenceBusy || (!force && Date.now()-dailyPresenceAttemptAt<60000))return;
+    dailyPresenceBusy=true;dailyPresenceAttemptAt=Date.now();
+    const day=callDayKey();
+    try {
+      const data=await bridge.request('/api/v2/analytics/users/aggregates/query',{
+        interval:todayCallInterval(),groupBy:['userId'],metrics:['tSystemPresence'],
+        filter:{type:'and',predicates:[{dimension:'userId',value:userId}]}
+      });
+      if(day===callDayKey() && userId===currentAgentApiId)GM_setValue('genesys-v2-daily-presence',{day,userId,refreshedAt:Date.now(),...dailyPresenceTotals(data,userId)});
+    }catch(error){performanceEvent('daily-presence-unavailable',{reason:String(error.message).slice(0,100)});}
+    finally{dailyPresenceBusy=false;}
+  }
   async function refreshTodayCallCache(force=false) {
     if(force)pendingEndedCallRefresh=true;
     if(window!==window.top || callCacheBusy || callCardDragging)return;
@@ -6517,6 +6548,7 @@
     callCacheBusy=true;
     try {
       if(!currentAgentApiId)rememberCallApi('/api/v2/users/me',200,await bridge.request('/api/v2/users/me'));
+      void refreshDailyPresence(force);
       const interval=todayCallInterval();
       for(let page=1;page<=20;page++) {
         if(GM_getValue(key,{})?.token!==token)break;
@@ -6637,6 +6669,11 @@
       tbody tr:nth-child(even)>td{background:var(--call-stripe)!important}
       @media(max-width:800px){.panel{max-height:calc(100vh - 130px);max-height:calc(100dvh - 130px)}}
     `;root.append(readableRowsStyle);
+    const summaryStyle=document.createElement('style');summaryStyle.textContent=`
+      .status{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:12px 16px;margin:0}
+      .summary-card{display:inline-flex;align-items:center;padding:7px 10px;background:var(--head);border:1px solid var(--line);border-radius:8px;font-weight:600;white-space:nowrap}
+      .summary-age{color:var(--muted);font-weight:400}
+    `;root.append(summaryStyle);
     const modernStyle=document.createElement('style');modernStyle.textContent=`
       :host{--panel:#252d38;--head:#303b49;--line:#526778;--muted:#b4c4d4;--call-row:#252d38;--call-stripe:#2c3542;color:#f1f5f9}
       :host(:not([data-theme="light"])) .panel{border:1px solid #607085;border-top:2px solid #22d3ee;box-shadow:0 16px 40px #0009,0 0 20px #22d3ee38,0 0 4px #22d3ee55}
@@ -6668,6 +6705,16 @@
       if(panel.hidden || callCardDragging)return;
       paintCallRows();
       const fresh=readTodayCallCache(),rows=myTodayCallRows(fresh,currentAgentApiId || fresh.userId,currentAgentName(document));
+      const presence=readDailyPresence(),colors=savedStatusColors(document);
+      status.replaceChildren();
+      const summary=(text,color)=>{const card=document.createElement('span');card.className='summary-card';card.textContent=text;if(color){card.style.color=color;card.style.borderColor=color;}status.append(card);};
+      summary(fresh.userName || currentAgentName(document));summary(`${rows.length} calls`);
+      summary(`PR - ${presence?Math.floor(presence.breakMs/60000)+' min':'—'}`,colors.break || '#ffffff');
+      summary(`MB - ${presence?Math.floor(presence.mealMs/60000)+' min':'—'}`,colors.meal || '#ff7a18');
+      const age=document.createElement('span');age.className='summary-age';
+      const seconds=Math.max(0,Math.floor((Date.now()-fresh.refreshedAt)/1000));
+      age.textContent=fresh.refreshedAt?`Updated ${seconds<60?seconds+' seconds':Math.floor(seconds/60)+' min'} ago`:'Not updated yet';
+      status.append(age);
       const signature=JSON.stringify([fresh.day,fresh.refreshedAt,rows]);if(signature===myCallsPanelCacheSignature)return;myCallsPanelCacheSignature=signature;tbody.replaceChildren();
       for(const c of rows) {
         const row=document.createElement('tr');row.dataset.conversationId=c.conversationId;row.title='Conversation ID: '+c.conversationId;
@@ -6684,7 +6731,6 @@
       }
       if(!rows.length) {const row=document.createElement('tr'),cell=document.createElement('td');cell.colSpan=6;cell.textContent='No calls recorded for you today.';row.append(cell);tbody.append(row);}
       paintCallRows();
-      status.textContent=`${fresh.userName || currentAgentName(document)} • ${rows.length} calls • ${fresh.refreshedAt?'Updated '+new Date(fresh.refreshedAt).toLocaleTimeString():'Cached data'}${fresh.truncated?' • cache limit reached':''}`;
     };
     // Match SN AI's launcher-origin expansion; epochs prevent a stale close from hiding a reopened panel.
     let animation=null,epoch=0,closing=false;
