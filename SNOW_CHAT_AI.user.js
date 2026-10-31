@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.806
+// @version      2.36.807
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.807","fixes":true,"changes":[{"key":"classic-stack-references","meaningful":true,"text":"Limit classic CI searches to 50 candidates, cache repeat searches, clear invalid-reference errors on click, and support classic New Event CI fields."}]},
 {"version":"2.36.806","fixes":true,"changes":[{"key":"classic-stack-references","meaningful":true,"text":"Preserve native reference XML and column metadata so ranked classic CI suggestions render and can be selected."}]},
 {"version":"2.36.805","fixes":true,"changes":[{"key":"classic-stack-references","meaningful":true,"text":"Apply Workspace-style CI token search and ranking to normal typing in the classic native CI dropdown, not only STACK automation."}]},
 {"version":"2.36.804","fixes":true,"changes":[{"key":"stack-bubble-persistence","meaningful":true,"text":"Restore classic STACK and HP-STACK bubbles with live controls after reload, retain their inputs and save pending edits on page exit without automatically rerunning jobs."}]},
@@ -9758,7 +9759,7 @@ function startSNAI(tabIdentity) {
     finally{memorySampling=false;}
   },60000):0;
   window.addEventListener('pagehide',()=>{memoryStopped=true;clearInterval(memoryTimer);},{once:true});
-  try{if(workspacePage)installCISearch();else if(/^\/incident\.do$/i.test(location.pathname))installClassicCISearch();}catch{/* Preserve native lookup if enhancement cannot initialize. */}
+  try{if(workspacePage)installCISearch();else if(/^\/(?:incident|new_call)\.do$/i.test(location.pathname))installClassicCISearch();}catch{/* Preserve native lookup if enhancement cannot initialize. */}
   if(workspacePage)setTimeout(()=>installPersonalSettingsSync({
     identity:diagnosticIdentity,reporter:snPersonalCurrentAccount,defaultModes:DEFAULT_ENABLED_MODES,
     readModes:()=>gmGetValue(ENABLED_MODES_KEY,DEFAULT_ENABLED_MODES),
@@ -25921,32 +25922,40 @@ function chatsTodaySearchMatch(text,query) {
 // SN_AI_CI_SEARCH_BEGIN
 async function snClassicCommitReference(name,query,options={}) {
   const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
-  const input=page.document.getElementById('sys_display.incident.'+name),form=page.g_form;
+  const form=page.g_form,table=form?.getTableName?.()||'incident';
+  const input=page.document.getElementById('sys_display.'+table+'.'+name);
   if(!input||input.disabled||input.readOnly||!form)throw Error('CLASSIC_REFERENCE_UNAVAILABLE: '+name);
-  if(!input.ac&&typeof page.AJAXTableCompleter==='function')new page.AJAXTableCompleter(input,'incident.'+name,'','true');
+  if(!input.ac&&typeof page.AJAXTableCompleter==='function')new page.AJAXTableCompleter(input,table+'.'+name,'','true');
   const ac=input.ac;
   if(!ac?.getQuerystring||!ac.referenceSelect||typeof page.GlideAjax!=='function')throw Error('CLASSIC_REFERENCE_UNAVAILABLE: '+name);
   const record=form.getUniqueValue(),initialId=form.getValue(name),initialDisplay=input.value;
   const check=()=>{if(options.stopped?.())throw Error('CLASSIC_REFERENCE_STOPPED');if(form.getUniqueValue()!==record||!input.isConnected||form.getValue(name)!==initialId||input.value!==initialDisplay)throw Error('CLASSIC_REFERENCE_CONTEXT_CHANGED: '+name);};
-  const rows=[],terms=name==='cmdb_ci'?ciSearchTerms(query):['*'+String(query).replace(/^\*+/, '')];
+  const isCI=name==='cmdb_ci'||name==='u_configuration_item',limit=isCI?50:100;
+  const rows=[],seen=new Set(),terms=isCI?ciSearchTerms(query).sort((a,b)=>Number(/\d/.test(b))-Number(/\d/.test(a))||b.length-a.length):['*'+String(query).replace(/^\*+/, '')];
+  const cacheKey=record+'|'+ac.getQuerystring(query).replace(/sysparm_timer=[^&]*/,'sysparm_timer=');
+  const cache=ac.snAiRankedCache||(ac.snAiRankedCache=new Map());
+  const cached=cache.get(cacheKey);
+  if(options.searchOnly&&cached&&Date.now()-cached.at<15000){check();return cached.rows;}
   for(const term of terms){
     check();
     const xml=await new Promise((resolve,reject)=>{
       const timer=setTimeout(()=>reject(Error('CLASSIC_REFERENCE_TIMEOUT: '+name)),8000);
       const request=new page.GlideAjax(ac.PROCESSOR);
-      request.setQueryString(ac.getQuerystring(term).replace(/sysparm_max=[^&]*/,'sysparm_max=100'));
+      request.setQueryString(ac.getQuerystring(term).replace(/sysparm_max=[^&]*/,'sysparm_max='+limit));
       request.setErrorCallback(()=>{clearTimeout(timer);reject(Error('CLASSIC_REFERENCE_READ_FAILED: '+name));});
       request.getXML(response=>{clearTimeout(timer);resolve(response?.responseXML||response);});
     });
     check();
     if(!xml?.getElementsByTagName)throw Error('CLASSIC_REFERENCE_RESPONSE_INVALID: '+name);
-    for(const item of [...Array.from(xml.getElementsByTagName('recent')),...Array.from(xml.getElementsByTagName('item'))].slice(0,100)){
+    for(const item of [...Array.from(xml.getElementsByTagName('recent')),...Array.from(xml.getElementsByTagName('item'))]){
       const id=item.getAttribute('name'),label=item.getAttribute('label');
-      if(/^[a-f0-9]{32}$/i.test(id||'')&&label)rows.push({sysId:id,referenceData:[{value:label}],nativeItem:{...(typeof ac.copyAttributes==='function'?ac.copyAttributes(item):{}),XML:item}});
+      if(/^[a-f0-9]{32}$/i.test(id||'')&&label&&!seen.has(id)){seen.add(id);rows.push({sysId:id,referenceData:[{value:label}],nativeItem:{...(typeof ac.copyAttributes==='function'?ac.copyAttributes(item):{}),XML:item}});}
+      if(rows.length>=limit)break;
     }
+    if(rows.length>=limit)break;
   }
-  const ranked=name==='cmdb_ci'?ciRankRows(rows,query):rows.filter(row=>row.referenceData[0].value.toLowerCase()===String(query).toLowerCase());
-  if(options.searchOnly){check();return ranked.slice(0,100);}
+  const ranked=isCI?ciRankRows(rows,query):rows.filter(row=>row.referenceData[0].value.toLowerCase()===String(query).toLowerCase());
+  if(options.searchOnly){check();const result=ranked.slice(0,limit);cache.set(cacheKey,{at:Date.now(),rows:result});while(cache.size>4)cache.delete(cache.keys().next().value);return result;}
   const chosen=ranked[0];if(!chosen)throw Error('CLASSIC_REFERENCE_NO_MATCH: '+name+' - '+query);
   check();ac.referenceSelect(chosen.sysId,chosen.referenceData[0].value);ac.clearDropDown();ac.hideDropDown();
   if(form.getValue(name)!==chosen.sysId||input.value!==chosen.referenceData[0].value)throw Error('CLASSIC_REFERENCE_COMMIT_FAILED: '+name);
@@ -25955,17 +25964,21 @@ async function snClassicCommitReference(name,query,options={}) {
 function installClassicCISearch() {
   const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
   const install=()=>{
-    const input=page.document.getElementById('sys_display.incident.cmdb_ci');
+    const table=page.g_form?.getTableName?.()||'incident',name=table==='new_call'?'u_configuration_item':'cmdb_ci';
+    const input=page.document.getElementById('sys_display.'+table+'.'+name);
     if(!input||!page.g_form||typeof page.AJAXTableCompleter!=='function')return;
-    if(!input.ac)new page.AJAXTableCompleter(input,'incident.cmdb_ci','','true');
+    if(!input.ac)new page.AJAXTableCompleter(input,table+'.'+name,'','true');
     const ac=input.ac;if(!ac||ac.snAiRankedSearch)return;
     const native=ac.ajaxRequest;let sequence=0;
     ac.snAiRankedSearch=true;
+    ac.max=50;
     ac.ajaxRequest=function(){
-      const query=String(this._getSearchChars()||'').trim(),ticket=++sequence;
+      const query=String(this._getSearchChars()||'').trim();
+      if(this.isResolvingFlag&&this.searchChars===query)return;
+      const ticket=++sequence;
       if(query.replace(/\*/g,'').length<2)return native.apply(this,arguments);
       this.searchChars=query;this.isResolvingFlag=true;this.clearDropDown();
-      snClassicCommitReference('cmdb_ci',query,{searchOnly:true,stopped:()=>ticket!==sequence}).then(rows=>{
+      snClassicCommitReference(name,query,{searchOnly:true,stopped:()=>ticket!==sequence}).then(rows=>{
         if(ticket!==sequence||String(this._getSearchChars()||'').trim()!==query)return;
         const values=rows.map(row=>({...row.nativeItem,name:row.sysId,label:row.referenceData[0].value}));
         this.isResolvingFlag=false;
@@ -25981,9 +25994,16 @@ function installClassicCISearch() {
         native.call(this);
       });
     };
+    input.addEventListener('click',()=>{
+      ac.clearInvalid();
+      // Clear presentation only. A nonempty display without an ID remains
+      // unresolved until the native suggestion selection commits a real CI.
+      if(!ac.getKeyValue?.())ac.referenceValid=false;
+      if(String(input.value||'').replace(/\*/g,'').trim().length>=2)ac.ajaxRequest();
+    });
   };
   install();
-  page.document.addEventListener('focusin',event=>{if(event.target?.id==='sys_display.incident.cmdb_ci')install();});
+  page.document.addEventListener('focusin',event=>{if(['sys_display.incident.cmdb_ci','sys_display.new_call.u_configuration_item'].includes(event.target?.id))install();});
 }
 function ciSearchWords(value) {
   return String(value||'').slice(0,256).normalize('NFKD').replace(/\p{M}/gu,'').toLowerCase().match(/[\p{L}\p{N}]+/gu)||[];
