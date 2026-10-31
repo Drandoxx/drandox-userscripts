@@ -6605,6 +6605,23 @@
     const seconds=Math.max(0,Math.round(ms/1000));
     return `${String(Math.floor(seconds/3600)).padStart(2,'0')}:${String(Math.floor(seconds%3600/60)).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`;
   }
+  function callDateFromKey(day) {
+    const [year,month,date]=day.split('-').map(Number);
+    return new Date(year,month-1,date,12);
+  }
+  async function loadHistoricalCallDay(day,userId) {
+    const bridge=readyCallApiBridge();if(!bridge || !userId)throw new Error('Call API is not ready');
+    const interval=todayCallInterval(callDateFromKey(day));
+    const cache={day,userId,conversations:{},refreshedAt:0};
+    for(let page=1;page<=20;page++) {
+      const data=await bridge.request('/api/v2/analytics/conversations/details/query',{interval,order:'desc',orderBy:'conversationStart',paging:{pageSize:100,pageNumber:page},segmentFilters:[{type:'and',predicates:[{dimension:'userId',value:userId}]}]});
+      for(const raw of data.conversations || []){const c=compactApiConversation(raw);cache.conversations[c.conversationId]={analytics:c};}
+      if((data.conversations || []).length<100 || page*100>=data.totalHits)break;
+      if(page===20)cache.truncated=true;
+    }
+    const presence=await bridge.request('/api/v2/analytics/users/aggregates/query',{interval,groupBy:['userId'],metrics:['tSystemPresence'],filter:{type:'and',predicates:[{dimension:'userId',value:userId}]}}).then(data=>dailyPresenceTotals(data,userId)).catch(()=>null);
+    cache.refreshedAt=Date.now();return {cache,presence};
+  }
   let myCallsPanelRender = null, myCallsPanelCacheSignature = '';
   function ensureMyCallsTodayPanel() {
     if(window!==window.top || !document.body)return;
@@ -6683,6 +6700,28 @@
     `;root.append(modernStyle);
     document.body.append(host);
     const panel=root.querySelector('.panel'),launcher=root.querySelector('.launcher'),status=root.querySelector('.status'),tbody=root.querySelector('tbody');
+    let selectedDay=null,historical=null,dayLoading=false,dayError='',dayEpoch=0;
+    const dateNav=document.createElement('div');dateNav.className='date-nav';
+    const previousDay=document.createElement('button'),nextDay=document.createElement('button'),dateLabel=document.createElement('span');
+    previousDay.type=nextDay.type='button';previousDay.setAttribute('aria-label','Previous day');nextDay.setAttribute('aria-label','Next day');
+    previousDay.innerHTML='<svg class="lucide lucide-chevron-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>';
+    nextDay.innerHTML='<svg class="lucide lucide-chevron-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
+    dateNav.append(previousDay,dateLabel,nextDay);root.querySelector('h2').after(dateNav);
+    const dateStyle=document.createElement('style');dateStyle.textContent='header{flex-wrap:wrap;gap:12px}.date-nav{display:flex;align-items:center;gap:8px;font-variant-numeric:tabular-nums;white-space:nowrap}.date-nav button{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;flex:0 0 30px}.date-nav svg{width:18px;height:18px;display:block}.date-nav button:disabled{opacity:.35;cursor:default}';root.append(dateStyle);
+    async function loadSelectedDay() {
+      const epoch=++dayEpoch,day=selectedDay;dayError='';
+      if(!day){dayLoading=false;myCallsPanelCacheSignature='';myCallsPanelRender();void refreshTodayCallCache();return;}
+      dayLoading=true;historical=null;myCallsPanelCacheSignature='';myCallsPanelRender();
+      try{const result=await loadHistoricalCallDay(day,currentAgentApiId);if(epoch===dayEpoch)historical=result;}
+      catch(error){if(epoch===dayEpoch)dayError='Unable to load this day; try Refresh.';}
+      finally{if(epoch===dayEpoch){dayLoading=false;myCallsPanelCacheSignature='';myCallsPanelRender();}}
+    }
+    function changeDay(offset) {
+      const date=callDateFromKey(selectedDay || callDayKey());date.setDate(date.getDate()+offset);
+      const day=callDayKey(date);if(day>callDayKey())return;
+      selectedDay=day===callDayKey()?null:day;void loadSelectedDay();
+    }
+    previousDay.addEventListener('click',()=>changeDay(-1));nextDay.addEventListener('click',()=>changeDay(1));
     function copyCell(value,label) {
       const cell=document.createElement('td');cell.append(document.createTextNode(value || '—'));
       if(value) {const button=document.createElement('button');button.type='button';button.className='copy';button.setAttribute('aria-label','Copy '+label);
@@ -6704,8 +6743,10 @@
     myCallsPanelRender=()=>{
       if(panel.hidden || callCardDragging)return;
       paintCallRows();
-      const fresh=readTodayCallCache(),rows=myTodayCallRows(fresh,currentAgentApiId || fresh.userId,currentAgentName(document));
-      const presence=readDailyPresence(),colors=savedStatusColors(document);
+      const shownDay=selectedDay || callDayKey();dateLabel.textContent=shownDay.replace(/-/g,'.');nextDay.disabled=shownDay>=callDayKey();
+      root.querySelector('h2').textContent=selectedDay?'My calls':'My calls Today';
+      const fresh=selectedDay?(historical?.cache || {day:shownDay,userId:currentAgentApiId,conversations:{},refreshedAt:0}):readTodayCallCache(),rows=myTodayCallRows(fresh,currentAgentApiId || fresh.userId,currentAgentName(document));
+      const presence=selectedDay?historical?.presence:readDailyPresence(),colors=savedStatusColors(document);
       status.replaceChildren();
       const summary=(text,color)=>{const card=document.createElement('span');card.className='summary-card';card.textContent=text;if(color){card.style.color=color;card.style.borderColor=color;}status.append(card);};
       summary(fresh.userName || currentAgentName(document));summary(`${rows.length} calls`);
@@ -6713,7 +6754,7 @@
       summary(`MB - ${presence?Math.floor(presence.mealMs/60000)+' min':'—'}`,colors.meal || '#ff7a18');
       const age=document.createElement('span');age.className='summary-age';
       const seconds=Math.max(0,Math.floor((Date.now()-fresh.refreshedAt)/1000));
-      age.textContent=fresh.refreshedAt?`Updated ${seconds<60?seconds+' seconds':Math.floor(seconds/60)+' min'} ago`:'Not updated yet';
+      age.textContent=dayLoading?'Loading…':dayError || (fresh.refreshedAt?`Updated ${seconds<60?seconds+' seconds':Math.floor(seconds/60)+' min'} ago`:'Not updated yet');
       status.append(age);
       const signature=JSON.stringify([fresh.day,fresh.refreshedAt,rows]);if(signature===myCallsPanelCacheSignature)return;myCallsPanelCacheSignature=signature;tbody.replaceChildren();
       for(const c of rows) {
@@ -6729,7 +6770,7 @@
         copyAll.addEventListener('click',async()=>{const text=[['Time',date.textContent],['Number',phone],['Duration',duration.textContent],['Location',location],['Queue',queue]].filter(([,value])=>value && value!=='—').map(([label,value])=>label+' - '+String(value).replace(/[\r\n]+/g,' ')).join('\n');try{await navigator.clipboard.writeText(text);callCopyFeedback(copyAll,'<svg viewBox="0 0 24 24" class="lucide lucide-check"><path d="M20 6 9 17l-5-5"/></svg><span>Copied</span>');outlineLucide(copyAll);}catch(_){copyAll.title='Copy failed; try again';}});all.append(copyAll);
         row.append(date,copyCell(phone,'phone number'),duration,copyCell(location,'location'),copyCell(queue,'queue'),all);tbody.append(row);
       }
-      if(!rows.length) {const row=document.createElement('tr'),cell=document.createElement('td');cell.colSpan=6;cell.textContent='No calls recorded for you today.';row.append(cell);tbody.append(row);}
+      if(!rows.length) {const row=document.createElement('tr'),cell=document.createElement('td');cell.colSpan=6;cell.textContent=dayLoading?'Loading calls…':dayError || 'No calls recorded for you on this day.';row.append(cell);tbody.append(row);}
       paintCallRows();
     };
     // Match SN AI's launcher-origin expansion; epochs prevent a stale close from hiding a reopened panel.
@@ -6738,6 +6779,7 @@
       const current=++epoch;animation?.cancel();closing=!open;
       launcher.setAttribute('aria-expanded',String(open));
       if(open) {
+        selectedDay=null;historical=null;dayLoading=false;dayError='';dayEpoch++;
         panel.hidden=false;myCallsPanelCacheSignature='';myCallsPanelRender();void refreshTodayCallCache();
         const anchor=launcher.getBoundingClientRect(),rect=panel.getBoundingClientRect();
         panel.style.transformOrigin=`${Math.max(0,Math.min(rect.width,anchor.left+anchor.width/2-rect.left))}px ${Math.max(0,Math.min(rect.height,anchor.top+anchor.height/2-rect.top))}px`;
@@ -6772,9 +6814,9 @@
     }
     refresh.addEventListener('click',async()=>{
       if(refreshFeedbackRunning)return;refreshFeedbackRunning=true;refresh.disabled=true;
-      const previous=readTodayCallCache().refreshedAt;status.textContent='Refreshing…';
-      try {await refreshTodayCallCache(true);myCallsPanelCacheSignature='';myCallsPanelRender();
-        if(readTodayCallCache().refreshedAt>previous)await showRefreshSuccess();
+      const previous=selectedDay?historical?.cache.refreshedAt || 0:readTodayCallCache().refreshedAt;status.textContent='Refreshing…';
+      try {if(selectedDay)await loadSelectedDay();else await refreshTodayCallCache(true);myCallsPanelCacheSignature='';myCallsPanelRender();
+        if((selectedDay?historical?.cache.refreshedAt || 0:readTodayCallCache().refreshedAt)>previous)await showRefreshSuccess();
         else status.textContent+=' • Refresh unavailable or already running; cached calls retained.';
       } catch(_){status.textContent='Refresh failed; cached calls retained.';}
       finally {refreshFeedbackRunning=false;refresh.disabled=false;}
