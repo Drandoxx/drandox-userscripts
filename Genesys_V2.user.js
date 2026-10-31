@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.590.0
+// @version      1.591.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -5899,13 +5899,15 @@
   let presenceManualAt=0,presenceRestoreDone=false,presenceRestoreBusy=false;
   const presenceBootAt=Date.now();
   let presenceReload=false;
-  try{presenceReload=performance.getEntriesByType('navigation')[0]?.type==='reload';if(window===window.top && !presenceReload)sessionStorage.removeItem(RELOAD_PRESENCE_KEY);}catch(_){}
+  // Session storage also survives a restored browser tab. Explicit logout
+  // clears it; an ordinary restart must not discard the saved manual status.
+  try{presenceReload=performance.getEntriesByType('navigation')[0]?.type==='reload' || !!sessionStorage.getItem(RELOAD_PRESENCE_KEY);}catch(_){}
   function presenceUserIntent(event) {
     if(!event.isTrusted)return;
     const target=event.target?.nodeType===1?event.target:event.target?.parentElement;
     if(!target)return;
     if(target.closest?.('.user-settings-popover') && /log\s*out/i.test(target.closest('button,a')?.textContent || '')) {sessionStorage.removeItem(RELOAD_PRESENCE_KEY);presenceRestoreDone=true;return;}
-    if(target.closest?.('#command-bar-queue-toggle,.user-presence-input,[name="presence-selector"],.user-settings-popover form')) {presenceManualAt=Date.now();presenceRestoreDone=true;}
+    if(target.closest?.('#command-bar-queue-toggle,.user-presence-input,[name="presence-selector"],.user-settings-popover')) {presenceManualAt=Date.now();presenceRestoreDone=true;}
   }
   function rememberManualPresence(path,status,data) {
     const match=path.match(/^\/api\/v2\/users\/([a-f0-9-]{36})\/presences\/PURECLOUD$/i);
@@ -5933,12 +5935,12 @@
       const path=`/api/v2/users/${currentAgentApiId}/presences/PURECLOUD`,current=await bridge.request(path);
       if(presenceRestoreDone)return;
       if(current.presenceDefinition?.id===saved.definition.id){presenceRestoreDone=true;return;}
-      if(current.presenceDefinition?.systemPresence!=='Available'){presenceRestoreDone=true;performanceEvent('presence-restore-skipped',{reason:'non-default-current-presence'});return;}
-      presenceRestoreDone=true;
+      if(!current.presenceDefinition?.id)throw new Error('Current presence is not ready');
       if(String(saved.definition.systemPresence).replace(/[\s_]/g,'').toLowerCase()==='onqueue' && saved.offQueue?.id)await bridge.request(path,{presenceDefinition:{id:saved.offQueue.id}},'PATCH');
       await bridge.request(path,{presenceDefinition:{id:saved.definition.id}},'PATCH');
+      presenceRestoreDone=true;
       performanceEvent('presence-reload-restored',{systemPresence:saved.definition.systemPresence});
-    }catch(error){presenceRestoreDone=true;performanceEvent('presence-restore-failed',{reason:String(error.message).slice(0,100)});}finally{presenceRestoreBusy=false;}
+    }catch(error){performanceEvent('presence-restore-failed',{reason:String(error.message).slice(0,100)});}finally{presenceRestoreBusy=false;}
   }
   const CALL_TIMELINE_KEY='genesys-v2-call-event-timeline';
   function persistCallTimeline(event) {
