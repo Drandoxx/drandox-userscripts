@@ -3997,6 +3997,32 @@
     }
     .preferences .btn:hover, .preferences .btn-link:hover, .preferences .btn-toggle:hover { background: #343d49 !important; color: #fff !important; }
     .preferences .alert, .preferences .alert-warning { background: #3a3120 !important; color: #fde68a !important; border-color: #a16207 !important; }
+    /* Native audio profile editor uses separate surfaces from Preferences. */
+    .preferences-main .profile-selection-v2 .device-selection {
+      background: #252b33 !important; color: #e5e7eb !important; border: 1px solid #4b596a !important; color-scheme: dark;
+    }
+    .preferences-main .profile-selection-v2 .device-selection .entry-row {
+      background: #252b33 !important; color: #e5e7eb !important; border-color: #4b596a !important;
+    }
+    .preferences-main .profile-selection-v2 :is(.entry-label,.entry-values,.default-profile-wrapper,.profile-camera-option,.edit-profile-buttons),
+    .preferences-main .profile-selection-v2 :is(label,span,gux-icon) {
+      background: transparent !important; color: #cbd5e1 !important;
+    }
+    .preferences-main .profile-selection-v2 :is(input[type="text"],select,.dropdown-menu) {
+      background: #1d2025 !important; color: #f1f5f9 !important; border-color: #4b596a !important; color-scheme: dark;
+    }
+    .preferences-main .profile-selection-v2 :is(input[type="text"],select):focus-visible {
+      outline: 2px solid #22d3ee !important; outline-offset: 2px;
+    }
+    .preferences-main .profile-selection-v2 :is(input[type="checkbox"],input[type="radio"]) { accent-color: #22d3ee; color-scheme: dark; }
+    .preferences-main .profile-selection-v2 :is(button,.btn) {
+      background: #303b49 !important; color: #f1f5f9 !important; border-color: #526778 !important;
+    }
+    .preferences-main .profile-selection-v2 :is(button,.btn):hover { background: #3b4859 !important; }
+    .preferences-main .profile-selection-v2 :is(:disabled,[aria-disabled="true"],.disabled) {
+      color: #94a3b8 !important; opacity: 1 !important;
+    }
+    .preferences-main .profile-selection-v2 .call-controls-subheader { background: #252b33 !important; color: #cbd5e1 !important; }
     .user-settings-popover, .user-settings-popover .info-card, .user-settings-popover .user-information,
     .user-settings-popover .avatar-header, .user-settings-popover .user-sub-info,
     .user-settings-popover .status-container, .user-settings-popover .presence-section,
