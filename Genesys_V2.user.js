@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.592.0
+// @version      1.593.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -6886,7 +6886,7 @@
   let activeCallSavedSignature = '';
   function saveActiveCallWindow() {
     if (!activeCallSummary) { GM_deleteValue(ACTIVE_CALL_WINDOW_KEY); activeCallSavedSignature = ''; return; }
-    const signature = JSON.stringify(activeCallSummary.details) + activeCallSummary.connectedAt + activeCallSummary.snowUrl + activeCallSummary.hadSnowAction + activeCallSummary.conversationId;
+    const signature = JSON.stringify(activeCallSummary.details) + activeCallSummary.connectedAt + activeCallSummary.snowUrl + activeCallSummary.hadSnowAction + activeCallSummary.conversationId + JSON.stringify(activeCallSummary.relativePosition);
     if (signature !== activeCallSavedSignature || Date.now() - (activeCallSummary.updatedAt || 0) > 10000) {
       activeCallSummary.updatedAt = Date.now(); GM_setValue(ACTIVE_CALL_WINDOW_KEY, activeCallSummary);
       activeCallSavedSignature = signature;
@@ -6899,7 +6899,7 @@
       GM_setValue('genesys-v2-earlier-call-cards',earlierCallCards);
       document.getElementById('gbs-last-call-data')?.remove();
     }
-    lastCallSummary = {startedAt:activeCallSummary.connectedAt || activeCallSummary.ringingAt,
+    lastCallSummary = {relativePosition:activeCallSummary.relativePosition || document.getElementById('gbs-call-information')?.__gbsRelativePosition,startedAt:activeCallSummary.connectedAt || activeCallSummary.ringingAt,
       endedAt:Date.now(),details:activeCallSummary.details,conversationId:activeCallSummary.conversationId,apiUserId:activeCallSummary.apiUserId,snowUrl:activeCallSummary.snowUrl,hadSnowAction:activeCallSummary.hadSnowAction,wrapupSeconds:29,wrapupObservedAt:Date.now(),wrapupComplete:false};
     activeCallSummary = null; saveActiveCallWindow(); saveLastCallWindow();
     applyCachedCallTimings();
@@ -6945,8 +6945,28 @@
     });
     body.append(button);
   }
-  function installCallCardDrag(card, heading, savePosition) {
+  function restoreCallCardPosition(card) {
+    const p=card.__gbsRelativePosition,win=card.ownerDocument.defaultView;
+    if(!p || !Number.isFinite(p.x) || !Number.isFinite(p.y))return;
+    card.style.right='auto';
+    card.style.left=Math.max(0,Math.min(win.innerWidth-card.offsetWidth,win.innerWidth*p.x/100))+'px';
+    card.style.top=Math.max(0,Math.min(win.innerHeight-40,win.innerHeight*p.y/100))+'px';
+  }
+  window.addEventListener('resize',()=>{
+    document.querySelectorAll('#gbs-call-information,#gbs-last-call-data,[id^="gbs-earlier-call-"]').forEach(card=>{if(!card.__gbsDragging)restoreCallCardPosition(card);});
+  });
+  function installCallCardDrag(card, heading, savePosition, positionOwner) {
     const win = card.ownerDocument.defaultView;
+    if(positionOwner?.relativePosition){card.__gbsRelativePosition=positionOwner.relativePosition;win.requestAnimationFrame(()=>restoreCallCardPosition(card));}
+    const scheduleSave=(x,y)=>{
+      const position={x:100*x/Math.max(1,win.innerWidth),y:100*y/Math.max(1,win.innerHeight)};
+      card.__gbsRelativePosition=position;
+      clearTimeout(card.__gbsPositionSave);
+      card.__gbsPositionSave=setTimeout(()=>{
+        if(positionOwner)positionOwner.relativePosition=position;
+        savePosition?.(x,y);
+      },1000);
+    };
     heading.addEventListener('pointerdown', event => {
       if (event.button !== 0 || event.target.closest('button,a,input')) return;
       event.preventDefault(); event.stopPropagation();
@@ -6971,6 +6991,7 @@
         const latest = samples?.length ? samples[samples.length-1] : e;
         x = Math.max(0,Math.min(maxX,rect.left + latest.clientX-startX));
         y = Math.max(0,Math.min(maxY,rect.top + latest.clientY-startY));
+        scheduleSave(x,y);
         if (!frame) frame = win.requestAnimationFrame(paint);
       };
       const end = () => {
@@ -6985,7 +7006,7 @@
         card.style.setProperty('transform','none','important');
         card.style.removeProperty('will-change'); card.style.removeProperty('contain');
         callCardDragging = card.__gbsDragging = false;
-        savePosition?.(x,y);
+        scheduleSave(x,y);
       };
       heading.setPointerCapture(id);
       heading.addEventListener('pointermove',move);
@@ -7058,7 +7079,7 @@
       close.style.cssText='position:absolute;right:10px;top:8px;background:transparent;border:0;color:#67e8f9;font-size:20px;cursor:pointer';
       close.addEventListener('click',()=>{earlierCallCards=earlierCallCards.filter(item=>item.endedAt!==call.endedAt);GM_setValue('genesys-v2-earlier-call-cards',earlierCallCards);card.remove();});
       heading.append(close);
-      installCallCardDrag(card, heading);
+      installCallCardDrag(card, heading,()=>GM_setValue('genesys-v2-earlier-call-cards',earlierCallCards),call);
       const body=doc.createElement('div');body.style.padding='12px 16px';
       for(const [label,value] of call.details){
         const row=doc.createElement('div');row.style.marginBottom='8px';const title=doc.createElement('div');title.textContent=label;title.style.cssText='color:#8fb2bd;font-size:12px';
@@ -7161,7 +7182,7 @@
     installCallCardDrag(popup, heading, (left, top) => {
       if (!lastCallSummary) return;
       lastCallSummary.left = left; lastCallSummary.top = top; saveLastCallWindow();
-    });
+    },lastCallSummary);
     const body = doc.createElement('div'); body.style.padding = '12px 16px';
     for (const [label, value] of lastCallSummary.details) {
       const row = doc.createElement('div'); row.style.cssText = 'margin-bottom:8px;overflow-wrap:anywhere';
@@ -7357,7 +7378,7 @@
       // Native global transitions must not interpolate pointer coordinates.
       popup.style.setProperty('transition', 'none', 'important');
       popup.style.setProperty('animation', 'none', 'important');
-      installCallCardDrag(popup, heading);
+      installCallCardDrag(popup, heading,()=>{if(activeCallSummary)saveActiveCallWindow();},activeCallSummary);
     }
     const snowAction = scopes.flatMap(scope => [...scope.querySelectorAll('a,button,input[type="button"]')])
       .find(element => /open in snow/i.test(element.textContent || element.value || ''));
