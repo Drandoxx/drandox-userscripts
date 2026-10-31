@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.596.0
+// @version      1.597.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -6751,8 +6751,8 @@
       const summary=(text,color)=>{const card=document.createElement('span');card.className='summary-card';card.textContent=text;if(color){card.style.setProperty('color',color,'important');card.style.setProperty('border-color',color,'important');card.style.setProperty('background',`color-mix(in srgb, ${color} 16%, var(--panel))`,'important');card.style.setProperty('box-shadow',`inset 3px 0 0 ${color}`,'important');}status.append(card);};
       summary(fresh.userName || currentAgentName(document));summary(`${rows.length} calls`);
       const presenceDuration=ms=>{const seconds=Math.max(0,Math.floor(ms/1000));return `${Math.floor(seconds/60)}m ${seconds%60}s`;};
-      summary(`PR - ${presence?presenceDuration(presence.breakMs):'—'}`,colors.break || '#ffffff');
-      summary(`MB - ${presence?presenceDuration(presence.mealMs):'—'}`,colors.meal || '#ff7a18');
+      summary(`PR - ${presence?presenceDuration(presence.breakMs):'—'}`,resolvedStatusColor(document,'break'));
+      summary(`MB - ${presence?presenceDuration(presence.mealMs):'—'}`,resolvedStatusColor(document,'meal'));
       const age=document.createElement('span');age.className='summary-age';
       const seconds=Math.max(0,Math.floor((Date.now()-fresh.refreshedAt)/1000));
       age.textContent=dayLoading?'Loading…':dayError || (fresh.refreshedAt?`Updated ${seconds<60?seconds+' seconds':Math.floor(seconds/60)+' min'} ago`:'Not updated yet');
