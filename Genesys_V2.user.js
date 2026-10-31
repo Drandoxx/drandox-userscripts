@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.597.0
+// @version      1.598.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -7559,9 +7559,9 @@
     }
     appendCallCopyAll(doc,body,details);
     if (!incoming && activeCallSummary?.connectedAt) {
-      const timer=doc.createElement('div'); timer.dataset.gbsLiveDuration='true';timer.style.cssText='color:#8fb2bd;font-size:12px;user-select:none;margin:8px 0';
+      const timer=doc.createElement('span'); timer.dataset.gbsLiveDuration='true';timer.style.cssText='display:inline-block;margin-left:8px;padding:1px 5px;border:1px solid #c4b5fd;border-radius:4px;color:#c4b5fd;background:#c4b5fd14;font-size:12px;line-height:inherit;box-shadow:0 0 4px #c4b5fd40;user-select:none;white-space:nowrap;font-variant-numeric:tabular-nums';
       timer.title='Elapsed time from the connected timestamp; final talk duration is confirmed by Genesys';
-      timer.textContent=callDurationLabel({startedAt:activeCallSummary.connectedAt,endedAt:Date.now()});body.append(timer);
+      timer.textContent=callDurationLabel({startedAt:activeCallSummary.connectedAt,endedAt:Date.now()});heading.append(timer);
     }
     if (hasSnow) {
       const button = doc.createElement('button');
