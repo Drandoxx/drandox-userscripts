@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.803
+// @version      2.36.804
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.804","fixes":true,"changes":[{"key":"stack-bubble-persistence","meaningful":true,"text":"Restore classic STACK and HP-STACK bubbles with live controls after reload, retain their inputs and save pending edits on page exit without automatically rerunning jobs."}]},
 {"version":"2.36.803","fixes":true,"changes":[{"key":"classic-stack-references","meaningful":true,"text":"Resolve STACK references through classic ServiceNow's native qualified lookup and selection, sharing Workspace CI ranking; tolerate unavailable preview animation cancellation."}]},
 {"version":"2.36.802","fixes":true,"changes":[{"key":"reopen-tab-placement","meaningful":true,"text":"The sub-row Reopen button restores records under the current main tab without opening or switching a main-row tab."}]},
 {"version":"2.36.801","fixes":true,"changes":[{"key":"matrix-reference-resolution","meaningful":true,"text":"Choose the first exact allowed routing match in ServiceNow's returned order when multiple options exist."}]},
@@ -20215,7 +20216,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       <div class="local-sn-model-note" data-hp-model-note></div>
       <div class="local-sn-hp-complete-note" data-hp-complete-note hidden></div>`;
 
-    const openClassicStack = async (event, profile) => {
+    const openClassicStack = async (event, profile, restored=null) => {
       event.preventDefault();
       const hpStack = profile === 'HP';
       const mode = hpStack ? 'HP-STACK' : 'STACK';
@@ -20526,10 +20527,23 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           runButton.disabled = false;
         }
       });
+      if(restored?.dialog){
+        const old=restored.dialog,oldControls=[...old.querySelectorAll('input,textarea,select')];
+        const savedType=old.querySelector('[data-hp-type][aria-pressed="true"]')?.dataset.hpType;
+        if(hpStack&&savedType)setHPIssueType(savedType);
+        [...dialog.querySelectorAll('input,textarea,select')].forEach((control,index)=>{
+          const saved=oldControls[index];if(!saved)return;
+          control.value=saved.value;
+          if('checked' in control)control.checked=saved.checked;
+        });
+        if(old.dataset.ticketWindowId){dialog.dataset.ticketWindowId=old.dataset.ticketWindowId;const badge=dialog.querySelector('[data-ticket-id]');if(badge)badge.textContent=old.dataset.ticketWindowId;}
+        errorLine.textContent='Restored after reload. Review the details, then click Run to continue.';
+      }
       await openWindowFromAction(event.currentTarget, dialog, {
         pinnedIMS: incidentNumber,
-        afterOpen: () => (templateInput || hpFields.find((field) => !field.value) || hpFields[0])?.focus(),
+        afterOpen: () => {if(!restored)(templateInput || hpFields.find((field) => !field.value) || hpFields[0])?.focus();},
       });
+      if(restored){dialog.classList.add('is-minimized');document.dispatchEvent(new CustomEvent('sn-ai-ticket-window-state'));}
     };
     stackAction?.addEventListener('click', (event) => openClassicStack(event, 'STACK'));
     hpStackAction?.addEventListener('click', (event) => openClassicStack(event, 'HP'));
@@ -21174,9 +21188,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       });
     };
     let ticketWindowPersistTimer = 0;
-    const persistOpenTicketWindows = () => {
+    const flushOpenTicketWindows = () => {
       clearTimeout(ticketWindowPersistTimer);
-      ticketWindowPersistTimer = setTimeout(() => {
         try {
           const windows = [...host.querySelectorAll('.local-sn-cpc-dialog[data-ticket-window]')].slice(-6).map((dialog) => {
             const rect = dialog.getBoundingClientRect();
@@ -21218,8 +21231,13 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         } catch (error) {
           addLog('warn', 'ticket-window-persist-failed', { message: error?.message || String(error) });
         }
-      }, 80);
     };
+    const persistOpenTicketWindows = () => {
+      clearTimeout(ticketWindowPersistTimer);
+      ticketWindowPersistTimer=setTimeout(flushOpenTicketWindows,80);
+    };
+    window.addEventListener('pagehide',flushOpenTicketWindows);
+    window.addEventListener('beforeunload',flushOpenTicketWindows);
     const restorePersistedTicketWindows = () => {
       let saved = [];
       try { saved = JSON.parse(localStorage.getItem(TICKET_WINDOWS_KEY) || '[]'); } catch { saved = []; }
@@ -21230,6 +21248,15 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         template.innerHTML = entry.html;
         const dialog = template.content.firstElementChild;
         if (!(dialog instanceof HTMLElement) || !dialog.matches('.local-sn-cpc-dialog[data-ticket-window]')) return;
+        if(['STACK','HP-STACK'].includes(dialog.dataset.ticketWindow)){
+          if(!classicIncidentMode)return;
+          const currentNumber=normalise(document.getElementById('sys_readonly.incident.number')?.value||document.getElementById('incident.number')?.value);
+          if(dialog.dataset.pinnedIms!==currentNumber)return;
+          const hp=dialog.dataset.ticketWindow==='HP-STACK';
+          void openClassicStack({preventDefault(){},currentTarget:hp?hpStackAction:stackAction},hp?'HP':'STACK',{dialog,centre:entry.centre}).catch(error=>addLog('error','stack-draft-restore-failed',{message:error.message}));
+          return;
+        }
+        if(classicIncidentMode)return;
         if (dialog.dataset.ticketWindow === 'HP') {
           // Saved HTML contains data, never event handlers or live closures.
           // Rebuild HP through the current factory instead of reviving inert DOM.
@@ -23813,10 +23840,12 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       ticketWindowPersistenceObserver.disconnect();
       document.removeEventListener('sn-ai-ticket-window-state', persistOpenTicketWindows);
       clearTimeout(ticketWindowPersistTimer);
+      window.removeEventListener('pagehide',flushOpenTicketWindows);
+      window.removeEventListener('beforeunload',flushOpenTicketWindows);
     }, { once: true });
     host.classList.add('collapsed');
     restoreLauncherPosition();
-    if (workspacePage) restorePersistedTicketWindows();
+    if (workspacePage || classicIncidentMode) restorePersistedTicketWindows();
     // With no restored/open ticket bubble there is no valid IMS owner. Remove
     // stale transcripts, AI responses and bridge routing left by older builds.
     if (workspacePage) void purgeAllTransientIMSDataWhenNoBubbles();
