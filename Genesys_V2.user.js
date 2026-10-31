@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.589.0
+// @version      1.590.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -7452,10 +7452,10 @@
       body.appendChild(button);
     }
     const controls = doc.createElement('div');
-    controls.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid #22d3ee40';
+    controls.style.cssText = 'display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid #22d3ee40';
     if (incoming) {
       const answer = doc.createElement('button'); answer.type = 'button'; answer.textContent = 'Answer';
-      answer.style.cssText = 'padding:8px 12px;background:#243039;color:#22ff88;border:1px solid #22ff88;border-radius:6px;cursor:pointer';
+      answer.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;box-sizing:border-box;min-height:44px;margin:8px 0;padding:8px 12px;font:inherit;line-height:1.4;background:#22c55e;color:#052e16;border:1px solid #4ade80;border-radius:5px;cursor:pointer;font-weight:600';
       answer.addEventListener('click', () => {
         const native = doc.querySelector('.messenger-shown [data-action="answerInteraction"] a')
           || selected?.querySelector('button[aria-label="Answer"]')
