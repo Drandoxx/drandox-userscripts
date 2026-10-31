@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.591.0
+// @version      1.592.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -6651,7 +6651,7 @@
       if(value) {const button=document.createElement('button');button.type='button';button.className='copy';button.setAttribute('aria-label','Copy '+label);
         const icon='<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-copy" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';button.innerHTML=icon;outlineLucide(button);
         let resetCopy=null;
-        button.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(value);clearTimeout(resetCopy);button.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';outlineLucide(button);button.title='Copied';resetCopy=setTimeout(()=>{if(button.isConnected){button.innerHTML=icon;outlineLucide(button);button.title='Copy '+label;}},1600);}catch(_){button.title='Copy failed';}});cell.append(button);}
+        button.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(value);clearTimeout(resetCopy);button.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';outlineLucide(button);button.title='Copied';resetCopy=setTimeout(()=>{if(button.isConnected){button.innerHTML=icon;outlineLucide(button);button.title='Copy '+label;}},3000);}catch(_){button.title='Copy failed';}});cell.append(button);}
       return cell;
     }
     function paintCallRows() {
@@ -6679,7 +6679,7 @@
         const queue=myCallQueue(c,currentAgentApiId || fresh.userId,fresh),all=document.createElement('td');
         const copyAll=document.createElement('button');copyAll.type='button';copyAll.className='copy-all';copyAll.setAttribute('aria-label','Copy all details for call at '+date.textContent);
         copyAll.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="lucide lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16H2V2h14v2"/></svg><span>Copy All</span>';outlineLucide(copyAll);
-        copyAll.addEventListener('click',async()=>{const text=[['Time',date.textContent],['Number',phone],['Duration',duration.textContent],['Location',location],['Queue',queue]].filter(([,value])=>value && value!=='—').map(([label,value])=>label+' - '+String(value).replace(/[\r\n]+/g,' ')).join('\n');try{await navigator.clipboard.writeText(text);copyAll.innerHTML='<svg viewBox="0 0 24 24" class="lucide lucide-check"><path d="M20 6 9 17l-5-5"/></svg><span>Copied</span>';outlineLucide(copyAll);}catch(_){copyAll.title='Copy failed; try again';}});all.append(copyAll);
+        copyAll.addEventListener('click',async()=>{const text=[['Time',date.textContent],['Number',phone],['Duration',duration.textContent],['Location',location],['Queue',queue]].filter(([,value])=>value && value!=='—').map(([label,value])=>label+' - '+String(value).replace(/[\r\n]+/g,' ')).join('\n');try{await navigator.clipboard.writeText(text);callCopyFeedback(copyAll,'<svg viewBox="0 0 24 24" class="lucide lucide-check"><path d="M20 6 9 17l-5-5"/></svg><span>Copied</span>');outlineLucide(copyAll);}catch(_){copyAll.title='Copy failed; try again';}});all.append(copyAll);
         row.append(date,copyCell(phone,'phone number'),duration,copyCell(location,'location'),copyCell(queue,'queue'),all);tbody.append(row);
       }
       if(!rows.length) {const row=document.createElement('tr'),cell=document.createElement('td');cell.colSpan=6;cell.textContent='No calls recorded for you today.';row.append(cell);tbody.append(row);}
@@ -6910,6 +6910,16 @@
   function validCallSnowUrl(value) {
     try{const url=new URL(value);return url.protocol==='https:' && url.hostname==='kingfisher.service-now.com' && !url.username && !url.password ? url.href : null;}catch(_){return null;}
   }
+  function callCopyFeedback(button,html) {
+    if(!button.__gbsCopyOriginal)button.__gbsCopyOriginal=button.innerHTML;
+    clearTimeout(button.__gbsCopyReset);
+    button.innerHTML=html;
+    button.__gbsCopyReset=setTimeout(()=>{
+      button.innerHTML=button.__gbsCopyOriginal;
+      button.__gbsCopyReset=null;
+      if(button.getAttribute('aria-label')==='All call details copied')button.setAttribute('aria-label','Copy all call details');
+    },3000);
+  }
   function callCopyAllText(details) {
     const entries=Array.from(details || []);
     const find=pattern=>String(entries.find(([label])=>pattern.test(label))?.[1] || '').replace(/[\r\n]+/g,' ').trim();
@@ -6922,7 +6932,7 @@
     button.style.cssText='display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;gap:6px;box-sizing:border-box;min-height:44px;margin:8px 8px 8px 0;padding:8px 12px;font:inherit;line-height:1.4;border:1px solid #22d3ee;border-radius:5px;background:#22343b;color:#a5f3fc;cursor:pointer';
     const icon=checked=>`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-${checked?'check':'copy'}" aria-hidden="true">${checked?'<path d="M20 6 9 17l-5-5"/>':'<rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2"/>'}</svg>`;
     button.innerHTML=icon(false)+'<span>Copy All</span>';
-    button.addEventListener('click',async()=>{try{await doc.defaultView.navigator.clipboard.writeText(text);button.innerHTML=icon(true)+'<span>Copied</span>';button.setAttribute('aria-label','All call details copied');}catch(_){button.setAttribute('aria-label','Copy failed; try again');}});
+    button.addEventListener('click',async()=>{try{await doc.defaultView.navigator.clipboard.writeText(text);callCopyFeedback(button,icon(true)+'<span>Copied</span>');button.setAttribute('aria-label','All call details copied');}catch(_){button.setAttribute('aria-label','Copy failed; try again');}});
     body.append(button);
   }
   function appendEarlierSnowButton(doc, body, call) {
@@ -7056,7 +7066,7 @@
         if(/phone number|location|country|queue|line name/i.test(label)){
           const copy=doc.createElement('button');copy.type='button';copy.setAttribute('aria-label',`Copy ${label}`);copy.style.cssText='margin-left:8px;background:transparent;border:0;color:#67e8f9;cursor:pointer';
           copy.innerHTML='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="lucide lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2"/></svg>';
-          copy.addEventListener('click',async()=>{try{await doc.defaultView.navigator.clipboard.writeText(value);copy.innerHTML='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="lucide lucide-check"><path d="M20 6 9 17l-5-5"/></svg>';}catch(_){}});content.append(copy);
+          copy.addEventListener('click',async()=>{try{await doc.defaultView.navigator.clipboard.writeText(value);callCopyFeedback(copy,'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="lucide lucide-check"><path d="M20 6 9 17l-5-5"/></svg>');}catch(_){}});content.append(copy);
         }
         row.append(title,content);body.append(row);
       }
@@ -7163,7 +7173,7 @@
         const icon = checked => `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-${checked ? 'check' : 'copy'}">${checked ? '<path d="M20 6 9 17l-5-5"/>' : '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>'}</svg>`;
         copy.innerHTML = icon(false);
         copy.addEventListener('click', async () => {
-          try { await doc.defaultView.navigator.clipboard.writeText(value); copy.innerHTML = icon(true); }
+          try { await doc.defaultView.navigator.clipboard.writeText(value); callCopyFeedback(copy,icon(true)); }
           catch (_) { copy.setAttribute('aria-label', 'Copy failed'); }
         });
         content.appendChild(copy);
@@ -7429,7 +7439,7 @@
         const icon = checked => `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-${checked ? 'check' : 'copy'}">${checked ? '<path d="M20 6 9 17l-5-5"/>' : '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>'}</svg>`;
         copy.innerHTML = icon(false);
         copy.addEventListener('click', async () => {
-          try { await doc.defaultView.navigator.clipboard.writeText(value); copy.innerHTML = icon(true); }
+          try { await doc.defaultView.navigator.clipboard.writeText(value); callCopyFeedback(copy,icon(true)); }
           catch (_) { copy.setAttribute('aria-label', 'Copy failed'); }
         });
         content.appendChild(copy);
