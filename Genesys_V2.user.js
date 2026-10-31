@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.588.0
+// @version      1.589.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -6917,7 +6917,7 @@
   function appendCallCopyAll(doc,body,details) {
     const text=callCopyAllText(details);if(!text)return;
     const button=doc.createElement('button');button.type='button';button.setAttribute('aria-label','Copy all call details');
-    button.style.cssText='display:inline-flex;align-items:center;gap:6px;margin:4px 0 10px;padding:6px 10px;border:1px solid #397382;border-radius:5px;background:transparent;color:#67e8f9;cursor:pointer';
+    button.style.cssText='display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;gap:6px;box-sizing:border-box;min-height:44px;margin:8px 8px 8px 0;padding:8px 12px;font:inherit;line-height:1.4;border:1px solid #22d3ee;border-radius:5px;background:#22343b;color:#a5f3fc;cursor:pointer';
     const icon=checked=>`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-${checked?'check':'copy'}" aria-hidden="true">${checked?'<path d="M20 6 9 17l-5-5"/>':'<rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2"/>'}</svg>`;
     button.innerHTML=icon(false)+'<span>Copy All</span>';
     button.addEventListener('click',async()=>{try{await doc.defaultView.navigator.clipboard.writeText(text);button.innerHTML=icon(true)+'<span>Copied</span>';button.setAttribute('aria-label','All call details copied');}catch(_){button.setAttribute('aria-label','Copy failed; try again');}});
@@ -6927,7 +6927,7 @@
     if (!validCallSnowUrl(call.snowUrl) && !call.hadSnowAction) return;
     const button = doc.createElement('button'); button.type = 'button';
     button.textContent = 'Open in SNOW';
-    button.style.cssText = 'margin-top:8px;padding:8px 12px;background:#22343b;color:#a5f3fc;border:1px solid #22d3ee;border-radius:5px;cursor:pointer';
+    button.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;box-sizing:border-box;min-height:44px;margin:8px 0;padding:8px 12px;font:inherit;line-height:1.4;background:#243c32;color:#b6edc5;border:1px solid #81b5a1;border-radius:5px;cursor:pointer';
     button.addEventListener('click', () => {
       invokeCallSnow(doc,call,button);
     });
@@ -7445,7 +7445,7 @@
       const button = doc.createElement('button');
       button.type = 'button';
       button.textContent = 'Open in SNOW';
-      button.style.cssText = 'padding:8px 12px;background:#22343b;color:#a5f3fc;border:1px solid #22d3ee;border-radius:5px;cursor:pointer';
+      button.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;box-sizing:border-box;min-height:44px;margin:8px 0;padding:8px 12px;font:inherit;line-height:1.4;background:#243c32;color:#b6edc5;border:1px solid #81b5a1;border-radius:5px;cursor:pointer';
       button.addEventListener('click', () => {
         invokeCallSnow(doc,activeCallSummary,button);
       });
