@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.802
+// @version      2.36.803
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.803","fixes":true,"changes":[{"key":"classic-stack-references","meaningful":true,"text":"Resolve STACK references through classic ServiceNow's native qualified lookup and selection, sharing Workspace CI ranking; tolerate unavailable preview animation cancellation."}]},
 {"version":"2.36.802","fixes":true,"changes":[{"key":"reopen-tab-placement","meaningful":true,"text":"The sub-row Reopen button restores records under the current main tab without opening or switching a main-row tab."}]},
 {"version":"2.36.801","fixes":true,"changes":[{"key":"matrix-reference-resolution","meaningful":true,"text":"Choose the first exact allowed routing match in ServiceNow's returned order when multiple options exist."}]},
 {"version":"2.36.800","fixes":true,"changes":[{"key":"matrix-reference-resolution","meaningful":true,"text":"Resolve missing or ambiguous cached routing options through ServiceNow's current-form reference lookup, including recent selections, without guessing a record."}]},
@@ -11553,7 +11554,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     };
   }
   const aiResponsePreviews=new Map();
-  function clearAIResponsePreview(id){const entry=aiResponsePreviews.get(id);if(entry?.typingTimer)clearTimeout(entry.typingTimer);entry?.animation?.cancel();if(entry?.reposition)window.removeEventListener('resize',entry.reposition);entry?.panel?.remove();aiResponsePreviews.delete(id);}
+  function clearAIResponsePreview(id){const entry=aiResponsePreviews.get(id);if(entry?.typingTimer)clearTimeout(entry.typingTimer);if(typeof entry?.animation?.cancel==='function')entry.animation.cancel();if(entry?.reposition)window.removeEventListener('resize',entry.reposition);entry?.panel?.remove();aiResponsePreviews.delete(id);}
   function startAIResponsePreview(id,ims,provider){
     for(const key of aiResponsePreviews.keys())clearAIResponsePreview(key);
     if(!state.aiResponsePreview||provider!=='chatgpt')return;
@@ -11614,7 +11615,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       tick();
     }
     if(!(typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches)&&entry.body.animate){
-      entry.animation?.cancel();entry.animation=entry.body.animate([{boxShadow:'inset 0 2px 12px #0004,0 0 12px #ac94ec70'},{boxShadow:'inset 0 2px 12px #0004,0 0 0 #ac94ec00'}],{duration:420,easing:'ease-out'});
+      if(typeof entry.animation?.cancel==='function')entry.animation.cancel();entry.animation=entry.body.animate([{boxShadow:'inset 0 2px 12px #0004,0 0 12px #ac94ec70'},{boxShadow:'inset 0 2px 12px #0004,0 0 0 #ac94ec00'}],{duration:420,easing:'ease-out'});
     }
   }
   function formatAIResponseTV(raw){
@@ -20423,8 +20424,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             ? normalise(hpSuppliedValues['model-number']).replace(/^\*+/, '')
             : ciInput.value.trim().replace(/^\*+/, '');
           const group = hpStack ? '' : groupInput.value.trim().replace(/^\*+/, '');
-          if (ci) setField('sys_display.incident.cmdb_ci', `*${ci}`);
-          if (group) setField('sys_display.incident.assignment_group', `*${group}`);
+          if (ci) await snClassicCommitReference('cmdb_ci',ci,{stopped:()=>stopped});
+          if (group) await snClassicCommitReference('assignment_group',group,{stopped:()=>stopped});
           await sleep(700);
           if (stopped) return;
           const context = readIncident();
@@ -24187,8 +24188,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       status.style.color = '#c7f5e9'; status.textContent = 'Loading AI settings and reading incident fields…';
       await loadAISettings();
       if (!state.ai.enabled) { status.style.color = '#ffaaa0'; status.textContent = 'AI power is off. Turn it on in SN AI settings, then run Stack again.'; return; }
-      if (ci) set('sys_display.incident.cmdb_ci', `*${ci}`);
-      if (group) set('sys_display.incident.assignment_group', `*${group}`);
+      if (ci) await snClassicCommitReference('cmdb_ci',ci);
+      if (group) await snClassicCommitReference('assignment_group',group);
       await sleep(700);
       const context = read();
       const templateText = template.trim() ? template : String(get('incident.description')?.value || '');
@@ -25887,6 +25888,38 @@ function chatsTodaySearchMatch(text,query) {
   return false;
 }
 // SN_AI_CI_SEARCH_BEGIN
+async function snClassicCommitReference(name,query,options={}) {
+  const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
+  const input=page.document.getElementById('sys_display.incident.'+name),form=page.g_form;
+  if(!input||input.disabled||input.readOnly||!form)throw Error('CLASSIC_REFERENCE_UNAVAILABLE: '+name);
+  if(!input.ac&&typeof page.AJAXTableCompleter==='function')new page.AJAXTableCompleter(input,'incident.'+name,'','true');
+  const ac=input.ac;
+  if(!ac?.getQuerystring||!ac.referenceSelect||typeof page.GlideAjax!=='function')throw Error('CLASSIC_REFERENCE_UNAVAILABLE: '+name);
+  const record=form.getUniqueValue(),initialId=form.getValue(name),initialDisplay=input.value;
+  const check=()=>{if(options.stopped?.())throw Error('CLASSIC_REFERENCE_STOPPED');if(form.getUniqueValue()!==record||!input.isConnected||form.getValue(name)!==initialId||input.value!==initialDisplay)throw Error('CLASSIC_REFERENCE_CONTEXT_CHANGED: '+name);};
+  const rows=[],terms=name==='cmdb_ci'?ciSearchTerms(query):['*'+String(query).replace(/^\*+/, '')];
+  for(const term of terms){
+    check();
+    const xml=await new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>reject(Error('CLASSIC_REFERENCE_TIMEOUT: '+name)),8000);
+      const request=new page.GlideAjax(ac.PROCESSOR);
+      request.setQueryString(ac.getQuerystring(term).replace(/sysparm_max=[^&]*/,'sysparm_max=100'));
+      request.setErrorCallback(()=>{clearTimeout(timer);reject(Error('CLASSIC_REFERENCE_READ_FAILED: '+name));});
+      request.getXML(response=>{clearTimeout(timer);resolve(response?.responseXML||response);});
+    });
+    check();
+    if(!xml?.getElementsByTagName)throw Error('CLASSIC_REFERENCE_RESPONSE_INVALID: '+name);
+    for(const item of [...Array.from(xml.getElementsByTagName('recent')),...Array.from(xml.getElementsByTagName('item'))].slice(0,100)){
+      const id=item.getAttribute('name'),label=item.getAttribute('label');
+      if(/^[a-f0-9]{32}$/i.test(id||'')&&label)rows.push({sysId:id,referenceData:[{value:label}]});
+    }
+  }
+  const ranked=name==='cmdb_ci'?ciRankRows(rows,query):rows.filter(row=>row.referenceData[0].value.toLowerCase()===String(query).toLowerCase());
+  const chosen=ranked[0];if(!chosen)throw Error('CLASSIC_REFERENCE_NO_MATCH: '+name+' - '+query);
+  check();ac.referenceSelect(chosen.sysId,chosen.referenceData[0].value);ac.clearDropDown();ac.hideDropDown();
+  if(form.getValue(name)!==chosen.sysId||input.value!==chosen.referenceData[0].value)throw Error('CLASSIC_REFERENCE_COMMIT_FAILED: '+name);
+  return input.value;
+}
 function ciSearchWords(value) {
   return String(value||'').slice(0,256).normalize('NFKD').replace(/\p{M}/gu,'').toLowerCase().match(/[\p{L}\p{N}]+/gu)||[];
 }
