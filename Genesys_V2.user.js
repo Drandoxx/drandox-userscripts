@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.594.0
+// @version      1.595.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -6756,7 +6756,7 @@
       const seconds=Math.max(0,Math.floor((Date.now()-fresh.refreshedAt)/1000));
       age.textContent=dayLoading?'Loading…':dayError || (fresh.refreshedAt?`Updated ${seconds<60?seconds+' seconds':Math.floor(seconds/60)+' min'} ago`:'Not updated yet');
       status.append(age);
-      const signature=JSON.stringify([fresh.day,fresh.refreshedAt,rows]);if(signature===myCallsPanelCacheSignature)return;myCallsPanelCacheSignature=signature;tbody.replaceChildren();
+      const signature=JSON.stringify([fresh.day,fresh.refreshedAt,dayLoading,dayError,rows]);if(signature===myCallsPanelCacheSignature)return;myCallsPanelCacheSignature=signature;tbody.replaceChildren();
       for(const c of rows) {
         const row=document.createElement('tr');row.dataset.conversationId=c.conversationId;row.title='Conversation ID: '+c.conversationId;
         const date=document.createElement('td'),stamp=Date.parse(c.conversationStart);date.textContent=Number.isFinite(stamp)?new Intl.DateTimeFormat(undefined,{hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(new Date(stamp)):'—';
