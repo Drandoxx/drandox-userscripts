@@ -9830,7 +9830,7 @@ async function snOfflinePackDataset(records){
   if(current.length||!chunks.length)await finish();
   return{chunks,count:records.length,chunkCount:chunks.length,complete:true,sha256:await snOfflineHash(chunks.map(c=>c.body).join(''))};
 }
-function snOfflinePending(value){return new Promise((resolve,reject)=>{const open=indexedDB.open('sn-ai-offline-export-v1',1);open.onupgradeneeded=()=>open.result.createObjectStore('pending');open.onerror=()=>reject(Error('offline_queue_unavailable'));open.onsuccess=()=>{const db=open.result,tx=db.transaction('pending',value===undefined?'readonly':'readwrite'),store=tx.objectStore('pending');const r=value===undefined?store.get('AKIMLA01'):value===null?store.delete('AKIMLA01'):store.put(value,'AKIMLA01');let result;r.onsuccess=()=>result=r.result;tx.oncomplete=()=>{db.close();resolve(result);};tx.onerror=tx.onabort=()=>{db.close();reject(Error('offline_queue_save_failed'));};};});}
+function snOfflinePending(value){return new Promise((resolve,reject)=>{const open=indexedDB.open('sn-ai-offline-export-v1',1);open.onupgradeneeded=()=>open.result.createObjectStore('pending');open.onerror=()=>reject(Error('offline_queue_unavailable'));open.onsuccess=()=>{const db=open.result,tx=db.transaction('pending',value===undefined?'readonly':'readwrite'),store=tx.objectStore('pending');const r=value===undefined?store.get('AKIMLA01'):value===null?store.clear():store.put(value,'AKIMLA01');let result;r.onsuccess=()=>result=r.result;tx.oncomplete=()=>{db.close();resolve(result);};tx.onerror=tx.onabort=()=>{db.close();reject(Error('offline_queue_save_failed'));};};});}
 async function snOfflineAuthorizedAccount(){const account=await snPersonalCurrentAccount();if(!snPersonalApprovedPage()||String(account?.userID||'').toUpperCase()!=='AKIMLA01')throw Error('offline_updater_not_available');return account;}
 async function snOfflineRequest(action,{method='GET',query={},body,token}={}){
   await snOfflineAuthorizedAccount();
@@ -9842,11 +9842,12 @@ async function snOfflineRequest(action,{method='GET',query={},body,token}={}){
 }
 async function snOfflineRetry(operation){for(let attempt=0;;attempt++){try{return await operation();}catch(e){if(attempt>=3||!(!e.status||e.status===429||e.status>=500))throw e;await new Promise(r=>setTimeout(r,Math.max(e.retryMs||0,1000*2**attempt)));}}}
 let snOfflineUpdating=false;
-async function snOfflineUpdateReferences(progress){
+async function snOfflineUpdateReferences(progress,{fresh=false}={}){
   if(snOfflineUpdating)throw Error('offline_update_already_running');snOfflineUpdating=true;
   try{
     const run=async()=>{
       const account=await snOfflineAuthorizedAccount(),identity=await diagnosticIdentity();
+      if(fresh){progress('Clearing the previous local reference export…',0);await snOfflinePending(null);}
       let pending=await snOfflinePending();
       if(!pending){
         progress('Collecting ServiceNow reference data…',0);
@@ -9900,7 +9901,7 @@ function installSnOfflineUpdaterUI(panel){
     const bar=document.createElement('progress');bar.max=100;bar.value=0;bar.hidden=true;bar.setAttribute('aria-label','Offline SNOW update progress');bar.style.cssText='width:100%;height:12px;accent-color:var(--sn-theme-ac94ec,#ac94ec)';
     const update=document.createElement('button'),message=document.createElement('div');message.setAttribute('role','status');message.style.cssText='font-size:12px;line-height:1.5';
     update.type='button';update.textContent='Update Offline SNOW data';
-    update.onclick=async()=>{if(snOfflineUpdating)return;update.disabled=true;bar.hidden=false;bar.value=0;try{await snOfflineUpdateReferences((text,percent)=>{message.textContent=text;if(Number.isFinite(percent))bar.value=Math.max(bar.value,percent);});}catch(e){message.textContent=e.message+' Pending data is kept for retry.';recordCompactDiagnostic('warn','offline-reference-upload',{code:e.code||'unconfirmed',status:e.status||0});}finally{update.disabled=false;}};
+    update.onclick=async()=>{if(snOfflineUpdating)return;update.disabled=true;bar.hidden=false;bar.value=0;try{await snOfflineUpdateReferences((text,percent)=>{message.textContent=text;if(Number.isFinite(percent))bar.value=Math.max(bar.value,percent);},{fresh:true});}catch(e){message.textContent=e.message+' Pending data is kept for retry.';recordCompactDiagnostic('warn','offline-reference-upload',{code:e.code||'unconfirmed',status:e.status||0});}finally{update.disabled=false;}};
     row.append(update,bar,message);panel.append(row);
   }).catch(()=>{});
 }
