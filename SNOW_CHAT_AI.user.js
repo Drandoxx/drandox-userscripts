@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.823
+// @version      2.36.824
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.824","fixes":true,"changes":[{"key":"personal-mode-colors","meaningful":true,"text":"Keep explicitly chosen green mode colors and show the actual theme color for modes without a manual override."}]},
 {"version":"2.36.823","fixes":true,"changes":[{"key":"personal-mode-colors","meaningful":true,"text":"Sync manually customized mode colors across devices and restore server colors on page load without saving built-in default colors."},{"key":"gemini-model-selection","meaningful":true,"text":"Use Gemini 3.5 Flash-Lite as the only model option and automatically migrate older saved model selections."},{"key":"shared-ai-mode-messages","meaningful":true,"text":"Keep built-in mode guidance in the original instructions and leave the shared editor empty for extra required details, appended verbatim without a wrapper prompt."}]},
 {"version":"2.36.822","fixes":true,"changes":[{"key":"shared-ai-mode-messages","meaningful":true,"text":"Let AKIMLA01 edit shared per-mode AI writing messages in Developer settings, with backend authorization, revision protection and cached messages for all users. STACK modes also honor the selected Gemini API connection."},{"key":"ai-feedback","meaningful":true,"text":"Send Gemini feedback once and ask the model to use or update a SNOW memory or skill only if that capability is available, without storing feedback as script-managed memory."}]},
 {"version":"2.36.821","fixes":true,"changes":[{"key":"gemini-connection-check","meaningful":true,"text":"Stop all Gemini requests after 20 seconds without automatic retry and use low-latency reasoning for supported ticket models."},{"key":"ticket-progress-stages","meaningful":true,"text":"Keep FTF preparation, AI waiting and ticket filling stages separate so preparing New Event cannot falsely mark the AI reply as validated."}]},
@@ -409,9 +410,9 @@ function snPersonalSnippetExport(rows){
   if(!Array.isArray(rows))return [];
   return snPersonalNormalizeSnippetIDs(rows).map((row,order)=>({id:row.id,name:String(row.title||''),text:String(row.message||''),order}));
 }
-function snPersonalModeColors(value){
+function snPersonalModeColors(value,legacy=false){
   const names=['CMD','CPC','ILS_PRNT','DESCRIPTION','COM_PLUS','FTF','HP','STACK','HP_STACK'];
-  return Object.fromEntries(names.filter(name=>/^#[0-9a-f]{6}$/i.test(String(value?.[name]||''))&&String(value[name]).toLowerCase()!=='#167d5f').map(name=>[name,String(value[name]).toLowerCase()]));
+  return Object.fromEntries(names.filter(name=>/^#[0-9a-f]{6}$/i.test(String(value?.[name]||''))&&(!legacy||String(value[name]).toLowerCase()!=='#167d5f')).map(name=>[name,String(value[name]).toLowerCase()]));
 }
 function snPersonalSettingsDiff(previous,next){
   const patch={};
@@ -464,7 +465,7 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
     const normalized=snPersonalNormalizeSnippetIDs(rows);
     if(JSON.stringify(rows)!==JSON.stringify(normalized)){rows=normalized;localStorage.setItem('snippets_manager_v1',JSON.stringify(rows));notify();}
     const modes=await readModes(),nova=localStorage.getItem('sn-ai-nova-messages-v1:'+ctx.sysId),actionColors=await GM_getValue('local-sn-inspector-action-colors-v1',{});
-    return {snippets:snPersonalSnippetExport(rows),appearance:{theme:localStorage.getItem('snippets_manager_theme_v1')==='light'?'light':'dark',modeColors:snPersonalModeColors(actionColors?.enabled?actionColors.colors:{})},
+    return {snippets:snPersonalSnippetExport(rows),appearance:{theme:localStorage.getItem('snippets_manager_theme_v1')==='light'?'light':'dark',modeColors:snPersonalModeColors(actionColors?.enabled?actionColors.colors:{},!actionColors?.manualOnly)},
       enabledModes:Object.keys(defaultModes).filter(key=>modes?.[key]!==false),...(nova===null?{}:{nova:{suggestions:nova==='yes'}})};
   };
   const valid=ctx=>!stopped&&snPersonalApprovedPage()&&context===ctx&&ctx.stamp===userStamp()&&localStorage.getItem('sn-ai-personal-settings-active-account')===ctx.account;
@@ -476,7 +477,7 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
       else localStorage.setItem('snippets_manager_v1','[]');
       localStorage.setItem('snippets_manager_theme_v1',settings.appearance?.theme==='light'?'light':'dark');
       const colors=snPersonalModeColors(Object.prototype.hasOwnProperty.call(settings.appearance||{},'modeColors')?settings.appearance.modeColors:ctx.legacyColors);
-      await GM_setValue('local-sn-inspector-action-colors-v1',{enabled:Object.keys(colors).length>0,colors});
+      await GM_setValue('local-sn-inspector-action-colors-v1',{enabled:Object.keys(colors).length>0,colors,manualOnly:true});
       const enabled=Array.isArray(settings.enabledModes)?settings.enabledModes:Object.keys(defaultModes);
       await writeModes(Object.fromEntries(Object.keys(defaultModes).map(key=>[key,enabled.includes(key)])));
       if(!valid(ctx))return;
@@ -627,7 +628,7 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
         if(!valid(ctx))return;
         ctx.seedAllowed=!owner||owner===account;
         const legacyActionColors=await GM_getValue('local-sn-inspector-action-colors-v1',{});
-        ctx.legacyColors=ctx.seedAllowed&&legacyActionColors?.enabled?snPersonalModeColors(legacyActionColors.colors):{};
+        ctx.legacyColors=ctx.seedAllowed&&legacyActionColors?.enabled?snPersonalModeColors(legacyActionColors.colors,!legacyActionColors.manualOnly):{};
         const cachedCredentialBinding=await GM_getValue('sn-ai-personal-settings-binding-v2:'+ctx.account,null);
         if(/^[a-f0-9]{32}$/.test(cachedCredentialBinding||'')&&valid(ctx))onCredentialBinding({account:ctx.account,binding:cachedCredentialBinding,seedAllowed:ctx.seedAllowed,valid:()=>valid(ctx),token:async()=>{if(!valid(ctx))throw Error('Account changed');return (await identity()).token;}});
         const journal=readJournal(ctx);
@@ -9386,7 +9387,7 @@ function startSNAI(tabIdentity) {
     const savedActionColors = await gmGetValue(ACTION_COLORS_KEY, DEFAULT_ACTION_COLORS);
     state.actionColors = {
       enabled: Boolean(savedActionColors?.enabled),
-      colors: snPersonalModeColors(savedActionColors?.enabled?savedActionColors.colors:{}),
+      colors: snPersonalModeColors(savedActionColors?.enabled?savedActionColors.colors:{},!savedActionColors?.manualOnly),
     };
     state.feedbackEnabled = Boolean(await gmGetValue(AI_FEEDBACK_ENABLED_KEY, false));
     // Feedback belongs to its original conversation, never future ticket prompts.
@@ -19808,7 +19809,11 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const aiDeleteConfirm = settingsDialog.querySelector('[data-ai-delete-confirm]');
     const actionButtonByColourName = Object.freeze({ CPC: cpcAction, ILS_PRNT: ilsPrntAction, DESCRIPTION: descriptionAction, COM_PLUS: comPlusAction, FTF: ftfAction, HP: hpAction, STACK: stackAction, HP_STACK: hpStackAction, CMD: cmdActionButton });
     const validColour = (value) => /^#[0-9a-f]{6}$/i.test(String(value || '').trim());
-    const currentActionColour = (name) => state.actionColors.enabled && validColour(state.actionColors.colors[name]) ? String(state.actionColors.colors[name]).toUpperCase() : DEFAULT_ACTION_COLOR;
+    const currentActionColour = (name) => {
+      if(state.actionColors.enabled&&validColour(state.actionColors.colors[name]))return String(state.actionColors.colors[name]).toUpperCase();
+      const theme=getComputedStyle(host).getPropertyValue('--sn-theme-655573').trim();
+      return validColour(theme)?theme:'#655573';
+    };
     const syncActionColourControls = () => {
       for (const name of ACTION_COLOR_NAMES) {
         const colour = currentActionColour(name);
@@ -20337,7 +20342,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       if (!validColour(colour)) return;
       try {
         const colors=snPersonalModeColors({...state.actionColors.colors,[name]:colour});
-        state.actionColors = { enabled: Object.keys(colors).length>0, colors };
+        state.actionColors = { enabled: Object.keys(colors).length>0, colors, manualOnly:true };
         await gmSetValue(ACTION_COLORS_KEY, state.actionColors);
         document.dispatchEvent(new CustomEvent('sn-ai-personal-settings-change'));
         aiSettingsError.textContent = '';
