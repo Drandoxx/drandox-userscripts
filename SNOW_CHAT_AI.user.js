@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.808
+// @version      2.36.809
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.809","fixes":true,"changes":[{"key":"offline-snow-reference-updater","meaningful":true,"text":"Exclude Castorama, France and Brico user locations from Offline SNOW exports and send full replacement snapshots with department eligibility and English matrix names."}]},
 {"version":"2.36.808","fixes":false,"changes":[{"key":"offline-snow-reference-updater","meaningful":true,"text":"Let AKIMLA01 manually refresh Offline SNOW reference data and upload it to Drandox with resumable verified batches, without extra login or instance entry."}]},
 {"version":"2.36.807","fixes":true,"changes":[{"key":"classic-stack-references","meaningful":true,"text":"Limit classic CI searches to 50 candidates, cache repeat searches, clear invalid-reference errors on click, and support classic New Event CI fields."}]},
 {"version":"2.36.806","fixes":true,"changes":[{"key":"classic-stack-references","meaningful":true,"text":"Preserve native reference XML and column metadata so ranked classic CI suggestions render and can be selected."}]},
@@ -9791,30 +9792,33 @@ async function snOfflineCollectReferences(page,progress=()=>{},cancelled=()=>fal
     }
     return{rows,total,complete:rows.length===total};
   };
-  const users=await read('sys_user','active=true','sys_id,user_name,name,location',150000);
-  const templates=await read('sys_template','table=new_call','sys_id,name,table,template',2000);
-  const matrix=await read('u_matrix','u_active=true^u_confidential!=true','sys_id,u_code,u_parent,u_type,u_restrict_visibility,u_confidential',20000);
+  const users=await read('sys_user','active=true','sys_id,user_name,name,location,department',150000);
+  const templates=await read('sys_template','table=new_call','sys_id,name,table,template,u_call_type,active',2000);
+  const matrix=await read('u_matrix','u_active=true^u_confidential!=true','sys_id,u_code,u_parent,u_type,u_restrict_visibility,u_confidential,u_department,u_description,u_name_en',20000);
+  const departments=await read('cmn_department','sys_idISNOTEMPTY','sys_id,parent',20000);
   const parseTemplate=raw=>{
     const out={};for(const part of String(raw||'').split(/\^(?=[a-zA-Z_][a-zA-Z0-9_.]*=|EQ(?:\^|$))/)){
       const i=part.indexOf('=');if(i<0)continue;const key=part.slice(0,i),v=part.slice(i+1);
       if(!/^javascript:/i.test(v))out[key]=v;
     }return out;
   };
-  const allTemplates=templates.rows.map(row=>{const fields=parseTemplate(value(row.template));return{id:value(row.sys_id),name:display(row.name),description:fields.description||'',shortDescription:fields.short_description||'',eventType:fields.call_type||'',matrixIds:{category:fields.u_matrix_category||'',subcategory:fields.u_matrix_subcategory||'',symptom:fields.u_matrix_symptom||''}};});
-  return{schema:1,exportedAt:new Date().toISOString(),meta:{source:page.location.origin,usersComplete:users.complete,reportedUserCount:users.total,downloadedUserCount:users.rows.length,templatesWithoutStaticDescription:allTemplates.filter(t=>!t.description.trim()).length,matrixComplete:matrix.complete,templatesComplete:templates.complete},users:users.rows.map(r=>({id:value(r.sys_id),userID:value(r.user_name),username:value(r.user_name),name:display(r.name),location:display(r.location),locationId:value(r.location)})),templates:allTemplates.filter(t=>t.description.trim()),matrix:matrix.rows.map(r=>({id:value(r.sys_id),code:value(r.u_code),parent:value(r.u_parent),type:display(r.u_type),restricted:value(r.u_restrict_visibility)==='true',confidential:value(r.u_confidential)==='true'}))};
+  const allTemplates=templates.rows.map(row=>{const fields=parseTemplate(value(row.template));return{id:value(row.sys_id),name:display(row.name),description:fields.description||'',shortDescription:fields.short_description||'',eventType:value(row.u_call_type)||fields.call_type||'',matrixIds:{category:fields.u_matrix_category||'',subcategory:fields.u_matrix_subcategory||'',symptom:fields.u_matrix_symptom||''}};});
+  return{schema:1,exportedAt:new Date().toISOString(),meta:{source:page.location.origin,usersComplete:users.complete,reportedUserCount:users.total,downloadedUserCount:users.rows.length,templatesWithoutStaticDescription:allTemplates.filter(t=>!t.description.trim()).length,departmentsComplete:departments.complete,matrixComplete:matrix.complete,templatesComplete:templates.complete},eligibilitySchema:1,userDirectoryFilterVersion:1,departments:departments.rows.map(r=>({id:value(r.sys_id),parent:value(r.parent)})),users:users.rows.filter(r=>!/castorama|france|brico/i.test(display(r.location))).map(r=>({id:value(r.sys_id),userID:value(r.user_name),username:value(r.user_name),name:display(r.name),location:display(r.location),locationId:value(r.location),departmentId:value(r.department)})),templates:allTemplates.filter(t=>t.description.trim()),matrix:matrix.rows.map(r=>({id:value(r.sys_id),code:value(r.u_code),nameEN:value(r.u_name_en)||value(r.u_description),departmentIds:value(r.u_department).split(',').filter(Boolean),parent:value(r.u_parent),type:display(r.u_type),restricted:value(r.u_restrict_visibility)==='true',confidential:value(r.u_confidential)==='true'}))};
 }
+
+
 /* Embedded into SN AI's private closure. No credentials or customer data here. */
 function snOfflineRandomID(){return Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');}
 async function snOfflineHash(text){return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text))),b=>b.toString(16).padStart(2,'0')).join('');}
 function snOfflineDatasetRecords(snapshot){
   const id=v=>/^[a-f0-9]{32}$/.test(v||'')?v:null;
-  const candidates=snapshot.matrix.map(r=>({id:r.id,code:r.code,parent:id(r.parent),type:String(r.type).toLowerCase().replace(/\s/g,''),restricted:r.restricted===true,confidential:r.confidential===true})).filter(r=>!r.confidential);
+  const candidates=snapshot.matrix.map(r=>({id:r.id,code:r.code,nameEN:r.nameEN||'',departmentIds:Array.isArray(r.departmentIds)?r.departmentIds.filter(v=>id(v)):[],parent:id(r.parent),type:String(r.type).toLowerCase().replace(/\s/g,''),restricted:r.restricted===true,confidential:r.confidential===true})).filter(r=>!r.confidential);
   const categories=candidates.filter(r=>r.type==='category').map(r=>({...r,parent:null})),categoryIDs=new Set(categories.map(r=>r.id));
   const subcategories=candidates.filter(r=>r.type==='subcategory'&&categoryIDs.has(r.parent)),subcategoryIDs=new Set(subcategories.map(r=>r.id));
   const matrix=[...categories,...subcategories,...candidates.filter(r=>r.type==='symptom'&&subcategoryIDs.has(r.parent))];
   const known=new Map(matrix.map(r=>[r.id,r]));
   const templates=snapshot.templates.filter(r=>! /javascript\s*:|\$\{|<\s*(?:script|iframe|object|embed)\b|\bon[a-z]+\s*=|<\?/iu.test(r.description)).map(r=>{const matrixIds={category:null,subcategory:null,symptom:null};for(const key of ['category','subcategory','symptom']){const candidate=known.get(r.matrixIds?.[key]);if(candidate?.type===key&&(key==='category'||candidate.parent===matrixIds[key==='subcategory'?'category':'subcategory']))matrixIds[key]=candidate.id;}return{id:r.id,name:r.name,description:r.description,shortDescription:r.shortDescription,eventType:r.eventType,matrixIds};});
-  return{users:snapshot.users.map(r=>({id:r.id,userID:r.userID,username:r.username,name:r.name,locationId:id(r.locationId),location:r.location})),templates,matrix};
+  return{departments:(snapshot.departments||[]).map(r=>({id:r.id,parent:id(r.parent)})),users:snapshot.users.filter(r=>!/castorama|france|brico/i.test(r.location||'')).map(r=>({id:r.id,userID:r.userID,username:r.username,name:r.name,locationId:id(r.locationId),location:r.location,departmentId:id(r.departmentId)})),templates,matrix};
 }
 async function snOfflinePackDataset(records){
   const chunks=[];let current=[],bytes=14;
@@ -9846,12 +9850,13 @@ async function snOfflineUpdateReferences(progress){
         progress('Collecting ServiceNow reference data…');
         const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
         const snapshot=await snOfflineCollectReferences(page,item=>progress('Collecting '+item.table+': '+item.count.toLocaleString()),()=>!snPersonalApprovedPage());
-        if(!snapshot.meta.usersComplete||!snapshot.meta.templatesComplete||!snapshot.meta.matrixComplete)throw Error('offline_snapshot_incomplete');
+        if(!snapshot.meta.usersComplete||!snapshot.meta.templatesComplete||!snapshot.meta.matrixComplete||!snapshot.meta.departmentsComplete)throw Error('offline_snapshot_incomplete');
         const datasets=snOfflineDatasetRecords(snapshot),packed={};
         for(const [key,records]of Object.entries(datasets)){progress('Preparing '+key+'…');packed[key]=await snOfflinePackDataset(records);}
-        pending={schema:1,requestId:snOfflineRandomID(),metadata:{schema:1,instance:location.hostname,exportedAt:snapshot.exportedAt,sourceAccount:{userID:account.userID,name:account.fullName},datasets:Object.fromEntries(Object.entries(packed).map(([key,data])=>[key,{count:data.count,chunkCount:data.chunkCount,complete:true,sha256:data.sha256}]))},packed};
+        pending={schema:2,requestId:snOfflineRandomID(),metadata:{schema:2,replace:true,eligibilitySchema:1,userDirectoryFilterVersion:1,instance:location.hostname,exportedAt:snapshot.exportedAt,sourceAccount:{userID:account.userID,name:account.fullName},datasets:Object.fromEntries(Object.entries(packed).map(([key,data])=>[key,{count:data.count,chunkCount:data.chunkCount,complete:true,sha256:data.sha256}]))},packed};
         await snOfflinePending(pending); // Durable exact bytes before the first server write.
       }
+      if(pending.schema!==2||pending.metadata?.schema!==2)throw Error('offline_legacy_pending_retained: previous export needs explicit migration; no data was deleted');
       if(pending.metadata?.sourceAccount?.userID?.toUpperCase()!=='AKIMLA01'||pending.metadata.instance!==location.hostname)throw Error('offline_queue_identity_mismatch');
       progress('Starting/resuming secure upload…');
       const start=await snOfflineRetry(()=>snOfflineRequest('start',{method:'POST',token:identity.token,body:JSON.stringify({requestId:pending.requestId,metadata:pending.metadata})}));
