@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.822
+// @version      2.36.823
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.823","fixes":true,"changes":[{"key":"personal-mode-colors","meaningful":true,"text":"Sync manually customized mode colors across devices and restore server colors on page load without saving built-in default colors."},{"key":"gemini-model-selection","meaningful":true,"text":"Use Gemini 3.5 Flash-Lite as the only model option and automatically migrate older saved model selections."},{"key":"shared-ai-mode-messages","meaningful":true,"text":"Keep built-in mode guidance in the original instructions and leave the shared editor empty for extra required details, appended verbatim without a wrapper prompt."}]},
 {"version":"2.36.822","fixes":true,"changes":[{"key":"shared-ai-mode-messages","meaningful":true,"text":"Let AKIMLA01 edit shared per-mode AI writing messages in Developer settings, with backend authorization, revision protection and cached messages for all users. STACK modes also honor the selected Gemini API connection."},{"key":"ai-feedback","meaningful":true,"text":"Send Gemini feedback once and ask the model to use or update a SNOW memory or skill only if that capability is available, without storing feedback as script-managed memory."}]},
 {"version":"2.36.821","fixes":true,"changes":[{"key":"gemini-connection-check","meaningful":true,"text":"Stop all Gemini requests after 20 seconds without automatic retry and use low-latency reasoning for supported ticket models."},{"key":"ticket-progress-stages","meaningful":true,"text":"Keep FTF preparation, AI waiting and ticket filling stages separate so preparing New Event cannot falsely mark the AI reply as validated."}]},
 {"version":"2.36.820","fixes":true,"changes":[{"key":"gemini-connection-check","meaningful":true,"text":"Check Gemini key and model access without generating an answer, avoiding generation latency and clearly separating connection status from generation quota."}]},
@@ -408,10 +409,19 @@ function snPersonalSnippetExport(rows){
   if(!Array.isArray(rows))return [];
   return snPersonalNormalizeSnippetIDs(rows).map((row,order)=>({id:row.id,name:String(row.title||''),text:String(row.message||''),order}));
 }
+function snPersonalModeColors(value){
+  const names=['CMD','CPC','ILS_PRNT','DESCRIPTION','COM_PLUS','FTF','HP','STACK','HP_STACK'];
+  return Object.fromEntries(names.filter(name=>/^#[0-9a-f]{6}$/i.test(String(value?.[name]||''))&&String(value[name]).toLowerCase()!=='#167d5f').map(name=>[name,String(value[name]).toLowerCase()]));
+}
 function snPersonalSettingsDiff(previous,next){
   const patch={};
   for(const key of ['snippets','appearance','enabledModes','nova']){
     if(JSON.stringify(previous?.[key])!==JSON.stringify(next?.[key]))patch[key]=next[key]??null;
+  }
+  if(patch.appearance){
+    const before=snPersonalModeColors(previous?.appearance?.modeColors),after=snPersonalModeColors(next?.appearance?.modeColors);
+    patch.appearance={...patch.appearance,modeColors:Object.fromEntries([...new Set([...Object.keys(before),...Object.keys(after)])].filter(key=>before[key]!==after[key]).map(key=>[key,after[key]??null]))};
+    if(!Object.keys(patch.appearance.modeColors).length)delete patch.appearance.modeColors;
   }
   return patch;
 }
@@ -453,8 +463,8 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
     let rows=[];try{rows=JSON.parse(localStorage.getItem('snippets_manager_v1')||'[]');}catch{}
     const normalized=snPersonalNormalizeSnippetIDs(rows);
     if(JSON.stringify(rows)!==JSON.stringify(normalized)){rows=normalized;localStorage.setItem('snippets_manager_v1',JSON.stringify(rows));notify();}
-    const modes=await readModes(),nova=localStorage.getItem('sn-ai-nova-messages-v1:'+ctx.sysId);
-    return {snippets:snPersonalSnippetExport(rows),appearance:{theme:localStorage.getItem('snippets_manager_theme_v1')==='light'?'light':'dark'},
+    const modes=await readModes(),nova=localStorage.getItem('sn-ai-nova-messages-v1:'+ctx.sysId),actionColors=await GM_getValue('local-sn-inspector-action-colors-v1',{});
+    return {snippets:snPersonalSnippetExport(rows),appearance:{theme:localStorage.getItem('snippets_manager_theme_v1')==='light'?'light':'dark',modeColors:snPersonalModeColors(actionColors?.enabled?actionColors.colors:{})},
       enabledModes:Object.keys(defaultModes).filter(key=>modes?.[key]!==false),...(nova===null?{}:{nova:{suggestions:nova==='yes'}})};
   };
   const valid=ctx=>!stopped&&snPersonalApprovedPage()&&context===ctx&&ctx.stamp===userStamp()&&localStorage.getItem('sn-ai-personal-settings-active-account')===ctx.account;
@@ -465,6 +475,8 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
       if(Array.isArray(settings.snippets))localStorage.setItem('snippets_manager_v1',JSON.stringify(settings.snippets.map(row=>({id:String(row.id),title:row.name,message:row.text}))));
       else localStorage.setItem('snippets_manager_v1','[]');
       localStorage.setItem('snippets_manager_theme_v1',settings.appearance?.theme==='light'?'light':'dark');
+      const colors=snPersonalModeColors(Object.prototype.hasOwnProperty.call(settings.appearance||{},'modeColors')?settings.appearance.modeColors:ctx.legacyColors);
+      await GM_setValue('local-sn-inspector-action-colors-v1',{enabled:Object.keys(colors).length>0,colors});
       const enabled=Array.isArray(settings.enabledModes)?settings.enabledModes:Object.keys(defaultModes);
       await writeModes(Object.fromEntries(Object.keys(defaultModes).map(key=>[key,enabled.includes(key)])));
       if(!valid(ctx))return;
@@ -541,6 +553,11 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
       onConflict:()=>{if(valid(ctx))show('conflict');}});
     const current=await snapshot(ctx),seed=ctx.seedAllowed?current:{snippets:[],appearance:{theme:'dark'},enabledModes:Object.keys(defaultModes)};ctx.previous=current;
     await ctx.sync.start(seed);await ctx.applyTail;
+    if(valid(ctx)&&ctx.sync.initialized&&!Object.prototype.hasOwnProperty.call(ctx.sync.settings.appearance||{},'modeColors')&&Object.keys(ctx.legacyColors||{}).length){
+      // One-time migration of this account's old manual overrides, never defaults.
+      await ctx.sync.update({appearance:{modeColors:ctx.legacyColors}});await ctx.applyTail;
+    }
+    if(ctx.sync.initialized)ctx.legacyColors={};
     if(valid(ctx)&&ctx.sync.initialized)await GM_setValue('sn-ai-personal-settings-local-owner',ctx.account);
     ctx.refreshTimer=setInterval(async()=>{
       if(!valid(ctx)||document.hidden||ctx.sync.sending||ctx.sync.inflight||Object.keys(ctx.sync.pending).length||ctx.sync.conflict||ctx.sync.authorizationBlocked)return;
@@ -609,6 +626,8 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
         const cache=await GM_getValue(ctx.cacheKey,null),owner=await GM_getValue('sn-ai-personal-settings-local-owner',null);
         if(!valid(ctx))return;
         ctx.seedAllowed=!owner||owner===account;
+        const legacyActionColors=await GM_getValue('local-sn-inspector-action-colors-v1',{});
+        ctx.legacyColors=ctx.seedAllowed&&legacyActionColors?.enabled?snPersonalModeColors(legacyActionColors.colors):{};
         const cachedCredentialBinding=await GM_getValue('sn-ai-personal-settings-binding-v2:'+ctx.account,null);
         if(/^[a-f0-9]{32}$/.test(cachedCredentialBinding||'')&&valid(ctx))onCredentialBinding({account:ctx.account,binding:cachedCredentialBinding,seedAllowed:ctx.seedAllowed,valid:()=>valid(ctx),token:async()=>{if(!valid(ctx))throw Error('Account changed');return (await identity()).token;}});
         const journal=readJournal(ctx);
@@ -773,7 +792,7 @@ class SnSharedModeMessages {
     finally{ctx.running=false;}
   }
   schedule(ctx,ms){clearTimeout(this.timer);if(this.valid(ctx))this.timer=setTimeout(()=>this.run(),ms);}
-  message(mode){const key=mode==='DESCRIPTION'?'TEXT':mode;if(!SN_AI_MESSAGE_MODES.includes(key))return '';return this.snapshot.messages[key]?.trim()||SN_AI_DEFAULT_MESSAGES[key];}
+  message(mode){const key=mode==='DESCRIPTION'?'TEXT':mode;if(!SN_AI_MESSAGE_MODES.includes(key))return '';return this.snapshot.messages[key]||'';}
   async save(baseRevision,messages){const ctx=this.context;if(!this.isAdmin(ctx)||!this.snapshot.canEdit)throw Error('Only the authorized AKIMLA01 profile can change shared AI messages.');
     if(!Number.isSafeInteger(baseRevision)||baseRevision<0)throw Error('Load the shared message revision before saving. Your local draft is retained.');
     const clean=snValidateModeMessages(messages);await this.exclusive(ctx,async()=>{if(await this.get(this.pendingKey(ctx),null))throw Error('Resolve or cancel the pending save before publishing another version.');const body={schema:1,baseRevision,mutationId:this.uuid(),messages:clean};if(new TextEncoder().encode(JSON.stringify(body)).length>131072)throw Error('Shared message request exceeds the server size limit. Draft retained.');await this.set(this.pendingKey(ctx),{conflict:false,body});});await this.run();
@@ -8375,7 +8394,7 @@ function startSNAI(tabIdentity) {
   const CHATGPT_WEB_WINDOW_NAME = 'sn-ai-chatgpt-worker-window';
   const CHATGPT_WEB_WINDOW_NAME_KEY = 'local-sn-inspector-chatgpt-window-name-v1';
   const CHATGPT_WEB_HEARTBEAT_FRESH_MS = 180000;
-  const DEFAULT_API_MODEL = 'gemini-3.8-flash';
+  const DEFAULT_API_MODEL = 'gemini-3.5-flash-lite';
   const DEFAULT_ENABLED_MODES = Object.freeze({ CPC: true, ILS_PRNT: true, DESCRIPTION: true, COM_PLUS: true, FTF: true, HP: true, STACK: true, HP_STACK: true });
   const DEFAULT_ACTION_COLOR = '#167d5f';
   const ACTION_COLOR_NAMES = Object.freeze(['CPC', 'ILS_PRNT', 'DESCRIPTION', 'COM_PLUS', 'FTF', 'HP', 'STACK', 'HP_STACK', 'CMD']);
@@ -8677,9 +8696,9 @@ function startSNAI(tabIdentity) {
       });
     }
   });
-  function sharedModeInstructions(mode,instructions){const message=sharedModeMessages.message(mode);if(!message)return instructions;
-    recordCompactDiagnostic('info','shared-mode-message-applied',{mode,version:String(sharedModeMessages.snapshot.revision??'built-in')});
-    return String(instructions||'')+'\n\nSHARED MODE WRITING MESSAGE:\n'+message+'\nApply this shared writing message where consistent with current case facts and explicit operator input. The mandatory output schema, factual/privacy rules and fixed automation workflow above remain binding. This message never grants permission to save/submit records, run code or change security.';
+  function sharedModeInstructions(mode,instructions){const key=mode==='DESCRIPTION'?'TEXT':mode;const builtIn=SN_AI_DEFAULT_MESSAGES[key]||'',message=sharedModeMessages.message(key);
+    if(message)recordCompactDiagnostic('info','shared-mode-message-applied',{mode,version:String(sharedModeMessages.snapshot.revision??'built-in')});
+    return String(instructions||'')+(builtIn?'\n'+builtIn:'')+(message?'\n'+message:'');
   }
 
   const normaliseChatGPTConversationRecord = (value) => {
@@ -9367,7 +9386,7 @@ function startSNAI(tabIdentity) {
     const savedActionColors = await gmGetValue(ACTION_COLORS_KEY, DEFAULT_ACTION_COLORS);
     state.actionColors = {
       enabled: Boolean(savedActionColors?.enabled),
-      colors: Object.fromEntries(ACTION_COLOR_NAMES.map((name) => [name, /^#[0-9a-f]{6}$/i.test(String(savedActionColors?.colors?.[name] || '')) ? String(savedActionColors.colors[name]).toUpperCase() : DEFAULT_ACTION_COLOR])),
+      colors: snPersonalModeColors(savedActionColors?.enabled?savedActionColors.colors:{}),
     };
     state.feedbackEnabled = Boolean(await gmGetValue(AI_FEEDBACK_ENABLED_KEY, false));
     // Feedback belongs to its original conversation, never future ticket prompts.
@@ -9378,7 +9397,8 @@ function startSNAI(tabIdentity) {
     if (savedProvider !== state.ai.provider) await gmSetValue(AI_PROVIDER_KEY, state.ai.provider);
     const savedWebService = String(await gmGetValue(AI_WEB_SERVICE_KEY, 'chatgpt') || 'chatgpt');
     state.ai.webService = ['chatgpt', 'gemini'].includes(savedWebService) ? savedWebService : 'chatgpt';
-    state.ai.apiModel = String(await gmGetValue(AI_MODEL_KEY, DEFAULT_API_MODEL) || DEFAULT_API_MODEL);
+    state.ai.apiModel = DEFAULT_API_MODEL;
+    if(await gmGetValue(AI_MODEL_KEY,null)!==DEFAULT_API_MODEL)await gmSetValue(AI_MODEL_KEY,DEFAULT_API_MODEL);
     state.ai.model = state.ai.provider === 'gemini-api' ? state.ai.apiModel : 'chatgpt-web';
     state.ai.keySaved = Boolean(await geminiCredentials.key());
     return { ...state.ai };
@@ -10054,7 +10074,7 @@ function snOfflineOpenPage(progress){
   function installSharedModeMessageEditor(panel){
     const row=document.createElement('section');row.hidden=true;row.dataset.sharedModeMessages='true';row.style.cssText='display:none;gap:8px;padding:12px 16px';
     const heading=document.createElement('strong');heading.textContent='Shared AI mode messages';
-    const note=document.createElement('div');note.textContent='AKIMLA01 only. Saved writing messages apply to all users. Required JSON, current case context, factual safeguards and fixed ticket actions cannot be changed here.';note.style.cssText='font-size:12px;line-height:1.4';
+    const note=document.createElement('div');note.textContent='Extra required details for all users. Your text is added directly after the built-in mode instructions. Leave empty to add nothing. Required JSON, case facts and ticket safeguards still apply.';note.style.cssText='font-size:12px;line-height:1.4';
     const select=document.createElement('select');select.setAttribute('aria-label','AI message mode');for(const mode of SN_AI_MESSAGE_MODES){const option=document.createElement('option');option.value=mode;option.textContent=({TEXT:'Description',COM_PLUS:'.COM+',ILS_PRNT:'ILS printer',HP_STACK:'HP-STACK'})[mode]||mode;select.append(option);}
     const input=document.createElement('textarea');input.rows=9;input.maxLength=8000;input.spellcheck=false;input.setAttribute('aria-label','Shared mode AI message');input.style.cssText='box-sizing:border-box;width:100%;min-height:150px;resize:vertical';
     const actions=document.createElement('div');actions.style.cssText='display:flex;flex-wrap:wrap;gap:8px';const save=document.createElement('button'),reset=document.createElement('button'),retry=document.createElement('button'),local=document.createElement('button'),remote=document.createElement('button');for(const button of [save,reset,retry,local,remote])button.type='button';save.textContent='Save for everyone';reset.textContent='Use built-in message';retry.textContent='Retry sync';local.textContent='Publish my version';remote.textContent='Use server version';actions.append(reset,retry,local,remote,save);
@@ -10062,7 +10082,7 @@ function snOfflineOpenPage(progress){
     const cancelPending=document.createElement('button');cancelPending.type='button';cancelPending.textContent='Cancel pending save';cancelPending.title='Cancel future retries but keep your local draft. A request already sent may have reached the server.';cancelPending.hidden=true;actions.insertBefore(cancelPending,save);
     let activeAccount='',baseRevision=null,baseMessages={},drafts={},changed=false,loading=false,draftTimer;
     const persistDraft=async()=>{const ctx=sharedModeMessages.context;if(!sharedModeMessages.isAdmin(ctx)||ctx.account!==activeAccount)return;await gmSetValue(sharedModeMessages.draftKey(ctx),{baseRevision,baseMessages,drafts});};
-    const showMode=()=>{const mode=select.value;input.value=Object.prototype.hasOwnProperty.call(drafts,mode)?drafts[mode]:baseMessages[mode]||SN_AI_DEFAULT_MESSAGES[mode];};
+    const showMode=()=>{const mode=select.value;input.value=Object.prototype.hasOwnProperty.call(drafts,mode)?drafts[mode]:baseMessages[mode]||'';input.placeholder='Extra required details for this mode (optional)';reset.textContent='Clear extra details';};
     const render=async()=>{
       const ctx=sharedModeMessages.context;row.hidden=!(sharedModeMessages.isAdmin(ctx)&&sharedModeMessages.snapshot.canEdit);row.style.display=row.hidden?'none':'grid';if(row.hidden||loading)return;loading=true;
       try{
@@ -10077,7 +10097,7 @@ function snOfflineOpenPage(progress){
       }finally{loading=false;}
     };
     input.addEventListener('input',()=>{drafts[select.value]=input.value;changed=true;status.textContent='Unsaved changes kept locally.';clearTimeout(draftTimer);draftTimer=setTimeout(()=>persistDraft().catch(()=>{status.textContent='Local draft could not be saved.';}),500);});
-    select.onchange=showMode;reset.onclick=()=>{drafts[select.value]='';changed=true;input.value=SN_AI_DEFAULT_MESSAGES[select.value];persistDraft().catch(()=>{});status.textContent='Built-in message selected. Save to apply for everyone.';};
+    select.onchange=showMode;reset.onclick=()=>{drafts[select.value]='';changed=true;input.value='';persistDraft().catch(()=>{});status.textContent='Extra details cleared. Save to apply for everyone.';};
     save.onclick=async()=>{
       save.disabled=true;
       try{
@@ -12291,7 +12311,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const promise = new Promise((resolve, reject) => {
       rejectPending = reject;
       const fail = (error, details = {}) => { if (!settled) { settled = true; clearTimeout(deadlineTimer); const message = String(error?.message || error).split(apiKey).join('[redacted]'); log('error', 'failed', { message, ...details }); reject(error instanceof Error ? error : new Error(message)); } };
-      const data = connectionOnly ? undefined : JSON.stringify({ systemInstruction: { parts: [{ text: instructions }] }, contents: [{ role: 'user', parts: [{ text: JSON.stringify(input) }] }], generationConfig: { responseMimeType: 'application/json', responseJsonSchema: schema, thinkingConfig:model==='gemini-3.8-flash'?{thinkingLevel:'low'}:model==='gemini-3.5-flash-lite'?{thinkingLevel:'minimal'}:undefined } });
+      const data = connectionOnly ? undefined : JSON.stringify({ systemInstruction: { parts: [{ text: instructions }] }, contents: [{ role: 'user', parts: [{ text: JSON.stringify(input) }] }], generationConfig: { responseMimeType: 'application/json', responseJsonSchema: schema, thinkingConfig:{thinkingLevel:'minimal'} } });
       log('info', 'request-started', { length: data?.length||0, phase:connectionOnly?'model-access-check':'ticket-generation', source:typeof fetch==='function'?'browser-fetch':'userscript-request' });
       deadlineTimer=setTimeout(()=>{if(settled)return;fail('Gemini did not finish within 20 seconds. No ticket data was applied. Retry manually or try Gemini 3.5 Flash-Lite.',{status:0,code:'CALLBACK_DEADLINE',phase:readyState>=2?'response-started':'waiting-for-response',timeoutMs});try{handle?.abort?.();}catch{}},timeoutMs);
       try { handle = sendRequest({
@@ -18901,7 +18921,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             <div data-ai-settings-details hidden>
               <label class="local-sn-cpc-row"><span>Live ChatGPT response preview</span><input type="checkbox" data-ai-response-preview aria-label="Live ChatGPT response preview"></label>
               <div class="local-sn-cpc-row"><label>AI connection</label><select aria-label="AI connection"><option value="web">Web companion (default)</option><option value="gemini-api">Gemini API</option></select></div>
-              <div class="local-sn-cpc-row" data-ai-api-model-row hidden><label>AI model</label><select aria-label="Gemini API model"><option value="gemini-3.8-flash">Gemini 3.8 Flash</option><option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite</option></select></div>
+              <div class="local-sn-cpc-row" data-ai-api-model-row hidden><label>AI model</label><select aria-label="Gemini API model"><option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite</option></select></div>
               <div class="local-sn-provider-panel" data-ai-web-settings hidden>
                 <div class="local-sn-cpc-row"><label>Website AI</label><select aria-label="Website AI service"><option value="chatgpt">ChatGPT Web</option><option value="gemini">Gemini Web</option></select></div>
                 <div class="local-sn-settings-note">Uses your signed-in selected AI website without an API key. The worker remains hidden during normal processing and is shown only for sign-in or inspection.</div>
@@ -19800,7 +19820,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       for (const name of ACTION_COLOR_NAMES) {
         const button = actionButtonByColourName[name];
         if (!button) continue;
-        if (state.actionColors.enabled) button.style.setProperty('--local-sn-action-bg', currentActionColour(name));
+        if (state.actionColors.enabled && validColour(state.actionColors.colors[name])) button.style.setProperty('--local-sn-action-bg', currentActionColour(name));
         else button.style.removeProperty('--local-sn-action-bg');
       }
     };
@@ -20316,8 +20336,10 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       const colour = String(input.value || '').toUpperCase();
       if (!validColour(colour)) return;
       try {
-        state.actionColors = { enabled: true, colors: { ...state.actionColors.colors, [name]: colour } };
+        const colors=snPersonalModeColors({...state.actionColors.colors,[name]:colour});
+        state.actionColors = { enabled: Object.keys(colors).length>0, colors };
         await gmSetValue(ACTION_COLORS_KEY, state.actionColors);
+        document.dispatchEvent(new CustomEvent('sn-ai-personal-settings-change'));
         aiSettingsError.textContent = '';
         syncAISettingsUI();
       } catch (error) {
@@ -20425,7 +20447,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     });
     aiModelSelect.addEventListener('change', async () => {
       try {
-        state.ai.apiModel = aiModelSelect.value || DEFAULT_API_MODEL;
+        state.ai.apiModel = DEFAULT_API_MODEL;
         if (state.ai.provider === 'gemini-api') state.ai.model = state.ai.apiModel;
         await gmSetValue(AI_MODEL_KEY, state.ai.apiModel);
         aiSettingsError.textContent = '';
