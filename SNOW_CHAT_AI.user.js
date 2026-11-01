@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.809
+// @version      2.36.810
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.810","fixes":false,"changes":[{"key":"offline-snow-reference-updater","meaningful":false,"text":"Move the Offline SNOW updater into Developer settings and remove the Open Offline SNOW button."}]},
 {"version":"2.36.809","fixes":true,"changes":[{"key":"offline-snow-reference-updater","meaningful":true,"text":"Exclude Castorama, France and Brico user locations from Offline SNOW exports and send full replacement snapshots with department eligibility and English matrix names."}]},
 {"version":"2.36.808","fixes":false,"changes":[{"key":"offline-snow-reference-updater","meaningful":true,"text":"Let AKIMLA01 manually refresh Offline SNOW reference data and upload it to Drandox with resumable verified batches, without extra login or instance entry."}]},
 {"version":"2.36.807","fixes":true,"changes":[{"key":"classic-stack-references","meaningful":true,"text":"Limit classic CI searches to 50 candidates, cache repeat searches, clear invalid-reference errors on click, and support classic New Event CI fields."}]},
@@ -9894,10 +9895,10 @@ function installSnOfflineUpdaterUI(panel){
   snOfflineAuthorizedAccount().then(()=>{
     if(!panel.isConnected||panel.querySelector('[data-offline-snow-updater]'))return;
     const row=document.createElement('section');row.dataset.offlineSnowUpdater='true';row.style.cssText='display:grid;gap:8px;padding:12px 16px';
-    const update=document.createElement('button'),open=document.createElement('button'),message=document.createElement('div');message.setAttribute('role','status');message.style.cssText='font-size:12px;line-height:1.5';
-    update.type=open.type='button';update.textContent='Update Offline SNOW data';open.textContent='Open Offline SNOW';
+    const update=document.createElement('button'),message=document.createElement('div');message.setAttribute('role','status');message.style.cssText='font-size:12px;line-height:1.5';
+    update.type='button';update.textContent='Update Offline SNOW data';
     update.onclick=async()=>{if(snOfflineUpdating)return;update.disabled=true;try{await snOfflineUpdateReferences(text=>{message.textContent=text;});}catch(e){message.textContent=e.message+' Pending data is kept for retry.';recordCompactDiagnostic('warn','offline-reference-upload',{code:e.code||'unconfirmed',status:e.status||0});}finally{update.disabled=false;}};
-    open.onclick=()=>snOfflineOpenPage(text=>{message.textContent=text;});row.append(update,open,message);panel.append(row);
+    row.append(update,message);panel.append(row);
   }).catch(()=>{});
 }
   /* SN_AI_OFFLINE_UPDATER_END */
@@ -20145,7 +20146,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       });developerPanel.append(matrixSetting,matrixStatus);
     }
     tabList.after(generalPanel);
-    installSnOfflineUpdaterUI(generalPanel);
+    installSnOfflineUpdaterUI(developerPanel);
     diagnosticStore();
     const fallbackStyle=document.createElement('style');fallbackStyle.textContent='[data-diagnostic-download-fallback][hidden]{display:none!important}';generalPanel.append(fallbackStyle);
     const settingsTabs = [...settingsDialog.querySelectorAll('[data-settings-tab]')];
