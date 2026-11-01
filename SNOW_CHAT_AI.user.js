@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.807
+// @version      2.36.808
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.808","fixes":false,"changes":[{"key":"offline-snow-reference-updater","meaningful":true,"text":"Let AKIMLA01 manually refresh Offline SNOW reference data and upload it to Drandox with resumable verified batches, without extra login or instance entry."}]},
 {"version":"2.36.807","fixes":true,"changes":[{"key":"classic-stack-references","meaningful":true,"text":"Limit classic CI searches to 50 candidates, cache repeat searches, clear invalid-reference errors on click, and support classic New Event CI fields."}]},
 {"version":"2.36.806","fixes":true,"changes":[{"key":"classic-stack-references","meaningful":true,"text":"Preserve native reference XML and column metadata so ranked classic CI suggestions render and can be selected."}]},
 {"version":"2.36.805","fixes":true,"changes":[{"key":"classic-stack-references","meaningful":true,"text":"Apply Workspace-style CI token search and ranking to normal typing in the classic native CI dropdown, not only STACK automation."}]},
@@ -9765,6 +9766,136 @@ function startSNAI(tabIdentity) {
     readModes:()=>gmGetValue(ENABLED_MODES_KEY,DEFAULT_ENABLED_MODES),
     writeModes:async modes=>{await gmSetValue(ENABLED_MODES_KEY,modes);state.enabledModes={...modes};},
   }),0);
+  /* SN_AI_OFFLINE_UPDATER_BEGIN */
+/* Read-only online preparation. Run only inside an authenticated ServiceNow page.
+ * No uploads, credentials, or ticket writes. Output is ordinary JSON data. */
+async function snOfflineCollectReferences(page,progress=()=>{},cancelled=()=>false){
+  if(page.location.origin!=='https://kingfisher.service-now.com')throw Error('Run from the approved ServiceNow instance.');
+  const value=x=>typeof x==='object'&&x?String(x.value||''):String(x||'');
+  const display=x=>typeof x==='object'&&x?String(x.display_value||x.value||''):String(x||'');
+  const read=async(table,condition,fields,max)=>{
+    const rows=[];let cursor='',total=null;
+    for(;;){
+      if(cancelled())throw Error('Reference update cancelled. Previous snapshot was kept.');
+      const params=new URLSearchParams({sysparm_query:condition+(cursor?'^sys_id>'+cursor:'')+'^ORDERBYsys_id',sysparm_fields:fields,sysparm_limit:'2000',sysparm_display_value:'all',sysparm_exclude_reference_link:'true'});
+      const response=await page.fetch('/api/now/table/'+table+'?'+params,{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':page.g_ck}});
+      if(!response.ok)throw Error('Reference API '+table+' returned HTTP '+response.status+'.');
+      const payload=await response.json();if(!Array.isArray(payload.result))throw Error('Invalid reference response for '+table);
+      if(total===null)total=Number(response.headers.get('X-Total-Count'))||0;
+      if(!payload.result.length)break;
+      const next=value(payload.result.at(-1).sys_id);if(!/^[a-f0-9]{32}$/i.test(next)||next<=cursor)throw Error('Invalid pagination cursor for '+table);
+      rows.push(...payload.result);if(rows.length>max)throw Error(table+' exceeds the configured snapshot limit.');
+      cursor=next;progress({table,count:rows.length,total});
+      if(payload.result.length<2000)break;
+      await new Promise(resolve=>setTimeout(resolve,120));
+    }
+    return{rows,total,complete:rows.length===total};
+  };
+  const users=await read('sys_user','active=true','sys_id,user_name,name,location',150000);
+  const templates=await read('sys_template','table=new_call','sys_id,name,table,template',2000);
+  const matrix=await read('u_matrix','u_active=true^u_confidential!=true','sys_id,u_code,u_parent,u_type,u_restrict_visibility,u_confidential',20000);
+  const parseTemplate=raw=>{
+    const out={};for(const part of String(raw||'').split(/\^(?=[a-zA-Z_][a-zA-Z0-9_.]*=|EQ(?:\^|$))/)){
+      const i=part.indexOf('=');if(i<0)continue;const key=part.slice(0,i),v=part.slice(i+1);
+      if(!/^javascript:/i.test(v))out[key]=v;
+    }return out;
+  };
+  const allTemplates=templates.rows.map(row=>{const fields=parseTemplate(value(row.template));return{id:value(row.sys_id),name:display(row.name),description:fields.description||'',shortDescription:fields.short_description||'',eventType:fields.call_type||'',matrixIds:{category:fields.u_matrix_category||'',subcategory:fields.u_matrix_subcategory||'',symptom:fields.u_matrix_symptom||''}};});
+  return{schema:1,exportedAt:new Date().toISOString(),meta:{source:page.location.origin,usersComplete:users.complete,reportedUserCount:users.total,downloadedUserCount:users.rows.length,templatesWithoutStaticDescription:allTemplates.filter(t=>!t.description.trim()).length,matrixComplete:matrix.complete,templatesComplete:templates.complete},users:users.rows.map(r=>({id:value(r.sys_id),userID:value(r.user_name),username:value(r.user_name),name:display(r.name),location:display(r.location),locationId:value(r.location)})),templates:allTemplates.filter(t=>t.description.trim()),matrix:matrix.rows.map(r=>({id:value(r.sys_id),code:value(r.u_code),parent:value(r.u_parent),type:display(r.u_type),restricted:value(r.u_restrict_visibility)==='true',confidential:value(r.u_confidential)==='true'}))};
+}
+/* Embedded into SN AI's private closure. No credentials or customer data here. */
+function snOfflineRandomID(){return Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');}
+async function snOfflineHash(text){return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text))),b=>b.toString(16).padStart(2,'0')).join('');}
+function snOfflineDatasetRecords(snapshot){
+  const id=v=>/^[a-f0-9]{32}$/.test(v||'')?v:null;
+  const candidates=snapshot.matrix.map(r=>({id:r.id,code:r.code,parent:id(r.parent),type:String(r.type).toLowerCase().replace(/\s/g,''),restricted:r.restricted===true,confidential:r.confidential===true})).filter(r=>!r.confidential);
+  const categories=candidates.filter(r=>r.type==='category').map(r=>({...r,parent:null})),categoryIDs=new Set(categories.map(r=>r.id));
+  const subcategories=candidates.filter(r=>r.type==='subcategory'&&categoryIDs.has(r.parent)),subcategoryIDs=new Set(subcategories.map(r=>r.id));
+  const matrix=[...categories,...subcategories,...candidates.filter(r=>r.type==='symptom'&&subcategoryIDs.has(r.parent))];
+  const known=new Map(matrix.map(r=>[r.id,r]));
+  const templates=snapshot.templates.filter(r=>! /javascript\s*:|\$\{|<\s*(?:script|iframe|object|embed)\b|\bon[a-z]+\s*=|<\?/iu.test(r.description)).map(r=>{const matrixIds={category:null,subcategory:null,symptom:null};for(const key of ['category','subcategory','symptom']){const candidate=known.get(r.matrixIds?.[key]);if(candidate?.type===key&&(key==='category'||candidate.parent===matrixIds[key==='subcategory'?'category':'subcategory']))matrixIds[key]=candidate.id;}return{id:r.id,name:r.name,description:r.description,shortDescription:r.shortDescription,eventType:r.eventType,matrixIds};});
+  return{users:snapshot.users.map(r=>({id:r.id,userID:r.userID,username:r.username,name:r.name,locationId:id(r.locationId),location:r.location})),templates,matrix};
+}
+async function snOfflinePackDataset(records){
+  const chunks=[];let current=[],bytes=14;
+  const encoder=new TextEncoder();
+  const finish=async()=>{const body=JSON.stringify({records:current});chunks.push({body,sha256:await snOfflineHash(body),records:current.length});current=[];bytes=14;};
+  for(const row of records){const length=encoder.encode(JSON.stringify(row)).length;if(length+14>524288)throw Error('offline_record_too_large');if(current.length&&(current.length>=1000||bytes+length+1>524288))await finish();current.push(row);bytes+=length+1;}
+  if(current.length||!chunks.length)await finish();
+  return{chunks,count:records.length,chunkCount:chunks.length,complete:true,sha256:await snOfflineHash(chunks.map(c=>c.body).join(''))};
+}
+function snOfflinePending(value){return new Promise((resolve,reject)=>{const open=indexedDB.open('sn-ai-offline-export-v1',1);open.onupgradeneeded=()=>open.result.createObjectStore('pending');open.onerror=()=>reject(Error('offline_queue_unavailable'));open.onsuccess=()=>{const db=open.result,tx=db.transaction('pending',value===undefined?'readonly':'readwrite'),store=tx.objectStore('pending');const r=value===undefined?store.get('AKIMLA01'):value===null?store.delete('AKIMLA01'):store.put(value,'AKIMLA01');let result;r.onsuccess=()=>result=r.result;tx.oncomplete=()=>{db.close();resolve(result);};tx.onerror=tx.onabort=()=>{db.close();reject(Error('offline_queue_save_failed'));};};});}
+async function snOfflineAuthorizedAccount(){const account=await snPersonalCurrentAccount();if(!snPersonalApprovedPage()||String(account?.userID||'').toUpperCase()!=='AKIMLA01')throw Error('offline_updater_not_available');return account;}
+async function snOfflineRequest(action,{method='GET',query={},body,token}={}){
+  await snOfflineAuthorizedAccount();
+  const url='https://drandox.cc/work/offline-snow/api.php?'+new URLSearchParams({action,...query});
+  const response=await new Promise((resolve,reject)=>{GM_xmlhttpRequest({method,url,anonymous:true,headers:{Authorization:'Bearer '+token,...(body!==undefined?{'Content-Type':'application/json'}:{})},data:body,timeout:45000,onload:resolve,onerror:()=>reject(Error('offline_network_error')),ontimeout:()=>reject(Error('offline_network_timeout')),onabort:()=>reject(Error('offline_request_aborted'))});});
+  let data;try{data=JSON.parse(response.responseText);}catch{data=null;}
+  if(response.status<200||response.status>=300||data?.ok!==true){const e=Error('Offline data update: HTTP '+response.status+' / '+(/^[a-z0-9_]+$/.test(data?.code||'')?data.code:'unconfirmed_response'));e.status=response.status;e.code=data?.code;const retry=String(response.responseHeaders||'').match(/^Retry-After:\s*(.+)$/im)?.[1];e.retryMs=retry?Math.max(0,/^\d+$/.test(retry)?Number(retry)*1000:Date.parse(retry)-Date.now()):Math.max(0,Number(data?.retryAfter)||0)*1000;throw e;}
+  return data;
+}
+async function snOfflineRetry(operation){for(let attempt=0;;attempt++){try{return await operation();}catch(e){if(attempt>=3||!(!e.status||e.status===429||e.status>=500))throw e;await new Promise(r=>setTimeout(r,Math.max(e.retryMs||0,1000*2**attempt)));}}}
+let snOfflineUpdating=false;
+async function snOfflineUpdateReferences(progress){
+  if(snOfflineUpdating)throw Error('offline_update_already_running');snOfflineUpdating=true;
+  try{
+    const run=async()=>{
+      const account=await snOfflineAuthorizedAccount(),identity=await diagnosticIdentity();
+      let pending=await snOfflinePending();
+      if(!pending){
+        progress('Collecting ServiceNow reference data…');
+        const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
+        const snapshot=await snOfflineCollectReferences(page,item=>progress('Collecting '+item.table+': '+item.count.toLocaleString()),()=>!snPersonalApprovedPage());
+        if(!snapshot.meta.usersComplete||!snapshot.meta.templatesComplete||!snapshot.meta.matrixComplete)throw Error('offline_snapshot_incomplete');
+        const datasets=snOfflineDatasetRecords(snapshot),packed={};
+        for(const [key,records]of Object.entries(datasets)){progress('Preparing '+key+'…');packed[key]=await snOfflinePackDataset(records);}
+        pending={schema:1,requestId:snOfflineRandomID(),metadata:{schema:1,instance:location.hostname,exportedAt:snapshot.exportedAt,sourceAccount:{userID:account.userID,name:account.fullName},datasets:Object.fromEntries(Object.entries(packed).map(([key,data])=>[key,{count:data.count,chunkCount:data.chunkCount,complete:true,sha256:data.sha256}]))},packed};
+        await snOfflinePending(pending); // Durable exact bytes before the first server write.
+      }
+      if(pending.metadata?.sourceAccount?.userID?.toUpperCase()!=='AKIMLA01'||pending.metadata.instance!==location.hostname)throw Error('offline_queue_identity_mismatch');
+      progress('Starting/resuming secure upload…');
+      const start=await snOfflineRetry(()=>snOfflineRequest('start',{method:'POST',token:identity.token,body:JSON.stringify({requestId:pending.requestId,metadata:pending.metadata})}));
+      if(!/^[a-f0-9]{32}$/.test(start.updateId||'')||(pending.updateId&&pending.updateId!==start.updateId))throw Error('offline_update_ack_mismatch');
+      pending.updateId=start.updateId;await snOfflinePending(pending);
+      if(start.status!=='published')for(const [dataset,data]of Object.entries(pending.packed))for(const [index,chunk]of data.chunks.entries()){
+        const received=start.datasets?.[dataset]?.received?.find(r=>r.chunk_index===index);
+        if(received){if(received.sha256!==chunk.sha256||received.records!==chunk.records)throw Error('offline_resume_ack_mismatch');continue;}
+        progress('Uploading '+dataset+' '+(index+1)+' / '+data.chunks.length+'…');
+        const ack=await snOfflineRetry(()=>snOfflineRequest('chunk',{method:'PUT',token:identity.token,query:{updateId:pending.updateId,dataset,index:String(index),sha256:chunk.sha256},body:chunk.body}));
+        if(ack.updateId!==pending.updateId||ack.dataset!==dataset||ack.index!==index||ack.sha256!==chunk.sha256||ack.records!==chunk.records)throw Error('offline_chunk_ack_mismatch');
+      }
+      progress('Validating and publishing complete snapshot…');
+      const done=await snOfflineRetry(()=>snOfflineRequest('complete',{method:'POST',token:identity.token,body:JSON.stringify({updateId:pending.updateId})}));
+      if(done.manifest?.updateId!==pending.updateId||done.manifest.instance!==pending.metadata.instance||!Number.isInteger(done.manifest.revision)||Object.entries(pending.metadata.datasets).some(([key,v])=>done.manifest.datasets?.[key]?.sha256!==v.sha256||done.manifest.datasets?.[key]?.count!==v.count))throw Error('offline_publish_ack_mismatch');
+      await snOfflinePending(null);progress('Offline SNOW data updated successfully. Revision '+done.manifest.revision+'.');
+    };
+    if(!navigator.locks?.request)throw Error('offline_cross_tab_lock_unavailable');
+    await navigator.locks.request('sn-ai-offline-export-AKIMLA01',{ifAvailable:true},lock=>{if(!lock)throw Error('offline_update_running_in_another_tab');return run();});
+  }finally{snOfflineUpdating=false;}
+}
+function snOfflineOpenPage(progress){
+  const target=window.open('https://drandox.cc/work/offline-snow/','sn-ai-offline-snow');if(!target){progress('Allow the Offline SNOW window to open.');return;}
+  let connecting=false;const end=()=>{window.removeEventListener('message',listener);clearTimeout(timer);};
+  const listener=async event=>{
+    if(event.origin!=='https://drandox.cc'||event.source!==target)return;
+    if(event.data?.type==='sn-ai-offline-connected'){progress('Offline SNOW connected.');end();return;}
+    if(event.data?.type!=='sn-ai-offline-ready'||connecting)return;connecting=true;
+    try{await snOfflineAuthorizedAccount();const identity=await diagnosticIdentity(),answer=await snOfflineRequest('ticket',{method:'POST',token:identity.token,body:'{}'});if(!/^[a-f0-9]{64}$/.test(answer.ticket||''))throw Error('offline_ticket_unconfirmed');target.postMessage({type:'sn-ai-offline-connect',ticket:answer.ticket,instance:location.hostname},'https://drandox.cc');}
+    catch(e){progress(e.message);end();}
+  };window.addEventListener('message',listener);const timer=setTimeout(end,90000);
+}
+function installSnOfflineUpdaterUI(panel){
+  if(!snPersonalApprovedPage())return;
+  snOfflineAuthorizedAccount().then(()=>{
+    if(!panel.isConnected||panel.querySelector('[data-offline-snow-updater]'))return;
+    const row=document.createElement('section');row.dataset.offlineSnowUpdater='true';row.style.cssText='display:grid;gap:8px;padding:12px 16px';
+    const update=document.createElement('button'),open=document.createElement('button'),message=document.createElement('div');message.setAttribute('role','status');message.style.cssText='font-size:12px;line-height:1.5';
+    update.type=open.type='button';update.textContent='Update Offline SNOW data';open.textContent='Open Offline SNOW';
+    update.onclick=async()=>{if(snOfflineUpdating)return;update.disabled=true;try{await snOfflineUpdateReferences(text=>{message.textContent=text;});}catch(e){message.textContent=e.message+' Pending data is kept for retry.';recordCompactDiagnostic('warn','offline-reference-upload',{code:e.code||'unconfirmed',status:e.status||0});}finally{update.disabled=false;}};
+    open.onclick=()=>snOfflineOpenPage(text=>{message.textContent=text;});row.append(update,open,message);panel.append(row);
+  }).catch(()=>{});
+}
+  /* SN_AI_OFFLINE_UPDATER_END */
   async function downloadDiagnostics(){
     const log=diagnosticStore();
     await flushDailyDiagnostics();await flushDailyDiagnostics();
@@ -20009,6 +20140,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       });developerPanel.append(matrixSetting,matrixStatus);
     }
     tabList.after(generalPanel);
+    installSnOfflineUpdaterUI(generalPanel);
     diagnosticStore();
     const fallbackStyle=document.createElement('style');fallbackStyle.textContent='[data-diagnostic-download-fallback][hidden]{display:none!important}';generalPanel.append(fallbackStyle);
     const settingsTabs = [...settingsDialog.querySelectorAll('[data-settings-tab]')];
