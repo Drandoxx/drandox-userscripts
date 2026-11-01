@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.815
+// @version      2.36.816
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.816","fixes":true,"changes":[{"key":"ai-credential-sync","meaningful":true,"text":"Sync private Gemini keys across authorized devices with encrypted server storage, durable offline retries and explicit conflict resolution."}]},
 {"version":"2.36.815","fixes":true,"changes":[{"key":"ai-connections","meaningful":true,"text":"Use the Web companion by default or configure a private Gemini API key, with setup instructions for every user. Remove legacy local-server and Gemini API connections."}]},
 {"version":"2.36.814","fixes":true,"changes":[{"key":"offline-snow-reference-updater","meaningful":true,"text":"Upload Offline SNOW as one compressed snapshot, validate publication before cleanup and represent unavailable user departments as unknown without guessing eligibility."}]},
 {"version":"2.36.813","fixes":true,"changes":[{"key":"offline-snow-reference-updater","meaningful":false,"text":"Exclude unknown and empty user locations from Offline SNOW reference exports."}]},
@@ -424,7 +425,7 @@ async function snPersonalCurrentAccount(){
   }
   return {userID,fullName,sysId:/^[a-f0-9]{32}$/i.test(sysId)?sysId:''};
 }
-function installPersonalSettingsSync({identity,reporter,readModes,writeModes,defaultModes}){
+function installPersonalSettingsSync({identity,reporter,readModes,writeModes,defaultModes,onCredentialBinding=()=>{},onCredentialDetach=()=>{}}){
   if(!snPersonalApprovedPage())return;
   let stopped=false,checking=false,context=null,generation=0,status='connecting',panel=null,refreshing=false;
   const clone=value=>JSON.parse(JSON.stringify(value));
@@ -567,6 +568,7 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
         if(oldQueue&&(oldQueue.inflight||oldQueue.conflict||Object.keys(oldQueue.pending||{}).length)){ctx.authorizationBlocked=true;ctx.binding=null;show('queue-reconciliation');return;}
       }
       await GM_setValue(bindingKey,ctx.binding);
+      onCredentialBinding({account:ctx.account,binding:ctx.binding,seedAllowed:ctx.seedAllowed,valid:()=>valid(ctx),token:async()=>{if(!valid(ctx))throw Error('Account changed');return (await identity()).token;}});
       if(!navigator.locks){show('offline');return;}
       claim(ctx);
     }catch{if(valid(ctx)){show('offline');ctx.retryAt=Date.now()+60000;}}
@@ -587,7 +589,7 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
     try{
       if(!snPersonalApprovedPage()){context?.sync?.close();context?.release?.();clearInterval(context?.refreshTimer);return;}
       const stamp=userStamp();
-      if(context&&context.stamp!==stamp){context.sync?.close();context.release?.();clearInterval(context.refreshTimer);context=null;generation++;}
+      if(context&&context.stamp!==stamp){onCredentialDetach();context.sync?.close();context.release?.();clearInterval(context.refreshTimer);context=null;generation++;}
       if(context&&!valid(context)){context.sync?.close();context.release?.();clearInterval(context.refreshTimer);show('account-changed');return;}
       if(!stamp){show('identity-required');return;}
       if(!context){
@@ -601,6 +603,8 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
         const cache=await GM_getValue(ctx.cacheKey,null),owner=await GM_getValue('sn-ai-personal-settings-local-owner',null);
         if(!valid(ctx))return;
         ctx.seedAllowed=!owner||owner===account;
+        const cachedCredentialBinding=await GM_getValue('sn-ai-personal-settings-binding-v2:'+ctx.account,null);
+        if(/^[a-f0-9]{32}$/.test(cachedCredentialBinding||'')&&valid(ctx))onCredentialBinding({account:ctx.account,binding:cachedCredentialBinding,seedAllowed:ctx.seedAllowed,valid:()=>valid(ctx),token:async()=>{if(!valid(ctx))throw Error('Account changed');return (await identity()).token;}});
         const journal=readJournal(ctx);
         if(cache&&!journal){await apply(ctx,cache);ctx.seedAllowed=true;}
         // No local UI clearing or owner change before successful linking/GET.
@@ -627,9 +631,90 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
   window.addEventListener('storage',storage);
   const modeListener=typeof GM_addValueChangeListener==='function'?GM_addValueChangeListener('local-sn-inspector-enabled-modes-v1',dirty):null;
   const timer=setInterval(()=>check().catch(()=>show('offline')),5000);check().catch(()=>show('offline'));
-  const dispose=()=>{stopped=true;clearInterval(timer);context?.sync?.close();context?.release?.();clearInterval(context?.refreshTimer);document.removeEventListener('sn-ai-personal-settings-change',dirty);window.removeEventListener('storage',storage);if(modeListener!==null&&typeof GM_removeValueChangeListener==='function')GM_removeValueChangeListener(modeListener);panel?.remove();};
+  const dispose=()=>{stopped=true;onCredentialDetach();clearInterval(timer);context?.sync?.close();context?.release?.();clearInterval(context?.refreshTimer);document.removeEventListener('sn-ai-personal-settings-change',dirty);window.removeEventListener('storage',storage);if(modeListener!==null&&typeof GM_removeValueChangeListener==='function')GM_removeValueChangeListener(modeListener);panel?.remove();};
   window.addEventListener('pagehide',dispose,{once:true});document.addEventListener('sn-ai-runtime-dispose',dispose,{once:true});
 }
+// Private credential state never enters the ordinary settings or diagnostic queues.
+class SnAICredentialSync {
+  constructor({get,set,remove,request,uuid,lock,onStatus=()=>{},onChange=()=>{}}) {
+    Object.assign(this,{get,set,remove,request,uuid,lock,onStatus,onChange});this.context=null;this.timer=null;
+  }
+  valid(ctx){return this.context===ctx&&ctx.valid();}
+  detach(){this.context=null;clearTimeout(this.timer);this.onStatus('waiting');}
+  bind(ctx){if(this.context?.account===ctx.account&&this.context?.binding===ctx.binding&&this.valid(this.context))return;this.detach();this.context=ctx;this.run();}
+  storageKey(ctx){return 'sn-ai-private-gemini-sync-v1:'+ctx.account;}
+  async record(ctx){
+    const saved=await this.get(this.storageKey(ctx),null);if(saved)return saved;
+    const owner=await this.get('sn-ai-private-gemini-legacy-owner',null);
+    const legacy=ctx.seedAllowed&&(!owner||owner===ctx.account)?await this.get('local-sn-inspector-gemini-key-v1',''):'';
+    // An existing private key remains usable during a credential-server outage.
+    // This does not seed the server: that still requires a successful GET first.
+    return {revision:null,localKey:/^[A-Za-z0-9_-]{20,256}$/.test(legacy)?legacy:'',pending:null,conflict:false};
+  }
+  async saveRecord(ctx,record){if(!this.valid(ctx))throw Error('account-changed');await this.set(this.storageKey(ctx),record);}
+  async key(){const ctx=this.context;if(!ctx||!this.valid(ctx))return '';const record=await this.record(ctx);return this.valid(ctx)?record.localKey||'':'';}
+  notify(ctx,status){if(this.valid(ctx)){this.onStatus(status);this.onChange();}}
+  schedule(ctx,ms){clearTimeout(this.timer);if(this.valid(ctx))this.timer=setTimeout(()=>this.run(),ms);}
+  async exclusive(ctx,task){if(!this.lock)throw Error('locking-unavailable');return this.lock('sn-ai-private-gemini:'+ctx.account,async()=>{if(!this.valid(ctx))throw Error('account-changed');return task();});}
+  async readRemote(ctx){
+    const response=await this.request(ctx,'GET');this.check(response);
+    const data=response.json;
+    if(data.schema!==1||data.provider!=='gemini'||!Number.isSafeInteger(data.revision)||data.revision<0||typeof data.everStored!=='boolean'||typeof data.deleted!=='boolean'||typeof data.present!=='boolean'||(data.present&&(!data.everStored||data.deleted||!/^[A-Za-z0-9_-]{20,256}$/.test(data.credential||'')))||(!data.present&&data.credential!==null))throw Error('invalid-response');
+    return data;
+  }
+  check(response){if(response.status===200&&response.json?.ok===true)return;const error=Error('credential-request-failed');error.status=response.status;error.retryAfter=response.retryAfter;error.code=/^[a-z_]{1,60}$/.test(response.json?.code||'')?response.json.code:'request_failed';throw error;}
+  async adopt(ctx,record,remote){record.revision=remote.revision;record.localKey=remote.present?remote.credential:'';record.pending=null;record.conflict=false;await this.saveRecord(ctx,record);await this.set('sn-ai-private-gemini-legacy-owner',ctx.account);this.notify(ctx,'saved');}
+  operation(record,kind,value,seedOnly=false){return {kind,body:{schema:1,baseRevision:record.revision,mutationId:this.uuid(),...(kind==='PUT'?{seedOnly,credential:value}:{})}};}
+  async stage(kind,value=''){
+    const ctx=this.context;if(!ctx||!this.valid(ctx))throw Error('Settings identity is not connected yet. Your key has not been changed.');
+    await this.exclusive(ctx,async()=>{const record=await this.record(ctx);if(record.conflict)throw Error('Resolve the API key sync conflict first.');record.localKey=kind==='PUT'?value:'';record.pending={kind,value};await this.saveRecord(ctx,record);this.notify(ctx,'pending');});
+    this.run();
+  }
+  async reconcile(ctx){
+    let record=await this.record(ctx);
+    const remote=await this.readRemote(ctx);
+    if(!this.valid(ctx))return;
+    if(record.conflict){this.notify(ctx,'conflict');return;}
+    if(!record.pending&&record.revision===null&&!remote.everStored&&remote.revision===0&&!remote.deleted){
+      const owner=await this.get('sn-ai-private-gemini-legacy-owner',null);
+      const legacy=ctx.seedAllowed&&(!owner||owner===ctx.account)?await this.get('local-sn-inspector-gemini-key-v1',''):'';
+      if(/^[A-Za-z0-9_-]{20,256}$/.test(legacy)){record.localKey=legacy;record.revision=0;record.pending=this.operation(record,'PUT',legacy,true);await this.saveRecord(ctx,record);}
+    }
+    if(!record.pending){await this.adopt(ctx,record,remote);return;}
+    if(!record.pending.body){
+      if(record.revision===null&&remote.everStored){record.conflict=true;await this.saveRecord(ctx,record);this.notify(ctx,'conflict');return;}
+      if(record.revision===null)record.revision=remote.revision;
+      record.pending=this.operation(record,record.pending.kind,record.pending.value,false);await this.saveRecord(ctx,record);
+    }
+    const operation=record.pending;
+    const response=await this.request(ctx,operation.kind,operation.body);
+    if(response.status===409){record.conflict=true;await this.saveRecord(ctx,record);this.notify(ctx,'conflict');return;}
+    this.check(response);
+    const ack=response.json;
+    if(ack.mutationId!==operation.body.mutationId||!Number.isSafeInteger(ack.savedRevision)||ack.savedRevision<=operation.body.baseRevision||!Number.isSafeInteger(ack.revision)||ack.revision<ack.savedRevision)throw Error('invalid-acknowledgement');
+    // A replay may describe a newer deletion. GET current state before adopting anything.
+    const current=await this.readRemote(ctx);if(current.revision<ack.revision)throw Error('stale-read');
+    await this.adopt(ctx,record,current);
+  }
+  async run(){
+    const ctx=this.context;if(!ctx||!this.valid(ctx)||ctx.running)return;ctx.running=true;
+    try{await this.exclusive(ctx,()=>this.reconcile(ctx));ctx.failures=0;this.schedule(ctx,60000);}
+    catch(error){
+      if(!this.valid(ctx))return;
+      const status=error.status;
+      this.notify(ctx,status===401||status===403?'access-unavailable':status>=400&&status<500&&status!==429?'rejected':'offline');
+      if(status!==401&&status!==403&&!(status>=400&&status<500&&status!==429))this.schedule(ctx,status===429?Math.max(1000,error.retryAfter||60000):Math.min(60000,1000*2**Math.min(6,ctx.failures=(ctx.failures||0)+1)));
+    }finally{ctx.running=false;}
+  }
+  async resolve(useLocal){
+    const ctx=this.context;if(!ctx||!this.valid(ctx))return;
+    await this.exclusive(ctx,async()=>{const record=await this.record(ctx);if(!record.conflict)return;const remote=await this.readRemote(ctx);
+      if(!useLocal){await this.adopt(ctx,record,remote);return;}
+      const kind=record.pending?.kind||'PUT',value=record.localKey;record.revision=remote.revision;record.conflict=false;record.pending=this.operation(record,kind,value,false);await this.saveRecord(ctx,record);
+    });this.run();
+  }
+}
+
 /* SN_PERSONAL_SETTINGS_END */
 
 /*
@@ -8493,6 +8578,26 @@ function startSNAI(tabIdentity) {
     await GM_deleteValue(key);
   };
 
+
+  let geminiCredentialStatus = 'waiting';
+  const geminiCredentials = new SnAICredentialSync({
+    get:gmGetValue,set:gmSetValue,remove:gmDeleteValue,uuid:()=>crypto.randomUUID(),
+    lock:(name,task)=>{if(!navigator.locks?.request)throw Error('locking-unavailable');return navigator.locks.request(name,task);},
+    onStatus:status=>{const previous=geminiCredentialStatus;geminiCredentialStatus=status;if(previous!==status&&['offline','conflict','rejected','access-unavailable'].includes(status))recordCompactDiagnostic('warn','gemini-credential-sync',{provider:'gemini-api',stage:status});document.dispatchEvent(new CustomEvent('sn-ai-credential-status'));},
+    onChange:()=>document.dispatchEvent(new CustomEvent('sn-ai-credential-changed')),
+    request:async(ctx,method,body)=>{
+      if(!ctx.valid()||!snPersonalApprovedPage())throw Error('account-changed');
+      const token=await ctx.token();
+      if(!ctx.valid())throw Error('account-changed');
+      return new Promise((resolve,reject)=>GM_xmlhttpRequest({method,anonymous:true,
+        url:'https://drandox.cc/wuwa/sn-ai-credentials.php?bindingId='+encodeURIComponent(ctx.binding)+'&provider=gemini',
+        headers:{Authorization:'Bearer '+token,...(body?{'Content-Type':'application/json'}:{})},data:body?JSON.stringify(body):undefined,timeout:20000,
+        onload:response=>{let json=null;try{json=JSON.parse(response.responseText);}catch{}const retry=String(response.responseHeaders||'').match(/^Retry-After:\s*(.+)$/im)?.[1]?.trim();const retryMs=retry?(/^\d+$/.test(retry)?Number(retry)*1000:Math.max(0,Date.parse(retry)-Date.now())):Number(json?.retryAfter||0)*1000;resolve({status:response.status,json,retryAfter:Number.isFinite(retryMs)?retryMs:60000});},
+        onerror:()=>reject(Error('credential-network')),ontimeout:()=>reject(Error('credential-timeout'))
+      }));
+    }
+  });
+
   const normaliseChatGPTConversationRecord = (value) => {
     if (!value || typeof value !== 'object') return null;
     // This bridge starts before the ServiceNow helpers below are initialized
@@ -9191,7 +9296,7 @@ function startSNAI(tabIdentity) {
     state.ai.webService = ['chatgpt', 'gemini'].includes(savedWebService) ? savedWebService : 'chatgpt';
     state.ai.apiModel = String(await gmGetValue(AI_MODEL_KEY, DEFAULT_API_MODEL) || DEFAULT_API_MODEL);
     state.ai.model = state.ai.provider === 'gemini-api' ? state.ai.apiModel : 'chatgpt-web';
-    state.ai.keySaved = Boolean(await gmGetValue(AI_API_KEY, ''));
+    state.ai.keySaved = Boolean(await geminiCredentials.key());
     return { ...state.ai };
   };
   const webAIMemoryBootstrapPrompt = () => [
@@ -9735,8 +9840,9 @@ function startSNAI(tabIdentity) {
   },60000):0;
   window.addEventListener('pagehide',()=>{memoryStopped=true;clearInterval(memoryTimer);},{once:true});
   try{if(workspacePage)installCISearch();else if(/^\/(?:incident|new_call)\.do$/i.test(location.pathname))installClassicCISearch();}catch{/* Preserve native lookup if enhancement cannot initialize. */}
-  if(workspacePage)setTimeout(()=>installPersonalSettingsSync({
+  if(snPersonalApprovedPage())setTimeout(()=>installPersonalSettingsSync({
     identity:diagnosticIdentity,reporter:snPersonalCurrentAccount,defaultModes:DEFAULT_ENABLED_MODES,
+    onCredentialBinding:ctx=>geminiCredentials.bind(ctx),onCredentialDetach:()=>geminiCredentials.detach(),
     readModes:()=>gmGetValue(ENABLED_MODES_KEY,DEFAULT_ENABLED_MODES),
     writeModes:async modes=>{await gmSetValue(ENABLED_MODES_KEY,modes);state.enabledModes={...modes};},
   }),0);
@@ -12029,7 +12135,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const safeEnum = value => /^[A-Z_]{1,60}$/.test(String(value || '')) ? String(value) : '';
     const log = (level, stage, details = {}) => { try { recordCompactDiagnostic(level, 'gemini-api', { provider: 'gemini-api', jobId, ims, mode, model, stage, durationMs: Date.now() - startedAt, ...details }); } catch { /* Diagnostics never block ticket work. */ } };
     const preflight = message => { log('error', 'configuration-error', { code: 'CONFIGURATION', message }); throw new Error(message); };
-    if (!/^[A-Za-z0-9_-]{20,200}$/.test(String(apiKey || ''))) preflight('Save a valid Gemini API key in Settings > AI first.');
+    if (!/^[A-Za-z0-9_-]{20,256}$/.test(String(apiKey || ''))) preflight('Save a valid Gemini API key in Settings > AI first.');
     if (!/^gemini-[a-z0-9.-]{1,80}$/.test(model)) preflight('Select a valid Gemini model in Settings > AI.');
     if (typeof GM_xmlhttpRequest !== 'function') preflight('Update SN AI in Tampermonkey to enable Gemini API access.');
     let handle, rejectPending, settled = false;
@@ -18642,9 +18748,9 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
                 <div class="local-sn-settings-note">Requires the SN AI Web companion extension. Select Gemini only when gemini.google.com is directly available in Chrome.</div>
               </div>
               <div class="local-sn-provider-panel" data-ai-api-settings hidden>
-                <div class="local-sn-settings-note">Requests go directly to Google, not the companion or Drandox. Your key is saved only in private userscript storage on this browser, never synced or included in diagnostics. Only send work data through a company-approved project.</div>
-                <details><summary>Set up Gemini API</summary><ol><li>Open <a href="https://aistudio.google.com/api-keys" target="_blank" rel="noopener noreferrer">Google AI Studio API keys</a> and create a key in your approved Google project.</li><li>Select Gemini API above, choose a model, paste your key below and click Save. Each user/device configures its own key; no local server or companion is needed.</li><li>Click Check API connection. This sends only a synthetic test, not a ticket or transcript.</li></ol><div class="local-sn-settings-note">Free access and quotas depend on your project and region. For clients made available in the EEA, UK or Switzerland, Google's terms require Paid Services. Check <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener noreferrer">Google's terms</a> and your employer's policy first. Never share your key or paste it into a chat.</div></details><button class="secondary" type="button" data-action="check-gemini-api">Check API connection</button><div data-gemini-api-status role="status" aria-live="polite"></div>
-                <div data-ai-key-editor>
+                <div class="local-sn-settings-note">Requests go directly to Google, not the companion or Drandox. Your key is saved privately on this browser and encrypted in your Drandox profile for cross-device sync, never in ordinary settings or diagnostics. Only send work data through a company-approved project.</div>
+                <details><summary>Set up Gemini API</summary><ol><li>Open <a href="https://aistudio.google.com/api-keys" target="_blank" rel="noopener noreferrer">Google AI Studio API keys</a> and create a key in your approved Google project.</li><li>Select Gemini API above, choose a model, paste your key below and click Save. Save your own key once; it loads automatically on your other authorized devices. No local server or companion is needed.</li><li>Click Check API connection. This sends only a synthetic test, not a ticket or transcript.</li></ol><div class="local-sn-settings-note">Free access and quotas depend on your project and region. For clients made available in the EEA, UK or Switzerland, Google's terms require Paid Services. Check <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener noreferrer">Google's terms</a> and your employer's policy first. Never share your key or paste it into a chat.</div></details><button class="secondary" type="button" data-action="check-gemini-api">Check API connection</button><div data-gemini-api-status role="status" aria-live="polite"></div>
+                <div data-gemini-sync-status role="status" aria-live="polite"></div><div data-gemini-sync-actions hidden><button type="button" data-gemini-sync-retry>Retry sync</button><button type="button" data-gemini-sync-local hidden>Keep my local change</button><button type="button" data-gemini-sync-remote hidden>Use server key</button></div><div data-ai-key-editor>
                   <label for="local-sn-ai-key-input">Gemini API key</label>
                   <div class="local-sn-settings-key-row"><input id="local-sn-ai-key-input" aria-label="Gemini API key" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your Gemini API key"/><button class="secondary local-sn-icon-button" type="button" data-action="open-gemini-api-keys" aria-label="Open Gemini API keys" title="Open Gemini API keys"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/><path d="m21 3-9 9"/><path d="M15 3h6v6"/></svg></button><button type="button" data-action="save-ai-key">Save</button><button class="danger local-sn-icon-button" type="button" data-action="cancel-ai-key-edit" aria-label="Cancel API key edit">×</button></div>
                 </div>
@@ -19597,7 +19703,6 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       fieldTestAction.hidden = classicIncidentMode || !state.fieldTestEnabled;
       if (stackAction) stackAction.hidden = !(state.enabledModes.STACK && aiReady);
       if (hpStackAction) hpStackAction.hidden = !(state.enabledModes.HP_STACK && aiReady);
-      aiKeyInput.value = '';
     };
     const showAISettingsError = (error) => {
       aiSettingsError.textContent = error?.message || String(error || 'AI settings could not be updated.');
@@ -20163,24 +20268,36 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         showAISettingsError(error);
       }
     });
+    const refreshGeminiSyncStatus=()=>{
+      const status=geminiCredentialStatus,node=settingsDialog.querySelector('[data-gemini-sync-status]'),actions=settingsDialog.querySelector('[data-gemini-sync-actions]');
+      node.textContent=({waiting:'Waiting for signed-in settings identity…',pending:'Key saved locally; cloud sync pending.',offline:'Key sync offline. Local changes kept for retry.',conflict:'API key changed on another device. Choose which change to keep.',rejected:'Key sync rejected. Local changes kept.', 'access-unavailable':'Key sync access unavailable. Local changes kept.'})[status]||'';
+      actions.hidden=!['offline','conflict','rejected','access-unavailable'].includes(status);
+      settingsDialog.querySelector('[data-gemini-sync-local]').hidden=status!=='conflict';settingsDialog.querySelector('[data-gemini-sync-remote]').hidden=status!=='conflict';
+    };
+    const updateGeminiKeyUI=()=>{geminiCredentials.key().then(key=>{state.ai.keySaved=Boolean(key);if(!aiKeyInput.value)syncAISettingsUI();refreshGeminiSyncStatus();}).catch(()=>{});};
+    document.addEventListener('sn-ai-credential-status',refreshGeminiSyncStatus);document.addEventListener('sn-ai-credential-changed',updateGeminiKeyUI);
+    document.addEventListener('sn-ai-runtime-dispose',()=>{document.removeEventListener('sn-ai-credential-status',refreshGeminiSyncStatus);document.removeEventListener('sn-ai-credential-changed',updateGeminiKeyUI);},{once:true});
+    settingsDialog.querySelector('[data-gemini-sync-retry]').onclick=()=>geminiCredentials.run();
+    for(const [selector,local]of [['[data-gemini-sync-local]',true],['[data-gemini-sync-remote]',false]])settingsDialog.querySelector(selector).onclick=async()=>{try{await geminiCredentials.resolve(local);}catch{aiSettingsError.textContent='Key sync is unavailable; your local change was retained.';}};
+    refreshGeminiSyncStatus();
     settingsDialog.querySelector('[data-action="check-gemini-api"]').addEventListener('click', async event => {
       const button = event.currentTarget, status = settingsDialog.querySelector('[data-gemini-api-status]');
       button.disabled = true; status.textContent = 'Checking Gemini API…';
       try {
-        const apiKey = await gmGetValue(AI_API_KEY, '');
+        const apiKey = await geminiCredentials.key();
         await requestGeminiAPI({ apiKey, model: state.ai.apiModel, instructions: 'Return the JSON object {"ok":true}. This is a synthetic connectivity check.', input: { test: true }, schema: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false }, validate: value => { if(value?.ok !== true) throw new Error('Gemini test returned an unexpected result.'); return value; } }).promise;
         status.textContent = 'Gemini API connected.';
       } catch(error) { status.textContent = error.message; } finally { button.disabled = false; }
     });
     settingsDialog.querySelector('[data-action="save-ai-key"]').addEventListener('click', async () => {
       const apiKey = aiKeyInput.value.trim();
-      if (!/^[A-Za-z0-9_-]{20,200}$/.test(apiKey)) {
+      if (!/^[A-Za-z0-9_-]{20,256}$/.test(apiKey)) {
         aiSettingsError.textContent = 'Paste a valid Gemini API key without spaces before saving.';
         aiKeyInput.focus();
         return;
       }
       try {
-        await gmSetValue(AI_API_KEY, apiKey);
+        await geminiCredentials.stage('PUT',apiKey);
         state.ai.keySaved = true;
         aiSettingsError.textContent = '';
         syncAISettingsUI();
@@ -20215,7 +20332,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     });
     settingsDialog.querySelector('[data-action="delete-ai-key"]').addEventListener('click', async () => {
       try {
-        await gmDeleteValue(AI_API_KEY);
+        await geminiCredentials.stage('DELETE');
         state.ai.keySaved = false;
         aiSettingsError.textContent = '';
         syncAISettingsUI();
@@ -21907,7 +22024,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             if (state.ai.provider === 'web') {
               aiRequest = requestChatGPTWebCPC({ ims: pinnedIMS, transcript });
             } else {
-              const apiKey = await gmGetValue(AI_API_KEY, '');
+              const apiKey = await geminiCredentials.key();
               if (!apiKey) throw new Error('The saved Gemini API key is unavailable.');
               aiRequest = requestGeminiCPC({ apiKey, model: state.ai.model, ims: pinnedIMS, transcript });
             }
@@ -22151,7 +22268,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             if (state.ai.provider === 'web') {
               aiRequest = requestChatGPTWebILSPrnt({ ims: pinnedIMS, transcript });
             } else {
-              const apiKey = await gmGetValue(AI_API_KEY, '');
+              const apiKey = await geminiCredentials.key();
               if (!apiKey) throw new Error('The saved Gemini API key is unavailable.');
               aiRequest = requestGeminiILSPrnt({ apiKey, model: state.ai.model, ims: pinnedIMS, transcript });
             }
@@ -22418,7 +22535,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           if (state.ai.provider === 'web') {
             aiRequest = requestChatGPTWebFTF({ ims: pinnedIMS, transcript });
           } else {
-            const apiKey = await gmGetValue(AI_API_KEY, '');
+            const apiKey = await geminiCredentials.key();
             if (!apiKey) throw new Error('The saved Gemini API key is unavailable.');
             aiRequest = requestGeminiFTF({ apiKey, model: state.ai.model, ims: pinnedIMS, transcript });
           }
@@ -22682,7 +22799,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           assertTicketWindowAlive(dialog);
             if (state.ai.provider === 'web') aiRequest = requestChatGPTWebHP(requestArgs);
             else {
-              const apiKey = await gmGetValue(AI_API_KEY, ''); if (!apiKey) throw new Error('The saved Gemini API key is unavailable.');
+              const apiKey = await geminiCredentials.key(); if (!apiKey) throw new Error('The saved Gemini API key is unavailable.');
               aiRequest = requestGeminiHP({ apiKey, model: state.ai.model, ...requestArgs });
             }
             let command = await aiRequest.promise; aiRequest = null;
@@ -22977,7 +23094,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           if (state.ai.provider === 'web') {
             aiRequest = requestChatGPTWebDescription({ ims: pinnedIMS, transcript, genericSchema: requestSchema });
           } else {
-            const apiKey = await gmGetValue(AI_API_KEY, '');
+            const apiKey = await geminiCredentials.key();
             if (!apiKey) throw new Error('The saved Gemini API key is unavailable.');
             aiRequest = requestGeminiDescription({ apiKey, model: state.ai.model, ims: pinnedIMS, transcript, genericSchema: requestSchema });
           }
