@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.817
+// @version      2.36.818
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.818","fixes":true,"changes":[{"key":"gemini-connection-check","meaningful":true,"text":"Bound Gemini connection checks to 20 seconds, show elapsed time and recover from missing request callbacks with safe diagnostic timing."}]},
 {"version":"2.36.817","fixes":true,"changes":[{"key":"ai-credential-sync","meaningful":true,"text":"Accept the newer dotted Gemini API key format in key setup, API requests and private credential sync."}]},
 {"version":"2.36.816","fixes":true,"changes":[{"key":"ai-credential-sync","meaningful":true,"text":"Sync private Gemini keys across authorized devices with encrypted server storage, durable offline retries and explicit conflict resolution."}]},
 {"version":"2.36.815","fixes":true,"changes":[{"key":"ai-connections","meaningful":true,"text":"Use the Web companion by default or configure a private Gemini API key, with setup instructions for every user. Remove legacy local-server and Gemini API connections."}]},
@@ -12139,19 +12140,22 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     if (!/^[A-Za-z0-9_.-]{20,256}$/.test(String(apiKey || ''))) preflight('Save a valid Gemini API key in Settings > AI first.');
     if (!/^gemini-[a-z0-9.-]{1,80}$/.test(model)) preflight('Select a valid Gemini model in Settings > AI.');
     if (typeof GM_xmlhttpRequest !== 'function') preflight('Update SN AI in Tampermonkey to enable Gemini API access.');
-    let handle, rejectPending, settled = false;
-    const stop = () => { if (!settled) { settled = true; log('info', 'cancelled', { code: 'AI_STOPPED' }); rejectPending(Object.assign(new Error('AI request stopped.'), { code: 'AI_STOPPED' })); } };
+    const timeoutMs = mode === 'TEST' ? 20000 : 120000;
+    let handle, rejectPending, settled = false, deadlineTimer, readyState = 0;
+    const stop = () => { if (!settled) { settled = true; clearTimeout(deadlineTimer); log('info', 'cancelled', { code: 'AI_STOPPED' }); rejectPending(Object.assign(new Error('AI request stopped.'), { code: 'AI_STOPPED' })); } };
     const promise = new Promise((resolve, reject) => {
       rejectPending = reject;
-      const fail = (error, details = {}) => { if (!settled) { settled = true; const message = String(error?.message || error).split(apiKey).join('[redacted]'); log('error', 'failed', { message, ...details }); reject(error instanceof Error ? error : new Error(message)); } };
+      const fail = (error, details = {}) => { if (!settled) { settled = true; clearTimeout(deadlineTimer); const message = String(error?.message || error).split(apiKey).join('[redacted]'); log('error', 'failed', { message, ...details }); reject(error instanceof Error ? error : new Error(message)); } };
       const data = JSON.stringify({ systemInstruction: { parts: [{ text: instructions }] }, contents: [{ role: 'user', parts: [{ text: JSON.stringify(input) }] }], generationConfig: { responseMimeType: 'application/json', responseJsonSchema: schema } });
       log('info', 'request-started', { length: data.length });
+      deadlineTimer=setTimeout(()=>{if(settled)return;fail(`Gemini API did not complete within ${timeoutMs/1000} seconds. Check Tampermonkey permission for generativelanguage.googleapis.com and network access.`,{status:0,code:'CALLBACK_DEADLINE',phase:readyState>=2?'response-started':'waiting-for-network-or-permission',timeoutMs});try{handle?.abort?.();}catch{}},timeoutMs);
       try { handle = GM_xmlhttpRequest({
         method: 'POST', anonymous: true,
         url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
         headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
         data,
-        timeout: 120000,
+        timeout: timeoutMs,
+        onreadystatechange(response) { if(settled)return;readyState=Number(response.readyState)||0;if(readyState===2)log('info','response-started',{status:Number(response.status)||0}); },
         onload(response) {
           if (settled) return;
           const status = Number(response.status);
@@ -12174,11 +12178,11 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             const usage = body.usageMetadata || {}, counts = {};
             for (const key of ['promptTokenCount', 'candidatesTokenCount', 'totalTokenCount', 'thoughtsTokenCount', 'cachedContentTokenCount']) if (Number.isSafeInteger(usage[key]) && usage[key] >= 0) counts[key] = usage[key];
             log('info', 'completed', { status, finishReason, length: text.length, ...counts });
-            settled = true; resolve(result);
+            settled = true; clearTimeout(deadlineTimer); resolve(result);
           } catch (error) { fail(error, { status, code: Object.prototype.hasOwnProperty.call(error || {}, 'aiResponse') ? 'VALIDATION_ERROR' : 'INVALID_RESPONSE' }); }
         },
         onerror: () => fail('Gemini API network error. Check network access to generativelanguage.googleapis.com.', { status: 0, code: 'NETWORK_ERROR' }),
-        ontimeout: () => fail('Gemini API timed out after 120 seconds. No automatic retry was sent.', { status: 0, code: 'TIMEOUT' }),
+        ontimeout: () => fail(`Gemini API timed out after ${timeoutMs/1000} seconds. No automatic retry was sent.`, { status: 0, code: 'TIMEOUT', timeoutMs }),
         onabort: stop,
       }); } catch { fail('Gemini API request could not start. Check Tampermonkey permissions.', { status: 0, code: 'REQUEST_START_FAILED' }); }
     });
@@ -20284,11 +20288,12 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     settingsDialog.querySelector('[data-action="check-gemini-api"]').addEventListener('click', async event => {
       const button = event.currentTarget, status = settingsDialog.querySelector('[data-gemini-api-status]');
       button.disabled = true; status.textContent = 'Checking Gemini API…';
+      const startedAt=Date.now(),progressTimer=setInterval(()=>{status.textContent=`Checking Gemini API… ${Math.floor((Date.now()-startedAt)/1000)}s (20s limit). Check for a Tampermonkey permission prompt.`;},1000);
       try {
         const apiKey = await geminiCredentials.key();
         await requestGeminiAPI({ apiKey, model: state.ai.apiModel, instructions: 'Return the JSON object {"ok":true}. This is a synthetic connectivity check.', input: { test: true }, schema: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false }, validate: value => { if(value?.ok !== true) throw new Error('Gemini test returned an unexpected result.'); return value; } }).promise;
         status.textContent = 'Gemini API connected.';
-      } catch(error) { status.textContent = error.message; } finally { button.disabled = false; }
+      } catch(error) { status.textContent = error.message; } finally { clearInterval(progressTimer);button.disabled = false; }
     });
     settingsDialog.querySelector('[data-action="save-ai-key"]').addEventListener('click', async () => {
       const apiKey = aiKeyInput.value.trim();
