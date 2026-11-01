@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.820
+// @version      2.36.821
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.821","fixes":true,"changes":[{"key":"gemini-connection-check","meaningful":true,"text":"Stop all Gemini requests after 20 seconds without automatic retry and use low-latency reasoning for supported ticket models."},{"key":"ticket-progress-stages","meaningful":true,"text":"Keep FTF preparation, AI waiting and ticket filling stages separate so preparing New Event cannot falsely mark the AI reply as validated."}]},
 {"version":"2.36.820","fixes":true,"changes":[{"key":"gemini-connection-check","meaningful":true,"text":"Check Gemini key and model access without generating an answer, avoiding generation latency and clearly separating connection status from generation quota."}]},
 {"version":"2.36.819","fixes":true,"changes":[{"key":"gemini-connection-check","meaningful":true,"text":"Use direct browser HTTPS for Gemini requests to avoid stalled extension callbacks, retaining cancellation, safe diagnostics and bounded connection checks."}]},
 {"version":"2.36.818","fixes":true,"changes":[{"key":"gemini-connection-check","meaningful":true,"text":"Bound Gemini connection checks to 20 seconds, show elapsed time and recover from missing request callbacks with safe diagnostic timing."}]},
@@ -12153,15 +12154,15 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     if (!/^gemini-[a-z0-9.-]{1,80}$/.test(model)) preflight('Select a valid Gemini model in Settings > AI.');
     if (typeof fetch !== 'function' && typeof GM_xmlhttpRequest !== 'function') preflight('No Gemini HTTPS transport is available. Update your browser and SN AI.');
     const sendRequest=typeof fetch==='function'?requestGeminiFetch:GM_xmlhttpRequest;
-    const timeoutMs = mode === 'TEST' ? 20000 : 120000;
+    const timeoutMs = 20000;
     let handle, rejectPending, settled = false, deadlineTimer, readyState = 0;
     const stop = () => { if (!settled) { settled = true; clearTimeout(deadlineTimer); log('info', 'cancelled', { code: 'AI_STOPPED' }); rejectPending(Object.assign(new Error('AI request stopped.'), { code: 'AI_STOPPED' })); } };
     const promise = new Promise((resolve, reject) => {
       rejectPending = reject;
       const fail = (error, details = {}) => { if (!settled) { settled = true; clearTimeout(deadlineTimer); const message = String(error?.message || error).split(apiKey).join('[redacted]'); log('error', 'failed', { message, ...details }); reject(error instanceof Error ? error : new Error(message)); } };
-      const data = connectionOnly ? undefined : JSON.stringify({ systemInstruction: { parts: [{ text: instructions }] }, contents: [{ role: 'user', parts: [{ text: JSON.stringify(input) }] }], generationConfig: { responseMimeType: 'application/json', responseJsonSchema: schema } });
+      const data = connectionOnly ? undefined : JSON.stringify({ systemInstruction: { parts: [{ text: instructions }] }, contents: [{ role: 'user', parts: [{ text: JSON.stringify(input) }] }], generationConfig: { responseMimeType: 'application/json', responseJsonSchema: schema, thinkingConfig:model==='gemini-3.8-flash'?{thinkingLevel:'low'}:model==='gemini-3.5-flash-lite'?{thinkingLevel:'minimal'}:undefined } });
       log('info', 'request-started', { length: data?.length||0, phase:connectionOnly?'model-access-check':'ticket-generation', source:typeof fetch==='function'?'browser-fetch':'userscript-request' });
-      deadlineTimer=setTimeout(()=>{if(settled)return;fail(`Gemini API did not complete within ${timeoutMs/1000} seconds. Check network access to generativelanguage.googleapis.com.`,{status:0,code:'CALLBACK_DEADLINE',phase:readyState>=2?'response-started':'waiting-for-network',timeoutMs});try{handle?.abort?.();}catch{}},timeoutMs);
+      deadlineTimer=setTimeout(()=>{if(settled)return;fail('Gemini did not finish within 20 seconds. No ticket data was applied. Retry manually or try Gemini 3.5 Flash-Lite.',{status:0,code:'CALLBACK_DEADLINE',phase:readyState>=2?'response-started':'waiting-for-response',timeoutMs});try{handle?.abort?.();}catch{}},timeoutMs);
       try { handle = sendRequest({
         method: connectionOnly ? 'GET' : 'POST', anonymous: true,
         url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}${connectionOnly?'':':generateContent'}`,
@@ -20847,9 +20848,11 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     // One shared bridge lifecycle updates every running AI ticket window.
     // Mode code only supplies its ticket work; it does not own Web-AI stages.
     document.addEventListener('sn-ai-web-progress', (event) => {
+      if(state.ai.provider!=='web')return;
       const stage = ({ 'job-message-accepted': 2, 'job-response-received': 3, 'job-response-validated': 4 })[event.detail?.stage];
       if (!Number.isInteger(stage)) return;
       for (const target of document.querySelectorAll('.local-sn-cpc-dialog.is-running [data-ticket-progress]')) {
+        if(target.dataset.ticketPhase)continue; // Explicit per-window phases own their progress.
         target.dataset.webAiStage = String(stage);
         renderTicketProgressStages(target, Math.max(25, Number(target.dataset.ticketProgress) || 25));
       }
@@ -22400,6 +22403,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       let successTimer = 0;
       let aiRequest = null;
       let lastFTFAIResponse = null;
+      let ftfPhase = 'collecting';
       let recoverableAutomationError = null;
       let aiMessageAccepted = false;
       ftfShell.onFullRetry = async () => {
@@ -22410,35 +22414,25 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       };
       const setProgress = (nextProgress) => {
         progress = Math.max(progress, Math.min(100, Math.round(nextProgress)));
-        if (state.ai.provider === 'web' && progress >= 25) {
-          const stages = aiMessageAccepted
-            ? ['Getting Chat data', 'Message to AI sent', 'Waiting for AI reply', 'Validating AI response', 'Generating Ticket', 'Finishing']
-            : ['Getting Chat data', 'Sending message to AI', 'Validating AI response', 'Generating Ticket', 'Finishing'];
-          const currentStage = progress >= 99 ? stages.length - 1
-            : progress >= 62 ? stages.length - 2
-            : progress >= 58 ? stages.length - 3
-            : aiMessageAccepted ? 2 : 1;
-          renderTicketProgressStages(progressText, progress, { stages, currentStage });
-          return;
-        }
-        renderTicketProgressStages(progressText, progress);
+        const currentStage=({collecting:0,sending:1,waiting:2,validating:3,filling:4,finishing:5})[ftfPhase]??0;
+        progressText.dataset.ticketPhase=ftfPhase;
+        renderTicketProgressStages(progressText,progress,{currentStage});
       };
       const aiWebProgress = (event) => {
-        if (!running || stoppedFromWindow || state.ai.provider !== 'web') return;
+        if (!running || stoppedFromWindow || state.ai.provider !== 'web' || ftfPhase==='collecting') return;
         if (event.detail?.stage === 'job-message-accepted') {
-          aiMessageAccepted = true;
+          aiMessageAccepted = true;ftfPhase='waiting';
           setProgress(Math.max(progress, 35));
-        } else if (event.detail?.stage === 'job-response-received') setProgress(Math.max(progress, 58));
-        else if (event.detail?.stage === 'job-response-validated') setProgress(Math.max(progress, 62));
+        }
       };
       const automationProgress = (event) => {
-        if (!running || stoppedFromWindow) return;
+        if (!running || stoppedFromWindow || !['filling','finishing'].includes(ftfPhase)) return;
         const action = event.detail?.action || '';
         if (action === 'command-started') setProgress(62);
         else if (['cache-session-ready', 'ticket-start-ready'].includes(action)) setProgress(68);
         else if (['auto-field-attempt', 'auto-select-attempt'].includes(action)) setProgress(Math.min(88, progress + 2));
         else if (['field-commit-confirmed', 'wizard-field-committed'].includes(action)) setProgress(Math.min(96, progress + 4));
-        else if (action === 'auto-ftf-complete') setProgress(99);
+        else if (action === 'auto-ftf-complete') {ftfPhase='finishing';setProgress(99);}
       };
       const restoreEditableWindow = (message = '') => {
         ftfDialog.classList.remove('is-running', 'is-success', 'is-error');
@@ -22520,7 +22514,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           modelLine.textContent = reusableAICommand ? 'Validated command cached · retry uses no AI tokens' : `AI mode: ${aiProviderDisplayName()}`;
           running = true;
           stoppedFromWindow = false;
-          progress = 0;
+          progress = 0;ftfPhase='collecting';delete progressText.dataset.webAiStage;
           aiMessageAccepted = false;
           errorLine.textContent = '';
           ftfShell.hideAIReturned();
@@ -22555,6 +22549,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           titleMain.textContent = `${pinnedIMS} - FTF running`;
           const transcript = appendCurrentCaseInstruction(await aiTranscriptWithUserInformation(cacheEntry, 'FTF', pinnedIMS), ftfShell.caseInstruction?.value);
           assertTicketWindowAlive(ftfDialog);
+          ftfPhase='sending';setProgress(25);
           if (state.ai.provider === 'web') {
             aiRequest = requestChatGPTWebFTF({ ims: pinnedIMS, transcript });
           } else {
@@ -22562,17 +22557,18 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             if (!apiKey) throw new Error('The saved Gemini API key is unavailable.');
             aiRequest = requestGeminiFTF({ apiKey, model: state.ai.model, ims: pinnedIMS, transcript });
           }
-          setProgress(35);
+          ftfPhase='waiting';setProgress(35);
           const ftfCommand = await aiRequest.promise;
           assertTicketWindowAlive(ftfDialog);
           aiRequest = null;
-          lastFTFAIResponse = ftfCommand;
+          lastFTFAIResponse = ftfCommand;ftfPhase='validating';
           if (stoppedFromWindow) throw Object.assign(new Error('FTF request stopped.'), { code: 'AI_STOPPED' });
           setProgress(58);
           titleMain.textContent = `${pinnedIMS} - FTF running`;
           reusableAICommand = await writeCachedAICommand('FTF', pinnedIMS, JSON.stringify(ftfCommand));
           collapsedCommandInput.value = reusableAICommand;
           }
+          ftfPhase='filling';setProgress(62);
           const finalStatus = await runCommandInput(collapsedCommandInput);
           if (stoppedFromWindow || finalStatus?.result?.code === 'AUTOMATION_STOPPED') throw Object.assign(new Error('FTF request stopped.'), { code: 'AI_STOPPED' });
           const successful = finalStatus?.status === 'complete' && finalStatus?.result?.kind === 'auto-complete' && finalStatus?.result?.ok === true;
