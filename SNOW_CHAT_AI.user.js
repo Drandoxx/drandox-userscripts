@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.812
+// @version      2.36.813
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.813","fixes":true,"changes":[{"key":"offline-snow-reference-updater","meaningful":false,"text":"Exclude unknown and empty user locations from Offline SNOW reference exports."}]},
 {"version":"2.36.812","fixes":true,"changes":[{"key":"offline-snow-reference-updater","meaningful":false,"text":"Clear previous temporary reference exports when starting a fresh update and remove exported batches after confirmed publication."}]},
 {"version":"2.36.811","fixes":false,"changes":[{"key":"offline-snow-reference-updater","meaningful":true,"text":"Show count-based progress while collecting and uploading Offline SNOW reference data, reaching completion only after confirmed publication."}]},
 {"version":"2.36.810","fixes":false,"changes":[{"key":"offline-snow-reference-updater","meaningful":false,"text":"Move the Offline SNOW updater into Developer settings and remove the Open Offline SNOW button."}]},
@@ -9806,7 +9807,7 @@ async function snOfflineCollectReferences(page,progress=()=>{},cancelled=()=>fal
     }return out;
   };
   const allTemplates=templates.rows.map(row=>{const fields=parseTemplate(value(row.template));return{id:value(row.sys_id),name:display(row.name),description:fields.description||'',shortDescription:fields.short_description||'',eventType:value(row.u_call_type)||fields.call_type||'',matrixIds:{category:fields.u_matrix_category||'',subcategory:fields.u_matrix_subcategory||'',symptom:fields.u_matrix_symptom||''}};});
-  return{schema:1,exportedAt:new Date().toISOString(),meta:{source:page.location.origin,usersComplete:users.complete,reportedUserCount:users.total,downloadedUserCount:users.rows.length,templatesWithoutStaticDescription:allTemplates.filter(t=>!t.description.trim()).length,departmentsComplete:departments.complete,matrixComplete:matrix.complete,templatesComplete:templates.complete},eligibilitySchema:1,userDirectoryFilterVersion:1,departments:departments.rows.map(r=>({id:value(r.sys_id),parent:value(r.parent)})),users:users.rows.filter(r=>!/castorama|france|brico/i.test(display(r.location))).map(r=>({id:value(r.sys_id),userID:value(r.user_name),username:value(r.user_name),name:display(r.name),location:display(r.location),locationId:value(r.location),departmentId:value(r.department)})),templates:allTemplates.filter(t=>t.description.trim()),matrix:matrix.rows.map(r=>({id:value(r.sys_id),code:value(r.u_code),nameEN:value(r.u_name_en)||value(r.u_description),departmentIds:value(r.u_department).split(',').filter(Boolean),parent:value(r.u_parent),type:display(r.u_type),restricted:value(r.u_restrict_visibility)==='true',confidential:value(r.u_confidential)==='true'}))};
+  return{schema:1,exportedAt:new Date().toISOString(),meta:{source:page.location.origin,usersComplete:users.complete,reportedUserCount:users.total,downloadedUserCount:users.rows.length,templatesWithoutStaticDescription:allTemplates.filter(t=>!t.description.trim()).length,departmentsComplete:departments.complete,matrixComplete:matrix.complete,templatesComplete:templates.complete},eligibilitySchema:1,userDirectoryFilterVersion:1,departments:departments.rows.map(r=>({id:value(r.sys_id),parent:value(r.parent)})),users:users.rows.filter(r=>display(r.location).trim()&&!/castorama|france|brico|unknown/i.test(display(r.location))).map(r=>({id:value(r.sys_id),userID:value(r.user_name),username:value(r.user_name),name:display(r.name),location:display(r.location),locationId:value(r.location),departmentId:value(r.department)})),templates:allTemplates.filter(t=>t.description.trim()),matrix:matrix.rows.map(r=>({id:value(r.sys_id),code:value(r.u_code),nameEN:value(r.u_name_en)||value(r.u_description),departmentIds:value(r.u_department).split(',').filter(Boolean),parent:value(r.u_parent),type:display(r.u_type),restricted:value(r.u_restrict_visibility)==='true',confidential:value(r.u_confidential)==='true'}))};
 }
 
 
@@ -9821,7 +9822,7 @@ function snOfflineDatasetRecords(snapshot){
   const matrix=[...categories,...subcategories,...candidates.filter(r=>r.type==='symptom'&&subcategoryIDs.has(r.parent))];
   const known=new Map(matrix.map(r=>[r.id,r]));
   const templates=snapshot.templates.filter(r=>! /javascript\s*:|\$\{|<\s*(?:script|iframe|object|embed)\b|\bon[a-z]+\s*=|<\?/iu.test(r.description)).map(r=>{const matrixIds={category:null,subcategory:null,symptom:null};for(const key of ['category','subcategory','symptom']){const candidate=known.get(r.matrixIds?.[key]);if(candidate?.type===key&&(key==='category'||candidate.parent===matrixIds[key==='subcategory'?'category':'subcategory']))matrixIds[key]=candidate.id;}return{id:r.id,name:r.name,description:r.description,shortDescription:r.shortDescription,eventType:r.eventType,matrixIds};});
-  return{departments:(snapshot.departments||[]).map(r=>({id:r.id,parent:id(r.parent)})),users:snapshot.users.filter(r=>!/castorama|france|brico/i.test(r.location||'')).map(r=>({id:r.id,userID:r.userID,username:r.username,name:r.name,locationId:id(r.locationId),location:r.location,departmentId:id(r.departmentId)})),templates,matrix};
+  return{departments:(snapshot.departments||[]).map(r=>({id:r.id,parent:id(r.parent)})),users:snapshot.users.filter(r=>String(r.location||'').trim()&&!/castorama|france|brico|unknown/i.test(r.location||'')).map(r=>({id:r.id,userID:r.userID,username:r.username,name:r.name,locationId:id(r.locationId),location:r.location,departmentId:id(r.departmentId)})),templates,matrix};
 }
 async function snOfflinePackDataset(records){
   const chunks=[];let current=[],bytes=14;
