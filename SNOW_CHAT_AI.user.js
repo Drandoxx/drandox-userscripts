@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.819
+// @version      2.36.820
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.820","fixes":true,"changes":[{"key":"gemini-connection-check","meaningful":true,"text":"Check Gemini key and model access without generating an answer, avoiding generation latency and clearly separating connection status from generation quota."}]},
 {"version":"2.36.819","fixes":true,"changes":[{"key":"gemini-connection-check","meaningful":true,"text":"Use direct browser HTTPS for Gemini requests to avoid stalled extension callbacks, retaining cancellation, safe diagnostics and bounded connection checks."}]},
 {"version":"2.36.818","fixes":true,"changes":[{"key":"gemini-connection-check","meaningful":true,"text":"Bound Gemini connection checks to 20 seconds, show elapsed time and recover from missing request callbacks with safe diagnostic timing."}]},
 {"version":"2.36.817","fixes":true,"changes":[{"key":"ai-credential-sync","meaningful":true,"text":"Accept the newer dotted Gemini API key format in key setup, API requests and private credential sync."}]},
@@ -12141,7 +12142,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     return {abort:()=>controller.abort()};
   }
   // Gemini API: private installation key, direct HTTPS, no shared relay or automatic transport retries.
-  function requestGeminiAPI({ apiKey, model = DEFAULT_API_MODEL, ims = '', mode = 'TEST', instructions, input, schema, validate = value => value }) {
+  function requestGeminiAPI({ apiKey, model = DEFAULT_API_MODEL, ims = '', mode = 'TEST', connectionOnly = false, instructions, input, schema, validate = value => value }) {
     state.geminiDiagnosticsActive = true;
     if (state.diagnostics?.passive) state.diagnostics = null;
     const startedAt = Date.now(), jobId = 'gemini-' + (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : startedAt + '-' + Math.random().toString(36).slice(2));
@@ -12158,12 +12159,12 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const promise = new Promise((resolve, reject) => {
       rejectPending = reject;
       const fail = (error, details = {}) => { if (!settled) { settled = true; clearTimeout(deadlineTimer); const message = String(error?.message || error).split(apiKey).join('[redacted]'); log('error', 'failed', { message, ...details }); reject(error instanceof Error ? error : new Error(message)); } };
-      const data = JSON.stringify({ systemInstruction: { parts: [{ text: instructions }] }, contents: [{ role: 'user', parts: [{ text: JSON.stringify(input) }] }], generationConfig: { responseMimeType: 'application/json', responseJsonSchema: schema } });
-      log('info', 'request-started', { length: data.length, source:typeof fetch==='function'?'browser-fetch':'userscript-request' });
+      const data = connectionOnly ? undefined : JSON.stringify({ systemInstruction: { parts: [{ text: instructions }] }, contents: [{ role: 'user', parts: [{ text: JSON.stringify(input) }] }], generationConfig: { responseMimeType: 'application/json', responseJsonSchema: schema } });
+      log('info', 'request-started', { length: data?.length||0, phase:connectionOnly?'model-access-check':'ticket-generation', source:typeof fetch==='function'?'browser-fetch':'userscript-request' });
       deadlineTimer=setTimeout(()=>{if(settled)return;fail(`Gemini API did not complete within ${timeoutMs/1000} seconds. Check network access to generativelanguage.googleapis.com.`,{status:0,code:'CALLBACK_DEADLINE',phase:readyState>=2?'response-started':'waiting-for-network',timeoutMs});try{handle?.abort?.();}catch{}},timeoutMs);
       try { handle = sendRequest({
-        method: 'POST', anonymous: true,
-        url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+        method: connectionOnly ? 'GET' : 'POST', anonymous: true,
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}${connectionOnly?'':':generateContent'}`,
         headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
         data,
         timeout: timeoutMs,
@@ -12179,6 +12180,10 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           }
           try {
             const body = JSON.parse(response.responseText || '{}');
+            if(connectionOnly){
+              if(!String(body.name||'').startsWith('models/'+model)||!body.supportedGenerationMethods?.includes('generateContent'))throw Error('Google responded, but the selected model does not advertise ticket generation support.');
+              log('info','completed',{status,phase:'model-access-check'});settled=true;clearTimeout(deadlineTimer);resolve({ok:true,model,generationTested:false});return;
+            }
             const candidate = body.candidates?.[0];
             const finishReason = safeEnum(candidate?.finishReason), blockReason = safeEnum(body.promptFeedback?.blockReason);
             if (body.promptFeedback?.blockReason || (candidate?.finishReason && candidate.finishReason !== 'STOP')) { fail('Gemini did not complete the response. It may have been blocked or reached its output limit. No ticket data was applied.', { status, code: 'INCOMPLETE_RESPONSE', finishReason, blockReason }); return; }
@@ -18766,7 +18771,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
               </div>
               <div class="local-sn-provider-panel" data-ai-api-settings hidden>
                 <div class="local-sn-settings-note">Requests go directly to Google, not the companion or Drandox. Your key is saved privately on this browser and encrypted in your Drandox profile for cross-device sync, never in ordinary settings or diagnostics. Only send work data through a company-approved project.</div>
-                <details><summary>Set up Gemini API</summary><ol><li>Open <a href="https://aistudio.google.com/api-keys" target="_blank" rel="noopener noreferrer">Google AI Studio API keys</a> and create a key in your approved Google project.</li><li>Select Gemini API above, choose a model, paste your key below and click Save. Save your own key once; it loads automatically on your other authorized devices. No local server or companion is needed.</li><li>Click Check API connection. This sends only a synthetic test, not a ticket or transcript.</li></ol><div class="local-sn-settings-note">Free access and quotas depend on your project and region. For clients made available in the EEA, UK or Switzerland, Google's terms require Paid Services. Check <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener noreferrer">Google's terms</a> and your employer's policy first. Never share your key or paste it into a chat.</div></details><button class="secondary" type="button" data-action="check-gemini-api">Check API connection</button><div data-gemini-api-status role="status" aria-live="polite"></div>
+                <details><summary>Set up Gemini API</summary><ol><li>Open <a href="https://aistudio.google.com/api-keys" target="_blank" rel="noopener noreferrer">Google AI Studio API keys</a> and create a key in your approved Google project.</li><li>Select Gemini API above, choose a model, paste your key below and click Save. Save your own key once; it loads automatically on your other authorized devices. No local server or companion is needed.</li><li>Click Check API connection. This checks your key and model access without generating an answer or sending ticket data.</li></ol><div class="local-sn-settings-note">Free access and quotas depend on your project and region. For clients made available in the EEA, UK or Switzerland, Google's terms require Paid Services. Check <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener noreferrer">Google's terms</a> and your employer's policy first. Never share your key or paste it into a chat.</div></details><button class="secondary" type="button" data-action="check-gemini-api">Check API connection</button><div data-gemini-api-status role="status" aria-live="polite"></div>
                 <div data-gemini-sync-status role="status" aria-live="polite"></div><div data-gemini-sync-actions hidden><button type="button" data-gemini-sync-retry>Retry sync</button><button type="button" data-gemini-sync-local hidden>Keep my local change</button><button type="button" data-gemini-sync-remote hidden>Use server key</button></div><div data-ai-key-editor>
                   <label for="local-sn-ai-key-input">Gemini API key</label>
                   <div class="local-sn-settings-key-row"><input id="local-sn-ai-key-input" aria-label="Gemini API key" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your Gemini API key"/><button class="secondary local-sn-icon-button" type="button" data-action="open-gemini-api-keys" aria-label="Open Gemini API keys" title="Open Gemini API keys"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/><path d="m21 3-9 9"/><path d="M15 3h6v6"/></svg></button><button type="button" data-action="save-ai-key">Save</button><button class="danger local-sn-icon-button" type="button" data-action="cancel-ai-key-edit" aria-label="Cancel API key edit">×</button></div>
@@ -20303,8 +20308,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       const startedAt=Date.now(),progressTimer=setInterval(()=>{status.textContent=`Checking Gemini API… ${Math.floor((Date.now()-startedAt)/1000)}s (20s limit).`;},1000);
       try {
         const apiKey = await geminiCredentials.key();
-        await requestGeminiAPI({ apiKey, model: state.ai.apiModel, instructions: 'Return the JSON object {"ok":true}. This is a synthetic connectivity check.', input: { test: true }, schema: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false }, validate: value => { if(value?.ok !== true) throw new Error('Gemini test returned an unexpected result.'); return value; } }).promise;
-        status.textContent = 'Gemini API connected.';
+        await requestGeminiAPI({ apiKey, model: state.ai.apiModel, connectionOnly:true }).promise;
+        status.textContent = 'Gemini API connected. Key and model access verified; generation quota is checked when you run a ticket.';
       } catch(error) { status.textContent = error.message; } finally { clearInterval(progressTimer);button.disabled = false; }
     });
     settingsDialog.querySelector('[data-action="save-ai-key"]').addEventListener('click', async () => {
