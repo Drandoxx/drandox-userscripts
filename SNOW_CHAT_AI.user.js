@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.810
+// @version      2.36.811
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.811","fixes":false,"changes":[{"key":"offline-snow-reference-updater","meaningful":true,"text":"Show count-based progress while collecting and uploading Offline SNOW reference data, reaching completion only after confirmed publication."}]},
 {"version":"2.36.810","fixes":false,"changes":[{"key":"offline-snow-reference-updater","meaningful":false,"text":"Move the Offline SNOW updater into Developer settings and remove the Open Offline SNOW button."}]},
 {"version":"2.36.809","fixes":true,"changes":[{"key":"offline-snow-reference-updater","meaningful":true,"text":"Exclude Castorama, France and Brico user locations from Offline SNOW exports and send full replacement snapshots with department eligibility and English matrix names."}]},
 {"version":"2.36.808","fixes":false,"changes":[{"key":"offline-snow-reference-updater","meaningful":true,"text":"Let AKIMLA01 manually refresh Offline SNOW reference data and upload it to Drandox with resumable verified batches, without extra login or instance entry."}]},
@@ -9848,32 +9849,33 @@ async function snOfflineUpdateReferences(progress){
       const account=await snOfflineAuthorizedAccount(),identity=await diagnosticIdentity();
       let pending=await snOfflinePending();
       if(!pending){
-        progress('Collecting ServiceNow reference data…');
+        progress('Collecting ServiceNow reference data…',0);
         const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
-        const snapshot=await snOfflineCollectReferences(page,item=>progress('Collecting '+item.table+': '+item.count.toLocaleString()),()=>!snPersonalApprovedPage());
+        const snapshot=await snOfflineCollectReferences(page,item=>{const tables=['sys_user','sys_template','u_matrix','cmn_department'],index=tables.indexOf(item.table);progress('Collecting '+item.table+': '+item.count.toLocaleString()+' / '+item.total.toLocaleString(),Math.max(0,index)*15+Math.min(1,item.total?item.count/item.total:0)*15);},()=>!snPersonalApprovedPage());
         if(!snapshot.meta.usersComplete||!snapshot.meta.templatesComplete||!snapshot.meta.matrixComplete||!snapshot.meta.departmentsComplete)throw Error('offline_snapshot_incomplete');
         const datasets=snOfflineDatasetRecords(snapshot),packed={};
-        for(const [key,records]of Object.entries(datasets)){progress('Preparing '+key+'…');packed[key]=await snOfflinePackDataset(records);}
+        for(const [key,records]of Object.entries(datasets)){progress('Preparing '+key+'…',60+Object.keys(packed).length);packed[key]=await snOfflinePackDataset(records);}
         pending={schema:2,requestId:snOfflineRandomID(),metadata:{schema:2,replace:true,eligibilitySchema:1,userDirectoryFilterVersion:1,instance:location.hostname,exportedAt:snapshot.exportedAt,sourceAccount:{userID:account.userID,name:account.fullName},datasets:Object.fromEntries(Object.entries(packed).map(([key,data])=>[key,{count:data.count,chunkCount:data.chunkCount,complete:true,sha256:data.sha256}]))},packed};
         await snOfflinePending(pending); // Durable exact bytes before the first server write.
       }
       if(pending.schema!==2||pending.metadata?.schema!==2)throw Error('offline_legacy_pending_retained: previous export needs explicit migration; no data was deleted');
       if(pending.metadata?.sourceAccount?.userID?.toUpperCase()!=='AKIMLA01'||pending.metadata.instance!==location.hostname)throw Error('offline_queue_identity_mismatch');
-      progress('Starting/resuming secure upload…');
+      progress('Starting/resuming secure upload…',65);
       const start=await snOfflineRetry(()=>snOfflineRequest('start',{method:'POST',token:identity.token,body:JSON.stringify({requestId:pending.requestId,metadata:pending.metadata})}));
       if(!/^[a-f0-9]{32}$/.test(start.updateId||'')||(pending.updateId&&pending.updateId!==start.updateId))throw Error('offline_update_ack_mismatch');
       pending.updateId=start.updateId;await snOfflinePending(pending);
+      const totalChunks=Object.values(pending.packed).reduce((sum,d)=>sum+d.chunks.length,0);let completedChunks=0;
       if(start.status!=='published')for(const [dataset,data]of Object.entries(pending.packed))for(const [index,chunk]of data.chunks.entries()){
         const received=start.datasets?.[dataset]?.received?.find(r=>r.chunk_index===index);
-        if(received){if(received.sha256!==chunk.sha256||received.records!==chunk.records)throw Error('offline_resume_ack_mismatch');continue;}
-        progress('Uploading '+dataset+' '+(index+1)+' / '+data.chunks.length+'…');
+        if(received){if(received.sha256!==chunk.sha256||received.records!==chunk.records)throw Error('offline_resume_ack_mismatch');completedChunks++;continue;}
+        progress('Uploading '+dataset+' '+(index+1)+' / '+data.chunks.length+' · '+completedChunks+' / '+totalChunks+' batches complete',65+30*completedChunks/totalChunks);
         const ack=await snOfflineRetry(()=>snOfflineRequest('chunk',{method:'PUT',token:identity.token,query:{updateId:pending.updateId,dataset,index:String(index),sha256:chunk.sha256},body:chunk.body}));
-        if(ack.updateId!==pending.updateId||ack.dataset!==dataset||ack.index!==index||ack.sha256!==chunk.sha256||ack.records!==chunk.records)throw Error('offline_chunk_ack_mismatch');
+        if(ack.updateId!==pending.updateId||ack.dataset!==dataset||ack.index!==index||ack.sha256!==chunk.sha256||ack.records!==chunk.records)throw Error('offline_chunk_ack_mismatch');completedChunks++;
       }
-      progress('Validating and publishing complete snapshot…');
+      progress('Validating and publishing complete snapshot…',95);
       const done=await snOfflineRetry(()=>snOfflineRequest('complete',{method:'POST',token:identity.token,body:JSON.stringify({updateId:pending.updateId})}));
       if(done.manifest?.updateId!==pending.updateId||done.manifest.instance!==pending.metadata.instance||!Number.isInteger(done.manifest.revision)||Object.entries(pending.metadata.datasets).some(([key,v])=>done.manifest.datasets?.[key]?.sha256!==v.sha256||done.manifest.datasets?.[key]?.count!==v.count))throw Error('offline_publish_ack_mismatch');
-      await snOfflinePending(null);progress('Offline SNOW data updated successfully. Revision '+done.manifest.revision+'.');
+      await snOfflinePending(null);progress('Offline SNOW data updated successfully. Revision '+done.manifest.revision+'.',100);
     };
     if(!navigator.locks?.request)throw Error('offline_cross_tab_lock_unavailable');
     await navigator.locks.request('sn-ai-offline-export-AKIMLA01',{ifAvailable:true},lock=>{if(!lock)throw Error('offline_update_running_in_another_tab');return run();});
@@ -9895,10 +9897,11 @@ function installSnOfflineUpdaterUI(panel){
   snOfflineAuthorizedAccount().then(()=>{
     if(!panel.isConnected||panel.querySelector('[data-offline-snow-updater]'))return;
     const row=document.createElement('section');row.dataset.offlineSnowUpdater='true';row.style.cssText='display:grid;gap:8px;padding:12px 16px';
+    const bar=document.createElement('progress');bar.max=100;bar.value=0;bar.hidden=true;bar.setAttribute('aria-label','Offline SNOW update progress');bar.style.cssText='width:100%;height:12px;accent-color:var(--sn-theme-ac94ec,#ac94ec)';
     const update=document.createElement('button'),message=document.createElement('div');message.setAttribute('role','status');message.style.cssText='font-size:12px;line-height:1.5';
     update.type='button';update.textContent='Update Offline SNOW data';
-    update.onclick=async()=>{if(snOfflineUpdating)return;update.disabled=true;try{await snOfflineUpdateReferences(text=>{message.textContent=text;});}catch(e){message.textContent=e.message+' Pending data is kept for retry.';recordCompactDiagnostic('warn','offline-reference-upload',{code:e.code||'unconfirmed',status:e.status||0});}finally{update.disabled=false;}};
-    row.append(update,message);panel.append(row);
+    update.onclick=async()=>{if(snOfflineUpdating)return;update.disabled=true;bar.hidden=false;bar.value=0;try{await snOfflineUpdateReferences((text,percent)=>{message.textContent=text;if(Number.isFinite(percent))bar.value=Math.max(bar.value,percent);});}catch(e){message.textContent=e.message+' Pending data is kept for retry.';recordCompactDiagnostic('warn','offline-reference-upload',{code:e.code||'unconfirmed',status:e.status||0});}finally{update.disabled=false;}};
+    row.append(update,bar,message);panel.append(row);
   }).catch(()=>{});
 }
   /* SN_AI_OFFLINE_UPDATER_END */
