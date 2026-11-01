@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.811
+// @version      2.36.812
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.812","fixes":true,"changes":[{"key":"offline-snow-reference-updater","meaningful":false,"text":"Clear previous temporary reference exports when starting a fresh update and remove exported batches after confirmed publication."}]},
 {"version":"2.36.811","fixes":false,"changes":[{"key":"offline-snow-reference-updater","meaningful":true,"text":"Show count-based progress while collecting and uploading Offline SNOW reference data, reaching completion only after confirmed publication."}]},
 {"version":"2.36.810","fixes":false,"changes":[{"key":"offline-snow-reference-updater","meaningful":false,"text":"Move the Offline SNOW updater into Developer settings and remove the Open Offline SNOW button."}]},
 {"version":"2.36.809","fixes":true,"changes":[{"key":"offline-snow-reference-updater","meaningful":true,"text":"Exclude Castorama, France and Brico user locations from Offline SNOW exports and send full replacement snapshots with department eligibility and English matrix names."}]},
