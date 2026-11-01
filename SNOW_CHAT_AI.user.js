@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.816
+// @version      2.36.817
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.817","fixes":true,"changes":[{"key":"ai-credential-sync","meaningful":true,"text":"Accept the newer dotted Gemini API key format in key setup, API requests and private credential sync."}]},
 {"version":"2.36.816","fixes":true,"changes":[{"key":"ai-credential-sync","meaningful":true,"text":"Sync private Gemini keys across authorized devices with encrypted server storage, durable offline retries and explicit conflict resolution."}]},
 {"version":"2.36.815","fixes":true,"changes":[{"key":"ai-connections","meaningful":true,"text":"Use the Web companion by default or configure a private Gemini API key, with setup instructions for every user. Remove legacy local-server and Gemini API connections."}]},
 {"version":"2.36.814","fixes":true,"changes":[{"key":"offline-snow-reference-updater","meaningful":true,"text":"Upload Offline SNOW as one compressed snapshot, validate publication before cleanup and represent unavailable user departments as unknown without guessing eligibility."}]},
@@ -649,7 +650,7 @@ class SnAICredentialSync {
     const legacy=ctx.seedAllowed&&(!owner||owner===ctx.account)?await this.get('local-sn-inspector-gemini-key-v1',''):'';
     // An existing private key remains usable during a credential-server outage.
     // This does not seed the server: that still requires a successful GET first.
-    return {revision:null,localKey:/^[A-Za-z0-9_-]{20,256}$/.test(legacy)?legacy:'',pending:null,conflict:false};
+    return {revision:null,localKey:/^[A-Za-z0-9_.-]{20,256}$/.test(legacy)?legacy:'',pending:null,conflict:false};
   }
   async saveRecord(ctx,record){if(!this.valid(ctx))throw Error('account-changed');await this.set(this.storageKey(ctx),record);}
   async key(){const ctx=this.context;if(!ctx||!this.valid(ctx))return '';const record=await this.record(ctx);return this.valid(ctx)?record.localKey||'':'';}
@@ -659,7 +660,7 @@ class SnAICredentialSync {
   async readRemote(ctx){
     const response=await this.request(ctx,'GET');this.check(response);
     const data=response.json;
-    if(data.schema!==1||data.provider!=='gemini'||!Number.isSafeInteger(data.revision)||data.revision<0||typeof data.everStored!=='boolean'||typeof data.deleted!=='boolean'||typeof data.present!=='boolean'||(data.present&&(!data.everStored||data.deleted||!/^[A-Za-z0-9_-]{20,256}$/.test(data.credential||'')))||(!data.present&&data.credential!==null))throw Error('invalid-response');
+    if(data.schema!==1||data.provider!=='gemini'||!Number.isSafeInteger(data.revision)||data.revision<0||typeof data.everStored!=='boolean'||typeof data.deleted!=='boolean'||typeof data.present!=='boolean'||(data.present&&(!data.everStored||data.deleted||!/^[A-Za-z0-9_.-]{20,256}$/.test(data.credential||'')))||(!data.present&&data.credential!==null))throw Error('invalid-response');
     return data;
   }
   check(response){if(response.status===200&&response.json?.ok===true)return;const error=Error('credential-request-failed');error.status=response.status;error.retryAfter=response.retryAfter;error.code=/^[a-z_]{1,60}$/.test(response.json?.code||'')?response.json.code:'request_failed';throw error;}
@@ -678,7 +679,7 @@ class SnAICredentialSync {
     if(!record.pending&&record.revision===null&&!remote.everStored&&remote.revision===0&&!remote.deleted){
       const owner=await this.get('sn-ai-private-gemini-legacy-owner',null);
       const legacy=ctx.seedAllowed&&(!owner||owner===ctx.account)?await this.get('local-sn-inspector-gemini-key-v1',''):'';
-      if(/^[A-Za-z0-9_-]{20,256}$/.test(legacy)){record.localKey=legacy;record.revision=0;record.pending=this.operation(record,'PUT',legacy,true);await this.saveRecord(ctx,record);}
+      if(/^[A-Za-z0-9_.-]{20,256}$/.test(legacy)){record.localKey=legacy;record.revision=0;record.pending=this.operation(record,'PUT',legacy,true);await this.saveRecord(ctx,record);}
     }
     if(!record.pending){await this.adopt(ctx,record,remote);return;}
     if(!record.pending.body){
@@ -12135,7 +12136,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const safeEnum = value => /^[A-Z_]{1,60}$/.test(String(value || '')) ? String(value) : '';
     const log = (level, stage, details = {}) => { try { recordCompactDiagnostic(level, 'gemini-api', { provider: 'gemini-api', jobId, ims, mode, model, stage, durationMs: Date.now() - startedAt, ...details }); } catch { /* Diagnostics never block ticket work. */ } };
     const preflight = message => { log('error', 'configuration-error', { code: 'CONFIGURATION', message }); throw new Error(message); };
-    if (!/^[A-Za-z0-9_-]{20,256}$/.test(String(apiKey || ''))) preflight('Save a valid Gemini API key in Settings > AI first.');
+    if (!/^[A-Za-z0-9_.-]{20,256}$/.test(String(apiKey || ''))) preflight('Save a valid Gemini API key in Settings > AI first.');
     if (!/^gemini-[a-z0-9.-]{1,80}$/.test(model)) preflight('Select a valid Gemini model in Settings > AI.');
     if (typeof GM_xmlhttpRequest !== 'function') preflight('Update SN AI in Tampermonkey to enable Gemini API access.');
     let handle, rejectPending, settled = false;
@@ -20291,7 +20292,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     });
     settingsDialog.querySelector('[data-action="save-ai-key"]').addEventListener('click', async () => {
       const apiKey = aiKeyInput.value.trim();
-      if (!/^[A-Za-z0-9_-]{20,256}$/.test(apiKey)) {
+      if (!/^[A-Za-z0-9_.-]{20,256}$/.test(apiKey)) {
         aiSettingsError.textContent = 'Paste a valid Gemini API key without spaces before saving.';
         aiKeyInput.focus();
         return;
