@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.813
+// @version      2.36.814
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.814","fixes":true,"changes":[{"key":"offline-snow-reference-updater","meaningful":true,"text":"Upload Offline SNOW as one compressed snapshot, validate publication before cleanup and represent unavailable user departments as unknown without guessing eligibility."}]},
 {"version":"2.36.813","fixes":true,"changes":[{"key":"offline-snow-reference-updater","meaningful":false,"text":"Exclude unknown and empty user locations from Offline SNOW reference exports."}]},
 {"version":"2.36.812","fixes":true,"changes":[{"key":"offline-snow-reference-updater","meaningful":false,"text":"Clear previous temporary reference exports when starting a fresh update and remove exported batches after confirmed publication."}]},
 {"version":"2.36.811","fixes":false,"changes":[{"key":"offline-snow-reference-updater","meaningful":true,"text":"Show count-based progress while collecting and uploading Offline SNOW reference data, reaching completion only after confirmed publication."}]},
@@ -9834,10 +9835,10 @@ async function snOfflinePackDataset(records){
 }
 function snOfflinePending(value){return new Promise((resolve,reject)=>{const open=indexedDB.open('sn-ai-offline-export-v1',1);open.onupgradeneeded=()=>open.result.createObjectStore('pending');open.onerror=()=>reject(Error('offline_queue_unavailable'));open.onsuccess=()=>{const db=open.result,tx=db.transaction('pending',value===undefined?'readonly':'readwrite'),store=tx.objectStore('pending');const r=value===undefined?store.get('AKIMLA01'):value===null?store.clear():store.put(value,'AKIMLA01');let result;r.onsuccess=()=>result=r.result;tx.oncomplete=()=>{db.close();resolve(result);};tx.onerror=tx.onabort=()=>{db.close();reject(Error('offline_queue_save_failed'));};};});}
 async function snOfflineAuthorizedAccount(){const account=await snPersonalCurrentAccount();if(!snPersonalApprovedPage()||String(account?.userID||'').toUpperCase()!=='AKIMLA01')throw Error('offline_updater_not_available');return account;}
-async function snOfflineRequest(action,{method='GET',query={},body,token}={}){
+async function snOfflineRequest(action,{method='GET',query={},body,token,contentType='application/json',onProgress}={}){
   await snOfflineAuthorizedAccount();
   const url='https://drandox.cc/work/offline-snow/api.php?'+new URLSearchParams({action,...query});
-  const response=await new Promise((resolve,reject)=>{GM_xmlhttpRequest({method,url,anonymous:true,headers:{Authorization:'Bearer '+token,...(body!==undefined?{'Content-Type':'application/json'}:{})},data:body,timeout:45000,onload:resolve,onerror:()=>reject(Error('offline_network_error')),ontimeout:()=>reject(Error('offline_network_timeout')),onabort:()=>reject(Error('offline_request_aborted'))});});
+  const response=await new Promise((resolve,reject)=>{GM_xmlhttpRequest({method,url,anonymous:true,headers:{Authorization:'Bearer '+token,...(body!==undefined?{'Content-Type':contentType}:{})},data:body,timeout:180000,onprogress:()=>{},upload:{onprogress:onProgress},onload:resolve,onerror:()=>reject(Error('offline_network_error')),ontimeout:()=>reject(Error('offline_network_timeout')),onabort:()=>reject(Error('offline_request_aborted'))});});
   let data;try{data=JSON.parse(response.responseText);}catch{data=null;}
   if(response.status<200||response.status>=300||data?.ok!==true){const e=Error('Offline data update: HTTP '+response.status+' / '+(/^[a-z0-9_]+$/.test(data?.code||'')?data.code:'unconfirmed_response'));e.status=response.status;e.code=data?.code;const retry=String(response.responseHeaders||'').match(/^Retry-After:\s*(.+)$/im)?.[1];e.retryMs=retry?Math.max(0,/^\d+$/.test(retry)?Number(retry)*1000:Date.parse(retry)-Date.now()):Math.max(0,Number(data?.retryAfter)||0)*1000;throw e;}
   return data;
@@ -9856,28 +9857,24 @@ async function snOfflineUpdateReferences(progress,{fresh=false}={}){
         const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
         const snapshot=await snOfflineCollectReferences(page,item=>{const tables=['sys_user','sys_template','u_matrix','cmn_department'],index=tables.indexOf(item.table);progress('Collecting '+item.table+': '+item.count.toLocaleString()+' / '+item.total.toLocaleString(),Math.max(0,index)*15+Math.min(1,item.total?item.count/item.total:0)*15);},()=>!snPersonalApprovedPage());
         if(!snapshot.meta.usersComplete||!snapshot.meta.templatesComplete||!snapshot.meta.matrixComplete||!snapshot.meta.departmentsComplete)throw Error('offline_snapshot_incomplete');
-        const datasets=snOfflineDatasetRecords(snapshot),packed={};
-        for(const [key,records]of Object.entries(datasets)){progress('Preparing '+key+'…',60+Object.keys(packed).length);packed[key]=await snOfflinePackDataset(records);}
-        pending={schema:2,requestId:snOfflineRandomID(),metadata:{schema:2,replace:true,eligibilitySchema:1,userDirectoryFilterVersion:1,instance:location.hostname,exportedAt:snapshot.exportedAt,sourceAccount:{userID:account.userID,name:account.fullName},datasets:Object.fromEntries(Object.entries(packed).map(([key,data])=>[key,{count:data.count,chunkCount:data.chunkCount,complete:true,sha256:data.sha256}]))},packed};
-        await snOfflinePending(pending); // Durable exact bytes before the first server write.
+        const datasets=snOfflineDatasetRecords(snapshot),known=new Set(datasets.departments.map(d=>d.id));
+        let unavailableDepartments=0;for(const user of datasets.users)if(user.departmentId&&!known.has(user.departmentId)){user.departmentId=null;unavailableDepartments++;}
+        if(unavailableDepartments)recordCompactDiagnostic('warn','offline-reference-departments',{reason:'Unavailable source departments represented as null; matrix eligibility fails closed',length:unavailableDepartments});
+        const counts=Object.fromEntries(Object.entries(datasets).map(([key,rows])=>[key,rows.length]));
+        const payload={schema:2,replace:true,eligibilitySchema:1,userDirectoryFilterVersion:1,instance:location.hostname,exportedAt:snapshot.exportedAt,sourceAccount:{userID:account.userID,name:account.fullName},counts,datasets};
+        progress('Compressing complete snapshot…',65);
+        const json=JSON.stringify(payload);if(new TextEncoder().encode(json).length>33554432)throw Error('offline_snapshot_exceeds_32MiB');
+        const bytes=new Uint8Array(await new Response(new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
+        if(bytes.length>8388608)throw Error('offline_compressed_snapshot_exceeds_8MiB');
+        const sha256=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),v=>v.toString(16).padStart(2,'0')).join('');
+        pending={schema:3,requestId:snOfflineRandomID(),sha256,bytes,counts,instance:location.hostname,userID:account.userID};
+        await snOfflinePending(pending);
       }
-      if(pending.schema!==2||pending.metadata?.schema!==2)throw Error('offline_legacy_pending_retained: previous export needs explicit migration; no data was deleted');
-      if(pending.metadata?.sourceAccount?.userID?.toUpperCase()!=='AKIMLA01'||pending.metadata.instance!==location.hostname)throw Error('offline_queue_identity_mismatch');
-      progress('Starting/resuming secure upload…',65);
-      const start=await snOfflineRetry(()=>snOfflineRequest('start',{method:'POST',token:identity.token,body:JSON.stringify({requestId:pending.requestId,metadata:pending.metadata})}));
-      if(!/^[a-f0-9]{32}$/.test(start.updateId||'')||(pending.updateId&&pending.updateId!==start.updateId))throw Error('offline_update_ack_mismatch');
-      pending.updateId=start.updateId;await snOfflinePending(pending);
-      const totalChunks=Object.values(pending.packed).reduce((sum,d)=>sum+d.chunks.length,0);let completedChunks=0;
-      if(start.status!=='published')for(const [dataset,data]of Object.entries(pending.packed))for(const [index,chunk]of data.chunks.entries()){
-        const received=start.datasets?.[dataset]?.received?.find(r=>r.chunk_index===index);
-        if(received){if(received.sha256!==chunk.sha256||received.records!==chunk.records)throw Error('offline_resume_ack_mismatch');completedChunks++;continue;}
-        progress('Uploading '+dataset+' '+(index+1)+' / '+data.chunks.length+' · '+completedChunks+' / '+totalChunks+' batches complete',65+30*completedChunks/totalChunks);
-        const ack=await snOfflineRetry(()=>snOfflineRequest('chunk',{method:'PUT',token:identity.token,query:{updateId:pending.updateId,dataset,index:String(index),sha256:chunk.sha256},body:chunk.body}));
-        if(ack.updateId!==pending.updateId||ack.dataset!==dataset||ack.index!==index||ack.sha256!==chunk.sha256||ack.records!==chunk.records)throw Error('offline_chunk_ack_mismatch');completedChunks++;
-      }
-      progress('Validating and publishing complete snapshot…',95);
-      const done=await snOfflineRetry(()=>snOfflineRequest('complete',{method:'POST',token:identity.token,body:JSON.stringify({updateId:pending.updateId})}));
-      if(done.manifest?.updateId!==pending.updateId||done.manifest.instance!==pending.metadata.instance||!Number.isInteger(done.manifest.revision)||Object.entries(pending.metadata.datasets).some(([key,v])=>done.manifest.datasets?.[key]?.sha256!==v.sha256||done.manifest.datasets?.[key]?.count!==v.count))throw Error('offline_publish_ack_mismatch');
+      if(pending.schema!==3)throw Error('offline_legacy_pending_retained: click Update to collect a fresh compressed snapshot');
+      if(pending.userID?.toUpperCase()!=='AKIMLA01'||pending.instance!==location.hostname)throw Error('offline_queue_identity_mismatch');
+      progress('Uploading one compressed snapshot ('+(pending.bytes.length/1048576).toFixed(2)+' MiB)…',70);
+      const done=await snOfflineRetry(()=>snOfflineRequest('upload-snapshot',{method:'POST',token:identity.token,query:{requestId:pending.requestId,sha256:pending.sha256},contentType:'application/gzip',body:pending.bytes.buffer.slice(pending.bytes.byteOffset,pending.bytes.byteOffset+pending.bytes.byteLength)}));
+      if(done.requestId!==pending.requestId||done.sha256!==pending.sha256||done.manifest?.schema!==2||done.manifest.replace!==true||done.manifest.instance!==pending.instance||!Number.isInteger(done.manifest.revision)||!done.manifest.portable?.sha256||Object.entries(pending.counts).some(([key,count])=>done.manifest.datasets?.[key]?.count!==count))throw Error('offline_publish_ack_mismatch');
       await snOfflinePending(null);progress('Offline SNOW data updated successfully. Revision '+done.manifest.revision+'.',100);
     };
     if(!navigator.locks?.request)throw Error('offline_cross_tab_lock_unavailable');
