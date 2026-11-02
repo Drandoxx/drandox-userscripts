@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.825
+// @version      2.36.826
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.826","fixes":true,"changes":[{"key":"settings-safe-error-details","meaningful":true,"text":"Include cookie-free transport mode, intended authorization and sanitized redirect destination in service error details."}]},
 {"version":"2.36.825","fixes":true,"changes":[{"key":"settings-safe-error-details","meaningful":true,"text":"Show persistent copyable safe error details for settings sync and Offline SNOW uploads without exposing credentials or request bodies."}]},
 {"version":"2.36.824","fixes":true,"changes":[{"key":"personal-mode-colors","meaningful":true,"text":"Keep explicitly chosen green mode colors and show the actual theme color for modes without a manual override."}]},
 {"version":"2.36.823","fixes":true,"changes":[{"key":"personal-mode-colors","meaningful":true,"text":"Sync manually customized mode colors across devices and restore server colors on page load without saving built-in default colors."},{"key":"gemini-model-selection","meaningful":true,"text":"Use Gemini 3.5 Flash-Lite as the only model option and automatically migrate older saved model selections."},{"key":"shared-ai-mode-messages","meaningful":true,"text":"Keep built-in mode guidance in the original instructions and leave the shared editor empty for extra required details, appended verbatim without a wrapper prompt."}]},
@@ -428,12 +429,16 @@ function snPersonalSettingsDiff(previous,next){
   return patch;
 }
 function snSafeServiceError(operation,endpoint,status,data,clientId='',failure=''){
-  const detail={operation,timestamp:new Date().toISOString(),version:typeof GM_info!=='undefined'?String(GM_info.script?.version||'unknown'):'unknown',clientId:/^[a-f0-9]{32}$/.test(clientId)?clientId:'unavailable',httpStatus:Number.isInteger(Number(status))?Number(status):0,endpoint};
+  const detail={operation,timestamp:new Date().toISOString(),version:typeof GM_info!=='undefined'?String(GM_info.script?.version||'unknown'):'unknown',clientId:/^[a-f0-9]{32}$/.test(clientId)?clientId:'unavailable',httpStatus:Number.isInteger(Number(status))?Number(status):0,endpoint,transport:'gm-anonymous-fetch',authorizationIntended:true};
   for(const key of ['code','authStage'])if(typeof data?.[key]==='string'&&/^[a-z_]{1,48}$/.test(data[key]))detail[key]=data[key];
   if(typeof data?.authorizationPresent==='boolean')detail.authorizationPresent=data.authorizationPresent;
   if(Number.isFinite(data?.retryAfter)&&data.retryAfter>=0)detail.retryAfter=Math.min(86400,data.retryAfter);
   if(failure)detail.failure=failure;
   return detail;
+}
+function snSafeFinalDestination(response){
+  if(!response?.finalUrl)return 'unavailable';
+  try{const url=new URL(response.finalUrl),paths=['/wuwa/sn-ai-settings-bindings.php','/wuwa/sn-ai-settings.php','/work/offline-snow/api.php'];return (url.hostname==='drandox.cc'?'drandox.cc':'[unexpected-host]')+(paths.includes(url.pathname)?url.pathname:'/[unexpected-path]');}catch{return 'unavailable';}
 }
 function snRenderServiceError(parent,detail){
   let box=parent.querySelector('[data-safe-service-error]');
@@ -471,7 +476,7 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
     GM_xmlhttpRequest({method,url,headers:{Authorization:'Bearer '+token,...(body?{'Content-Type':'application/json'}:{})},data:body?JSON.stringify(body):undefined,
       anonymous:true,timeout:20000,onload:r=>{let json=null;try{json=JSON.parse(r.responseText);}catch{}
         if(r.status===429){const header=String(r.responseHeaders||'').match(/^Retry-After:\s*(.+)$/im)?.[1]?.trim();if(header){const seconds=/^\d+$/.test(header)?Number(header):Math.max(0,(Date.parse(header)-Date.now())/1000);json={...(json||{}),retryAfter:Math.max(Number(json?.retryAfter)||0,Number.isFinite(seconds)?seconds:60)};}}
-      if(r.status>=400||!json?.ok){if(context){context.safeError=snSafeServiceError(method==='POST'?'settings-registration':method==='PATCH'?'settings-save':'settings-load',new URL(url).pathname,r.status,json,context.clientId,!json?'non_json_response':'');render();}}
+      if(r.status>=400||!json?.ok){if(context){context.safeError={...snSafeServiceError(method==='POST'?'settings-registration':method==='PATCH'?'settings-save':'settings-load',new URL(url).pathname,r.status,json,context.clientId,!json?'non_json_response':''),finalDestination:snSafeFinalDestination(r)};render();}}
       resolve({status:r.status,json});},
       onerror:()=>{if(context){context.safeError=snSafeServiceError('settings-request',new URL(url).pathname,0,null,context.clientId,'network_error');render();}reject(Error('Settings network error'));},ontimeout:()=>{if(context){context.safeError=snSafeServiceError('settings-request',new URL(url).pathname,0,null,context.clientId,'timeout');render();}reject(Error('Settings request timed out'));}});
   });
@@ -10035,7 +10040,7 @@ async function snOfflineRequest(action,{method='GET',query={},body,token,content
   const clientId=(await GM_getValue('sn-ai-diagnostic-installation',{}))?.clientId;
   const response=await new Promise((resolve,reject)=>{GM_xmlhttpRequest({method,url,anonymous:true,headers:{Authorization:'Bearer '+token,...(body!==undefined?{'Content-Type':contentType}:{})},data:body,timeout:180000,onprogress:()=>{},upload:{onprogress:onProgress},onload:resolve,onerror:()=>reject(Error('offline_network_error')),ontimeout:()=>reject(Error('offline_network_timeout')),onabort:()=>reject(Error('offline_request_aborted'))});}).catch(e=>{e.safeDetails=snSafeServiceError('offline-'+action,'/work/offline-snow/api.php',0,null,clientId,/timeout/.test(e.message)?'timeout':/aborted/.test(e.message)?'aborted':'network_error');throw e;});
   let data;try{data=JSON.parse(response.responseText);}catch{data=null;}
-  if(response.status<200||response.status>=300||data?.ok!==true){const e=Error('Offline data update: HTTP '+response.status+' / '+(/^[a-z_]{1,48}$/.test(data?.code||'')?data.code:'unconfirmed_response'));e.status=response.status;e.code=/^[a-z_]{1,48}$/.test(data?.code||'')?data.code:'unconfirmed_response';e.safeDetails=snSafeServiceError('offline-'+action,'/work/offline-snow/api.php',response.status,data,clientId,!data?'non_json_response':'');const retry=String(response.responseHeaders||'').match(/^Retry-After:\s*(.+)$/im)?.[1];e.retryMs=retry?Math.max(0,/^\d+$/.test(retry)?Number(retry)*1000:Date.parse(retry)-Date.now()):Math.max(0,Number(data?.retryAfter)||0)*1000;throw e;}
+  if(response.status<200||response.status>=300||data?.ok!==true){const e=Error('Offline data update: HTTP '+response.status+' / '+(/^[a-z_]{1,48}$/.test(data?.code||'')?data.code:'unconfirmed_response'));e.status=response.status;e.code=/^[a-z_]{1,48}$/.test(data?.code||'')?data.code:'unconfirmed_response';e.safeDetails={...snSafeServiceError('offline-'+action,'/work/offline-snow/api.php',response.status,data,clientId,!data?'non_json_response':''),finalDestination:snSafeFinalDestination(response)};const retry=String(response.responseHeaders||'').match(/^Retry-After:\s*(.+)$/im)?.[1];e.retryMs=retry?Math.max(0,/^\d+$/.test(retry)?Number(retry)*1000:Date.parse(retry)-Date.now()):Math.max(0,Number(data?.retryAfter)||0)*1000;throw e;}
   return data;
 }
 async function snOfflineRetry(operation){for(let attempt=0;;attempt++){try{return await operation();}catch(e){if(attempt>=3||!(!e.status||e.status===429||e.status>=500))throw e;await new Promise(r=>setTimeout(r,Math.max(e.retryMs||0,1000*2**attempt)));}}}
