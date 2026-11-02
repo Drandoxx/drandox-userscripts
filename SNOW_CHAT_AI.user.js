@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.829
+// @version      2.36.830
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.830","fixes":true,"changes":[{"key":"proxy-compatible-installation-auth","meaningful":true,"text":"Retry confirmed missing-Authorization failures with the same installation credential in a dedicated HTTPS header, keeping account permissions and queued mutation IDs unchanged."}]},
 {"version":"2.36.829","fixes":true,"changes":[{"key":"connection-diagnostic-zip","meaningful":true,"text":"Download a safe one-click connection diagnostic ZIP comparing server header controls, browser and extension transports, Gemini access and environment details."}]},
 {"version":"2.36.828","fixes":true,"changes":[{"key":"gemini-error-details","meaningful":true,"text":"Show copyable safe Gemini failure details with request phase, HTTP/API reason, browser network state and timing without exposing keys or ticket content."}]},
 {"version":"2.36.827","fixes":true,"changes":[{"key":"settings-safe-error-details","meaningful":false,"text":"Include the backend Apache authorization-presence check in safe copyable error details."}]},
@@ -431,12 +432,37 @@ function snPersonalSettingsDiff(previous,next){
   }
   return patch;
 }
+let snInstallationHeaderMode='authorization';
+function snInstallationRequest(options){
+  const paths=['/wuwa/sn-ai-settings-bindings.php','/wuwa/sn-ai-settings.php','/wuwa/sn-ai-credentials.php','/wuwa/sn-ai-mode-messages.php','/work/diagnostics.php','/work/offline-snow/api.php'];
+  let url;try{url=new URL(options.url);}catch{return GM_xmlhttpRequest(options);}
+  const authorization=options.headers?.Authorization,token=typeof authorization==='string'&&/^Bearer [a-f0-9]{64}$/.test(authorization)?authorization.slice(7):'';
+  if(url.origin!=='https://drandox.cc'||!paths.includes(url.pathname)||!token)return GM_xmlhttpRequest(options);
+  let handle,finished=false,retried=false,timer;
+  const finish=(callback,value)=>{if(finished)return;finished=true;clearTimeout(timer);options[callback]?.(value);};
+  const run=custom=>{
+    const headers={...options.headers};if(custom){delete headers.Authorization;headers['X-SN-Installation-Token']=token;}
+    try{handle=GM_xmlhttpRequest({...options,headers,onload:response=>{
+      if(finished)return;let data;try{data=JSON.parse(response.responseText);}catch{}
+      let sameEndpoint=true;try{if(response.finalUrl){const final=new URL(response.finalUrl);sameEndpoint=final.origin===url.origin&&final.pathname===url.pathname;}}catch{sameEndpoint=false;}
+      // A definitive auth rejection did not execute the requested operation. Retry once, unchanged.
+      if(!custom&&!retried&&sameEndpoint&&response.status===401&&data?.code==='invalid_authorization'&&data?.authStage==='credential_format'&&data?.authorizationPresent===false){retried=true;run(true);return;}
+      if(custom&&response.status>=200&&response.status<300)snInstallationHeaderMode='dedicated-header';
+      finish('onload',response);
+    },onerror:r=>finish('onerror',r),ontimeout:r=>finish('ontimeout',r),onabort:r=>finish('onabort',r)});}catch{finish('onerror',{});}
+  };
+  timer=setTimeout(()=>{if(finished)return;finish('ontimeout',{});try{handle?.abort?.();}catch{}},Math.max(1000,Number(options.timeout)||20000));
+  run(snInstallationHeaderMode==='dedicated-header');
+  return {abort(){if(finished)return;finish('onabort',{});try{handle?.abort?.();}catch{}}};
+}
 let snLastSafeServiceError=null;
 function snSafeServiceError(operation,endpoint,status,data,clientId='',failure=''){
   const detail={operation,timestamp:new Date().toISOString(),version:typeof GM_info!=='undefined'?String(GM_info.script?.version||'unknown'):'unknown',clientId:/^[a-f0-9]{32}$/.test(clientId)?clientId:'unavailable',httpStatus:Number.isInteger(Number(status))?Number(status):0,endpoint,transport:'gm-anonymous-fetch',authorizationIntended:true};
   for(const key of ['code','authStage'])if(typeof data?.[key]==='string'&&/^[a-z_]{1,48}$/.test(data[key]))detail[key]=data[key];
   if(typeof data?.authorizationPresent==='boolean')detail.authorizationPresent=data.authorizationPresent;
   if(typeof data?.apacheAuthorizationPresent==='boolean')detail.apacheAuthorizationPresent=data.apacheAuthorizationPresent;
+  if(typeof data?.customHeaderPresent==='boolean')detail.customHeaderPresent=data.customHeaderPresent;
+  if(['authorization','installation_header','dedicated-header','both','none'].includes(data?.authSource))detail.authSource=data.authSource;
   if(Number.isFinite(data?.retryAfter)&&data.retryAfter>=0)detail.retryAfter=Math.min(86400,data.retryAfter);
   if(failure)detail.failure=failure;
   snLastSafeServiceError=detail;return detail;
@@ -478,7 +504,7 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
   };
   const request=(url,token,method='GET',body)=>new Promise((resolve,reject)=>{
     if(!snPersonalApprovedPage()){reject(Error('Unapproved settings page'));return;}
-    GM_xmlhttpRequest({method,url,headers:{Authorization:'Bearer '+token,...(body?{'Content-Type':'application/json'}:{})},data:body?JSON.stringify(body):undefined,
+    snInstallationRequest({method,url,headers:{Authorization:'Bearer '+token,...(body?{'Content-Type':'application/json'}:{})},data:body?JSON.stringify(body):undefined,
       anonymous:true,timeout:20000,onload:r=>{let json=null;try{json=JSON.parse(r.responseText);}catch{}
         if(r.status===429){const header=String(r.responseHeaders||'').match(/^Retry-After:\s*(.+)$/im)?.[1]?.trim();if(header){const seconds=/^\d+$/.test(header)?Number(header):Math.max(0,(Date.parse(header)-Date.now())/1000);json={...(json||{}),retryAfter:Math.max(Number(json?.retryAfter)||0,Number.isFinite(seconds)?seconds:60)};}}
       if(r.status>=400||!json?.ok){if(context){context.safeError={...snSafeServiceError(method==='POST'?'settings-registration':method==='PATCH'?'settings-save':'settings-load',new URL(url).pathname,r.status,json,context.clientId,!json?'non_json_response':''),finalDestination:snSafeFinalDestination(r)};render();}}
@@ -8701,7 +8727,7 @@ function startSNAI(tabIdentity) {
       if(!ctx.valid()||!snPersonalApprovedPage())throw Error('account-changed');
       const token=await ctx.token();
       if(!ctx.valid())throw Error('account-changed');
-      return new Promise((resolve,reject)=>GM_xmlhttpRequest({method,anonymous:true,
+      return new Promise((resolve,reject)=>snInstallationRequest({method,anonymous:true,
         url:'https://drandox.cc/wuwa/sn-ai-credentials.php?bindingId='+encodeURIComponent(ctx.binding)+'&provider=gemini',
         headers:{Authorization:'Bearer '+token,...(body?{'Content-Type':'application/json'}:{})},data:body?JSON.stringify(body):undefined,timeout:20000,
         onload:response=>{let json=null;try{json=JSON.parse(response.responseText);}catch{}const retry=String(response.responseHeaders||'').match(/^Retry-After:\s*(.+)$/im)?.[1]?.trim();const retryMs=retry?(/^\d+$/.test(retry)?Number(retry)*1000:Math.max(0,Date.parse(retry)-Date.now())):Number(json?.retryAfter||0)*1000;resolve({status:response.status,json,retryAfter:Number.isFinite(retryMs)?retryMs:60000});},
@@ -8717,7 +8743,7 @@ function startSNAI(tabIdentity) {
     request:async(ctx,method,body)=>{
       if(!ctx.valid()||!snPersonalApprovedPage())throw Error('Signed-in account changed.');const token=await ctx.token();if(!ctx.valid())throw Error('Signed-in account changed.');
       return new Promise((resolve,reject)=>{let handle,done=false;const finish=(error,result)=>{if(done)return;done=true;clearTimeout(timer);error?reject(Error('Shared AI message server unavailable. Local changes retained.')):resolve(result);};const timer=setTimeout(()=>{finish(true);try{handle?.abort?.();}catch{}},20000);
-        try{handle=GM_xmlhttpRequest({method,anonymous:true,url:'https://drandox.cc/wuwa/sn-ai-mode-messages.php?bindingId='+encodeURIComponent(ctx.binding),headers:{Authorization:'Bearer '+token,...(body?{'Content-Type':'application/json'}:{})},data:body?JSON.stringify(body):undefined,timeout:20000,
+        try{handle=snInstallationRequest({method,anonymous:true,url:'https://drandox.cc/wuwa/sn-ai-mode-messages.php?bindingId='+encodeURIComponent(ctx.binding),headers:{Authorization:'Bearer '+token,...(body?{'Content-Type':'application/json'}:{})},data:body?JSON.stringify(body):undefined,timeout:20000,
           onload:r=>{let json=null;try{json=JSON.parse(r.responseText);}catch{}const retry=String(r.responseHeaders||'').match(/^Retry-After:\s*(.+)$/im)?.[1]?.trim();const ms=retry?(/^\d+$/.test(retry)?Number(retry)*1000:Math.max(0,Date.parse(retry)-Date.now())):Number(json?.retryAfter||0)*1000;finish(false,{status:r.status,json,retryAfter:Number.isFinite(ms)?ms:60000});},onerror:()=>finish(true),ontimeout:()=>finish(true),onabort:()=>finish(true)});}catch{finish(true);}
       });
     }
@@ -9696,7 +9722,7 @@ function startSNAI(tabIdentity) {
       const finish=(error,result)=>{if(done)return;done=true;clearTimeout(watchdog);error?reject(error):resolve(result);};
       const failure=(message,code)=>Object.assign(new Error(message),{code,phase});
       const watchdog=setTimeout(()=>{finish(failure('Diagnostic transport watchdog timed out','transport-watchdog'));try{request?.abort();}catch{}},35000);
-      try{request=GM_xmlhttpRequest({method:'POST',url,anonymous:true,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{}),...(batchId?{'X-SN-Batch':batchId}:{})},data:JSON.stringify(data),timeout:30000,onload:r=>finish(null,r),onerror:()=>finish(failure('Diagnostic network unavailable','network-error')),ontimeout:()=>finish(failure('Diagnostic request timed out','timeout')),onabort:()=>finish(failure('Diagnostic request aborted','aborted'))});}catch{finish(failure('Diagnostic request could not start','request-start-failed'));}
+      try{request=snInstallationRequest({method:'POST',url,anonymous:true,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{}),...(batchId?{'X-SN-Batch':batchId}:{})},data:JSON.stringify(data),timeout:30000,onload:r=>finish(null,r),onerror:()=>finish(failure('Diagnostic network unavailable','network-error')),ontimeout:()=>finish(failure('Diagnostic request timed out','timeout')),onabort:()=>finish(failure('Diagnostic request aborted','aborted'))});}catch{finish(failure('Diagnostic request could not start','request-start-failed'));}
     });}catch(error){diagnosticUploadHealth('failed',{phase,code:error.code,reason:error.message,durationMs:Date.now()-startedAt});throw error;}
     let body;try{body=JSON.parse(response.responseText);}catch{body={};}
     if(response.status===403&&body.code==='revoked'){const error=new Error('Diagnostic uploads revoked');error.revoked=true;error.status=403;diagnosticUploadHealth('failed',{phase,status:403,code:'revoked'});throw error;}
@@ -10043,7 +10069,7 @@ async function snOfflineRequest(action,{method='GET',query={},body,token,content
   await snOfflineAuthorizedAccount();
   const url='https://drandox.cc/work/offline-snow/api.php?'+new URLSearchParams({action,...query});
   const clientId=(await GM_getValue('sn-ai-diagnostic-installation',{}))?.clientId;
-  const response=await new Promise((resolve,reject)=>{GM_xmlhttpRequest({method,url,anonymous:true,headers:{Authorization:'Bearer '+token,...(body!==undefined?{'Content-Type':contentType}:{})},data:body,timeout:180000,onprogress:()=>{},upload:{onprogress:onProgress},onload:resolve,onerror:()=>reject(Error('offline_network_error')),ontimeout:()=>reject(Error('offline_network_timeout')),onabort:()=>reject(Error('offline_request_aborted'))});}).catch(e=>{e.safeDetails=snSafeServiceError('offline-'+action,'/work/offline-snow/api.php',0,null,clientId,/timeout/.test(e.message)?'timeout':/aborted/.test(e.message)?'aborted':'network_error');throw e;});
+  const response=await new Promise((resolve,reject)=>{snInstallationRequest({method,url,anonymous:true,headers:{Authorization:'Bearer '+token,...(body!==undefined?{'Content-Type':contentType}:{})},data:body,timeout:180000,onprogress:()=>{},upload:{onprogress:onProgress},onload:resolve,onerror:()=>reject(Error('offline_network_error')),ontimeout:()=>reject(Error('offline_network_timeout')),onabort:()=>reject(Error('offline_request_aborted'))});}).catch(e=>{e.safeDetails=snSafeServiceError('offline-'+action,'/work/offline-snow/api.php',0,null,clientId,/timeout/.test(e.message)?'timeout':/aborted/.test(e.message)?'aborted':'network_error');throw e;});
   let data;try{data=JSON.parse(response.responseText);}catch{data=null;}
   if(response.status<200||response.status>=300||data?.ok!==true){const e=Error('Offline data update: HTTP '+response.status+' / '+(/^[a-z_]{1,48}$/.test(data?.code||'')?data.code:'unconfirmed_response'));e.status=response.status;e.code=/^[a-z_]{1,48}$/.test(data?.code||'')?data.code:'unconfirmed_response';e.safeDetails={...snSafeServiceError('offline-'+action,'/work/offline-snow/api.php',response.status,data,clientId,!data?'non_json_response':''),finalDestination:snSafeFinalDestination(response)};const retry=String(response.responseHeaders||'').match(/^Retry-After:\s*(.+)$/im)?.[1];e.retryMs=retry?Math.max(0,/^\d+$/.test(retry)?Number(retry)*1000:Date.parse(retry)-Date.now()):Math.max(0,Number(data?.retryAfter)||0)*1000;throw e;}
   return data;
@@ -10114,8 +10140,8 @@ function snOfflineOpenPage(progress){
     const identity=await gmGetValue('sn-ai-diagnostic-installation',{}),token=/^[a-f0-9]{64}$/.test(identity?.token||'')?identity.token:'';
     const info=typeof GM_info!=='undefined'?GM_info:{},safeVersion=value=>/^[0-9.]{1,32}$/.test(String(value||''))?String(value):'unavailable';
     const report={schema:1,createdAt:new Date().toISOString(),version:safeVersion(info.script?.version),clientId:/^[a-f0-9]{32}$/.test(identity.clientId||'')?identity.clientId:'unavailable',environment:{manager:['Tampermonkey','Violentmonkey','Greasemonkey'].includes(info.scriptHandler)?info.scriptHandler:'unknown',managerVersion:safeVersion(info.version),browserFamily:(navigator.userAgent.match(/(?:Edg|Chrome|Firefox)\/\d+/)||['unknown'])[0],online:navigator.onLine!==false,visibility:document.visibilityState==='hidden'?'hidden':'visible',secureContext:typeof isSecureContext==='boolean'?isSecureContext:null,approvedPage:snPersonalApprovedPage(),gmTransportAvailable:typeof GM_xmlhttpRequest==='function',browserFetchAvailable:typeof fetch==='function',installationCredentialPresent:!!token,installationRegistered:identity.registered===true,installationRevoked:identity.revoked===true,settingsBindingPresent:!!sharedModeMessages.context?.binding},tests:[],limitations:['Client header intent is not on-wire proof.','Browser fetch failure cannot distinguish CORS, DNS, TLS, enterprise proxy, extension blocking or connection loss.','No proxy configuration, certificate chain, packet capture or enterprise policy can be inspected by this script.','Anonymous GM requests already use fetch in Tampermonkey; fetch:true is not an independent transport.','HTTP reachability does not prove generation quota or model latency. No ticket content or generation requests are sent.']};
-    const probe=async(name,url,transport,credential,parseGoogle=false)=>{
-      progress('Checking '+name+'…');const started=Date.now(),headers=credential?{[parseGoogle?'x-goog-api-key':'Authorization']:parseGoogle?credential:'Bearer '+credential}:{};
+    const probe=async(name,url,transport,credential,parseGoogle=false,customHeader=false)=>{
+      progress('Checking '+name+'…');const started=Date.now(),headers=credential?{[parseGoogle?'x-goog-api-key':customHeader?'X-SN-Installation-Token':'Authorization']:parseGoogle||customHeader?credential:'Bearer '+credential}:{};
       const result={name,transport,host:new URL(url).hostname,path:new URL(url).pathname,credentialIntended:!!credential};
       try{
         const response=await new Promise((resolve,reject)=>{
@@ -10123,21 +10149,21 @@ function snOfflineOpenPage(progress){
           const finish=(error,value)=>{if(settled)return;settled=true;clearTimeout(timer);error?reject(error):resolve(value);};
           const timer=setTimeout(()=>{finish(Error('deadline'));try{handle?.abort?.();controller?.abort();}catch{}},8000);
           if(transport==='gm-anonymous-fetch'){
-            try{handle=GM_xmlhttpRequest({method:'GET',url,headers,anonymous:true,redirect:'error',timeout:8000,onload:r=>finish(null,r),onerror:()=>finish(Error('network_error')),ontimeout:()=>finish(Error('timeout')),onabort:()=>finish(Error('aborted'))});}catch{finish(Error('request_start_failed'));}
+            try{handle=GM_xmlhttpRequest({method:'GET',url,headers,anonymous:true,timeout:8000,onload:r=>finish(null,r),onerror:()=>finish(Error('network_error')),ontimeout:()=>finish(Error('timeout')),onabort:()=>finish(Error('aborted'))});}catch{finish(Error('request_start_failed'));}
           }else{
             controller=new AbortController();fetch(url,{method:'GET',headers,credentials:'omit',redirect:'error',cache:'no-store',signal:controller.signal}).then(async r=>finish(null,{status:r.status,responseText:await r.text(),finalUrl:r.url})).catch(e=>finish(Error(['TypeError','SecurityError','AbortError'].includes(e.name)?e.name:'network_error')));
           }
         });
         result.status=Number(response.status)||0;result.finalDestination=parseGoogle?'generativelanguage.googleapis.com'+new URL(url).pathname:snSafeFinalDestination(response);
         let data;try{data=JSON.parse(response.responseText);}catch{result.responseFormat='non-json';}
-        if(data){result.responseFormat='json';for(const key of ['code','authStage'])if(/^[a-z_]{1,48}$/.test(data[key]||''))result[key]=data[key];for(const key of ['authorizationPresent','apacheAuthorizationPresent'])if(typeof data[key]==='boolean')result[key]=data[key];if(typeof data.ok==='boolean')result.ok=data.ok;if(parseGoogle&&/^[A-Z_]{1,60}$/.test(data.error?.status||''))result.apiStatus=data.error.status;}
+        if(data){result.responseFormat='json';for(const key of ['code','authStage','authSource'])if(/^[a-z_]{1,48}$/.test(data[key]||''))result[key]=data[key];for(const key of ['authorizationPresent','apacheAuthorizationPresent','customHeaderPresent'])if(typeof data[key]==='boolean')result[key]=data[key];if(typeof data.ok==='boolean')result.ok=data.ok;if(parseGoogle&&/^[A-Z_]{1,60}$/.test(data.error?.status||''))result.apiStatus=data.error.status;}
       }catch(error){result.status=0;result.failure=['deadline','network_error','timeout','aborted','request_start_failed','TypeError','SecurityError','AbortError'].includes(error.message)?error.message:'unknown';}
       result.durationMs=Date.now()-started;report.tests.push(result);
     };
     const endpoint='https://drandox.cc/wuwa/sn-ai-settings-bindings.php';
     await probe('Drandox missing-header control',endpoint,'gm-anonymous-fetch','');
     await probe('Drandox synthetic-header control',endpoint,'gm-anonymous-fetch','0'.repeat(64));
-    if(token){await probe('Drandox existing installation via extension',endpoint,'gm-anonymous-fetch',token);await probe('Drandox existing installation via browser',endpoint,'browser-fetch',token);}
+    if(token){await probe('Drandox existing installation via Authorization',endpoint,'gm-anonymous-fetch',token);await probe('Drandox existing installation via dedicated header',endpoint,'gm-anonymous-fetch',token,false,true);}
     await probe('Google API host without key','https://generativelanguage.googleapis.com/v1beta/models','browser-fetch','',true);
     let key='';try{key=await geminiCredentials.key();}catch{report.environment.geminiCredentialReadFailed=true;}report.environment.geminiCredentialPresent=!!key;
     if(key)await probe('Gemini model access without generation','https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite','browser-fetch',key,true);
