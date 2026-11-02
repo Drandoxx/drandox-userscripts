@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.824
+// @version      2.36.825
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.825","fixes":true,"changes":[{"key":"settings-safe-error-details","meaningful":true,"text":"Show persistent copyable safe error details for settings sync and Offline SNOW uploads without exposing credentials or request bodies."}]},
 {"version":"2.36.824","fixes":true,"changes":[{"key":"personal-mode-colors","meaningful":true,"text":"Keep explicitly chosen green mode colors and show the actual theme color for modes without a manual override."}]},
 {"version":"2.36.823","fixes":true,"changes":[{"key":"personal-mode-colors","meaningful":true,"text":"Sync manually customized mode colors across devices and restore server colors on page load without saving built-in default colors."},{"key":"gemini-model-selection","meaningful":true,"text":"Use Gemini 3.5 Flash-Lite as the only model option and automatically migrate older saved model selections."},{"key":"shared-ai-mode-messages","meaningful":true,"text":"Keep built-in mode guidance in the original instructions and leave the shared editor empty for extra required details, appended verbatim without a wrapper prompt."}]},
 {"version":"2.36.822","fixes":true,"changes":[{"key":"shared-ai-mode-messages","meaningful":true,"text":"Let AKIMLA01 edit shared per-mode AI writing messages in Developer settings, with backend authorization, revision protection and cached messages for all users. STACK modes also honor the selected Gemini API connection."},{"key":"ai-feedback","meaningful":true,"text":"Send Gemini feedback once and ask the model to use or update a SNOW memory or skill only if that capability is available, without storing feedback as script-managed memory."}]},
@@ -426,6 +427,19 @@ function snPersonalSettingsDiff(previous,next){
   }
   return patch;
 }
+function snSafeServiceError(operation,endpoint,status,data,clientId='',failure=''){
+  const detail={operation,timestamp:new Date().toISOString(),version:typeof GM_info!=='undefined'?String(GM_info.script?.version||'unknown'):'unknown',clientId:/^[a-f0-9]{32}$/.test(clientId)?clientId:'unavailable',httpStatus:Number.isInteger(Number(status))?Number(status):0,endpoint};
+  for(const key of ['code','authStage'])if(typeof data?.[key]==='string'&&/^[a-z_]{1,48}$/.test(data[key]))detail[key]=data[key];
+  if(typeof data?.authorizationPresent==='boolean')detail.authorizationPresent=data.authorizationPresent;
+  if(Number.isFinite(data?.retryAfter)&&data.retryAfter>=0)detail.retryAfter=Math.min(86400,data.retryAfter);
+  if(failure)detail.failure=failure;
+  return detail;
+}
+function snRenderServiceError(parent,detail){
+  let box=parent.querySelector('[data-safe-service-error]');
+  if(!box){box=document.createElement('div');box.dataset.safeServiceError='';box.style.cssText='display:grid;gap:6px;flex-basis:100%;';const text=document.createElement('pre');text.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.4 monospace;margin:0';const copy=document.createElement('button');copy.type='button';copy.textContent='Copy error details';copy.onclick=async()=>{try{if(typeof GM_setClipboard==='function')GM_setClipboard(box.dataset.safeErrorText,'text');else await navigator.clipboard.writeText(box.dataset.safeErrorText);copy.textContent='Copied';}catch{copy.textContent='Copy failed; select the details above';}};box.append(text,copy);parent.append(box);}
+  box.hidden=!detail;if(detail){box.dataset.safeErrorText=JSON.stringify(detail,null,2);box.firstChild.textContent=box.dataset.safeErrorText;box.lastChild.textContent='Copy error details';}
+}
 function snPersonalStatusVisible(status){return !['saved','standby','pending','saving'].includes(status);}
 function snPersonalApprovedPage(){return location.protocol==='https:'&&location.hostname==='kingfisher.service-now.com'&&location.pathname.startsWith('/now/workspace/');}
 async function snPersonalCurrentAccount(){
@@ -457,8 +471,9 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
     GM_xmlhttpRequest({method,url,headers:{Authorization:'Bearer '+token,...(body?{'Content-Type':'application/json'}:{})},data:body?JSON.stringify(body):undefined,
       anonymous:true,timeout:20000,onload:r=>{let json=null;try{json=JSON.parse(r.responseText);}catch{}
         if(r.status===429){const header=String(r.responseHeaders||'').match(/^Retry-After:\s*(.+)$/im)?.[1]?.trim();if(header){const seconds=/^\d+$/.test(header)?Number(header):Math.max(0,(Date.parse(header)-Date.now())/1000);json={...(json||{}),retryAfter:Math.max(Number(json?.retryAfter)||0,Number.isFinite(seconds)?seconds:60)};}}
-        resolve({status:r.status,json});},
-      onerror:()=>reject(Error('Settings network error')),ontimeout:()=>reject(Error('Settings request timed out'))});
+      if(r.status>=400||!json?.ok){if(context){context.safeError=snSafeServiceError(method==='POST'?'settings-registration':method==='PATCH'?'settings-save':'settings-load',new URL(url).pathname,r.status,json,context.clientId,!json?'non_json_response':'');render();}}
+      resolve({status:r.status,json});},
+      onerror:()=>{if(context){context.safeError=snSafeServiceError('settings-request',new URL(url).pathname,0,null,context.clientId,'network_error');render();}reject(Error('Settings network error'));},ontimeout:()=>{if(context){context.safeError=snSafeServiceError('settings-request',new URL(url).pathname,0,null,context.clientId,'timeout');render();}reject(Error('Settings request timed out'));}});
   });
   const snapshot=async ctx=>{
     let rows=[];try{rows=JSON.parse(localStorage.getItem('snippets_manager_v1')||'[]');}catch{}
@@ -507,7 +522,7 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
       }
       parent.append(panel);
     }
-    panel.hidden=!snPersonalStatusVisible(status);panel.style.display=panel.hidden?'none':'flex';
+    panel.hidden=!snPersonalStatusVisible(status)&&!context?.safeError;panel.style.display=panel.hidden?'none':'flex';panel.style.flexWrap='wrap';snRenderServiceError(panel,context?.safeError);
     const labels={connecting:'Settings: connecting',saved:'Settings: saved',pending:'Settings: saving',saving:'Settings: saving',offline:'Settings: offline - saved locally',conflict:'Settings: conflict',
       'local-save-failed':'Settings: local save failed - keep this page open','ambiguous-identity':'Settings: identity conflict - local data kept','queue-reconciliation':'Settings: previous unsaved changes need reconciliation','access-unavailable':'Settings: access unavailable','binding-revoked':'Settings: access revoked','authentication-required':'Settings: access unavailable',rejected:'Settings: save rejected - kept locally','identity-required':'Settings: waiting for signed-in name and userID',standby:'Settings: synced by another tab','account-changed':'Settings: another account is active in this browser'};
     panel.firstChild.textContent=labels[status]||'Settings: '+status;
@@ -580,7 +595,7 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
   async function connect(ctx){
     if(!valid(ctx)||ctx.connecting||ctx.authorizationBlocked)return;ctx.connecting=true;
     try{
-      const credential=await identity();if(!valid(ctx))return;ctx.token=credential.token;
+      const credential=await identity();if(!valid(ctx))return;ctx.token=credential.token;ctx.clientId=credential.clientId;
       const result=await bindingRequest(ctx,ctx.token);
       if(!valid(ctx))return;
       if(result.status!==200||!result.json?.ok||!/^[a-f0-9]{32}$/.test(result.json.bindingId||'')||result.json.status!=='approved'||!/^[a-f0-9]{64}$/.test(result.json.profileId||'')){handleBindingFailure(ctx,result);return;}
@@ -10017,9 +10032,10 @@ async function snOfflineAuthorizedAccount(){const account=await snPersonalCurren
 async function snOfflineRequest(action,{method='GET',query={},body,token,contentType='application/json',onProgress}={}){
   await snOfflineAuthorizedAccount();
   const url='https://drandox.cc/work/offline-snow/api.php?'+new URLSearchParams({action,...query});
-  const response=await new Promise((resolve,reject)=>{GM_xmlhttpRequest({method,url,anonymous:true,headers:{Authorization:'Bearer '+token,...(body!==undefined?{'Content-Type':contentType}:{})},data:body,timeout:180000,onprogress:()=>{},upload:{onprogress:onProgress},onload:resolve,onerror:()=>reject(Error('offline_network_error')),ontimeout:()=>reject(Error('offline_network_timeout')),onabort:()=>reject(Error('offline_request_aborted'))});});
+  const clientId=(await GM_getValue('sn-ai-diagnostic-installation',{}))?.clientId;
+  const response=await new Promise((resolve,reject)=>{GM_xmlhttpRequest({method,url,anonymous:true,headers:{Authorization:'Bearer '+token,...(body!==undefined?{'Content-Type':contentType}:{})},data:body,timeout:180000,onprogress:()=>{},upload:{onprogress:onProgress},onload:resolve,onerror:()=>reject(Error('offline_network_error')),ontimeout:()=>reject(Error('offline_network_timeout')),onabort:()=>reject(Error('offline_request_aborted'))});}).catch(e=>{e.safeDetails=snSafeServiceError('offline-'+action,'/work/offline-snow/api.php',0,null,clientId,/timeout/.test(e.message)?'timeout':/aborted/.test(e.message)?'aborted':'network_error');throw e;});
   let data;try{data=JSON.parse(response.responseText);}catch{data=null;}
-  if(response.status<200||response.status>=300||data?.ok!==true){const e=Error('Offline data update: HTTP '+response.status+' / '+(/^[a-z0-9_]+$/.test(data?.code||'')?data.code:'unconfirmed_response'));e.status=response.status;e.code=data?.code;const retry=String(response.responseHeaders||'').match(/^Retry-After:\s*(.+)$/im)?.[1];e.retryMs=retry?Math.max(0,/^\d+$/.test(retry)?Number(retry)*1000:Date.parse(retry)-Date.now()):Math.max(0,Number(data?.retryAfter)||0)*1000;throw e;}
+  if(response.status<200||response.status>=300||data?.ok!==true){const e=Error('Offline data update: HTTP '+response.status+' / '+(/^[a-z_]{1,48}$/.test(data?.code||'')?data.code:'unconfirmed_response'));e.status=response.status;e.code=/^[a-z_]{1,48}$/.test(data?.code||'')?data.code:'unconfirmed_response';e.safeDetails=snSafeServiceError('offline-'+action,'/work/offline-snow/api.php',response.status,data,clientId,!data?'non_json_response':'');const retry=String(response.responseHeaders||'').match(/^Retry-After:\s*(.+)$/im)?.[1];e.retryMs=retry?Math.max(0,/^\d+$/.test(retry)?Number(retry)*1000:Date.parse(retry)-Date.now()):Math.max(0,Number(data?.retryAfter)||0)*1000;throw e;}
   return data;
 }
 async function snOfflineRetry(operation){for(let attempt=0;;attempt++){try{return await operation();}catch(e){if(attempt>=3||!(!e.status||e.status===429||e.status>=500))throw e;await new Promise(r=>setTimeout(r,Math.max(e.retryMs||0,1000*2**attempt)));}}}
@@ -10127,7 +10143,7 @@ function installSnOfflineUpdaterUI(panel){
     const bar=document.createElement('progress');bar.max=100;bar.value=0;bar.hidden=true;bar.setAttribute('aria-label','Offline SNOW update progress');bar.style.cssText='width:100%;height:12px;accent-color:var(--sn-theme-ac94ec,#ac94ec)';
     const update=document.createElement('button'),message=document.createElement('div');message.setAttribute('role','status');message.style.cssText='font-size:12px;line-height:1.5';
     update.type='button';update.textContent='Update Offline SNOW data';
-    update.onclick=async()=>{if(snOfflineUpdating)return;update.disabled=true;bar.hidden=false;bar.value=0;try{await snOfflineUpdateReferences((text,percent)=>{message.textContent=text;if(Number.isFinite(percent))bar.value=Math.max(bar.value,percent);},{fresh:true});}catch(e){message.textContent=e.message+' Pending data is kept for retry.';recordCompactDiagnostic('warn','offline-reference-upload',{code:e.code||'unconfirmed',status:e.status||0});}finally{update.disabled=false;}};
+    update.onclick=async()=>{if(snOfflineUpdating)return;update.disabled=true;bar.hidden=false;bar.value=0;try{await snOfflineUpdateReferences((text,percent)=>{message.textContent=text;if(Number.isFinite(percent))bar.value=Math.max(bar.value,percent);},{fresh:true});snRenderServiceError(row,null);}catch(e){message.textContent=e.message+' Pending data is kept for retry.';snRenderServiceError(row,e.safeDetails||snSafeServiceError('offline-update','/work/offline-snow/api.php',e.status||0,null,'','local_or_network_error'));recordCompactDiagnostic('warn','offline-reference-upload',e.safeDetails||{code:'unconfirmed',status:e.status||0});}finally{update.disabled=false;}};
     row.append(update,bar,message);panel.append(row);
   }).catch(()=>{});
 }
