@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.826
+// @version      2.36.827
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.827","fixes":true,"changes":[{"key":"settings-safe-error-details","meaningful":false,"text":"Include the backend Apache authorization-presence check in safe copyable error details."}]},
 {"version":"2.36.826","fixes":true,"changes":[{"key":"settings-safe-error-details","meaningful":true,"text":"Include cookie-free transport mode, intended authorization and sanitized redirect destination in service error details."}]},
 {"version":"2.36.825","fixes":true,"changes":[{"key":"settings-safe-error-details","meaningful":true,"text":"Show persistent copyable safe error details for settings sync and Offline SNOW uploads without exposing credentials or request bodies."}]},
 {"version":"2.36.824","fixes":true,"changes":[{"key":"personal-mode-colors","meaningful":true,"text":"Keep explicitly chosen green mode colors and show the actual theme color for modes without a manual override."}]},
@@ -432,6 +433,7 @@ function snSafeServiceError(operation,endpoint,status,data,clientId='',failure='
   const detail={operation,timestamp:new Date().toISOString(),version:typeof GM_info!=='undefined'?String(GM_info.script?.version||'unknown'):'unknown',clientId:/^[a-f0-9]{32}$/.test(clientId)?clientId:'unavailable',httpStatus:Number.isInteger(Number(status))?Number(status):0,endpoint,transport:'gm-anonymous-fetch',authorizationIntended:true};
   for(const key of ['code','authStage'])if(typeof data?.[key]==='string'&&/^[a-z_]{1,48}$/.test(data[key]))detail[key]=data[key];
   if(typeof data?.authorizationPresent==='boolean')detail.authorizationPresent=data.authorizationPresent;
+  if(typeof data?.apacheAuthorizationPresent==='boolean')detail.apacheAuthorizationPresent=data.apacheAuthorizationPresent;
   if(Number.isFinite(data?.retryAfter)&&data.retryAfter>=0)detail.retryAfter=Math.min(86400,data.retryAfter);
   if(failure)detail.failure=failure;
   return detail;
