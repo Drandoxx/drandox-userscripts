@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.827
+// @version      2.36.829
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,8 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.829","fixes":true,"changes":[{"key":"connection-diagnostic-zip","meaningful":true,"text":"Download a safe one-click connection diagnostic ZIP comparing server header controls, browser and extension transports, Gemini access and environment details."}]},
+{"version":"2.36.828","fixes":true,"changes":[{"key":"gemini-error-details","meaningful":true,"text":"Show copyable safe Gemini failure details with request phase, HTTP/API reason, browser network state and timing without exposing keys or ticket content."}]},
 {"version":"2.36.827","fixes":true,"changes":[{"key":"settings-safe-error-details","meaningful":false,"text":"Include the backend Apache authorization-presence check in safe copyable error details."}]},
 {"version":"2.36.826","fixes":true,"changes":[{"key":"settings-safe-error-details","meaningful":true,"text":"Include cookie-free transport mode, intended authorization and sanitized redirect destination in service error details."}]},
 {"version":"2.36.825","fixes":true,"changes":[{"key":"settings-safe-error-details","meaningful":true,"text":"Show persistent copyable safe error details for settings sync and Offline SNOW uploads without exposing credentials or request bodies."}]},
@@ -429,6 +431,7 @@ function snPersonalSettingsDiff(previous,next){
   }
   return patch;
 }
+let snLastSafeServiceError=null;
 function snSafeServiceError(operation,endpoint,status,data,clientId='',failure=''){
   const detail={operation,timestamp:new Date().toISOString(),version:typeof GM_info!=='undefined'?String(GM_info.script?.version||'unknown'):'unknown',clientId:/^[a-f0-9]{32}$/.test(clientId)?clientId:'unavailable',httpStatus:Number.isInteger(Number(status))?Number(status):0,endpoint,transport:'gm-anonymous-fetch',authorizationIntended:true};
   for(const key of ['code','authStage'])if(typeof data?.[key]==='string'&&/^[a-z_]{1,48}$/.test(data[key]))detail[key]=data[key];
@@ -436,7 +439,7 @@ function snSafeServiceError(operation,endpoint,status,data,clientId='',failure='
   if(typeof data?.apacheAuthorizationPresent==='boolean')detail.apacheAuthorizationPresent=data.apacheAuthorizationPresent;
   if(Number.isFinite(data?.retryAfter)&&data.retryAfter>=0)detail.retryAfter=Math.min(86400,data.retryAfter);
   if(failure)detail.failure=failure;
-  return detail;
+  snLastSafeServiceError=detail;return detail;
 }
 function snSafeFinalDestination(response){
   if(!response?.finalUrl)return 'unavailable';
@@ -10095,6 +10098,57 @@ function snOfflineOpenPage(progress){
   };window.addEventListener('message',listener);const timer=setTimeout(end,90000);
 }
 
+  function snConnectionDiagnosticZip(files){
+    const chunks=[],entries=[],encoder=new TextEncoder();let offset=0;
+    const crc=bytes=>{let value=0xffffffff;for(const byte of bytes){value^=byte;for(let bit=0;bit<8;bit++)value=(value>>>1)^((value&1)?0xedb88320:0);}return(value^0xffffffff)>>>0;};
+    for(const [name,text] of Object.entries(files)){
+      const filename=encoder.encode(name),data=encoder.encode(text),checksum=crc(data),header=new Uint8Array(30+filename.length),view=new DataView(header.buffer);
+      view.setUint32(0,0x04034b50,true);view.setUint16(4,20,true);view.setUint32(14,checksum,true);view.setUint32(18,data.length,true);view.setUint32(22,data.length,true);view.setUint16(26,filename.length,true);header.set(filename,30);
+      chunks.push(header,data);entries.push({filename,length:data.length,checksum,offset});offset+=header.length+data.length;
+    }
+    const directoryOffset=offset;
+    for(const entry of entries){const header=new Uint8Array(46+entry.filename.length),view=new DataView(header.buffer);view.setUint32(0,0x02014b50,true);view.setUint16(4,20,true);view.setUint16(6,20,true);view.setUint32(16,entry.checksum,true);view.setUint32(20,entry.length,true);view.setUint32(24,entry.length,true);view.setUint16(28,entry.filename.length,true);view.setUint32(42,entry.offset,true);header.set(entry.filename,46);chunks.push(header);offset+=header.length;}
+    const end=new Uint8Array(22),view=new DataView(end.buffer);view.setUint32(0,0x06054b50,true);view.setUint16(8,entries.length,true);view.setUint16(10,entries.length,true);view.setUint32(12,offset-directoryOffset,true);view.setUint32(16,directoryOffset,true);chunks.push(end);return new Blob(chunks,{type:'application/zip'});
+  }
+  async function snRunConnectionDiagnostics(progress){
+    const identity=await gmGetValue('sn-ai-diagnostic-installation',{}),token=/^[a-f0-9]{64}$/.test(identity?.token||'')?identity.token:'';
+    const info=typeof GM_info!=='undefined'?GM_info:{},safeVersion=value=>/^[0-9.]{1,32}$/.test(String(value||''))?String(value):'unavailable';
+    const report={schema:1,createdAt:new Date().toISOString(),version:safeVersion(info.script?.version),clientId:/^[a-f0-9]{32}$/.test(identity.clientId||'')?identity.clientId:'unavailable',environment:{manager:['Tampermonkey','Violentmonkey','Greasemonkey'].includes(info.scriptHandler)?info.scriptHandler:'unknown',managerVersion:safeVersion(info.version),browserFamily:(navigator.userAgent.match(/(?:Edg|Chrome|Firefox)\/\d+/)||['unknown'])[0],online:navigator.onLine!==false,visibility:document.visibilityState==='hidden'?'hidden':'visible',secureContext:typeof isSecureContext==='boolean'?isSecureContext:null,approvedPage:snPersonalApprovedPage(),gmTransportAvailable:typeof GM_xmlhttpRequest==='function',browserFetchAvailable:typeof fetch==='function',installationCredentialPresent:!!token,installationRegistered:identity.registered===true,installationRevoked:identity.revoked===true,settingsBindingPresent:!!sharedModeMessages.context?.binding},tests:[],limitations:['Client header intent is not on-wire proof.','Browser fetch failure cannot distinguish CORS, DNS, TLS, enterprise proxy, extension blocking or connection loss.','No proxy configuration, certificate chain, packet capture or enterprise policy can be inspected by this script.','Anonymous GM requests already use fetch in Tampermonkey; fetch:true is not an independent transport.','HTTP reachability does not prove generation quota or model latency. No ticket content or generation requests are sent.']};
+    const probe=async(name,url,transport,credential,parseGoogle=false)=>{
+      progress('Checking '+name+'…');const started=Date.now(),headers=credential?{[parseGoogle?'x-goog-api-key':'Authorization']:parseGoogle?credential:'Bearer '+credential}:{};
+      const result={name,transport,host:new URL(url).hostname,path:new URL(url).pathname,credentialIntended:!!credential};
+      try{
+        const response=await new Promise((resolve,reject)=>{
+          let settled=false,handle,controller;
+          const finish=(error,value)=>{if(settled)return;settled=true;clearTimeout(timer);error?reject(error):resolve(value);};
+          const timer=setTimeout(()=>{finish(Error('deadline'));try{handle?.abort?.();controller?.abort();}catch{}},8000);
+          if(transport==='gm-anonymous-fetch'){
+            try{handle=GM_xmlhttpRequest({method:'GET',url,headers,anonymous:true,redirect:'error',timeout:8000,onload:r=>finish(null,r),onerror:()=>finish(Error('network_error')),ontimeout:()=>finish(Error('timeout')),onabort:()=>finish(Error('aborted'))});}catch{finish(Error('request_start_failed'));}
+          }else{
+            controller=new AbortController();fetch(url,{method:'GET',headers,credentials:'omit',redirect:'error',cache:'no-store',signal:controller.signal}).then(async r=>finish(null,{status:r.status,responseText:await r.text(),finalUrl:r.url})).catch(e=>finish(Error(['TypeError','SecurityError','AbortError'].includes(e.name)?e.name:'network_error')));
+          }
+        });
+        result.status=Number(response.status)||0;result.finalDestination=parseGoogle?'generativelanguage.googleapis.com'+new URL(url).pathname:snSafeFinalDestination(response);
+        let data;try{data=JSON.parse(response.responseText);}catch{result.responseFormat='non-json';}
+        if(data){result.responseFormat='json';for(const key of ['code','authStage'])if(/^[a-z_]{1,48}$/.test(data[key]||''))result[key]=data[key];for(const key of ['authorizationPresent','apacheAuthorizationPresent'])if(typeof data[key]==='boolean')result[key]=data[key];if(typeof data.ok==='boolean')result.ok=data.ok;if(parseGoogle&&/^[A-Z_]{1,60}$/.test(data.error?.status||''))result.apiStatus=data.error.status;}
+      }catch(error){result.status=0;result.failure=['deadline','network_error','timeout','aborted','request_start_failed','TypeError','SecurityError','AbortError'].includes(error.message)?error.message:'unknown';}
+      result.durationMs=Date.now()-started;report.tests.push(result);
+    };
+    const endpoint='https://drandox.cc/wuwa/sn-ai-settings-bindings.php';
+    await probe('Drandox missing-header control',endpoint,'gm-anonymous-fetch','');
+    await probe('Drandox synthetic-header control',endpoint,'gm-anonymous-fetch','0'.repeat(64));
+    if(token){await probe('Drandox existing installation via extension',endpoint,'gm-anonymous-fetch',token);await probe('Drandox existing installation via browser',endpoint,'browser-fetch',token);}
+    await probe('Google API host without key','https://generativelanguage.googleapis.com/v1beta/models','browser-fetch','',true);
+    let key='';try{key=await geminiCredentials.key();}catch{report.environment.geminiCredentialReadFailed=true;}report.environment.geminiCredentialPresent=!!key;
+    if(key)await probe('Gemini model access without generation','https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite','browser-fetch',key,true);
+    if(snLastSafeServiceError)report.latestServiceError={...snLastSafeServiceError};
+    if(state.geminiLastError){report.latestGeminiError=Object.fromEntries(['timestamp','jobId','model','operation','transport','endpoint','durationMs','phase','httpStatus','code','apiReason','browserErrorName','browserOnline','pageVisibility'].filter(k=>Object.hasOwn(state.geminiLastError,k)).map(k=>[k,state.geminiLastError[k]]));}
+    return report;
+  }
+  function installConnectionDiagnosticsUI(panel){
+    const row=document.createElement('div'),button=document.createElement('button'),status=document.createElement('div');button.type='button';button.textContent='Download connection diagnostic ZIP';button.className='secondary';status.setAttribute('role','status');row.style.cssText='display:grid;gap:6px;margin:12px 0';row.append(button,status);panel.append(row);
+    button.onclick=async()=>{button.disabled=true;try{const report=await snRunConnectionDiagnostics(text=>status.textContent=text),blob=snConnectionDiagnosticZip({'connection-report.json':JSON.stringify(report,null,2),'README.txt':'SN AI connection diagnostics. Contains safe environment facts, bounded read-only probes and latest sanitized Gemini failure. No keys, headers, bodies, account names or ticket data. Send this ZIP to the SN AI maintainer. Synthetic invalid-key controls intentionally return authorization errors. No credential reset, registration, ticket generation or authentication bypass is attempted. Tests may take about one minute. See report limitations.'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SN-AI-connection-'+new Date().toISOString().replace(/[:.]/g,'-')+'.zip';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);status.textContent='Diagnostic ZIP downloaded. Send it here for review.';}catch{status.textContent='Diagnostic check could not complete. No credentials were exported.';}finally{button.disabled=false;}};
+  }
   function installSharedModeMessageEditor(panel){
     const row=document.createElement('section');row.hidden=true;row.dataset.sharedModeMessages='true';row.style.cssText='display:none;gap:8px;padding:12px 16px';
     const heading=document.createElement('strong');heading.textContent='Shared AI mode messages';
@@ -12313,7 +12367,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     Promise.resolve().then(()=>fetch(options.url,{method:options.method,headers:options.headers,body:options.data,credentials:'omit',cache:'no-store',redirect:'error',signal:controller.signal})).then(async response=>{
       options.onreadystatechange?.({readyState:2,status:response.status});
       const responseText=await response.text();options.onload({status:response.status,responseText});
-    }).catch(error=>{if(error?.name==='AbortError')options.onabort?.();else options.onerror?.();});
+    }).catch(error=>{if(error?.name==='AbortError')options.onabort?.();else options.onerror?.({browserErrorName:['TypeError','NetworkError','SecurityError'].includes(error?.name)?error.name:'Error'});});
     return {abort:()=>controller.abort()};
   }
   // Gemini API: private installation key, direct HTTPS, no shared relay or automatic transport retries.
@@ -12334,10 +12388,17 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const stop = () => { if (!settled) { settled = true; clearTimeout(deadlineTimer); log('info', 'cancelled', { code: 'AI_STOPPED' }); rejectPending(Object.assign(new Error('AI request stopped.'), { code: 'AI_STOPPED' })); } };
     const promise = new Promise((resolve, reject) => {
       rejectPending = reject;
-      const fail = (error, details = {}) => { if (!settled) { settled = true; clearTimeout(deadlineTimer); const message = String(error?.message || error).split(apiKey).join('[redacted]'); log('error', 'failed', { message, ...details }); reject(error instanceof Error ? error : new Error(message)); } };
+      const fail = (error, details = {}) => { if (!settled) {
+        settled=true;clearTimeout(deadlineTimer);
+        const message=String(error?.message||error).split(apiKey).join('[redacted]');
+        const safe={timestamp:new Date().toISOString(),jobId,model,operation:connectionOnly?'model-access-check':mode==='FEEDBACK'?'feedback':'ticket-generation',transport:typeof fetch==='function'?'browser-fetch':'userscript-request',endpoint:'/v1beta/models/'+model+(connectionOnly?'':':generateContent'),durationMs:Date.now()-startedAt,phase:readyState>=2?'reading-response':'waiting-for-response',httpStatus:Number(details.status)||0,code:details.code||'UNKNOWN',...(details.apiReason?{apiReason:details.apiReason}:{}),...(details.browserErrorName?{browserErrorName:details.browserErrorName}:{}),...(typeof navigator!=='undefined'?{browserOnline:navigator.onLine!==false}:{}),...(typeof document!=='undefined'?{pageVisibility:document.visibilityState==='hidden'?'hidden':'visible'}:{})};
+        state.geminiLastError=safe;log('error','failed',{message,...safe,...details});
+        if(typeof document!=='undefined'&&typeof CustomEvent==='function')document.dispatchEvent(new CustomEvent('sn-ai-gemini-error',{detail:safe}));
+        const failure=error instanceof Error?error:new Error(message);failure.message=message+'\nGemini error details: '+JSON.stringify(safe);failure.safeDetails=safe;reject(failure);
+      } };
       const data = connectionOnly ? undefined : JSON.stringify({ systemInstruction: { parts: [{ text: instructions }] }, contents: [{ role: 'user', parts: [{ text: JSON.stringify(input) }] }], generationConfig: { responseMimeType: 'application/json', responseJsonSchema: schema, thinkingConfig:{thinkingLevel:'minimal'} } });
       log('info', 'request-started', { length: data?.length||0, phase:connectionOnly?'model-access-check':'ticket-generation', source:typeof fetch==='function'?'browser-fetch':'userscript-request' });
-      deadlineTimer=setTimeout(()=>{if(settled)return;fail('Gemini did not finish within 20 seconds. No ticket data was applied. Retry manually or try Gemini 3.5 Flash-Lite.',{status:0,code:'CALLBACK_DEADLINE',phase:readyState>=2?'response-started':'waiting-for-response',timeoutMs});try{handle?.abort?.();}catch{}},timeoutMs);
+      deadlineTimer=setTimeout(()=>{if(settled)return;fail('Gemini did not finish within 20 seconds. No ticket data was applied. Retry manually after checking the connection and Google service status.',{status:0,code:'CALLBACK_DEADLINE',phase:readyState>=2?'response-started':'waiting-for-response',timeoutMs});try{handle?.abort?.();}catch{}},timeoutMs);
       try { handle = sendRequest({
         method: connectionOnly ? 'GET' : 'POST', anonymous: true,
         url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}${connectionOnly?'':':generateContent'}`,
@@ -12350,9 +12411,9 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           const status = Number(response.status);
           if (status < 200 || status >= 300) {
             const hint = status === 429 ? 'Quota or rate limit reached. Wait before retrying and check your Google project quota.' : status === 401 || status === 403 ? 'Check the API key, project permissions, billing and regional availability.' : status === 404 ? 'This model is unavailable for your project. Choose another model.' : status === 400 ? 'Google rejected the request. Check model support and project configuration.' : 'Check your connection or try again later.';
-            let code = '';
-            try { code = safeEnum(JSON.parse(response.responseText || '{}')?.error?.status); } catch { /* Never record raw error bodies or headers. */ }
-            fail(`Gemini API HTTP ${status}. ${hint}`, { status, code: code || 'HTTP_ERROR' }); return;
+            let code = '',apiReason='';
+            try { const error=JSON.parse(response.responseText || '{}')?.error;code=safeEnum(error?.status);apiReason=safeEnum(error?.details?.find(detail=>detail?.['@type']==='type.googleapis.com/google.rpc.ErrorInfo')?.reason); } catch { /* Never record raw error bodies or headers. */ }
+            fail(`Gemini API HTTP ${status}. ${hint}`, { status, code: code || 'HTTP_ERROR',apiReason }); return;
           }
           try {
             const body = JSON.parse(response.responseText || '{}');
@@ -12374,7 +12435,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             settled = true; clearTimeout(deadlineTimer); resolve(result);
           } catch (error) { fail(error, { status, code: Object.prototype.hasOwnProperty.call(error || {}, 'aiResponse') ? 'VALIDATION_ERROR' : 'INVALID_RESPONSE' }); }
         },
-        onerror: () => fail('Gemini API network error. Check browser/network access to generativelanguage.googleapis.com.', { status: 0, code: 'NETWORK_ERROR' }),
+        onerror: response => fail('Gemini API network error. The browser cannot distinguish a proxy, DNS/TLS, CORS or connection block here. Check access to generativelanguage.googleapis.com.', { status: 0, code: 'NETWORK_ERROR',browserErrorName:['TypeError','NetworkError','SecurityError'].includes(response?.browserErrorName)?response.browserErrorName:'Error' }),
         ontimeout: () => fail(`Gemini API timed out after ${timeoutMs/1000} seconds. No automatic retry was sent.`, { status: 0, code: 'TIMEOUT', timeoutMs }),
         onabort: stop,
       }); } catch { fail('Gemini API request could not start. Check Tampermonkey permissions.', { status: 0, code: 'REQUEST_START_FAILED' }); }
@@ -19793,6 +19854,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     tabList.after(generalPanel);
     installSnOfflineUpdaterUI(developerPanel);
     installSharedModeMessageEditor(developerPanel);
+    installConnectionDiagnosticsUI(generalPanel);
     diagnosticStore();
     const fallbackStyle=document.createElement('style');fallbackStyle.textContent='[data-diagnostic-download-fallback][hidden]{display:none!important}';generalPanel.append(fallbackStyle);
     const settingsTabs = [...settingsDialog.querySelectorAll('[data-settings-tab]')];
@@ -19822,6 +19884,10 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const aiWebServiceSelect = settingsDialog.querySelector('[aria-label="Website AI service"]');
     const aiWebSettings = settingsDialog.querySelector('[data-ai-web-settings]');
     const aiAPISettings = settingsDialog.querySelector('[data-ai-api-settings]');
+    const geminiErrorDetails=document.createElement('div');aiAPISettings.append(geminiErrorDetails);
+    const showGeminiErrorDetails=()=>snRenderServiceError(geminiErrorDetails,state.geminiLastError||null);
+    document.addEventListener('sn-ai-gemini-error',showGeminiErrorDetails);showGeminiErrorDetails();
+    document.addEventListener('sn-ai-runtime-dispose',()=>document.removeEventListener('sn-ai-gemini-error',showGeminiErrorDetails),{once:true});
     const aiWebStatus = settingsDialog.querySelector('[data-ai-web-status]');
     const aiKeyEditor = settingsDialog.querySelector('[data-ai-key-editor]');
     const aiKeySaved = settingsDialog.querySelector('[data-ai-key-saved]');
