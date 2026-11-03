@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.831
+// @version      2.36.832
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.832","fixes":true,"changes":[{"key":"offline-snow-reference-updater","meaningful":true,"text":"Coordinate manual Offline SNOW updates with the shared daily updater lock, progress and successful publication history."}]},
 {"version":"2.36.831","fixes":true,"changes":[{"key":"personal-sync-recovery","meaningful":true,"text":"Show a compact sync warning only after one minute of continuous failure, retry temporary failures every five seconds, refresh hourly and provide manual settings sync."}]},
 {"version":"2.36.830","fixes":true,"changes":[{"key":"proxy-compatible-installation-auth","meaningful":true,"text":"Retry confirmed missing-Authorization failures with the same installation credential in a dedicated HTTPS header, keeping account permissions and queued mutation IDs unchanged."}]},
 {"version":"2.36.829","fixes":true,"changes":[{"key":"connection-diagnostic-zip","meaningful":true,"text":"Download a safe one-click connection diagnostic ZIP comparing server header controls, browser and extension transports, Gemini access and environment details."}]},
@@ -435,7 +436,7 @@ function snPersonalSettingsDiff(previous,next){
 }
 let snInstallationHeaderMode='authorization';
 function snInstallationRequest(options){
-  const paths=['/wuwa/sn-ai-settings-bindings.php','/wuwa/sn-ai-settings.php','/wuwa/sn-ai-credentials.php','/wuwa/sn-ai-mode-messages.php','/work/diagnostics.php','/work/offline-snow/api.php'];
+  const paths=['/wuwa/sn-ai-settings-bindings.php','/wuwa/sn-ai-settings.php','/wuwa/sn-ai-credentials.php','/wuwa/sn-ai-mode-messages.php','/work/diagnostics.php','/work/offline-snow/api.php','/work/offline-snow/daily.php'];
   let url;try{url=new URL(options.url);}catch{return GM_xmlhttpRequest(options);}
   const authorization=options.headers?.Authorization,token=typeof authorization==='string'&&/^Bearer [a-f0-9]{64}$/.test(authorization)?authorization.slice(7):'';
   if(url.origin!=='https://drandox.cc'||!paths.includes(url.pathname)||!token)return GM_xmlhttpRequest(options);
@@ -10080,9 +10081,9 @@ async function snOfflinePackDataset(records){
 }
 function snOfflinePending(value){return new Promise((resolve,reject)=>{const open=indexedDB.open('sn-ai-offline-export-v1',1);open.onupgradeneeded=()=>open.result.createObjectStore('pending');open.onerror=()=>reject(Error('offline_queue_unavailable'));open.onsuccess=()=>{const db=open.result,tx=db.transaction('pending',value===undefined?'readonly':'readwrite'),store=tx.objectStore('pending');const r=value===undefined?store.get('AKIMLA01'):value===null?store.clear():store.put(value,'AKIMLA01');let result;r.onsuccess=()=>result=r.result;tx.oncomplete=()=>{db.close();resolve(result);};tx.onerror=tx.onabort=()=>{db.close();reject(Error('offline_queue_save_failed'));};};});}
 async function snOfflineAuthorizedAccount(){const account=await snPersonalCurrentAccount();if(!snPersonalApprovedPage()||String(account?.userID||'').toUpperCase()!=='AKIMLA01')throw Error('offline_updater_not_available');return account;}
-async function snOfflineRequest(action,{method='GET',query={},body,token,contentType='application/json',onProgress}={}){
+async function snOfflineRequest(action,{method='GET',query={},body,token,contentType='application/json',onProgress,daily=false}={}){
   await snOfflineAuthorizedAccount();
-  const url='https://drandox.cc/work/offline-snow/api.php?'+new URLSearchParams({action,...query});
+  const url='https://drandox.cc/work/offline-snow/'+(daily?'daily.php':'api.php')+'?'+new URLSearchParams({action,...(daily?{instance:location.hostname}:{}),...query});
   const clientId=(await GM_getValue('sn-ai-diagnostic-installation',{}))?.clientId;
   const response=await new Promise((resolve,reject)=>{snInstallationRequest({method,url,anonymous:true,headers:{Authorization:'Bearer '+token,...(body!==undefined?{'Content-Type':contentType}:{})},data:body,timeout:180000,onprogress:()=>{},upload:{onprogress:onProgress},onload:resolve,onerror:()=>reject(Error('offline_network_error')),ontimeout:()=>reject(Error('offline_network_timeout')),onabort:()=>reject(Error('offline_request_aborted'))});}).catch(e=>{e.safeDetails=snSafeServiceError('offline-'+action,'/work/offline-snow/api.php',0,null,clientId,/timeout/.test(e.message)?'timeout':/aborted/.test(e.message)?'aborted':'network_error');throw e;});
   let data;try{data=JSON.parse(response.responseText);}catch{data=null;}
@@ -10093,15 +10094,23 @@ async function snOfflineRetry(operation){for(let attempt=0;;attempt++){try{retur
 let snOfflineUpdating=false;
 async function snOfflineUpdateReferences(progress,{fresh=false}={}){
   if(snOfflineUpdating)throw Error('offline_update_already_running');snOfflineUpdating=true;
+  let lease=null,leaseTimer=null,leaseBusy=false;const originalProgress=progress;
+  progress=(text,percent)=>{if(lease){lease.progress=Math.min(99,Math.max(lease.progress,Math.floor(Number(percent)||0)));const stages={sys_user:'users',sys_template:'templates',u_matrix:'matrix',cmn_department:'departments'};const table=Object.keys(stages).find(name=>text.includes(name));if(table)lease.stage=stages[table];else if(/Compressing/.test(text))lease.stage='compressing';else if(/Uploading/.test(text))lease.stage='uploading';}originalProgress(text,percent);};
   try{
     const run=async()=>{
       const account=await snOfflineAuthorizedAccount(),identity=await diagnosticIdentity();
       if(fresh){progress('Clearing the previous local reference export…',0);await snOfflinePending(null);}
       let pending=await snOfflinePending();
+      const dailyRequestId=pending?.requestId||snOfflineRandomID(),dailyTabId=pending?.dailyTabId||snOfflineRandomID();
+      const claim=await snOfflineRequest('claim',{daily:true,method:'POST',token:identity.token,body:JSON.stringify({instance:location.hostname,requestId:dailyRequestId,tabId:dailyTabId,manual:true,sourceAccount:{userID:account.userID.toUpperCase(),name:account.fullName,shortName:account.fullName.split(/\s+/)[0]}})});
+      if(claim.claim?.status!=='active'||!/^[a-f0-9]{32}$/.test(claim.claim?.attemptId||''))throw Error('offline_daily_claim_unconfirmed');
+      lease={id:claim.claim.attemptId,tabId:dailyTabId,token:identity.token,stage:'starting',progress:0,lost:false,published:false};
+      const pulse=async()=>{if(!lease||leaseBusy)return;leaseBusy=true;try{await snOfflineRequest('heartbeat',{daily:true,method:'POST',token:identity.token,body:JSON.stringify({claimId:lease.id,tabId:lease.tabId,stage:lease.stage,progress:lease.progress})});}catch(error){if([401,403].includes(error.status)||error.code==='lease_expired')lease.lost=true;recordCompactDiagnostic('warn','offline-reference-heartbeat',{status:error.status||0,code:error.code||'network_error'});}finally{leaseBusy=false;}};
+      await pulse();leaseTimer=setInterval(pulse,5000);
       if(!pending){
         progress('Collecting ServiceNow reference data…',0);
         const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
-        const snapshot=await snOfflineCollectReferences(page,item=>{const tables=['sys_user','sys_template','u_matrix','cmn_department'],index=tables.indexOf(item.table);progress('Collecting '+item.table+': '+item.count.toLocaleString()+' / '+item.total.toLocaleString(),Math.max(0,index)*15+Math.min(1,item.total?item.count/item.total:0)*15);},()=>!snPersonalApprovedPage());
+        const snapshot=await snOfflineCollectReferences(page,item=>{const tables=['sys_user','sys_template','u_matrix','cmn_department'],index=tables.indexOf(item.table);progress('Collecting '+item.table+': '+item.count.toLocaleString()+' / '+item.total.toLocaleString(),Math.max(0,index)*15+Math.min(1,item.total?item.count/item.total:0)*15);},()=>!snPersonalApprovedPage()||lease.lost);
         if(!snapshot.meta.usersComplete||!snapshot.meta.templatesComplete||!snapshot.meta.matrixComplete||!snapshot.meta.departmentsComplete)throw Error('offline_snapshot_incomplete');
         const datasets=snOfflineDatasetRecords(snapshot),known=new Set(datasets.departments.map(d=>d.id));
         let unavailableDepartments=0;for(const user of datasets.users)if(user.departmentId&&!known.has(user.departmentId)){user.departmentId=null;unavailableDepartments++;}
@@ -10113,19 +10122,20 @@ async function snOfflineUpdateReferences(progress,{fresh=false}={}){
         const bytes=new Uint8Array(await new Response(new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
         if(bytes.length>8388608)throw Error('offline_compressed_snapshot_exceeds_8MiB');
         const sha256=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),v=>v.toString(16).padStart(2,'0')).join('');
-        pending={schema:3,requestId:snOfflineRandomID(),sha256,bytes,counts,instance:location.hostname,userID:account.userID};
+        pending={schema:3,requestId:dailyRequestId,dailyTabId,sha256,bytes,counts,instance:location.hostname,userID:account.userID};
         await snOfflinePending(pending);
       }
       if(pending.schema!==3)throw Error('offline_legacy_pending_retained: click Update to collect a fresh compressed snapshot');
       if(pending.userID?.toUpperCase()!=='AKIMLA01'||pending.instance!==location.hostname)throw Error('offline_queue_identity_mismatch');
       progress('Uploading one compressed snapshot ('+(pending.bytes.length/1048576).toFixed(2)+' MiB)…',70);
-      const done=await snOfflineRetry(()=>snOfflineRequest('upload-snapshot',{method:'POST',token:identity.token,query:{requestId:pending.requestId,sha256:pending.sha256},contentType:'application/gzip',body:pending.bytes.buffer.slice(pending.bytes.byteOffset,pending.bytes.byteOffset+pending.bytes.byteLength)}));
+      if(lease.lost)throw Error('offline_daily_lease_expired');clearInterval(leaseTimer);
+      const done=await snOfflineRetry(()=>snOfflineRequest('upload-snapshot',{daily:true,method:'POST',token:identity.token,query:{claimId:lease.id,tabId:lease.tabId,requestId:pending.requestId,sha256:pending.sha256},contentType:'application/gzip',body:pending.bytes.buffer.slice(pending.bytes.byteOffset,pending.bytes.byteOffset+pending.bytes.byteLength)}));
       if(done.requestId!==pending.requestId||done.sha256!==pending.sha256||done.manifest?.schema!==2||done.manifest.replace!==true||done.manifest.instance!==pending.instance||!Number.isInteger(done.manifest.revision)||!done.manifest.portable?.sha256||Object.entries(pending.counts).some(([key,count])=>done.manifest.datasets?.[key]?.count!==count))throw Error('offline_publish_ack_mismatch');
-      await snOfflinePending(null);progress('Offline SNOW data updated successfully. Revision '+done.manifest.revision+'.',100);
+      lease.published=true;await snOfflinePending(null);progress('Offline SNOW data updated successfully. Revision '+done.manifest.revision+'.',100);
     };
     if(!navigator.locks?.request)throw Error('offline_cross_tab_lock_unavailable');
     await navigator.locks.request('sn-ai-offline-export-AKIMLA01',{ifAvailable:true},lock=>{if(!lock)throw Error('offline_update_running_in_another_tab');return run();});
-  }finally{snOfflineUpdating=false;}
+  }finally{clearInterval(leaseTimer);if(lease&&!lease.published){try{await snOfflineRequest('release',{daily:true,method:'POST',token:lease.token,body:JSON.stringify({claimId:lease.id,tabId:lease.tabId,errorCode:'client_error'})});}catch{}}snOfflineUpdating=false;}
 }
 function snOfflineOpenPage(progress){
   const target=window.open('https://drandox.cc/work/offline-snow/','sn-ai-offline-snow');if(!target){progress('Allow the Offline SNOW window to open.');return;}
