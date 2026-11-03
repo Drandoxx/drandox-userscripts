@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.598.0
+// @version      1.599.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -4933,7 +4933,13 @@
   let testCallSession = null;
   let testNativeAnswer = null;
   function callPopupsEnabled() {
-    try{return GM_getValue('genesys-v2-call-popups-enabled',false)===true;}catch(_){return false;}
+    try{
+      if(!GM_getValue('genesys-v2-call-popups-rollout-1',false)){
+        GM_setValue('genesys-v2-call-popups-enabled',true);
+        GM_setValue('genesys-v2-call-popups-rollout-1',true);
+      }
+      return GM_getValue('genesys-v2-call-popups-enabled',true)===true;
+    }catch(_){return true;}
   }
   function callRecordingAllowed(doc) {
     return true; // Diagnostic recording is independent of Admin permissions.
@@ -6364,6 +6370,28 @@
       let authorization=null, stopped=false;
       const nativeFetch=win.fetch, proto=win.XMLHttpRequest.prototype;
       const NativeWebSocket=win.WebSocket;
+      // Event-driven audio evidence: no polling, audio recording or retained URLs.
+      const audioSeen=new Map();
+      const audioEvidence=(kind,element)=>{
+        if(stopped)return;
+        const signal=currentLiveCallSignal();
+        const alerting=signal && /alerting|contacting/i.test(signal.state || '');
+        const key=(signal?.id || 'no-call')+':'+kind;
+        const now=Date.now();if(now-(audioSeen.get(key)||0)<1000)return;
+        audioSeen.set(key,now);if(audioSeen.size>40)audioSeen.delete(audioSeen.keys().next().value);
+        performanceEvent('call-audio-timing',{kind,at:now,conversationId:signal?.id || null,alerting:!!alerting,
+          muted:element?.muted ?? null,volume:element?.volume ?? null,hidden:win.document.hidden,
+          popupVisible:!!document.getElementById('gbs-call-information')});
+      };
+      const playing=event=>{if(event.target?.tagName==='AUDIO')audioEvidence('media-playing',event.target);};
+      win.document?.addEventListener('playing',playing,true);
+      const audioProto=win.AudioBufferSourceNode?.prototype,originalAudioStart=audioProto?.start;
+      const wrappedAudioStart=originalAudioStart && function(){
+        const result=originalAudioStart.apply(this,arguments);
+        if(this.context?.state==='running')audioEvidence('webaudio-start');
+        return result;
+      };
+      if(wrappedAudioStart)audioProto.start=wrappedAudioStart;
       const originalOpen=proto.open, originalHeader=proto.setRequestHeader, originalSend=proto.send;
       const observed = url => {try{const u=new URL(url,win.location.href);return u.origin===CALL_API_ORIGIN?u:null;}catch(_){return null;}};
       const scriptPath=path=>/^\/api\/v2\/scripts\/published\/[a-f0-9-]{36}(?:\/pages\/[a-f0-9-]{36})?$/.test(path);
@@ -6426,6 +6454,8 @@
           return await response.json();
         } finally {window.clearTimeout(timeout);}
       },stop:()=>{stopped=true;win.document?.removeEventListener('click',recordNativeCallControl,true);if(win.fetch===wrappedFetch)win.fetch=nativeFetch;if(proto.open===wrappedOpen)proto.open=originalOpen;if(proto.setRequestHeader===wrappedHeader)proto.setRequestHeader=originalHeader;if(proto.send===wrappedSend)proto.send=originalSend;if(win.WebSocket===wrappedSocket)win.WebSocket=NativeWebSocket;delete win.__gbsCallApiBridge;authorization=null;}};
+      const originalStop=bridge.stop;
+      bridge.stop=()=>{win.document?.removeEventListener('playing',playing,true);if(audioProto && audioProto.start===wrappedAudioStart)audioProto.start=originalAudioStart;audioSeen.clear();originalStop();};
       win.__gbsCallApiBridge=bridge;callNetworkBridges.add(win);
     } catch (_) { /* Inaccessible frames remain handled by existing DOM logging. */ }
   }
@@ -7523,6 +7553,11 @@
       persistTestCall();
     }
     const heading = popup.querySelector('.gbs-call-information-heading');
+    if(incoming && !popup.dataset.gbsIncomingLogged){
+      popup.dataset.gbsIncomingLogged='true';
+      performanceEvent('incoming-popup-appeared',{at:Date.now(),conversationId:activeCallSummary?.conversationId || null,hidden:doc.hidden,source:'custom'});
+    }
+    if(!incoming)delete popup.dataset.gbsIncomingLogged;
     heading.replaceChildren(doc.createTextNode('Call information '));
     if (state) {
       const badge = doc.createElement('span');
