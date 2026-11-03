@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.855
+// @version      2.36.856
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.856","fixes":true,"changes":[{"key":"workspace-media","meaningful":false,"text":"Leave attachment confirmation buttons unfocused on opening without interfering with subsequent keyboard or pointer interaction."}]},
 {"version":"2.36.855","fixes":true,"changes":[{"key":"workspace-media","meaningful":true,"text":"Hide the intermediate attachment action menu and focus Cancel instead of the close icon when opening native delete confirmation."}]},
 {"version":"2.36.854","fixes":true,"changes":[{"key":"workspace-media","meaningful":true,"text":"Retain confirmation for record drops, block closed-chat drops and make drop indicators lighter to render while Add to ticket stays automatic."},{"key":"presence-menu","meaningful":true,"text":"Selecting your current status closes the custom menu without opening ServiceNow's native menu behind it."}]},
 {"version":"2.36.853","fixes":true,"changes":[{"key":"workspace-media","meaningful":true,"text":"Keep only SNOW's delete confirmation and accept the first Add to ticket click during background status checks, with native Upload readiness protection."}]},
@@ -1528,8 +1529,8 @@ function snMediaConfirmDelete(){return Promise.resolve(true);}
 // Keep native confirmation and keyboard access, but avoid its close-button tooltip on entry.
 function snMediaPrepareDeleteDialog(card){
   const scope=snMediaAncestor(card,node=>node.localName==='now-record-form-connected')||card.getRootNode().host||card;
-  let attempts=0,focused=false;
-  const tick=()=>{if(!scope.isConnected||++attempts>30)return;for(const modal of snMediaNodes(scope.shadowRoot||scope,'now-modal')){const props=modal.getProperties?.();if(!/Delete attachment/i.test(props?.headerLabel||modal.textContent||''))continue;const cancel=snMediaNodes(modal.shadowRoot||modal,'button').find(button=>button.textContent.trim()==='Cancel');if(!cancel)continue;const active=modal.shadowRoot?.activeElement;if(!focused||/close/i.test(active?.getAttribute('aria-label')||'')){cancel.focus({preventScroll:true});focused=true;}}if(!focused||attempts<8)setTimeout(tick,50);};queueMicrotask(tick);
+  let attempts=0;const stop=()=>{attempts=30;};document.addEventListener('pointerdown',stop,{once:true,capture:true});document.addEventListener('keydown',stop,{once:true,capture:true});
+  const tick=()=>{if(!scope.isConnected||++attempts>30){document.removeEventListener('pointerdown',stop,true);document.removeEventListener('keydown',stop,true);return;}for(const modal of snMediaNodes(scope.shadowRoot||scope,'now-modal')){const props=modal.getProperties?.();if(!/Delete attachment/i.test(props?.headerLabel||modal.textContent||''))continue;let active=modal.shadowRoot?.activeElement;while(active?.shadowRoot?.activeElement)active=active.shadowRoot.activeElement;active?.blur?.();}setTimeout(tick,50);};queueMicrotask(tick);
 }
 function snMediaIcon(name){const paths={x:'<path d="M18 6 6 18M6 6l12 12"/>',left:'<path d="m15 18-6-6 6-6"/>',right:'<path d="m9 18 6-6-6-6"/>',edit:'<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.623l4.353-1.32a2 2 0 0 0 .83-.5z"/><path d="m15 5 4 4"/>',delete:'<path d="M3 6h18M10 11v6M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>','image-down':'<path d="M10.3 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10l-3.1-3.1a2 2 0 0 0-2.814.014L6 21"/><path d="m14 19 3 3v-5.5"/><path d="m17 22 3-3"/><circle cx="9" cy="9" r="2"/>',image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>'},names={edit:'pencil',delete:'trash-2',left:'chevron-left',right:'chevron-right'};return '<svg class="lucide lucide-'+(names[name]||name)+'" aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+(paths[name]||paths.image)+'</svg>';}
 snMediaIcon=((original)=>function(name){return name==='check'?snMediaCheckIcon():original(name);})(snMediaIcon);
