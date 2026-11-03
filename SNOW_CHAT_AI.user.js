@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.836
+// @version      2.36.837
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.837","fixes":true,"changes":[]},
 {"version":"2.36.836","fixes":true,"changes":[]},
 {"version":"2.36.835","fixes":true,"changes":[]},
 {"version":"2.36.834","fixes":true,"changes":[]},
@@ -19895,7 +19896,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const useAPI=document.createElement('button');useAPI.type='button';useAPI.textContent='Use Gemini API';useAPI.className='secondary';useAPI.hidden=true;useAPI.style.marginTop='10px';aiAPISettings.append(useAPI);useAPI.onclick=async()=>{state.ai.provider='gemini-api';state.ai.model=DEFAULT_API_MODEL;await gmSetValue(AI_PROVIDER_KEY,'gemini-api');syncAISettingsUI();checkPrimaryAI(true);};
     async function checkPrimaryAI(force=false){
       if(primaryCheckBusy||!state.ai.enabled)return;if(!force&&(Date.now()<primaryCheckNotBefore||Date.now()-primaryCheckedAt<15000))return;
-      primaryCheckBusy=true;const sequence=++primaryCheckSequence;checkButton.disabled=true;checkButton.classList.add('is-checking');statusText.textContent='AI status - Checking…';aiStatusCard.style.background='var(--sn-theme-251f31,#251f31)';
+      primaryCheckBusy=true;const sequence=++primaryCheckSequence;checkButton.disabled=true;checkButton.classList.add('is-checking');
       try{let available=false;if(state.ai.provider==='web')available=await healthyBackup();else{const apiKey=await geminiCredentials.key();state.ai.keySaved=!!apiKey;if(apiKey){await requestGeminiAPI({apiKey,model:DEFAULT_API_MODEL,connectionOnly:true}).promise;available=true;}}
         if(sequence!==primaryCheckSequence)return;statusText.textContent='AI status - '+(available?'Available':'Unavailable');aiStatusCard.style.background=available?'#17633f':'var(--sn-theme-251f31,#251f31)';aiStatusCard.style.color=available?'#fff':'var(--sn-theme-e6edf9,#eee)';if(available)fallbackBox.hidden=true;else await offerCompanionFallback();
       }catch{if(sequence===primaryCheckSequence){statusText.textContent='AI status - Unavailable';aiStatusCard.style.background='var(--sn-theme-251f31,#251f31)';await offerCompanionFallback();}}
