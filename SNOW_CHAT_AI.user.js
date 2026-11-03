@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.849
+// @version      2.36.850
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.850","fixes":true,"changes":[{"key":"workspace-media","meaningful":true,"text":"Use a semi-transparent image viewer without a filename header and keep small images at natural size while larger images fit the viewer."}]},
 {"version":"2.36.849","fixes":true,"changes":[{"key":"workspace-media","meaningful":true,"text":"Use compact responsive attachment grids, visible native filename editing, broader chat image detection and darker full-chat Lucide drop indicators without the native overlay."}]},
 {"version":"2.36.848","fixes":true,"changes":[{"key":"workspace-media","meaningful":true,"text":"Keep media features active after startup cleanup, handle delayed attachment content and use full-width cards with equal side padding."}]},
 {"version":"2.36.847","fixes":true,"changes":[{"key":"workspace-media","meaningful":true,"text":"Activate attachment cards, chat image galleries and custom dropzones reliably across Workspace shadow roots."}]},
@@ -1510,7 +1511,7 @@ const snAIChatDisplayNames=(()=>{
 // SN_AI_WORKSPACE_MEDIA_BEGIN
 function snMediaAncestor(node,predicate){for(let n=node;n;n=n.parentElement||n.getRootNode?.().host)if(predicate(n))return n;return null;}
 function snMediaNodes(root,selector){const out=[];function visit(r){if(!r)return;for(const node of r.querySelectorAll('*')){if(node.matches(selector))out.push(node);if(node.shadowRoot)visit(node.shadowRoot);}}visit(root);return out;}
-function snMediaFit(width,height,viewWidth,viewHeight){return Math.min(viewWidth/Math.max(1,width),viewHeight/Math.max(1,height));}
+function snMediaFit(width,height,viewWidth,viewHeight){return Math.min(1,viewWidth/Math.max(1,width),viewHeight/Math.max(1,height));}
 function snMediaPan(value,base,zoom,viewport){const limit=Math.max(0,(base*zoom-viewport)/2);return Math.max(-limit,Math.min(limit,value));}
 function snMediaImageURL(source){try{const url=new URL(source,location.href);const id=url.pathname.match(/^\/([a-f0-9]{32})\.iix$/i)?.[1];return id?location.origin+'/sys_attachment.do?sys_id='+id:url.href;}catch{return '';}}
 function snMediaChatSurface(chat){return [chat,...snMediaNodes(chat.shadowRoot,'.sn-chat,.sn-section,sn-connect-conversation,.sn-conversation')].filter(node=>node.getBoundingClientRect?.().width).sort((a,b)=>b.getBoundingClientRect().height-a.getBoundingClientRect().height)[0]||chat;}
@@ -1528,6 +1529,8 @@ function openSnMediaViewer(images,index=0,opener,actions={}){
   const hiddenStyle=document.createElement('style');hiddenStyle.textContent='[hidden]{display:none!important}';root.append(hiddenStyle);
   const extraStyle=document.createElement('style');extraStyle.textContent='.stage{inset:60px 66px 88px}.arrow{position:fixed;top:calc(50% - 14px)}.prev{left:12px}.next{right:12px}header{height:60px;padding:10px 14px;gap:16px}.add{width:auto;min-width:130px;margin-right:12px;padding:0 14px;white-space:nowrap;font:600 13px system-ui}.add.added{background:#196040;color:#c5f8d7;border-color:#3d956a}.thumbs{position:absolute;bottom:10px;left:66px;right:66px;height:64px;display:flex;justify-content:safe center;gap:8px;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}.thumb{flex:0 0 54px;width:54px;height:54px;padding:3px;border:2px solid transparent;background:var(--sn-theme-251f31,#29252f)}.thumb[aria-current=true]{border-color:#bda3ff;background:#6c548b}.thumb img{width:100%;height:100%;object-fit:cover;pointer-events:none}.notice{position:absolute;bottom:76px;left:15%;right:15%;text-align:center;color:#ffcca5;font-size:12px;pointer-events:none}@media(max-width:560px){header{gap:7px;padding:8px}.add{min-width:0;max-width:145px;white-space:normal;font-size:11px;margin-right:2px;padding:3px 8px}.stage{left:48px;right:48px}.prev{left:5px}.next{right:5px}.thumbs{left:48px;right:48px}}';root.append(extraStyle);
   // Controls occupy separate gutters; zoomed pixels cannot cover navigation or thumbnails.
+  name.remove();
+  const modernStyle=document.createElement('style');modernStyle.textContent=':host{background:rgba(18,18,24,.78)!important;color:#f6f4fa}:host::backdrop{background:transparent}header{background:transparent;border:0}.count{margin-left:auto;color:#ddd9e5;font-size:13px}button{background:rgba(255,255,255,.075);border:1px solid rgba(255,255,255,.18);border-radius:11px;transition:background .15s,border-color .15s}button:hover{background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.35)}button:disabled{opacity:.25}.thumb{background:rgba(255,255,255,.065);border-radius:9px}.thumb[aria-current=true]{border-color:#c4adff;background:rgba(170,137,241,.24)}.add{border-radius:10px}.add.added{background:rgba(30,108,69,.85);border-color:rgba(103,206,146,.55)}';root.append(modernStyle);
   stage.removeChild(prev);stage.removeChild(next);root.append(prev,next);
   const thumbs=document.createElement('nav'),add=document.createElement('button'),notice=document.createElement('div');thumbs.className='thumbs';thumbs.ariaLabel='Image thumbnails';add.className='add';add.textContent='Add to ticket';add.hidden=!actions.status;notice.className='notice';notice.setAttribute('role','status');header.insertBefore(add,close);root.append(thumbs,notice);
   let zoom=1,panX=0,panY=0,baseW=1,baseH=1,pinch=null,drag=null,closed=false,checking=0,adding=false;const points=new Map(),returnFocus=opener&&new WeakRef(opener),thumbnailButtons=[];
