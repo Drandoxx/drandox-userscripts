@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.862
+// @version      2.36.863
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.863","fixes":true,"changes":[{"key":"ticket-channel-metadata","meaningful":true,"text":"Exclude channel suffixes such as Name - Teams from issue narratives while retaining genuine Teams faults and stated contact preferences."}]},
 {"version":"2.36.862","fixes":true,"changes":[{"key":"gemini-busy-retries","meaningful":false,"text":"Keep retry notices hidden during the first 15 seconds of each request and clear stale notices when a new attempt starts."}]},
 {"version":"2.36.861","fixes":true,"changes":[{"key":"gemini-busy-retries","meaningful":true,"text":"Allow 40 seconds per Gemini attempt, show a thinking notice after 15 seconds and shorten built-in API prompts without changing validation or shared extra instructions."}]},
 {"version":"2.36.860","fixes":true,"changes":[{"key":"gemini-busy-retries","meaningful":true,"text":"Retry transient Gemini failures up to four times with exponential backoff, jitter, Retry-After support and protection against late responses."}]},
@@ -9013,7 +9014,8 @@ function startSNAI(tabIdentity) {
   function sharedModeInstructions(mode,instructions){const key=mode==='DESCRIPTION'?'TEXT':mode;const builtIn=SN_AI_DEFAULT_MESSAGES[key]||'',message=sharedModeMessages.message(key);
     const allMessage=SN_AI_MESSAGE_MODES.includes(key)&&key!=='ALL'&&key!=='STACK'&&key!=='HP_STACK'?sharedModeMessages.message('ALL'):'';
     if(message||allMessage)recordCompactDiagnostic('info','shared-mode-message-applied',{mode,version:String(sharedModeMessages.snapshot.revision??'built-in')});
-    return String(instructions||'')+(builtIn?'\n'+builtIn:'')+(allMessage?'\n'+allMessage:'')+(message?'\n'+message:'');
+    const channelRule='Participant labels such as "Name - Teams" contain channel metadata, not a fault or part of the person\'s name. In issue narratives say "The user" rather than repeating participant display labels. Mention Teams only for a genuine Teams-related issue or an explicitly stated contact preference, not because it appears in a speaker/name label. Keep actual contact names in contact fields without channel suffixes.';
+    return String(instructions||'')+(builtIn?'\n'+builtIn:'')+'\n'+channelRule+(allMessage?'\n'+allMessage:'')+(message?'\n'+message:'');
   }
 
   const normaliseChatGPTConversationRecord = (value) => {
