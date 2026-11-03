@@ -10501,6 +10501,58 @@ function fitDashboardMetricSpacing(doc) {
     window.addEventListener('pagehide',cleanup,{once:true});
     window.__gbsStopLightweightPerformance=cleanup;
   }
+  const dashboardRecoveryStates=new WeakMap();
+  function nativeDashboardDefinition(doc) {
+    try {
+      const element=doc.querySelector('.analytics-view-dashboard-detail');
+      if(!element)return null;
+      const win=doc===document?PAGE_WINDOW:doc.defaultView;
+      const requireFn=win?.__gbsNativeRuntime?.require || win?.require;
+      const view=requireFn?.('@ember/-internals/views')?.getElementView?.(element);
+      const definition=view?.viewConfiguration;
+      return definition && Array.isArray(definition.widgets)?{element,definition}:null;
+    }catch(_){return null;}
+  }
+  function dashboardRecoveryAllowed(doc,definition) {
+    if(boardPageHidden(document) || doc.hidden || navigator.onLine===false || callCardDragging)return false;
+    const signal=currentLiveCallSignal();
+    if(signal && ['alerting','contacting','connected'].includes(signal.state))return false;
+    return !definition.isEditMode && !definition.isEditingWidget;
+  }
+  async function recoverNativeDashboard(doc) {
+    const now=Date.now();
+    let state=dashboardRecoveryStates.get(doc);
+    if(!state){state={lastAt:now,busy:false};dashboardRecoveryStates.set(doc,state);return;}
+    // Periodic reconciliation is independent of whether a count changed:
+    // an unchanged count can be legitimate and cannot prove a broken stream.
+    if(state.busy || now-state.lastAt<120000)return;
+    const native=nativeDashboardDefinition(doc);
+    if(!native || !dashboardRecoveryAllowed(doc,native.definition))return;
+    state.busy=true;state.lastAt=now;
+    const {definition,element}=native;
+    let refreshed=0,failed=0;
+    const stillActive=()=>element.isConnected && nativeDashboardDefinition(doc)?.definition===definition && dashboardRecoveryAllowed(doc,definition);
+    try {
+      if(typeof definition.rebuildStreamingSubscribers==='function')await definition.rebuildStreamingSubscribers();
+      // Reuse Genesys' configured filters, date ranges and composers. Do not
+      // reconstruct metrics or recreate widgets / reset user layout.
+      for(const widget of definition.widgets.slice(0,50)) {
+        if(!stillActive())break;
+        if(widget.isLoading || widget.isEditing)continue;
+        const builder=widget.componentBuilder;
+        if(typeof builder?.queryData!=='function' || typeof builder.updateDisplay!=='function')continue;
+        try {
+          await builder.queryData();
+          if(!stillActive())break;
+          builder.updateDisplay();
+          if(builder.errorResponse)failed++;else refreshed++;
+        }catch(_){failed++;}
+        await new Promise(resolve=>window.setTimeout(resolve,500));
+      }
+      performanceEvent('dashboard-native-reconciled',{refreshed,failed,durationMs:Date.now()-now});
+    }catch(error){performanceEvent('dashboard-native-recovery-failed',{reason:String(error.message).slice(0,100)});}
+    finally{state.busy=false;state.lastAt=Date.now();}
+  }
   function tick() {
     if (callCardDragging) return;
     if(boardPageHidden(document))return;
@@ -10517,7 +10569,7 @@ function fitDashboardMetricSpacing(doc) {
           MANAGED_DOCUMENTS.delete(doc);
           return;
         }
-        if (doc.defaultView?.document === doc) sortDocument(doc);
+        if (doc.defaultView?.document === doc) {sortDocument(doc);void recoverNativeDashboard(doc);}
         else MANAGED_DOCUMENTS.delete(doc);
       } catch (_) { MANAGED_DOCUMENTS.delete(doc); }
     });
