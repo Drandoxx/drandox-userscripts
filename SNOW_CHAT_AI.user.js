@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.830
+// @version      2.36.831
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.831","fixes":true,"changes":[{"key":"personal-sync-recovery","meaningful":true,"text":"Show a compact sync warning only after one minute of continuous failure, retry temporary failures every five seconds, refresh hourly and provide manual settings sync."}]},
 {"version":"2.36.830","fixes":true,"changes":[{"key":"proxy-compatible-installation-auth","meaningful":true,"text":"Retry confirmed missing-Authorization failures with the same installation credential in a dedicated HTTPS header, keeping account permissions and queued mutation IDs unchanged."}]},
 {"version":"2.36.829","fixes":true,"changes":[{"key":"connection-diagnostic-zip","meaningful":true,"text":"Download a safe one-click connection diagnostic ZIP comparing server header controls, browser and extension transports, Gemini access and environment details."}]},
 {"version":"2.36.828","fixes":true,"changes":[{"key":"gemini-error-details","meaningful":true,"text":"Show copyable safe Gemini failure details with request phase, HTTP/API reason, browser network state and timing without exposing keys or ticket content."}]},
@@ -347,17 +348,17 @@ const SnAISettingsSync=(()=>{
   emit(){this.onSettings(merge(merge(this.settings,this.inflight?.body.changes||{}),this.pending),{revision:this.revision,conflict:!!this.conflict});}
   async request(method,body){if(this.closed)throw Error('Settings sync closed');const token=await this.tokenProvider();if(!/^[a-f0-9]{64}$/.test(token))throw Error('Installation credential unavailable');return this.transport({url:root+'?bindingId='+encodeURIComponent(this.bindingId),method,headers:{Authorization:'Bearer '+token,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});}
   schedule(delay=this.debounceMs){if(this.closed)return;clearTimeout(this.timer);this.timer=setTimeout(()=>{this.timer=null;this.flush().catch(()=>this.failed());},delay);}
-  failed(delay){this.onStatus('offline');this.schedule(delay??this.retry+Math.floor(Math.random()*250));this.retry=Math.min(60000,this.retry*2);}
+  failed(delay){this.onStatus('offline');this.schedule(Math.max(5000,delay||0));}
   stopForAuth(status){this.authorizationBlocked=true;this.onStatus(status===401?'authentication-required':'access-unavailable');clearTimeout(this.timer);}
   async start(localSettings={}){
    this.localSeed=clone(localSettings);const saved=await this.storage.get(this.key);if(saved?.schema===1&&saved.bindingId===this.bindingId){this.settings=saved.settings||{};this.revision=saved.revision||0;this.pending=saved.pending||{};this.inflight=saved.inflight||null;this.conflict=saved.conflict||null;this.rejected=!!saved.rejected;}else this.settings=clone(localSettings);
    return this.initialize();
   }
   async initialize(){
-   this.authorizationBlocked=false;try{const r=await this.request('GET');if([401,403].includes(r.status)){this.stopForAuth(r.status);return false;}if(r.status!==200||!r.json?.ok){this.failed(r.status===429?Math.max(1000,(r.json?.retryAfter||60)*1000):undefined);return false;}
+   this.readRetry=true;this.authorizationBlocked=false;try{const r=await this.request('GET');if([401,403].includes(r.status)){this.stopForAuth(r.status);return false;}if(r.status!==200||!r.json?.ok){this.failed(r.status===429?Math.max(1000,(r.json?.retryAfter||60)*1000):undefined);return false;}
     const server=r.json;
     if(server.exists&&!this.inflight&&!this.conflict&&Object.keys(this.pending).length){const paths=conflicts(this.settings,server.settings,this.pending);if(paths.length)this.conflict={base:clone(this.settings),remote:clone(server.settings),paths};}
-    this.settings=clone(server.settings);this.revision=server.revision;this.initialized=true;this.retry=1000;
+    this.settings=clone(server.settings);this.revision=server.revision;this.initialized=true;this.readRetry=false;this.retry=1000;
     if(!server.exists&&!this.inflight&&!this.conflict){this.inflight={baseSettings:clone(server.settings),body:{schema:1,baseRevision:0,mutationId:crypto.randomUUID(),seedOnly:true,changes:merge(this.localSeed||{},this.pending)}};this.pending={};}
     await this.persist();this.emit();if(this.conflict){this.onStatus('conflict');this.onConflict({paths:this.conflict.paths,current:clone(this.settings),pending:clone(this.pending)});}else if(this.rejected)this.onStatus('rejected');else if(this.inflight||Object.keys(this.pending).length)this.schedule(0);else this.onStatus('saved');return true;
    }catch(error){this.failed();return false;}
@@ -366,7 +367,7 @@ const SnAISettingsSync=(()=>{
   async update(changes){if(!object(changes))throw Error('Settings patch must be an object');if(this.rejected&&this.inflight){const combined=combine(combine(this.inflight.body.changes,this.pending),changes),paths=conflicts(this.inflight.baseSettings,this.settings,combined);this.pending=combined;this.inflight=null;this.rejected=false;if(paths.length)this.conflict={remote:clone(this.settings),paths};}else this.pending=combine(this.pending,changes);await this.persist();this.emit();this.onStatus(this.conflict?'conflict':'pending');if(!this.conflict)this.schedule();}
   async resolveConflict(chosenChanges){if(!object(chosenChanges))throw Error('Settings patch must be an object');if(!this.conflict)throw Error('No settings conflict');this.pending=combine({},chosenChanges);this.conflict=null;this.inflight=null;this.rejected=false;await this.persist();this.emit();if(Object.keys(this.pending).length)this.schedule();else this.onStatus('saved');}
   async flush(){
-   if(this.closed||this.sending||this.conflict||this.authorizationBlocked||this.rejected)return;if(!this.initialized){await this.initialize();return;}if(!this.inflight&&!Object.keys(this.pending).length)return;
+   if(this.closed||this.sending||this.conflict||this.authorizationBlocked||this.rejected)return;if(!this.initialized||this.readRetry){await this.initialize();return;}if(!this.inflight&&!Object.keys(this.pending).length)return;
    const wait=2000-(Date.now()-this.lastAttempt);if(wait>0){this.schedule(wait);return;}this.sending=true;
    try{
     if(!this.inflight){this.inflight={baseSettings:clone(this.settings),body:{schema:1,baseRevision:this.revision,mutationId:crypto.randomUUID(),changes:clone(this.pending)}};this.pending={};}
@@ -538,7 +539,9 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
       await GM_setValue(ctx.cacheKey,settings);
     }finally{ctx.applying=false;}
   };
-  function show(next){status=next;render();}
+  function show(next){status=next;
+    if(context){if(next==='saved'){context.failureSince=0;context.safeError=null;}else if(['offline','authentication-required','access-unavailable','binding-revoked','rejected','ambiguous-identity','conflict'].includes(next)&&!context.failureSince)context.failureSince=Date.now();}
+    document.dispatchEvent(new CustomEvent('sn-ai-settings-sync-status',{detail:next}));render();}
   const journalKey=ctx=>'sn-ai-personal-settings-local-edits-v1:'+ctx.account;
   const readJournal=ctx=>{try{return JSON.parse(localStorage.getItem(journalKey(ctx))||'null');}catch{return null;}};
   const clearJournal=(ctx,token)=>{if(token&&readJournal(ctx)?.token===token)localStorage.removeItem(journalKey(ctx));};
@@ -548,22 +551,22 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
     if(!parent)return;
     if(!panel?.isConnected){
       panel=document.createElement('div');panel.id='sn-ai-personal-settings-status';
-      panel.style.cssText='display:flex;align-items:center;gap:5px;font:12px system-ui;flex:0 0 auto;color:inherit';
+      panel.style.cssText='position:fixed;top:4px;right:180px;z-index:2147483646;display:flex;align-items:center;gap:8px;height:32px;box-sizing:border-box;padding:3px 8px;border:1px solid var(--sn-theme-655573,#655573);border-radius:8px;background:var(--sn-theme-251f31,#251f31);font:12px system-ui;color:var(--sn-theme-e6edf9,#eee);max-width:calc(100vw - 200px);white-space:nowrap;overflow:hidden';
       const label=document.createElement('span');label.setAttribute('role','status');panel.append(label);
-      const retry=document.createElement('button');retry.type='button';retry.textContent='Retry';retry.dataset.syncRetry='';
-      retry.onclick=()=>{if(context?.sync)context.sync.resume();else if(context){context.binding=null;context.authorizationBlocked=false;connect(context);}else check();};panel.append(retry);
+      const retry=document.createElement('button');retry.type='button';retry.textContent='Copy Error';retry.dataset.syncRetry='';retry.style.cssText='border:0;border-radius:6px;padding:4px 9px;background:var(--sn-theme-655573,#655573);color:inherit;font:inherit;white-space:nowrap;cursor:pointer';
+      retry.onclick=async()=>{const detail=context?.safeError||{operation:'settings-sync',status};try{if(typeof GM_setClipboard==='function')GM_setClipboard(JSON.stringify(detail,null,2),'text');else await navigator.clipboard.writeText(JSON.stringify(detail,null,2));retry.textContent='Copied';setTimeout(()=>retry.textContent='Copy Error',2000);}catch{retry.textContent='Copy failed';}};panel.append(retry);
       for(const [text,keepLocal]of [['Keep my changes',true],['Use server settings',false]]){
         const button=document.createElement('button');button.type='button';button.textContent=text;button.dataset.syncConflict='';
         button.onclick=()=>{const ctx=context;if(ctx?.sync?.conflict&&valid(ctx))ctx.sync.resolveConflict(keepLocal?clone(ctx.sync.pending):{}).catch(()=>show('offline'));};panel.append(button);
       }
       parent.append(panel);
     }
-    panel.hidden=!snPersonalStatusVisible(status)&&!context?.safeError;panel.style.display=panel.hidden?'none':'flex';panel.style.flexWrap='wrap';snRenderServiceError(panel,context?.safeError);
+    panel.hidden=!(context?.failureSince&&Date.now()-context.failureSince>=60000)&&status!=='local-save-failed';panel.style.display=panel.hidden?'none':'flex';
     const labels={connecting:'Settings: connecting',saved:'Settings: saved',pending:'Settings: saving',saving:'Settings: saving',offline:'Settings: offline - saved locally',conflict:'Settings: conflict',
       'local-save-failed':'Settings: local save failed - keep this page open','ambiguous-identity':'Settings: identity conflict - local data kept','queue-reconciliation':'Settings: previous unsaved changes need reconciliation','access-unavailable':'Settings: access unavailable','binding-revoked':'Settings: access revoked','authentication-required':'Settings: access unavailable',rejected:'Settings: save rejected - kept locally','identity-required':'Settings: waiting for signed-in name and userID',standby:'Settings: synced by another tab','account-changed':'Settings: another account is active in this browser'};
-    panel.firstChild.textContent=labels[status]||'Settings: '+status;
+    panel.firstChild.textContent=status==='local-save-failed'?labels[status]:'Online sync failed - local settings working.';
     panel.title=context?.sync?.conflict?'Conflicting fields: '+context.sync.conflict.paths.join(', '):'Personal settings sync - '+(context?.userID||'');
-    panel.querySelector('[data-sync-retry]').hidden=!['offline','access-unavailable','authentication-required','rejected'].includes(status);
+    panel.querySelector('[data-sync-retry]').hidden=false;
     panel.querySelectorAll('[data-sync-conflict]').forEach(button=>button.hidden=status!=='conflict');
   }
   const changed=async()=>{
@@ -614,7 +617,7 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
     ctx.refreshTimer=setInterval(async()=>{
       if(!valid(ctx)||document.hidden||ctx.sync.sending||ctx.sync.inflight||Object.keys(ctx.sync.pending).length||ctx.sync.conflict||ctx.sync.authorizationBlocked)return;
       if(refreshing)return;refreshing=true;try{await ctx.sync.resume();await ctx.applyTail;}finally{refreshing=false;}
-    },60000);
+    },3600000);
   };
   const bindingRequest=(ctx,token)=>request('https://drandox.cc/wuwa/sn-ai-settings-bindings.php',token,'POST',{schema:2,userID:ctx.userID,fullName:ctx.name});
   function handleBindingFailure(ctx,result){
@@ -626,7 +629,7 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
       show(code==='binding_revoked'?'binding-revoked':'authentication-required');return;
     }
     if(result.status>=400&&result.status<500){ctx.authorizationBlocked=true;show('rejected');return;}
-    show('offline');ctx.retryAt=Date.now()+60000;
+    show('offline');ctx.retryAt=Date.now()+5000;
   }
   async function connect(ctx){
     if(!valid(ctx)||ctx.connecting||ctx.authorizationBlocked)return;ctx.connecting=true;
@@ -702,13 +705,25 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
     ctx.changeTail=(ctx.changeTail||Promise.resolve()).catch(()=>{}).then(()=>changed()).catch(()=>show('offline'));
   };
   document.addEventListener('sn-ai-personal-settings-change',dirty);
+  let manualBusy=false;
+  const manualSync=async()=>{
+    if(manualBusy)return;manualBusy=true;
+    try{const ctx=context;if(!ctx){await check();return;}if(!valid(ctx))return;
+      await ctx.changeTail;await changed();
+      if(ctx.sync){if(ctx.sync.sending)return;await ctx.sync.resume();await ctx.applyTail;if(ctx.sync.initialized&&!ctx.sync.readRetry&&!ctx.sync.conflict)await ctx.sync.flush();}
+      else if(!ctx.binding){ctx.authorizationBlocked=false;ctx.retryAt=0;await connect(ctx);}
+      else localStorage.setItem('sn-ai-personal-settings-manual',String(Date.now()));
+    }catch{show('offline');}finally{manualBusy=false;}
+  };
+  document.addEventListener('sn-ai-personal-settings-sync-now',manualSync);
   const storage=event=>{if(['snippets_manager_v1','snippets_manager_theme_v1','sn-ai-personal-settings-dirty'].includes(event.key))dirty();
+    if(event.key==='sn-ai-personal-settings-manual'&&context?.sync)manualSync();
     if(event.key==='sn-ai-personal-settings-state'){try{const next=JSON.parse(event.newValue);if(next.account===context?.account&&!context?.leader){show(next.status);if(next.status==='saved')notify();}}catch{}}
   };
   window.addEventListener('storage',storage);
   const modeListener=typeof GM_addValueChangeListener==='function'?GM_addValueChangeListener('local-sn-inspector-enabled-modes-v1',dirty):null;
   const timer=setInterval(()=>check().catch(()=>show('offline')),5000);check().catch(()=>show('offline'));
-  const dispose=()=>{stopped=true;onCredentialDetach();clearInterval(timer);context?.sync?.close();context?.release?.();clearInterval(context?.refreshTimer);document.removeEventListener('sn-ai-personal-settings-change',dirty);window.removeEventListener('storage',storage);if(modeListener!==null&&typeof GM_removeValueChangeListener==='function')GM_removeValueChangeListener(modeListener);panel?.remove();};
+  const dispose=()=>{stopped=true;onCredentialDetach();clearInterval(timer);context?.sync?.close();context?.release?.();clearInterval(context?.refreshTimer);document.removeEventListener('sn-ai-personal-settings-change',dirty);document.removeEventListener('sn-ai-personal-settings-sync-now',manualSync);window.removeEventListener('storage',storage);if(modeListener!==null&&typeof GM_removeValueChangeListener==='function')GM_removeValueChangeListener(modeListener);panel?.remove();};
   window.addEventListener('pagehide',dispose,{once:true});document.addEventListener('sn-ai-runtime-dispose',dispose,{once:true});
 }
 // Private credential state never enters the ordinary settings or diagnostic queues.
@@ -19881,6 +19896,9 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     installSnOfflineUpdaterUI(developerPanel);
     installSharedModeMessageEditor(developerPanel);
     installConnectionDiagnosticsUI(generalPanel);
+    const syncRow=document.createElement('div'),syncNow=document.createElement('button'),syncNote=document.createElement('div');syncRow.style.cssText='display:grid;gap:6px;margin:12px 0';syncNow.type='button';syncNow.style.cssText='display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;padding:7px 14px;border:0;border-radius:8px;background:linear-gradient(115deg,var(--sn-theme-9de2f5,#9de2f5),var(--sn-theme-ac94ec,#ac94ec));color:var(--sn-theme-14121c,#14121c);font:inherit;font-weight:600;cursor:pointer';syncNow.innerHTML='<svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.36-6.36L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.36 6.36L3 16"/><path d="M8 16H3v5"/></svg><span>Sync settings now</span>';syncNote.setAttribute('role','status');syncNote.style.cssText='font-size:12px';syncRow.append(syncNow,syncNote);generalPanel.append(syncRow);
+    syncNow.onclick=()=>{syncNote.textContent='Syncing settings…';document.dispatchEvent(new CustomEvent('sn-ai-personal-settings-sync-now'));};
+    const syncNotice=event=>{syncNote.textContent=({saved:'Settings synced.',offline:'Local settings are working. Retrying online sync…',pending:'Saving your changes…',saving:'Saving your changes…',conflict:'Settings conflict needs your choice.','access-unavailable':'Online access unavailable; local settings retained.','authentication-required':'Online access unavailable; local settings retained.'})[event.detail]||'';};document.addEventListener('sn-ai-settings-sync-status',syncNotice);document.addEventListener('sn-ai-runtime-dispose',()=>document.removeEventListener('sn-ai-settings-sync-status',syncNotice),{once:true});
     diagnosticStore();
     const fallbackStyle=document.createElement('style');fallbackStyle.textContent='[data-diagnostic-download-fallback][hidden]{display:none!important}';generalPanel.append(fallbackStyle);
     const settingsTabs = [...settingsDialog.querySelectorAll('[data-settings-tab]')];
