@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.859
+// @version      2.36.860
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.860","fixes":true,"changes":[{"key":"gemini-busy-retries","meaningful":true,"text":"Retry transient Gemini failures up to four times with exponential backoff, jitter, Retry-After support and protection against late responses."}]},
 {"version":"2.36.859","fixes":true,"changes":[]},
 {"version":"2.36.858","fixes":true,"changes":[{"key":"workspace-media","meaningful":false,"text":"Disable the native delete-dialog close tooltip while preserving its accessible label and working close action."}]},
 {"version":"2.36.857","fixes":true,"changes":[{"key":"workspace-media","meaningful":true,"text":"Open native attachment delete confirmation directly from its ready action and clear initial focus from the actual hoisted dialog."}]},
@@ -12595,7 +12596,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const controller=new AbortController();
     Promise.resolve().then(()=>fetch(options.url,{method:options.method,headers:options.headers,body:options.data,credentials:'omit',cache:'no-store',redirect:'error',signal:controller.signal})).then(async response=>{
       options.onreadystatechange?.({readyState:2,status:response.status});
-      const responseText=await response.text();options.onload({status:response.status,responseText});
+      const responseText=await response.text();options.onload({status:response.status,responseText,retryAfter:response.headers.get('Retry-After')});
     }).catch(error=>{if(error?.name==='AbortError')options.onabort?.();else options.onerror?.({browserErrorName:['TypeError','NetworkError','SecurityError'].includes(error?.name)?error.name:'Error'});});
     return {abort:()=>controller.abort()};
   }
@@ -12613,8 +12614,9 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     if (typeof fetch !== 'function' && typeof GM_xmlhttpRequest !== 'function') preflight('No Gemini HTTPS transport is available. Update your browser and SN AI.');
     const sendRequest=typeof fetch==='function'?requestGeminiFetch:GM_xmlhttpRequest;
     const timeoutMs = 20000;
-    let handle, rejectPending, settled = false, deadlineTimer, retryTimer, retryCount=0, readyState = 0;
-    const busy=(value)=>{if(typeof document!=='undefined'&&typeof CustomEvent==='function')document.dispatchEvent(new CustomEvent('sn-ai-gemini-busy',{detail:{jobId,ims,mode:promptMode||mode,busy:value,retry:retryCount,maxRetries:10}}));};
+    let handle, rejectPending, settled = false, deadlineTimer, retryTimer, retryCount=0, readyState = 0, attemptId=0, attemptStartedAt=startedAt;
+    const maxRetries=4;
+    const busy=(value)=>{if(typeof document!=='undefined'&&typeof CustomEvent==='function')document.dispatchEvent(new CustomEvent('sn-ai-gemini-busy',{detail:{jobId,ims,mode:promptMode||mode,busy:value,retry:retryCount,maxRetries}}));};
     const stop = () => { if (!settled) { settled = true; clearTimeout(deadlineTimer);clearTimeout(retryTimer);busy(false); log('info', 'cancelled', { code: 'AI_STOPPED' }); rejectPending(Object.assign(new Error('AI request stopped.'), { code: 'AI_STOPPED' })); } };
     const promise = new Promise((resolve, reject) => {
       rejectPending = reject;
@@ -12622,29 +12624,34 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         settled=true;clearTimeout(deadlineTimer);clearTimeout(retryTimer);busy(false);
         const message=String(error?.message||error).split(apiKey).join('[redacted]');
         const safe={timestamp:new Date().toISOString(),jobId,model,operation:connectionOnly?'model-access-check':mode==='FEEDBACK'?'feedback':'ticket-generation',transport:typeof fetch==='function'?'browser-fetch':'userscript-request',endpoint:'/v1beta/models/'+model+(connectionOnly?'':':generateContent'),durationMs:Date.now()-startedAt,phase:readyState>=2?'reading-response':'waiting-for-response',httpStatus:Number(details.status)||0,code:details.code||'UNKNOWN',...(details.apiReason?{apiReason:details.apiReason}:{}),...(details.browserErrorName?{browserErrorName:details.browserErrorName}:{}),...(typeof navigator!=='undefined'?{browserOnline:navigator.onLine!==false}:{}),...(typeof document!=='undefined'?{pageVisibility:document.visibilityState==='hidden'?'hidden':'visible'}:{})};
+        Object.assign(safe,{attempts:retryCount+1,maxAttempts:maxRetries+1,attemptDurationMs:Date.now()-attemptStartedAt,responseHeadersReceived:readyState>=2,requestChars:data?.length||0});
+        for(const key of ['finishReason','blockReason'])if(safeEnum(details[key]))safe[key]=safeEnum(details[key]);
+        if(details.safetyRatings)safe.safetyRatings=details.safetyRatings;
+        if(details.tokenCounts)safe.tokenCounts=details.tokenCounts;
         state.geminiLastError=safe;log('error','failed',{message,...safe,...details});
         if(typeof document!=='undefined'&&typeof CustomEvent==='function')document.dispatchEvent(new CustomEvent('sn-ai-gemini-error',{detail:safe}));
         const failure=error instanceof Error?error:new Error(message);failure.message=message+'\nGemini error details: '+JSON.stringify(safe);failure.safeDetails=safe;reject(failure);
       } };
       const data = connectionOnly ? undefined : JSON.stringify({ systemInstruction: { parts: [{ text: instructions }] }, contents: [{ role: 'user', parts: [{ text: JSON.stringify(input) }] }], generationConfig: { responseMimeType: 'application/json', responseJsonSchema: schema, thinkingConfig:{thinkingLevel:'minimal'} } });
       log('info', 'request-started', { length: data?.length||0, phase:connectionOnly?'model-access-check':'ticket-generation', source:typeof fetch==='function'?'browser-fetch':'userscript-request' });
-      const sendAttempt=()=>{if(settled)return;readyState=0;
-      deadlineTimer=setTimeout(()=>{if(settled)return;fail('Gemini did not finish within 20 seconds. No ticket data was applied. Retry manually after checking the connection and Google service status.',{status:0,code:'CALLBACK_DEADLINE',phase:readyState>=2?'response-started':'waiting-for-response',timeoutMs});try{handle?.abort?.();}catch{}},timeoutMs);
+      const retry=(details={})=>{if(settled||retryCount>=maxRetries)return false;clearTimeout(deadlineTimer);attemptId++;retryCount++;const raw=String(details.retryAfter||'').trim(),serverDelay=/^\d+(\.\d+)?$/.test(raw)?Number(raw)*1000:raw?Math.max(0,Date.parse(raw)-Date.now()):0;const delayMs=Math.max(Math.min(60000,1000*2**(retryCount-1))*(.8+Math.random()*.4),Number.isFinite(serverDelay)?serverDelay:0);busy(true);log('warn','transient-retry-scheduled',{status:details.status||0,code:details.code||'TRANSIENT',retry:retryCount,maxRetries,delayMs:Math.round(delayMs)});retryTimer=setTimeout(()=>{retryTimer=null;sendAttempt();},delayMs);return true;};
+      const sendAttempt=()=>{if(settled)return;readyState=0;attemptStartedAt=Date.now();const attempt=++attemptId;const current=()=>!settled&&attempt===attemptId;
+      deadlineTimer=setTimeout(()=>{if(!current())return;const oldHandle=handle;if(!retry({code:'CALLBACK_DEADLINE'}))fail('Gemini did not finish after the initial attempt and four retries. No ticket data was applied. Check the connection or try again later.',{status:0,code:'CALLBACK_DEADLINE',timeoutMs});try{oldHandle?.abort?.();}catch{}},timeoutMs);
       try { handle = sendRequest({
         method: connectionOnly ? 'GET' : 'POST', anonymous: true,
         url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}${connectionOnly?'':':generateContent'}`,
         headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
         data,
         timeout: timeoutMs,
-        onreadystatechange(response) { if(settled)return;readyState=Number(response.readyState)||0;if(readyState===2)log('info','response-started',{status:Number(response.status)||0}); },
+        onreadystatechange(response) { if(!current())return;readyState=Number(response.readyState)||0;if(readyState===2)log('info','response-started',{status:Number(response.status)||0}); },
         onload(response) {
-          if (settled) return;
+          if (!current()) return;
           const status = Number(response.status);
           if (status < 200 || status >= 300) {
-            const hint = status === 503 && retryCount>=10 ? 'Gemini is still busy after 10 retries. Try again later.' : status === 429 ? 'Quota or rate limit reached. Wait before retrying and check your Google project quota.' : status === 401 || status === 403 ? 'Check the API key, project permissions, billing and regional availability.' : status === 404 ? 'This model is unavailable for your project. Choose another model.' : status === 400 ? 'Google rejected the request. Check model support and project configuration.' : 'Check your connection or try again later.';
+            const hint = retryCount>=maxRetries ? 'Gemini is still unavailable after four retries. Try again later.' : status === 429 ? 'Quota or rate limit reached. Wait before retrying and check your Google project quota.' : status === 401 || status === 403 ? 'Check the API key, project permissions, billing and regional availability.' : status === 404 ? 'This model is unavailable for your project. Choose another model.' : status === 400 ? 'Google rejected the request. Check model support and project configuration.' : 'Check your connection or try again later.';
             let code = '',apiReason='';
             try { const error=JSON.parse(response.responseText || '{}')?.error;code=safeEnum(error?.status);apiReason=safeEnum(error?.details?.find(detail=>detail?.['@type']==='type.googleapis.com/google.rpc.ErrorInfo')?.reason); } catch { /* Never record raw error bodies or headers. */ }
-            if(status===503&&!connectionOnly&&retryCount<10){clearTimeout(deadlineTimer);retryCount++;busy(true);log('warn','busy-retry-scheduled',{status,code:code||'UNAVAILABLE',retry:retryCount,maxRetries:10,delayMs:2000});retryTimer=setTimeout(()=>{retryTimer=null;sendAttempt();},2000);return;}
+            if((status===408||status===429||status>=500&&status<=599)&&retry({status,code:code||'HTTP_ERROR',retryAfter:response.retryAfter}))return;
             fail(`Gemini API HTTP ${status}. ${hint}`, { status, code: code || 'HTTP_ERROR',apiReason }); return;
           }
           busy(false);
@@ -12656,7 +12663,12 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             }
             const candidate = body.candidates?.[0];
             const finishReason = safeEnum(candidate?.finishReason), blockReason = safeEnum(body.promptFeedback?.blockReason);
-            if (body.promptFeedback?.blockReason || (candidate?.finishReason && candidate.finishReason !== 'STOP')) { fail('Gemini did not complete the response. It may have been blocked or reached its output limit. No ticket data was applied.', { status, code: 'INCOMPLETE_RESPONSE', finishReason, blockReason }); return; }
+            if (body.promptFeedback?.blockReason || (candidate?.finishReason && candidate.finishReason !== 'STOP')) {
+              const safetyRatings=[...(body.promptFeedback?.safetyRatings||[]),...(candidate?.safetyRatings||[])].slice(0,20).map(item=>({category:safeEnum(item.category),probability:safeEnum(item.probability),blocked:item.blocked===true}));
+              const tokenCounts={};for(const key of ['promptTokenCount','candidatesTokenCount','thoughtsTokenCount','totalTokenCount'])if(Number.isSafeInteger(body.usageMetadata?.[key])&&body.usageMetadata[key]>=0)tokenCounts[key]=body.usageMetadata[key];
+              const explanation=blockReason?'Google blocked the prompt ('+blockReason+'). Review the case text and safety categories.':finishReason==='MAX_TOKENS'?'Google reached the output token limit.':finishReason==='SAFETY'?'Google stopped the response for safety reasons.':finishReason==='RECITATION'?'Google stopped the response because of recitation filtering.':'Google stopped the response ('+finishReason+').';
+              fail(explanation+' No ticket data was applied. No automatic retry was sent for this response.', { status, code: blockReason?'PROMPT_BLOCKED':'INCOMPLETE_RESPONSE', finishReason, blockReason,safetyRatings,tokenCounts }); return;
+            }
             const text = (candidate?.content?.parts || []).filter(part => !part.thought && typeof part.text === 'string').map(part => part.text).join('');
             if (!text.trim()) throw new Error('Gemini returned no usable text. No ticket data was applied.');
             let parsed;
@@ -12668,9 +12680,9 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             settled = true; clearTimeout(deadlineTimer); resolve(result);
           } catch (error) { fail(error, { status, code: Object.prototype.hasOwnProperty.call(error || {}, 'aiResponse') ? 'VALIDATION_ERROR' : 'INVALID_RESPONSE' }); }
         },
-        onerror: response => fail('Gemini API network error. The browser cannot distinguish a proxy, DNS/TLS, CORS or connection block here. Check access to generativelanguage.googleapis.com.', { status: 0, code: 'NETWORK_ERROR',browserErrorName:['TypeError','NetworkError','SecurityError'].includes(response?.browserErrorName)?response.browserErrorName:'Error' }),
-        ontimeout: () => fail(`Gemini API timed out after ${timeoutMs/1000} seconds. No automatic retry was sent.`, { status: 0, code: 'TIMEOUT', timeoutMs }),
-        onabort: stop,
+        onerror: response => {if(!current()||retry({code:'NETWORK_ERROR'}))return;fail('Gemini API network error after four retries. Check access to generativelanguage.googleapis.com.', { status: 0, code: 'NETWORK_ERROR',browserErrorName:['TypeError','NetworkError','SecurityError'].includes(response?.browserErrorName)?response.browserErrorName:'Error' });},
+        ontimeout: () => {if(!current()||retry({code:'TIMEOUT'}))return;fail('Gemini API timed out after four retries. No ticket data was applied.', { status: 0, code: 'TIMEOUT', timeoutMs });},
+        onabort: () => {if(current())stop();},
       }); } catch { fail('Gemini API request could not start. Check Tampermonkey permissions.', { status: 0, code: 'REQUEST_START_FAILED' }); }
       };sendAttempt();
     });
