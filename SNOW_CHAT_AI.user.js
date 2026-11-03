@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.847
+// @version      2.36.848
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.848","fixes":true,"changes":[{"key":"workspace-media","meaningful":true,"text":"Keep media features active after startup cleanup, handle delayed attachment content and use full-width cards with equal side padding."}]},
 {"version":"2.36.847","fixes":true,"changes":[{"key":"workspace-media","meaningful":true,"text":"Activate attachment cards, chat image galleries and custom dropzones reliably across Workspace shadow roots."}]},
 {"version":"2.36.846","fixes":true,"changes":[{"key":"workspace-media","meaningful":true,"text":"Use clean drop indicators, square attachment cards, a zoomable gallery with thumbnail navigation and Add to ticket with duplicate protection."},{"key":"chat-image-paste","meaningful":true,"text":"Send screenshot batches in the background with Send and Enter locked, while preparing the next text and images separately."}]},
 {"version":"2.36.845","fixes":true,"changes":[{"key":"gemini-busy-retries","meaningful":true,"text":"Keep ticket requests loading during temporary Gemini 503 errors, retry up to ten times at two-second intervals and show a temporary busy notice."}]},
@@ -1568,7 +1569,7 @@ function installWorkspaceMedia(options={}){
       'sn-agent-chat':'.sn-chat-dragdrop-overlay{display:none!important;visibility:hidden!important;pointer-events:none!important}',
       'sn-connect-conversation':'.sn-attachments--drop,.sn-attachments--drop--target{display:none!important;pointer-events:none!important}',
       'sn-form-internal-attachment-overlay':':host{display:none!important;pointer-events:none!important}',
-      'sn-form-internal-attachments-list':'.sn-attachment-select-all,.sn-card>now-checkbox{display:none!important}.sn-card{display:block!important;width:100%!important;padding:0!important;margin:10px 0!important}.sn-card-list{padding:0!important}.sn-attachment-list-wrapper{padding:0 10px!important;box-sizing:border-box!important}now-record-common-attachment-card{display:block!important;width:100%!important}'
+      'sn-form-internal-attachments-list':':host{display:block!important;width:100%!important;min-width:0!important}.sn-panel-body,.sn-attachment-list-wrapper{width:100%!important;max-width:none!important;min-width:0!important;box-sizing:border-box!important}.sn-panel-body{padding-left:0!important;padding-right:0!important}.sn-attachment-select-all,.sn-card>now-checkbox{display:none!important}.sn-card{display:block!important;width:100%!important;max-width:none!important;box-sizing:border-box!important;padding:0!important;margin:10px 0!important}.sn-card-list{width:100%!important;max-width:none!important;margin:0!important;padding:0!important;box-sizing:border-box!important}.sn-attachment-list-wrapper.sn-attachment-list-wrapper.sn-attachment-list-wrapper{padding:0 10px!important}now-record-common-attachment-card{display:block!important;width:100%!important;min-width:0!important;max-width:none!important;margin:0!important}'
   };
   const discover=node=>{
     for(const [root,observer]of listObservers)if(!root.host.isConnected){observer.disconnect();listObservers.delete(root);}
@@ -10189,7 +10190,7 @@ function startSNAI(tabIdentity) {
     finally{memorySampling=false;}
   },60000):0;
   window.addEventListener('pagehide',()=>{memoryStopped=true;clearInterval(memoryTimer);},{once:true});
-  for(const [name,install] of workspacePage?[['ci',installCISearch],['reference-search',installWorkspaceReferenceSearch],['media',installWorkspaceMedia]]:/^\/(?:incident|new_call)\.do$/i.test(location.pathname)?[['classic-ci',installClassicCISearch]]:[]){try{install();}catch(failure){recordCompactDiagnostic('warn','workspace-enhancement-start-failed',{feature:name,reason:String(failure?.message||failure).slice(0,200)});}}
+  for(const [name,install] of workspacePage?[['ci',installCISearch],['reference-search',installWorkspaceReferenceSearch]]:/^\/(?:incident|new_call)\.do$/i.test(location.pathname)?[['classic-ci',installClassicCISearch]]:[]){try{install();}catch(failure){recordCompactDiagnostic('warn','workspace-enhancement-start-failed',{feature:name,reason:String(failure?.message||failure).slice(0,200)});}}
   document.addEventListener('sn-ai-media-error',event=>{showChatImagePasteHint(event.detail?.message||'The attachment action could not finish.');recordCompactDiagnostic('warn','workspace-media-error',{message:event.detail?.message||'media_action_failed'});});
   document.addEventListener('sn-ai-reference-search-error',event=>recordCompactDiagnostic('warn','workspace-reference-search-fallback',event.detail||{}));
   if(snPersonalApprovedPage())setTimeout(()=>installPersonalSettingsSync({
@@ -23814,6 +23815,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   // Form/route observation remains lightweight. Chat DOM is never observed or
   // scanned in the background; AI launchers perform one on-demand read.
   document.dispatchEvent(new CustomEvent('sn-ai-runtime-dispose'));
+  // Install only after disposing the previous runtime, never before our own cleanup.
+  if(workspacePage)try{installWorkspaceMedia();}catch(failure){recordCompactDiagnostic('warn','workspace-enhancement-start-failed',{feature:'media',reason:String(failure?.message||failure).slice(0,200)});}
   if (workspacePage) {
     const reportingTimer = setInterval(fillVisibleReportingUserFromName, 1500);
     const rememberReportingEdit = event => {
