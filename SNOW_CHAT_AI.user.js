@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.835
+// @version      2.36.836
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.836","fixes":true,"changes":[]},
 {"version":"2.36.835","fixes":true,"changes":[]},
 {"version":"2.36.834","fixes":true,"changes":[]},
 {"version":"2.36.833","fixes":true,"changes":[{"key":"ai-settings-gemini-first","meaningful":true,"text":"Simplify AI settings around Gemini API status and private key editing, with an automatic access check, setup guide and explicitly confirmed healthy companion fallback."},{"key":"ai-response-preview","meaningful":true,"text":"Remove the live AI response preview from the released script; a recovery copy is archived locally."}]},
@@ -18977,7 +18978,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
                 <details><summary>Set up Gemini API</summary><ol><li>Open <a href="https://aistudio.google.com/api-keys" target="_blank" rel="noopener noreferrer">Google AI Studio API keys</a> and create a key in your approved Google project.</li><li>Select Gemini API above, choose a model, paste your key below and click Save. Save your own key once; it loads automatically on your other authorized devices. No local server or companion is needed.</li><li>Click Check API connection. This checks your key and model access without generating an answer or sending ticket data.</li></ol><div class="local-sn-settings-note">Free access and quotas depend on your project and region. For clients made available in the EEA, UK or Switzerland, Google's terms require Paid Services. Check <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener noreferrer">Google's terms</a> and your employer's policy first. Never share your key or paste it into a chat.</div></details><button class="secondary" type="button" data-action="check-gemini-api">Check API connection</button><div data-gemini-api-status role="status" aria-live="polite"></div>
                 <div data-gemini-sync-status role="status" aria-live="polite"></div><div data-gemini-sync-actions hidden><button type="button" data-gemini-sync-retry>Retry sync</button><button type="button" data-gemini-sync-local hidden>Keep my local change</button><button type="button" data-gemini-sync-remote hidden>Use server key</button></div><div data-ai-key-editor>
                   <label for="local-sn-ai-key-input">Gemini API key</label>
-                  <div class="local-sn-settings-key-row"><input id="local-sn-ai-key-input" aria-label="Gemini API key" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your Gemini API key"/><button class="secondary local-sn-icon-button" type="button" data-action="open-gemini-api-keys" aria-label="Open Gemini API keys" title="Open Gemini API keys"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/><path d="m21 3-9 9"/><path d="M15 3h6v6"/></svg></button><button type="button" data-action="save-ai-key">Save</button><button class="danger local-sn-icon-button" type="button" data-action="cancel-ai-key-edit" aria-label="Cancel API key edit">×</button></div>
+                  <div class="local-sn-settings-key-row"><input id="local-sn-ai-key-input" aria-label="Gemini API key" type="text" autocomplete="off" spellcheck="false" placeholder="Paste your Gemini API key"/><button class="secondary local-sn-icon-button" type="button" data-action="open-gemini-api-keys" aria-label="Open Gemini API keys" title="Open Gemini API keys"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/><path d="m21 3-9 9"/><path d="M15 3h6v6"/></svg></button><button type="button" data-action="save-ai-key">Save</button><button class="danger local-sn-icon-button" type="button" data-action="cancel-ai-key-edit" aria-label="Cancel API key edit">×</button></div>
                 </div>
                 <div class="local-sn-key-saved" data-ai-key-saved hidden><span>API key saved securely</span><button class="secondary local-sn-icon-button" type="button" data-action="edit-ai-key" aria-label="Edit API key"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></svg></button><button class="danger local-sn-icon-button" type="button" data-action="ask-delete-ai-key" aria-label="Delete API key">×</button></div>
                 <div class="local-sn-confirm-box" data-ai-delete-confirm hidden><div>Do you really want to remove your API from SN AI ?</div><div class="local-sn-cpc-actions"><button class="secondary" type="button" data-action="cancel-delete-ai-key">Cancel</button><button class="danger" type="button" data-action="delete-ai-key">Remove</button></div></div>
@@ -19869,7 +19870,9 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     for(const node of [...aiAPISettings.children])if(!node.matches('[data-ai-key-editor],[data-ai-key-saved],[data-ai-delete-confirm]')){if(node.matches('[data-gemini-sync-status],[data-gemini-sync-actions]'))developerPanel.append(node);else node.hidden=true;}
     aiStatusCard.append(statusText,checkButton);aiAPISettings.prepend(aiStatusCard);
     const apiKeyLabel=document.createElement('div');apiKeyLabel.textContent='API key';apiKeyLabel.style.cssText='font-size:13px;font-weight:650;margin:14px 0 6px';aiStatusCard.after(apiKeyLabel);
-    const maskedKey=document.createElement('input');maskedKey.type='password';maskedKey.readOnly=true;maskedKey.value='••••••••••••••••••••••••';maskedKey.setAttribute('aria-label','Saved Gemini API key');maskedKey.title='Use Edit to view or change your saved key';aiKeySaved.querySelector('span')?.replaceWith(maskedKey);
+    const maskedKey=document.createElement('input');maskedKey.type='text';maskedKey.readOnly=true;maskedKey.autocomplete='off';maskedKey.value='••••••••••••••••••••••••';maskedKey.setAttribute('aria-label','Saved Gemini API key');maskedKey.title='Use Edit to view or change your saved key';aiKeySaved.querySelector('span')?.replaceWith(maskedKey);
+    aiKeyInput.type='text';aiKeyInput.autocomplete='off';aiKeyInput.setAttribute('autocapitalize','off');aiKeyInput.setAttribute('data-lpignore','true');aiKeyInput.setAttribute('data-1p-ignore','true');
+    const settingsClose=settingsDialog.querySelector('[data-action="close-ai-settings"]');settingsClose.innerHTML='<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 6-12 12M6 6l12 12"/></svg>';settingsClose.style.setProperty('display','grid','important');settingsClose.style.setProperty('place-items','center','important');settingsClose.style.setProperty('padding','0','important');
     const keyLabel=aiKeyEditor.querySelector('label');if(keyLabel)keyLabel.hidden=true;
     settingsDialog.querySelector('[data-action="open-gemini-api-keys"]').hidden=true;
     const saveKeyButton=settingsDialog.querySelector('[data-action="save-ai-key"]');saveKeyButton.setAttribute('aria-label','Save API key');saveKeyButton.title='Save API key';saveKeyButton.innerHTML='<svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg>';
@@ -20584,7 +20587,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       }
       try {
         await geminiCredentials.stage('PUT',apiKey);
-        state.ai.keySaved = true;keyEditing=false;aiKeyInput.type='password';
+        state.ai.keySaved = true;keyEditing=false;aiKeyInput.value='';
         aiSettingsError.textContent = '';
         syncAISettingsUI();
         addLog('info', 'ai-key-saved', { stored: true });
@@ -20606,7 +20609,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     settingsDialog.querySelector('[data-action="cancel-ai-key-edit"]').addEventListener('click', () => {
       aiKeyInput.value = '';
       aiSettingsError.textContent = '';
-      keyEditing=false;aiKeyInput.type='password';syncAISettingsUI();
+      keyEditing=false;syncAISettingsUI();
     });
     settingsDialog.querySelector('[data-action="ask-delete-ai-key"]').addEventListener('click', () => {
       aiDeleteConfirm.hidden = false;
