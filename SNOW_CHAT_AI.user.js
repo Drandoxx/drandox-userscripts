@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.833
+// @version      2.36.834
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.834","fixes":true,"changes":[]},
 {"version":"2.36.833","fixes":true,"changes":[{"key":"ai-settings-gemini-first","meaningful":true,"text":"Simplify AI settings around Gemini API status and private key editing, with an automatic access check, setup guide and explicitly confirmed healthy companion fallback."},{"key":"ai-response-preview","meaningful":true,"text":"Remove the live AI response preview from the released script; a recovery copy is archived locally."}]},
 {"version":"2.36.832","fixes":true,"changes":[{"key":"offline-snow-reference-updater","meaningful":true,"text":"Coordinate manual Offline SNOW updates with the shared daily updater lock, progress and successful publication history."}]},
 {"version":"2.36.831","fixes":true,"changes":[{"key":"personal-sync-recovery","meaningful":true,"text":"Show a compact sync warning only after one minute of continuous failure, retry temporary failures every five seconds, refresh hourly and provide manual settings sync."}]},
@@ -19865,6 +19866,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     // Keep only status, key controls and the setup guide in the AI panel.
     for(const node of [...aiAPISettings.children])if(!node.matches('[data-ai-key-editor],[data-ai-key-saved],[data-ai-delete-confirm]')){if(node.matches('[data-gemini-sync-status],[data-gemini-sync-actions]'))developerPanel.append(node);else node.hidden=true;}
     aiStatusCard.append(statusText,checkButton);aiAPISettings.prepend(aiStatusCard);
+    const apiKeyLabel=document.createElement('div');apiKeyLabel.textContent='API key';apiKeyLabel.style.cssText='font-size:13px;font-weight:650;margin:14px 0 6px';aiStatusCard.after(apiKeyLabel);
     const maskedKey=document.createElement('input');maskedKey.type='password';maskedKey.readOnly=true;maskedKey.value='••••••••••••••••••••••••';maskedKey.setAttribute('aria-label','Saved Gemini API key');maskedKey.title='Use Edit to view or change your saved key';aiKeySaved.querySelector('span')?.replaceWith(maskedKey);
     const keyLabel=aiKeyEditor.querySelector('label');if(keyLabel)keyLabel.hidden=true;
     settingsDialog.querySelector('[data-action="open-gemini-api-keys"]').hidden=true;
@@ -19895,13 +19897,17 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     function openGeminiSetupGuide(){
       if(document.getElementById('sn-ai-gemini-setup-guide'))return;
       const overlay=document.createElement('div');overlay.id='sn-ai-gemini-setup-guide';overlay.style.cssText='position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;padding:18px;background:#0008';
-      const dialog=document.createElement('section');dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');dialog.setAttribute('aria-label','Gemini API setup guide');dialog.style.cssText='width:min(720px,100%);max-height:85vh;overflow:auto;border:1px solid var(--sn-theme-655573,#655573);border-radius:12px;padding:20px;background:var(--sn-theme-251f31,#251f31);color:var(--sn-theme-e6edf9,#eee);font:14px/1.5 system-ui';
-      const heading=document.createElement('h2');heading.textContent='Set up Gemini API';heading.style.marginTop='0';const close=document.createElement('button');close.type='button';close.textContent='Close';close.style.float='right';close.onclick=()=>{overlay.remove();setupButton.focus();};dialog.append(close,heading);
+      overlay.style.pointerEvents='auto';
+      const card=document.createElement('section');card.className='local-sn-cpc-card local-sn-settings-card';card.setAttribute('role','dialog');card.setAttribute('aria-modal','true');card.setAttribute('aria-label','Gemini API setup guide');card.style.cssText='width:min(720px,100%);max-height:85vh;border-color:var(--sn-theme-65538f,#65538f);background:var(--sn-theme-1c1827,#1c1827);font:14px/1.5 system-ui';
+      const header=document.createElement('div');header.className='local-sn-cpc-drag';header.style.cursor='default';
+      const heading=document.createElement('h2');heading.textContent='Set up Gemini API';
+      const close=document.createElement('button');close.type='button';close.className='local-sn-cpc-close';close.setAttribute('aria-label','Close setup guide');close.innerHTML='<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m18 6-12 12M6 6l12 12"/></svg>';close.onclick=()=>{overlay.remove();setupButton.focus();};header.append(heading,close);
+      const dialog=document.createElement('div');dialog.className='local-sn-cpc-content local-sn-settings-content';dialog.style.cssText='overflow:auto;min-height:0;padding:20px';card.append(header,dialog);
       const introduction=document.createElement('p');introduction.textContent='Use a company-approved Google project. Google availability, quotas and billing rules depend on the project and region. Never share your API key. This checks key/model access, not remaining generation quota.';dialog.append(introduction);
       const link=document.createElement('a');link.href='https://aistudio.google.com/api-keys';link.target='_blank';link.rel='noopener noreferrer';link.textContent='Open Google AI Studio API keys';dialog.append(link);
       const steps=['Click Create API key.','Name the key (for example Gemini API Key), open Choose an imported project, then click Create project.','Name the project ServiceNOW and click Create project.','Select the ServiceNOW project and click Create key.','Copy the API key using the copy icon beside API Key or Copy key. Return to SN AI, click Edit, paste the key and press the tick to save.'];
       steps.forEach((text,index)=>{const section=document.createElement('section'),title=document.createElement('h3');title.textContent=(index+1)+'. '+text;title.style.fontSize='14px';const image=document.createElement('img');image.src=SN_GEMINI_SETUP_IMAGES[index];image.alt='Google AI Studio setup step '+(index+1);image.style.cssText='display:block;max-width:100%;max-height:440px;object-fit:contain;border-radius:8px';section.append(title,image);dialog.append(section);});
-      overlay.append(dialog);document.body.append(overlay);overlay.onclick=event=>{if(event.target===overlay)close.click();};overlay.addEventListener('keydown',event=>{if(event.key==='Escape')close.click();if(event.key==='Tab'){const controls=[close,link],first=controls[0],last=controls.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}});close.focus();
+      overlay.append(card);settingsDialog.append(overlay);overlay.onclick=event=>{if(event.target===overlay)close.click();};overlay.addEventListener('keydown',event=>{event.stopPropagation();if(event.key==='Escape'){event.preventDefault();close.click();}if(event.key==='Tab'){const controls=[close,link],first=controls[0],last=controls.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}});close.focus();
     }
 
     const actionButtonByColourName = Object.freeze({ CPC: cpcAction, ILS_PRNT: ilsPrntAction, DESCRIPTION: descriptionAction, COM_PLUS: comPlusAction, FTF: ftfAction, HP: hpAction, STACK: stackAction, HP_STACK: hpStackAction, CMD: cmdActionButton });
