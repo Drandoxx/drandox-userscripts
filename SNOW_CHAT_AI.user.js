@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.844
+// @version      2.36.845
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.845","fixes":true,"changes":[{"key":"gemini-busy-retries","meaningful":true,"text":"Keep ticket requests loading during temporary Gemini 503 errors, retry up to ten times at two-second intervals and show a temporary busy notice."}]},
 {"version":"2.36.844","fixes":true,"changes":[{"key":"workspace-reference-search","meaningful":true,"text":"Search matrix codes and English titles with code-first ranking, show titles beneath options, and find templates by words in any order without an asterisk."}]},
 {"version":"2.36.843","fixes":true,"changes":[{"key":"chat-image-paste","meaningful":true,"text":"Drag images into chat to queue removable previews, just like paste, without immediate sending or the native shaded drop overlay."}]},
 {"version":"2.36.842","fixes":true,"changes":[{"key":"classic-gemini","meaningful":true,"text":"Keep Gemini API active on classic SNOW forms and restrict companion fallback offers to Workspace chat pages."}]},
@@ -12374,12 +12375,13 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     if (typeof fetch !== 'function' && typeof GM_xmlhttpRequest !== 'function') preflight('No Gemini HTTPS transport is available. Update your browser and SN AI.');
     const sendRequest=typeof fetch==='function'?requestGeminiFetch:GM_xmlhttpRequest;
     const timeoutMs = 20000;
-    let handle, rejectPending, settled = false, deadlineTimer, readyState = 0;
-    const stop = () => { if (!settled) { settled = true; clearTimeout(deadlineTimer); log('info', 'cancelled', { code: 'AI_STOPPED' }); rejectPending(Object.assign(new Error('AI request stopped.'), { code: 'AI_STOPPED' })); } };
+    let handle, rejectPending, settled = false, deadlineTimer, retryTimer, retryCount=0, readyState = 0;
+    const busy=(value)=>{if(typeof document!=='undefined'&&typeof CustomEvent==='function')document.dispatchEvent(new CustomEvent('sn-ai-gemini-busy',{detail:{jobId,ims,mode:promptMode||mode,busy:value,retry:retryCount,maxRetries:10}}));};
+    const stop = () => { if (!settled) { settled = true; clearTimeout(deadlineTimer);clearTimeout(retryTimer);busy(false); log('info', 'cancelled', { code: 'AI_STOPPED' }); rejectPending(Object.assign(new Error('AI request stopped.'), { code: 'AI_STOPPED' })); } };
     const promise = new Promise((resolve, reject) => {
       rejectPending = reject;
       const fail = (error, details = {}) => { if (!settled) {
-        settled=true;clearTimeout(deadlineTimer);
+        settled=true;clearTimeout(deadlineTimer);clearTimeout(retryTimer);busy(false);
         const message=String(error?.message||error).split(apiKey).join('[redacted]');
         const safe={timestamp:new Date().toISOString(),jobId,model,operation:connectionOnly?'model-access-check':mode==='FEEDBACK'?'feedback':'ticket-generation',transport:typeof fetch==='function'?'browser-fetch':'userscript-request',endpoint:'/v1beta/models/'+model+(connectionOnly?'':':generateContent'),durationMs:Date.now()-startedAt,phase:readyState>=2?'reading-response':'waiting-for-response',httpStatus:Number(details.status)||0,code:details.code||'UNKNOWN',...(details.apiReason?{apiReason:details.apiReason}:{}),...(details.browserErrorName?{browserErrorName:details.browserErrorName}:{}),...(typeof navigator!=='undefined'?{browserOnline:navigator.onLine!==false}:{}),...(typeof document!=='undefined'?{pageVisibility:document.visibilityState==='hidden'?'hidden':'visible'}:{})};
         state.geminiLastError=safe;log('error','failed',{message,...safe,...details});
@@ -12388,6 +12390,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       } };
       const data = connectionOnly ? undefined : JSON.stringify({ systemInstruction: { parts: [{ text: instructions }] }, contents: [{ role: 'user', parts: [{ text: JSON.stringify(input) }] }], generationConfig: { responseMimeType: 'application/json', responseJsonSchema: schema, thinkingConfig:{thinkingLevel:'minimal'} } });
       log('info', 'request-started', { length: data?.length||0, phase:connectionOnly?'model-access-check':'ticket-generation', source:typeof fetch==='function'?'browser-fetch':'userscript-request' });
+      const sendAttempt=()=>{if(settled)return;readyState=0;
       deadlineTimer=setTimeout(()=>{if(settled)return;fail('Gemini did not finish within 20 seconds. No ticket data was applied. Retry manually after checking the connection and Google service status.',{status:0,code:'CALLBACK_DEADLINE',phase:readyState>=2?'response-started':'waiting-for-response',timeoutMs});try{handle?.abort?.();}catch{}},timeoutMs);
       try { handle = sendRequest({
         method: connectionOnly ? 'GET' : 'POST', anonymous: true,
@@ -12400,11 +12403,13 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           if (settled) return;
           const status = Number(response.status);
           if (status < 200 || status >= 300) {
-            const hint = status === 429 ? 'Quota or rate limit reached. Wait before retrying and check your Google project quota.' : status === 401 || status === 403 ? 'Check the API key, project permissions, billing and regional availability.' : status === 404 ? 'This model is unavailable for your project. Choose another model.' : status === 400 ? 'Google rejected the request. Check model support and project configuration.' : 'Check your connection or try again later.';
+            const hint = status === 503 && retryCount>=10 ? 'Gemini is still busy after 10 retries. Try again later.' : status === 429 ? 'Quota or rate limit reached. Wait before retrying and check your Google project quota.' : status === 401 || status === 403 ? 'Check the API key, project permissions, billing and regional availability.' : status === 404 ? 'This model is unavailable for your project. Choose another model.' : status === 400 ? 'Google rejected the request. Check model support and project configuration.' : 'Check your connection or try again later.';
             let code = '',apiReason='';
             try { const error=JSON.parse(response.responseText || '{}')?.error;code=safeEnum(error?.status);apiReason=safeEnum(error?.details?.find(detail=>detail?.['@type']==='type.googleapis.com/google.rpc.ErrorInfo')?.reason); } catch { /* Never record raw error bodies or headers. */ }
+            if(status===503&&!connectionOnly&&retryCount<10){clearTimeout(deadlineTimer);retryCount++;busy(true);log('warn','busy-retry-scheduled',{status,code:code||'UNAVAILABLE',retry:retryCount,maxRetries:10,delayMs:2000});retryTimer=setTimeout(()=>{retryTimer=null;sendAttempt();},2000);return;}
             fail(`Gemini API HTTP ${status}. ${hint}`, { status, code: code || 'HTTP_ERROR',apiReason }); return;
           }
+          busy(false);
           try {
             const body = JSON.parse(response.responseText || '{}');
             if(connectionOnly){
@@ -12429,6 +12434,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         ontimeout: () => fail(`Gemini API timed out after ${timeoutMs/1000} seconds. No automatic retry was sent.`, { status: 0, code: 'TIMEOUT', timeoutMs }),
         onabort: stop,
       }); } catch { fail('Gemini API request could not start. Check Tampermonkey permissions.', { status: 0, code: 'REQUEST_START_FAILED' }); }
+      };sendAttempt();
     });
     return { promise, abort() { if (settled) return; stop(); handle?.abort?.(); } };
   }
@@ -21129,11 +21135,13 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     };
     const renderTicketProgressStages = (target, progress, options = {}) => {
       const stages = options.stages || ['Getting Chat data', 'Sending message to AI', 'Waiting for AI reply', 'Validating AI response', 'Generating Ticket', 'Finishing'];
-      const currentStage = Number.isInteger(options.currentStage)
+      target.snAiProgressOptions={...options,stages};
+      let currentStage = Number.isInteger(options.currentStage)
         ? options.currentStage
         : Number.isInteger(Number(target.dataset.webAiStage))
           ? Number(target.dataset.webAiStage)
           : progress >= 99 ? 5 : progress >= 62 ? 4 : progress >= 58 ? 3 : progress >= 25 ? 1 : 0;
+      if(target.dataset.geminiBusyJob&&stages.includes('Sending message to AI'))currentStage=stages.indexOf('Sending message to AI');
       target.dataset.ticketProgress = String(progress);
       const loaderIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12a1 1 0 0 1-10 0 1 1 0 0 0-10 0"/><path d="M7 20.7a1 1 0 1 1 5-8.7 1 1 0 1 0 5-8.6"/><path d="M7 3.3a1 1 0 1 1 5 8.6 1 1 0 1 0 5 8.6"/><circle cx="12" cy="12" r="10"/></svg>';
       const checkIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
@@ -21143,10 +21151,20 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       }
       target.innerHTML = stages.map((label, index) => {
         if (index < currentStage) return `<span class="local-sn-progress-stage is-complete"><span>${label}</span>${checkIcon}</span>`;
-        if (index === currentStage) return `<span class="local-sn-progress-stage is-loading"><span>${label}</span><span class="local-sn-progress-spinner">${loaderIcon}</span></span>`;
+        if (index === currentStage) return `<span class="local-sn-progress-stage is-loading"><span>${label}${target.dataset.geminiBusyJob&&label==='Sending message to AI'?'<span style="display:block;font-size:11px;font-weight:500;opacity:.85" role="status">Gemini is a bit busy now, please wait</span>':''}</span><span class="local-sn-progress-spinner">${loaderIcon}</span></span>`;
         return '';
       }).filter(Boolean).join('');
     };
+    const updateGeminiBusyProgress=event=>{
+      const detail=event.detail||{},mode=value=>String(value==='TEXT'?'DESCRIPTION':value||'').toUpperCase().replace(/[^A-Z]/g,'');
+      for(const target of host.querySelectorAll('.local-sn-cpc-dialog.is-running [data-ticket-progress]')){
+        const dialog=target.closest('.local-sn-cpc-dialog');if(String(dialog.dataset.pinnedIms||'').toUpperCase()!==String(detail.ims||'').toUpperCase()||mode(dialog.dataset.ticketWindow)!==mode(detail.mode))continue;
+        if(detail.busy)target.dataset.geminiBusyJob=detail.jobId;else if(target.dataset.geminiBusyJob===detail.jobId)delete target.dataset.geminiBusyJob;else continue;
+        renderTicketProgressStages(target,Number(target.dataset.ticketProgress)||25,target.snAiProgressOptions||{});
+      }
+    };
+    document.addEventListener('sn-ai-gemini-busy',updateGeminiBusyProgress);
+    document.addEventListener('sn-ai-runtime-dispose',()=>document.removeEventListener('sn-ai-gemini-busy',updateGeminiBusyProgress),{once:true});
     // One shared bridge lifecycle updates every running AI ticket window.
     // Mode code only supplies its ticket work; it does not own Web-AI stages.
     document.addEventListener('sn-ai-web-progress', (event) => {
