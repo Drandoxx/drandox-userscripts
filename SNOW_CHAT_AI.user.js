@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.851
+// @version      2.36.852
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.852","fixes":true,"changes":[{"key":"workspace-media","meaningful":true,"text":"Automatically invoke the native Upload button for the staged ticket image, hide its preview dialog and confirm the uploaded attachment before marking it added."}]},
 {"version":"2.36.851","fixes":true,"changes":[{"key":"workspace-media","meaningful":true,"text":"Keep viewer controls opaque over a darker backdrop and use native direct upload without an extra confirmation when adding images to tickets."}]},
 {"version":"2.36.850","fixes":true,"changes":[{"key":"workspace-media","meaningful":true,"text":"Use a semi-transparent image viewer without a filename header and keep small images at natural size while larger images fit the viewer."}]},
 {"version":"2.36.849","fixes":true,"changes":[{"key":"workspace-media","meaningful":true,"text":"Use compact responsive attachment grids, visible native filename editing, broader chat image detection and darker full-chat Lucide drop indicators without the native overlay."}]},
@@ -1608,15 +1609,18 @@ function installWorkspaceMedia(options={}){
   const attachmentRows=async(owner)=>{const id=attachmentIdentity(owner).sysId;if(!/^[a-f0-9]{32}$/i.test(id||''))throw Error('record_identity_unavailable');const response=await page.fetch('/api/now/attachment?'+new URLSearchParams({sysparm_query:'table_sys_id='+id,sysparm_fields:'sys_id,file_name',sysparm_limit:'1000'}),{credentials:'same-origin',signal:AbortSignal.timeout(15000),headers:{Accept:'application/json','X-UserToken':page.g_ck}});if(!response.ok)throw Error('attachment_confirmation_failed');const body=await response.json();if(!Array.isArray(body.result))throw Error('attachment_confirmation_invalid');return body.result;};
   const upload=async(owner,form,files)=>{
     if(options.readOnly)throw Error('Preview mode: no files were uploaded.');const identity=attachmentIdentity(owner);let before;try{before=new Set((await attachmentRows(owner)).map(row=>row.sys_id));}catch{throw Error('Cannot confirm the target record. No files were attached.');}
-    const nativeOverlay=snMediaNodes(owner.shadowRoot,'sn-form-internal-attachment-overlay').find(node=>node.getProperties?.().sysId===identity.sysId),originalModal=nativeOverlay?.getProperties?.().disableUploadModal;
-    if(typeof nativeOverlay?.helpers?.updateProperties!=='function')throw Error('Native direct upload is unavailable. No files were attached.');
-    nativeOverlay.helpers.updateProperties({disableUploadModal:true});
+    const names=new Set(files.map(file=>file.name)),submitted=new WeakSet(),hiddenModals=new Map();
+    const uploadModal=modal=>{const props=modal.getProperties?.();return props?.footerActions?.some(action=>action.id==='upload')&&/^Upload (?:a file|files)/i.test(props.headerLabel||'');};
+    const existing=snMediaNodes(owner.shadowRoot,'now-modal').filter(uploadModal);if(existing.some(modal=>modal.getProperties().opened))throw Error('Finish the current file upload before adding another image.');
+    const hide=modal=>{if(!hiddenModals.has(modal)){hiddenModals.set(modal,{value:modal.style.getPropertyValue('display'),priority:modal.style.getPropertyPriority('display')});modal.style.setProperty('display','none','important');}};
+    const submitNativeUpload=()=>{if(disposed||!owner.isConnected||attachmentIdentity(owner).sysId!==identity.sysId)return;for(const modal of snMediaNodes(owner.shadowRoot,'now-modal').filter(uploadModal)){hide(modal);if(submitted.has(modal)||!modal.getProperties().opened)continue;const previews=snMediaNodes(modal,'img').map(image=>image.alt).filter(Boolean);if(!previews.length||previews.some(name=>!names.has(name)))continue;const button=snMediaNodes(modal.shadowRoot,'button').find(node=>node.textContent.trim()==='Upload'&&!node.disabled);if(!button)continue;submitted.add(modal);button.click();}};
+    existing.forEach(hide);const stagingObserver=new MutationObserver(submitNativeUpload);stagingObserver.observe(form,{childList:true,subtree:true});
     try{
-    await new Promise(resolve=>setTimeout(resolve,0));
-    if(nativeOverlay.getProperties?.().disableUploadModal!==true)throw Error('Native direct upload could not be enabled. No files were attached.');
     if(!owner.isConnected||!form.isConnected||attachmentIdentity(owner).sysId!==identity.sysId)throw Error('The target ticket is no longer open.');const transfer=new DataTransfer();for(const file of files)transfer.items.add(file);for(const type of ['dragenter','dragover','drop'])form.dispatchEvent(new DragEvent(type,{bubbles:true,composed:true,cancelable:true,dataTransfer:transfer}));
-    const reference=new WeakRef(owner),names=new Set(files.map(file=>file.name));files=[];for(let attempt=0;attempt<30;attempt++){await new Promise(resolve=>setTimeout(resolve,1000));const current=reference.deref();if(disposed||!current?.isConnected)throw Error('The target ticket closed before upload confirmation.');try{const added=(await attachmentRows(current)).filter(row=>!before.has(row.sys_id)&&names.has(row.file_name));if(added.length===names.size){const button=snMediaNodes(current.shadowRoot,'button[aria-label="Attachments"]').find(node=>node.getBoundingClientRect().width);if(button&&!button.classList.contains('is-selected'))button.click();changed();return added;}}catch{break;}}throw Error('Attachment upload could not be confirmed. Check Attachments before trying again.');
-    }finally{if(nativeOverlay.isConnected!==false)nativeOverlay.helpers.updateProperties({disableUploadModal:originalModal});}
+    // Run the exact native Upload footer button, scoped to this record and these filenames.
+    for(let attempt=0;attempt<20;attempt++){submitNativeUpload();await new Promise(resolve=>setTimeout(resolve,50));if(hiddenModals.size&&[...hiddenModals.keys()].some(modal=>submitted.has(modal)))break;}
+    const reference=new WeakRef(owner);files=[];for(let attempt=0;attempt<30;attempt++){submitNativeUpload();await new Promise(resolve=>setTimeout(resolve,1000));const current=reference.deref();if(disposed||!current?.isConnected)throw Error('The target ticket closed before upload confirmation.');try{const added=(await attachmentRows(current)).filter(row=>!before.has(row.sys_id)&&names.has(row.file_name));if(added.length===names.size){const button=snMediaNodes(current.shadowRoot,'button[aria-label="Attachments"]').find(node=>node.getBoundingClientRect().width);if(button&&!button.classList.contains('is-selected'))button.click();changed();return added;}}catch{break;}}throw Error('Attachment upload could not be confirmed. Check Attachments before trying again.');
+    }finally{stagingObserver.disconnect();for(const [modal,original]of hiddenModals)if(modal.isConnected!==false){if(original.value)modal.style.setProperty('display',original.value,original.priority);else modal.style.removeProperty('display');}}
   };
   const target=()=>{if(!/^\/now\/workspace\/agent\/chat\/[a-f0-9]{32}(?:\/|$)/i.test(location.pathname))return null;const candidates=snMediaNodes(document,'now-record-form-connected').map(owner=>({owner,props:owner.getProperties?.()||{},form:snMediaNodes(owner.shadowRoot,'form.sn-workspace-form-layout')[0]})).filter(item=>item.props.active!==false&&item.form?.getBoundingClientRect().width&&item.form.getBoundingClientRect().height);if(candidates.length!==1)return null;const item=candidates[0];item.props={...item.props,...attachmentIdentity(item.owner)};return /^[a-f0-9]{32}$/i.test(item.props.sysId||'')?item:null;};
   const linkKey=(item,image)=>item.props.table+':'+item.props.sysId+':'+image.src;
