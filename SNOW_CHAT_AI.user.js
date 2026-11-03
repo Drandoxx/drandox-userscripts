@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.839
+// @version      2.36.841
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,8 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.841","fixes":true,"changes":[]},
+{"version":"2.36.840","fixes":true,"changes":[{"key":"description-contact-number","meaningful":true,"text":"Fill the top Contact Number from Description contact details, including international numbers, and include existing contact details in AI context."}]},
 {"version":"2.36.839","fixes":true,"changes":[{"key":"chat-image-paste","meaningful":true,"text":"Queue up to ten pasted screenshots with removable previews and send them in order only after clicking Send, following the text message."}]},
 {"version":"2.36.838","fixes":false,"changes":[{"key":"shared-ai-mode-messages","meaningful":true,"text":"Add shared ALL instructions for every non-STACK AI mode, alongside mode-specific extra details."}]},
 {"version":"2.36.837","fixes":true,"changes":[]},
@@ -10893,6 +10895,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const lines = ['User information:', `Name: ${name || 'Not available'}`];
     if (profile !== 'CPC' && location) lines.push(`Location: ${location}`);
     if (email) lines.push(`Email: ${email}`);
+    const contactNumber=descriptionContactNumber({fieldsUnderDescription:{'Contact Number':readableControlValue('Contact Number',elements)}});
+    if(contactNumber)lines.push(`Contact Number: ${contactNumber}`);
     return lines.join('\n');
   }
 
@@ -14417,8 +14421,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       }
     }else if(profile==='TEXT'){
       text('Short Description',data.shortDescription,80);text('Description',data.description);
-      const phone=[data.description,...Object.entries(data.fieldsUnderDescription||{}).filter(([label])=>/contact.*(?:number|phone)|phone.*contact/i.test(label)).map(([,value])=>value)]
-        .map(value=>String(value||'').match(/(?:\+44\s?|0)\d(?:[\s()-]?\d){8,12}/)?.[0]||'').find(Boolean)?.replace(/[\s()-]+/g,'');
+      const phone=descriptionContactNumber(data);
       if(phone)text('Contact Number',phone,40);
       if(!data.skipOptionalFields)for(const [label,value] of Object.entries(data.fieldsUnderDescription||{}))extra(label,value);
     }
@@ -15567,6 +15570,14 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     }
     automationFailure(code,`${fieldLabel} did not remain empty.`);
   }
+  function nativeReferenceSearchChars(fieldLabel,searchChars,match){
+    const contains=comparableLabel(fieldLabel)==='attached knowledge'||comparableLabel(fieldLabel)==='configuration item'&&match==='contains';
+    return contains&&!searchChars.startsWith('*')?'*'+searchChars:searchChars;
+  }
+  function nativeReferenceDisplay(row,isKnowledge,matchesDisplay){
+    const cells=(row.referenceData||[]).map(cell=>cell.value).filter(value=>typeof value==='string');
+    return isKnowledge?cells.find(matchesDisplay):cells[0];
+  }
   async function commitNativeReferenceAttempt(fieldLabel,expected,options={}) {
     await waitForAutomationResume();
     if(options.isCurrent&&!options.isCurrent())return '';
@@ -15585,8 +15596,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
     const query=`query snRecordReferenceConnected ($table:String!,$field:String!,$sys_id:String,$encodedRecord:String,$serializedChanges:String,$chars:String!,$referenceKey:String) { GlideLayout_Query { referenceDataRetriever(tableName:$table,fieldName:$field,sysId:$sys_id,encodedRecord:$encodedRecord,serializedChanges:$serializedChanges,chars:$chars,referenceKey:$referenceKey,sysparm_ignore_ref_qual:false,pagination:{limit:100,offset:0},ignoreTotalCount:true) { referenceRecentDataList {sysId referenceKeyValue referenceData {key value}} referenceDataList {sysId referenceKeyValue referenceData {key value}} } } }`;
     const searchChars=String(options.searchValue||expected);
-    const containsCI=comparableLabel(fieldLabel)==='configuration item'&&options.match==='contains';
-    const variables={table:props.tableName||props.referringTable,field:props.fieldName,sys_id:props.recordSysId||'-1',encodedRecord:props.encodedRecord,serializedChanges:props.serializedChanges||'{}',chars:containsCI&&!searchChars.startsWith('*')?'*'+searchChars:searchChars,referenceKey:props.referenceKey||null};
+    const variables={table:props.tableName||props.referringTable,field:props.fieldName,sys_id:props.recordSysId||'-1',encodedRecord:props.encodedRecord,serializedChanges:props.serializedChanges||'{}',chars:nativeReferenceSearchChars(fieldLabel,searchChars,options.match),referenceKey:props.referenceKey||null};
     // The ranked CI transport is the exact operation used by the interactive
     // search, including its native qualifier, token expansion and 100-row cap.
     const operation=options.rankedCI?{operationName:'snRecordReferenceConnected',query,variables:{...variables,paginationLimit:100,paginationOffset:0}}:{query,variables};
@@ -15600,7 +15610,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     // Include both, keeping native order and avoiding duplicate records.
     let rows=[...new Map([...(retrieved.referenceRecentDataList||[]),...retrieved.referenceDataList].map(r=>[r.sysId,r])).values()];
     if(options.rankedCI)rows=ciRankRows(rows,searchChars).slice(0,100);
-    const matches=rows.map(r=>({value:props.referenceKey?r.referenceKeyValue:r.sysId,displayValue:r.referenceData?.[0]?.value}))
+    const matches=rows.map(r=>({value:props.referenceKey?r.referenceKeyValue:r.sysId,displayValue:nativeReferenceDisplay(r,isKnowledge,matchesDisplay)}))
       .filter(r=>r.value&&typeof r.displayValue==='string'&&matchesDisplay(r.displayValue));
     // Any native-returned version with the requested KB prefix is acceptable.
     if(!matches.length&&options.allowEmpty)return '';
@@ -17026,6 +17036,17 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     });
   }
 
+  function descriptionContactNumber(data={}){
+    const labelled=[...Object.entries(data.fieldsUnderDescription||{}),...Object.entries(data.values||{})]
+      .filter(([label])=>/contact|phone|telephone|mobile|\btel\b/i.test(label)).map(([,value])=>value);
+    labelled.push(...String(data.description||'').split(/\r?\n/).filter(line=>/contact|phone|telephone|mobile|\btel\b/i.test(line)));
+    for(const value of labelled){for(const match of String(value||'').matchAll(/(?<![\p{L}\d])\+?\d[\d ()\-./]{5,24}\d(?![\p{L}\d])/gu)){
+      const number=match[0].replace(/[ ()\-./]/g,'');if(number.replace(/\D/g,'').length>=7&&number.replace(/\D/g,'').length<=15)return number;
+    }}
+    // Legacy descriptions may contain an unlabelled UK/international phone.
+    // Boundaries prevent extracting a phone from the middle of an order ID.
+    return String(data.description||'').match(/(?<![\p{L}\d])(?:\+\d{1,3}[ ()-]*|0)\d(?:[ ()-]?\d){8,12}(?![\p{L}\d])/u)?.[0]?.replace(/[ ()-]/g,'')||'';
+  }
   async function autoTEXT(rawData) {
     const data = validateAndNormaliseWizardData('TEXT', rawData);
     if (!state.autoSession || state.autoSession.profile !== 'TEXT') automationFailure('TEXT_SESSION_NOT_READY', 'Run START TEXT IMS... first.');
@@ -17033,18 +17054,9 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const started = performance.now();
     try {
       const reportingUser = await copyReportingUserAuto();
-      const contactNumberSources = [
-        data.description,
-        ...Object.entries(data.fieldsUnderDescription || {})
-          .filter(([label]) => /contact.*(?:number|phone)|phone.*contact/i.test(String(label)))
-          .map(([, value]) => value),
-      ];
-      const contactNumber = contactNumberSources
-        .map((value) => String(value || '').match(/(?:\+44\s?|0)\d(?:[\s()-]?\d){8,12}/)?.[0] || '')
-        .find(Boolean)?.replace(/[\s()-]+/g, '') || '';
+      const contactNumber = descriptionContactNumber(data);
       if (contactNumber) {
-        const contactField = await waitForControlByLabel('Contact Number', 2200);
-        if (contactField) await autoText('Contact Number', contactNumber, 'TEXT_CONTACT_NUMBER_COMMIT_FAILED', 40);
+        await autoText('Contact Number', contactNumber, 'TEXT_CONTACT_NUMBER_COMMIT_FAILED', 40);
       }
       await autoText('Short Description', data.shortDescription, 'TEXT_SHORT_DESCRIPTION_COMMIT_FAILED', 80);
       await autoText('Description', data.description, 'TEXT_DESCRIPTION_COMMIT_FAILED');
@@ -23762,9 +23774,9 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
   function renderChatImageQueue(queue){
     queue.preview.replaceChildren();queue.preview.hidden=!queue.entries.length;queue.preview.style.display=queue.entries.length?'grid':'none';queue.send.hidden=!queue.entries.length;queue.send.style.display=queue.entries.length?'grid':'none';queue.nativeSend.style.display=queue.entries.length?'none':queue.originalDisplay;queue.send.disabled=queue.sending;
     for(const entry of queue.entries){
-      const box=document.createElement('div');box.style.cssText='position:relative;aspect-ratio:1;min-width:0;border:1px solid #766789;border-radius:6px;overflow:hidden;background:#25222d';
+      const box=document.createElement('div');box.style.cssText='position:relative;aspect-ratio:1;min-width:0;border:1px solid var(--sn-theme-655573,#766789);border-radius:6px;overflow:hidden;background:var(--sn-theme-251f31,#25222d)';
       const image=document.createElement('img');image.src=entry.url;image.alt='Queued screenshot '+(queue.entries.indexOf(entry)+1);image.style.cssText='display:block;width:100%;height:100%;object-fit:contain';
-      const remove=document.createElement('button');remove.type='button';remove.innerHTML=imageQueueIcon;remove.title=remove.ariaLabel='Remove screenshot';remove.disabled=queue.sending;remove.style.cssText='position:absolute;top:2px;right:2px;display:grid;place-items:center;width:22px;height:22px;padding:0;border:0;border-radius:4px;background:#17131fe6;color:white;cursor:pointer';
+      const remove=document.createElement('button');remove.type='button';remove.innerHTML=imageQueueIcon;remove.title=remove.ariaLabel='Remove screenshot';remove.disabled=queue.sending;remove.style.cssText='position:absolute;top:2px;right:2px;display:grid;place-items:center;width:22px;height:22px;padding:0;border:0;border-radius:4px;background:var(--sn-theme-1c1827,#17131f)!important;color:var(--sn-theme-e6edf9,#eee)!important;cursor:pointer';
       remove.onclick=()=>{queue.entries.splice(queue.entries.indexOf(entry),1);URL.revokeObjectURL(entry.url);if(queue.entries.length)renderChatImageQueue(queue);else releaseChatImageQueue(queue);};box.append(image,remove);
       if(entry.uncertain){box.style.borderColor='#ff8f8f';box.title='Sending could not be confirmed. Check the chat before removing or pasting this image again.';}
       queue.preview.append(box);
@@ -23804,10 +23816,10 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     if(!inputHost||!chatHost)return null;
     let queue=chatImageQueueByInput.get(inputHost);if(queue)return queue;
     const nativeSend=inputHost.shadowRoot?.querySelector('now-button.sn-chat-toolbar-send'),container=inputHost.shadowRoot?.querySelector('.sn-chat-input-container');if(!nativeSend||!container)return null;
-    const preview=document.createElement('div');preview.setAttribute('aria-label','Queued screenshots');preview.style.cssText='display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;width:100%;box-sizing:border-box;padding:6px 0';container.before(preview);
-    const send=document.createElement('button');send.type='button';send.innerHTML='<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>';send.style.cssText='display:grid;place-items:center;width:34px;height:34px;border:0;border-radius:6px;background:linear-gradient(110deg,#80c8ff,#ad8cff);color:#171222;cursor:pointer';nativeSend.after(send);
+    const preview=document.createElement('div');preview.setAttribute('aria-label','Queued screenshots');preview.style.cssText='display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;width:100%;box-sizing:border-box;padding:10px';container.before(preview);
+    const send=document.createElement('button');send.type='button';send.innerHTML='<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:inherit!important;stroke:currentColor!important;fill:none!important"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>';send.style.cssText='display:grid;place-items:center;width:34px;height:34px;border:1px solid var(--sn-theme-655573,#655573);border-radius:6px;background:var(--sn-theme-251f31,#251f31)!important;color:var(--sn-theme-e6edf9,#eee)!important;cursor:pointer';nativeSend.after(send);
     queue={inputHost,chatHost,nativeSend,originalDisplay:nativeSend.style.display,preview,send,entries:[],sending:false,disposed:false,channel:textarea.getAttribute('aria-label'),identity:inputHost.getAttribute('sys-id')};
-    queue.keydown=event=>{if(queue.entries.length&&event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();event.stopImmediatePropagation();showChatImagePasteHint('Click Send to send your message and queued screenshots.');}};inputHost.addEventListener('keydown',queue.keydown,true);send.onclick=()=>sendChatImageQueue(queue);chatImageQueues.add(queue);chatImageQueueByInput.set(inputHost,queue);return queue;
+    queue.keydown=event=>{if(queue.entries.length&&event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();event.stopImmediatePropagation();if(!event.repeat)return sendChatImageQueue(queue);}};inputHost.addEventListener('keydown',queue.keydown,true);send.onclick=()=>sendChatImageQueue(queue);chatImageQueues.add(queue);chatImageQueueByInput.set(inputHost,queue);return queue;
   }
   async function handleChatImagePaste(event){
     const files=[...(event.clipboardData?.items||[])].filter(item=>item.kind==='file'&&/^image\//i.test(item.type)).map(item=>item.getAsFile()).filter(Boolean);if(!files.length)return;
