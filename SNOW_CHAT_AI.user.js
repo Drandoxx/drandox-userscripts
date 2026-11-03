@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.858
+// @version      2.36.859
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.859","fixes":true,"changes":[]},
 {"version":"2.36.858","fixes":true,"changes":[{"key":"workspace-media","meaningful":false,"text":"Disable the native delete-dialog close tooltip while preserving its accessible label and working close action."}]},
 {"version":"2.36.857","fixes":true,"changes":[{"key":"workspace-media","meaningful":true,"text":"Open native attachment delete confirmation directly from its ready action and clear initial focus from the actual hoisted dialog."}]},
 {"version":"2.36.856","fixes":true,"changes":[{"key":"workspace-media","meaningful":false,"text":"Leave attachment confirmation buttons unfocused on opening without interfering with subsequent keyboard or pointer interaction."}]},
@@ -1531,6 +1532,7 @@ function snMediaConfirmDelete(){return Promise.resolve(true);}
 // Keep native confirmation and keyboard access, but avoid its close-button tooltip on entry.
 function snMediaPrepareDeleteDialog(card){
   const scope=snMediaAncestor(card,node=>node.localName==='now-record-form-connected')||card.getRootNode().host||card;
+  const tooltipRoots=snMediaNodes(document,'seismic-hoist').map(node=>node.shadowRoot).filter(Boolean);const dismissTooltip=()=>{for(const root of tooltipRoots)for(const tip of root.querySelectorAll('[role="tooltip"],.now-tooltip'))if((tip.textContent||tip.getAttribute('aria-label')||'').trim()==='Close dialog')tip.style.setProperty('display','none','important');};dismissTooltip();setTimeout(dismissTooltip,100);setTimeout(dismissTooltip,400);
   let stopped=false;const stop=()=>{stopped=true;document.removeEventListener('focusin',onFocus,true);document.removeEventListener('pointerdown',stop,true);document.removeEventListener('keydown',stop,true);};
   const onFocus=event=>{if(stopped)return;const path=event.composedPath?.()||[],dialog=path.find(node=>node.getAttribute?.('role')==='dialog');if(dialog&&/Delete attachment/i.test(dialog.querySelector('h2')?.textContent||''))path.find(node=>node.localName==='button')?.blur();};
   document.addEventListener('focusin',onFocus,true);document.addEventListener('pointerdown',stop,true);document.addEventListener('keydown',stop,true);setTimeout(stop,1500);
