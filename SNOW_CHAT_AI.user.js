@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.861
+// @version      2.36.862
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.862","fixes":true,"changes":[{"key":"gemini-busy-retries","meaningful":false,"text":"Keep retry notices hidden during the first 15 seconds of each request and clear stale notices when a new attempt starts."}]},
 {"version":"2.36.861","fixes":true,"changes":[{"key":"gemini-busy-retries","meaningful":true,"text":"Allow 40 seconds per Gemini attempt, show a thinking notice after 15 seconds and shorten built-in API prompts without changing validation or shared extra instructions."}]},
 {"version":"2.36.860","fixes":true,"changes":[{"key":"gemini-busy-retries","meaningful":true,"text":"Retry transient Gemini failures up to four times with exponential backoff, jitter, Retry-After support and protection against late responses."}]},
 {"version":"2.36.859","fixes":true,"changes":[]},
@@ -12623,7 +12624,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const timeoutMs = 40000;
     let handle, rejectPending, settled = false, deadlineTimer, thinkingTimer, retryTimer, retryCount=0, readyState = 0, attemptId=0, attemptStartedAt=startedAt;
     const maxRetries=4;
-    const busy=(value,reason='retry')=>{if(typeof document!=='undefined'&&typeof CustomEvent==='function')document.dispatchEvent(new CustomEvent('sn-ai-gemini-busy',{detail:{jobId,ims,mode:promptMode||mode,busy:value,reason,retry:retryCount,maxRetries}}));};
+    const busy=(value,reason='retry')=>{if(value&&reason==='retry'&&Date.now()-attemptStartedAt<15000)return;if(typeof document!=='undefined'&&typeof CustomEvent==='function')document.dispatchEvent(new CustomEvent('sn-ai-gemini-busy',{detail:{jobId,ims,mode:promptMode||mode,busy:value,reason,retry:retryCount,maxRetries}}));};
     const stop = () => { if (!settled) { settled = true; clearTimeout(deadlineTimer);clearTimeout(thinkingTimer);clearTimeout(retryTimer);busy(false); log('info', 'cancelled', { code: 'AI_STOPPED' }); rejectPending(Object.assign(new Error('AI request stopped.'), { code: 'AI_STOPPED' })); } };
     const promise = new Promise((resolve, reject) => {
       rejectPending = reject;
@@ -12643,6 +12644,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       log('info', 'request-started', { length: data?.length||0, phase:connectionOnly?'model-access-check':'ticket-generation', source:typeof fetch==='function'?'browser-fetch':'userscript-request' });
       const retry=(details={})=>{if(settled||retryCount>=maxRetries)return false;clearTimeout(deadlineTimer);clearTimeout(thinkingTimer);attemptId++;retryCount++;const raw=String(details.retryAfter||'').trim(),serverDelay=/^\d+(\.\d+)?$/.test(raw)?Number(raw)*1000:raw?Math.max(0,Date.parse(raw)-Date.now()):0;const delayMs=Math.max(Math.min(60000,1000*2**(retryCount-1))*(.8+Math.random()*.4),Number.isFinite(serverDelay)?serverDelay:0);busy(true);log('warn','transient-retry-scheduled',{status:details.status||0,code:details.code||'TRANSIENT',retry:retryCount,maxRetries,delayMs:Math.round(delayMs)});retryTimer=setTimeout(()=>{retryTimer=null;sendAttempt();},delayMs);return true;};
       const sendAttempt=()=>{if(settled)return;readyState=0;attemptStartedAt=Date.now();const attempt=++attemptId;const current=()=>!settled&&attempt===attemptId;
+      busy(false,'new-attempt');
       if(!connectionOnly)thinkingTimer=setTimeout(()=>{if(current())busy(true,'thinking');},15000);
       deadlineTimer=setTimeout(()=>{if(!current())return;const oldHandle=handle;if(!retry({code:'CALLBACK_DEADLINE'}))fail('Gemini did not finish after the initial attempt and four retries. No ticket data was applied. Check the connection or try again later.',{status:0,code:'CALLBACK_DEADLINE',timeoutMs});try{oldHandle?.abort?.();}catch{}},timeoutMs);
       try { handle = sendRequest({
@@ -21417,7 +21419,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       const detail=event.detail||{},mode=value=>String(value==='TEXT'?'DESCRIPTION':value||'').toUpperCase().replace(/[^A-Z]/g,'');
       for(const target of host.querySelectorAll('.local-sn-cpc-dialog.is-running [data-ticket-progress]')){
         const dialog=target.closest('.local-sn-cpc-dialog');if(String(dialog.dataset.pinnedIms||'').toUpperCase()!==String(detail.ims||'').toUpperCase()||mode(dialog.dataset.ticketWindow)!==mode(detail.mode))continue;
-        if(detail.busy){target.dataset.geminiBusyJob=detail.jobId;target.dataset.geminiBusyText=detail.reason==='thinking'?'Gemini is still thinking…':'Gemini is a bit busy now, please wait';}else if(target.dataset.geminiBusyJob===detail.jobId){delete target.dataset.geminiBusyJob;delete target.dataset.geminiBusyText;}else continue;
+        if(detail.busy){target.dataset.geminiBusyJob=detail.jobId;target.dataset.geminiBusyText=detail.reason==='thinking'?'Gemini is still thinking…':'Gemini is a bit busy now, please wait';}else if(detail.reason==='new-attempt'||target.dataset.geminiBusyJob===detail.jobId){delete target.dataset.geminiBusyJob;delete target.dataset.geminiBusyText;}else continue;
         renderTicketProgressStages(target,Number(target.dataset.ticketProgress)||25,target.snAiProgressOptions||{});
       }
     };
