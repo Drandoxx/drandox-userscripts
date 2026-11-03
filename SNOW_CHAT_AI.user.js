@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.837
+// @version      2.36.838
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.838","fixes":false,"changes":[{"key":"shared-ai-mode-messages","meaningful":true,"text":"Add shared ALL instructions for every non-STACK AI mode, alongside mode-specific extra details."}]},
 {"version":"2.36.837","fixes":true,"changes":[]},
 {"version":"2.36.836","fixes":true,"changes":[]},
 {"version":"2.36.835","fixes":true,"changes":[]},
@@ -813,7 +814,7 @@ class SnAICredentialSync {
   }
 }
 
-const SN_AI_MESSAGE_MODES=['CPC','ILS_PRNT','FTF','TEXT','COM_PLUS','HP','STACK','HP_STACK'];
+const SN_AI_MESSAGE_MODES=['ALL','CPC','ILS_PRNT','FTF','TEXT','COM_PLUS','HP','STACK','HP_STACK'];
 const SN_AI_DEFAULT_MESSAGES=Object.freeze({
   CPC:'Extract the confirmed store, requested ON/OFF action and factual reason only. Do not guess missing store details.',
   ILS_PRNT:'Extract the requested printer destination and factual reason. Leave an unsupported printer destination empty rather than guessing.',
@@ -8761,8 +8762,9 @@ function startSNAI(tabIdentity) {
     }
   });
   function sharedModeInstructions(mode,instructions){const key=mode==='DESCRIPTION'?'TEXT':mode;const builtIn=SN_AI_DEFAULT_MESSAGES[key]||'',message=sharedModeMessages.message(key);
-    if(message)recordCompactDiagnostic('info','shared-mode-message-applied',{mode,version:String(sharedModeMessages.snapshot.revision??'built-in')});
-    return String(instructions||'')+(builtIn?'\n'+builtIn:'')+(message?'\n'+message:'');
+    const allMessage=SN_AI_MESSAGE_MODES.includes(key)&&key!=='ALL'&&key!=='STACK'&&key!=='HP_STACK'?sharedModeMessages.message('ALL'):'';
+    if(message||allMessage)recordCompactDiagnostic('info','shared-mode-message-applied',{mode,version:String(sharedModeMessages.snapshot.revision??'built-in')});
+    return String(instructions||'')+(builtIn?'\n'+builtIn:'')+(allMessage?'\n'+allMessage:'')+(message?'\n'+message:'');
   }
 
   const normaliseChatGPTConversationRecord = (value) => {
