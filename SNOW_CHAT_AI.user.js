@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.838
+// @version      2.36.839
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.839","fixes":true,"changes":[{"key":"chat-image-paste","meaningful":true,"text":"Queue up to ten pasted screenshots with removable previews and send them in order only after clicking Send, following the text message."}]},
 {"version":"2.36.838","fixes":false,"changes":[{"key":"shared-ai-mode-messages","meaningful":true,"text":"Add shared ALL instructions for every non-STACK AI mode, alongside mode-specific extra details."}]},
 {"version":"2.36.837","fixes":true,"changes":[]},
 {"version":"2.36.836","fixes":true,"changes":[]},
@@ -23753,45 +23754,74 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     } finally {bitmap.close();canvas.width=0;canvas.height=0;}
   }
 
-  async function handleChatImagePaste(event) {
-    const items = [...(event.clipboardData?.items || [])];
-    const item = items.find((entry) => entry.kind === 'file' && /^image\//i.test(entry.type));
-    if (!item) return;
-    const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
-    const chatTextarea = path.find((node) => isChatTextarea(node));
-    if (!chatTextarea) {
-      event.preventDefault();
-      event.stopPropagation();
-      showChatImagePasteHint();
-      addLog('info', 'chat-image-paste-blocked-outside-chat', { type: item.type });
-      return;
+  // Images remain local until the operator explicitly clicks Send.
+  const chatImageQueues=new Set(),chatImageQueueByInput=new WeakMap();
+  const imageQueueIcon='<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 6-12 12M6 6l12 12"/></svg>';
+  function imageQueueNodes(root,selector){const result=[];const visit=r=>{for(const node of r.querySelectorAll('*')){if(node.matches(selector))result.push(node);if(node.shadowRoot)visit(node.shadowRoot);}};if(root)visit(root);return result;}
+  function releaseChatImageQueue(queue){queue.disposed=true;for(const entry of queue.entries)URL.revokeObjectURL(entry.url);queue.entries=[];queue.preview.remove();queue.send.remove();queue.nativeSend.style.display=queue.originalDisplay;queue.inputHost.removeEventListener('keydown',queue.keydown,true);chatImageQueues.delete(queue);chatImageQueueByInput.delete(queue.inputHost);}
+  function renderChatImageQueue(queue){
+    queue.preview.replaceChildren();queue.preview.hidden=!queue.entries.length;queue.preview.style.display=queue.entries.length?'grid':'none';queue.send.hidden=!queue.entries.length;queue.send.style.display=queue.entries.length?'grid':'none';queue.nativeSend.style.display=queue.entries.length?'none':queue.originalDisplay;queue.send.disabled=queue.sending;
+    for(const entry of queue.entries){
+      const box=document.createElement('div');box.style.cssText='position:relative;aspect-ratio:1;min-width:0;border:1px solid #766789;border-radius:6px;overflow:hidden;background:#25222d';
+      const image=document.createElement('img');image.src=entry.url;image.alt='Queued screenshot '+(queue.entries.indexOf(entry)+1);image.style.cssText='display:block;width:100%;height:100%;object-fit:contain';
+      const remove=document.createElement('button');remove.type='button';remove.innerHTML=imageQueueIcon;remove.title=remove.ariaLabel='Remove screenshot';remove.disabled=queue.sending;remove.style.cssText='position:absolute;top:2px;right:2px;display:grid;place-items:center;width:22px;height:22px;padding:0;border:0;border-radius:4px;background:#17131fe6;color:white;cursor:pointer';
+      remove.onclick=()=>{queue.entries.splice(queue.entries.indexOf(entry),1);URL.revokeObjectURL(entry.url);if(queue.entries.length)renderChatImageQueue(queue);else releaseChatImageQueue(queue);};box.append(image,remove);
+      if(entry.uncertain){box.style.borderColor='#ff8f8f';box.title='Sending could not be confirmed. Check the chat before removing or pasting this image again.';}
+      queue.preview.append(box);
     }
-    const source = item.getAsFile();
-    if (!source) return;
-    const target = chatPasteDropTarget(event);
-    if (!target) {
-      addLog('warn', 'chat-image-paste-no-target', { type: source.type, size: source.size });
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    const chatHost=path.find(node=>node?.localName==='sn-agent-chat');
-    const interaction=chatHost?.getProperties?.().interaction;
-    try {
-      const {file,width,height,originalSize}=await optimiseChatScreenshot(source);
-      if(!target.isConnected || (interaction&&chatHost?.getProperties?.().interaction!==interaction)
-        || chatHost?.getProperties?.().active===false || chatTextarea.disabled || chatTextarea.readOnly) {
-        showChatImagePasteHint('Chat changed or is no longer writable. Paste again in the active chat.');return;
-      }
-      const result=dispatchChatFileDrop(target,file);
-      addLog(result?'info':'warn',result?'chat-image-paste-dispatched':'chat-image-paste-no-target',{
-        target:target.localName,type:file.type,size:file.size,originalSize,width,height,nativeDropHandled:result?.handled===true,
-      });
-    } catch(error) {
-      showChatImagePasteHint('Could not prepare the image. Save it as PNG or JPEG and attach it using the paperclip.');
-      addLog('warn','chat-image-conversion-failed',{type:source.type,size:source.size,message:error.message});
-    }
+    queue.send.title=queue.send.ariaLabel=queue.sending?'Sending queued screenshots…':'Send message and '+queue.entries.length+' screenshots';
   }
+  function imageQueueSafe(queue,writable=true){const field=imageQueueNodes(queue.inputHost.shadowRoot,'textarea').find(isChatTextarea);return !queue.disposed&&queue.inputHost.isConnected&&queue.chatHost.isConnected&&queue.chatHost.getProperties?.().active!==false&&field&&(!writable||!field.disabled&&!field.readOnly)&&field.getBoundingClientRect().width>0&&field.getAttribute('aria-label')===queue.channel&&queue.inputHost.getAttribute('sys-id')===queue.identity&&queue.chatHost.getAttribute('interaction')===queue.identity?field:null;}
+  async function imageQueueWait(queue,predicate){const deadline=Date.now()+30000;while(Date.now()<deadline){if(!imageQueueSafe(queue,false))throw Error('chat-changed');if(predicate())return;await new Promise(resolve=>setTimeout(resolve,150));}throw Error('send-unconfirmed');}
+  async function sendChatImageQueue(queue){
+    if(queue.sending||!queue.entries.length)return;
+    if(queue.entries.some(entry=>entry.uncertain)){showChatImagePasteHint('Check the unconfirmed screenshot in the chat and remove its preview before continuing.');return;}
+    if(!imageQueueSafe(queue)){showChatImagePasteHint('Return to the original chat and public/private channel before sending.');return;}
+    queue.sending=true;renderChatImageQueue(queue);let attempted=null;
+    try{
+      const field=imageQueueSafe(queue),text=field.value;
+      if(text.trim()){
+        const previous=new Set(imageQueueNodes(queue.chatHost.shadowRoot,'now-chat-message').map(node=>snGreetingMessageInfo(node).key));
+        const send=imageQueueNodes(queue.inputHost.shadowRoot,'button[aria-label="Send Message"]').find(button=>!button.disabled);
+        if(!send)throw Error('text-send-unavailable');send.click();
+        await imageQueueWait(queue,()=>imageQueueNodes(queue.chatHost.shadowRoot,'now-chat-message').some(node=>{const info=snGreetingMessageInfo(node);return !previous.has(info.key)&&info.right&&!info.system&&(!info.status||['sent','delivered'].includes(info.status))&&info.text.replace(/\s+/g,' ').trim()===text.replace(/\s+/g,' ').trim();}));
+      }
+      while(queue.entries.length){
+        if(!imageQueueSafe(queue))throw Error('chat-changed');
+        const entry=queue.entries[0],prepared=await optimiseChatScreenshot(entry.file);
+        if(!imageQueueSafe(queue))throw Error('chat-changed');
+        const file=new File([prepared.file],'sn-ai-'+crypto.randomUUID()+'.'+(prepared.file.type==='image/jpeg'?'jpg':'png'),{type:prepared.file.type});
+        attempted=entry;const dispatched=dispatchChatFileDrop(queue.inputHost,file);if(!dispatched)throw Error('attachment-send-unavailable');
+        await imageQueueWait(queue,()=>imageQueueNodes(queue.chatHost.shadowRoot,'img,button,a').some(node=>[node.getAttribute('alt'),node.getAttribute('aria-label'),node.getAttribute('title'),node.localName==='a'?node.textContent:''].some(value=>String(value||'').includes(file.name))));
+        queue.entries.shift();URL.revokeObjectURL(entry.url);attempted=null;renderChatImageQueue(queue);
+        addLog('info','chat-image-queue-image-confirmed',{remaining:queue.entries.length,size:file.size,type:file.type});
+      }
+    }catch(error){if(attempted)attempted.uncertain=true;showChatImagePasteHint(attempted?'Image sending could not be confirmed. Check the chat; remaining screenshots were not sent.':'Sending paused. Check the text message and return to the original chat before trying again.');addLog('warn','chat-image-queue-send-stopped',{reason:error.message,remaining:queue.entries.length,unconfirmedImage:!!attempted});}
+    finally{queue.sending=false;if(!queue.disposed){if(!queue.entries.length)releaseChatImageQueue(queue);else renderChatImageQueue(queue);}}
+  }
+  function getChatImageQueue(path,textarea){
+    const inputHost=path.find(node=>node?.localName==='sn-chat-input'),chatHost=path.find(node=>node?.localName==='sn-agent-chat');
+    if(!inputHost||!chatHost)return null;
+    let queue=chatImageQueueByInput.get(inputHost);if(queue)return queue;
+    const nativeSend=inputHost.shadowRoot?.querySelector('now-button.sn-chat-toolbar-send'),container=inputHost.shadowRoot?.querySelector('.sn-chat-input-container');if(!nativeSend||!container)return null;
+    const preview=document.createElement('div');preview.setAttribute('aria-label','Queued screenshots');preview.style.cssText='display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;width:100%;box-sizing:border-box;padding:6px 0';container.before(preview);
+    const send=document.createElement('button');send.type='button';send.innerHTML='<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>';send.style.cssText='display:grid;place-items:center;width:34px;height:34px;border:0;border-radius:6px;background:linear-gradient(110deg,#80c8ff,#ad8cff);color:#171222;cursor:pointer';nativeSend.after(send);
+    queue={inputHost,chatHost,nativeSend,originalDisplay:nativeSend.style.display,preview,send,entries:[],sending:false,disposed:false,channel:textarea.getAttribute('aria-label'),identity:inputHost.getAttribute('sys-id')};
+    queue.keydown=event=>{if(queue.entries.length&&event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();event.stopImmediatePropagation();showChatImagePasteHint('Click Send to send your message and queued screenshots.');}};inputHost.addEventListener('keydown',queue.keydown,true);send.onclick=()=>sendChatImageQueue(queue);chatImageQueues.add(queue);chatImageQueueByInput.set(inputHost,queue);return queue;
+  }
+  async function handleChatImagePaste(event){
+    const files=[...(event.clipboardData?.items||[])].filter(item=>item.kind==='file'&&/^image\//i.test(item.type)).map(item=>item.getAsFile()).filter(Boolean);if(!files.length)return;
+    event.preventDefault();event.stopImmediatePropagation();const path=event.composedPath?.()||[],textarea=path.find(isChatTextarea);
+    if(!textarea){showChatImagePasteHint();return;}
+    const queue=getChatImageQueue(path,textarea);if(!queue){showChatImagePasteHint('The chat is still loading. Paste again when the message box is ready.');return;}
+    if(queue.sending||queue.channel!==textarea.getAttribute('aria-label')){showChatImagePasteHint('Finish the queued screenshots in their original chat channel first.');return;}
+    const remaining=10-queue.entries.length;for(const file of files.slice(0,remaining))queue.entries.push({file,url:URL.createObjectURL(file),uncertain:false});renderChatImageQueue(queue);
+    if(files.length>remaining)showChatImagePasteHint('You can queue up to 10 screenshots. Extra images were not added.');
+    addLog('info','chat-images-queued',{added:Math.min(files.length,remaining),queued:queue.entries.length});
+  }
+  const chatImageQueueCleanup=setInterval(()=>{for(const queue of chatImageQueues)if(!queue.inputHost.isConnected||!queue.chatHost.isConnected)releaseChatImageQueue(queue);},5000);
+  document.addEventListener('sn-ai-runtime-dispose',()=>{clearInterval(chatImageQueueCleanup);for(const queue of chatImageQueues)releaseChatImageQueue(queue);},{once:true});
+
   if (workspacePage) document.addEventListener('paste', handleChatImagePaste, true);
 
   // Workspace inserts this full-panel visual prompt while a file is dragged
