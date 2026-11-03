@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.857
+// @version      2.36.858
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.858","fixes":true,"changes":[{"key":"workspace-media","meaningful":false,"text":"Disable the native delete-dialog close tooltip while preserving its accessible label and working close action."}]},
 {"version":"2.36.857","fixes":true,"changes":[{"key":"workspace-media","meaningful":true,"text":"Open native attachment delete confirmation directly from its ready action and clear initial focus from the actual hoisted dialog."}]},
 {"version":"2.36.856","fixes":true,"changes":[{"key":"workspace-media","meaningful":false,"text":"Leave attachment confirmation buttons unfocused on opening without interfering with subsequent keyboard or pointer interaction."}]},
 {"version":"2.36.855","fixes":true,"changes":[{"key":"workspace-media","meaningful":true,"text":"Hide the intermediate attachment action menu and focus Cancel instead of the close icon when opening native delete confirmation."}]},
@@ -1534,7 +1535,7 @@ function snMediaPrepareDeleteDialog(card){
   const onFocus=event=>{if(stopped)return;const path=event.composedPath?.()||[],dialog=path.find(node=>node.getAttribute?.('role')==='dialog');if(dialog&&/Delete attachment/i.test(dialog.querySelector('h2')?.textContent||''))path.find(node=>node.localName==='button')?.blur();};
   document.addEventListener('focusin',onFocus,true);document.addEventListener('pointerdown',stop,true);document.addEventListener('keydown',stop,true);setTimeout(stop,1500);
   // Visible modal contents are hoisted outside now-modal's shadow root.
-  let ticks=0;const clearInitialFocus=()=>{if(stopped||++ticks>20)return;let active=document.activeElement;while(active?.shadowRoot?.activeElement)active=active.shadowRoot.activeElement;const dialog=snMediaAncestor(active,node=>node.getAttribute?.('role')==='dialog');if(dialog&&/Delete attachment/i.test(dialog.querySelector('h2')?.textContent||''))active?.blur?.();setTimeout(clearInitialFocus,40);};queueMicrotask(clearInitialFocus);
+  const quiet=new WeakSet();let ticks=0;const clearInitialFocus=()=>{if(stopped||++ticks>20)return;for(const dialog of snMediaNodes(scope.shadowRoot||scope,'[role="dialog"]'))if(/Delete attachment/i.test(dialog.querySelector('h2')?.textContent||'')){const close=dialog.querySelector('#now-modal-close-button');if(close&&!quiet.has(close)){quiet.add(close);const props=close.getProperties?.()||{};close.helpers?.updateProperties?.({tooltipContent:'',configAria:{...props.configAria,'aria-label':'Close dialog'}});close.shadowRoot?.querySelector('button')?.setAttribute('aria-label','Close dialog');}}let active=document.activeElement;while(active?.shadowRoot?.activeElement)active=active.shadowRoot.activeElement;const dialog=snMediaAncestor(active,node=>node.getAttribute?.('role')==='dialog');if(dialog&&/Delete attachment/i.test(dialog.querySelector('h2')?.textContent||''))active?.blur?.();setTimeout(clearInitialFocus,40);};queueMicrotask(clearInitialFocus);
 }
 function snMediaIcon(name){const paths={x:'<path d="M18 6 6 18M6 6l12 12"/>',left:'<path d="m15 18-6-6 6-6"/>',right:'<path d="m9 18 6-6-6-6"/>',edit:'<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.623l4.353-1.32a2 2 0 0 0 .83-.5z"/><path d="m15 5 4 4"/>',delete:'<path d="M3 6h18M10 11v6M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>','image-down':'<path d="M10.3 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10l-3.1-3.1a2 2 0 0 0-2.814.014L6 21"/><path d="m14 19 3 3v-5.5"/><path d="m17 22 3-3"/><circle cx="9" cy="9" r="2"/>',image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>'},names={edit:'pencil',delete:'trash-2',left:'chevron-left',right:'chevron-right'};return '<svg class="lucide lucide-'+(names[name]||name)+'" aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+(paths[name]||paths.image)+'</svg>';}
 snMediaIcon=((original)=>function(name){return name==='check'?snMediaCheckIcon():original(name);})(snMediaIcon);
