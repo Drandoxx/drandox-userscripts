@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.841
+// @version      2.36.842
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.842","fixes":true,"changes":[{"key":"classic-gemini","meaningful":true,"text":"Keep Gemini API active on classic SNOW forms and restrict companion fallback offers to Workspace chat pages."}]},
 {"version":"2.36.841","fixes":true,"changes":[]},
 {"version":"2.36.840","fixes":true,"changes":[{"key":"description-contact-number","meaningful":true,"text":"Fill the top Contact Number from Description contact details, including international numbers, and include existing contact details in AI context."}]},
 {"version":"2.36.839","fixes":true,"changes":[{"key":"chat-image-paste","meaningful":true,"text":"Queue up to ten pasted screenshots with removable previews and send them in order only after clicking Send, following the text message."}]},
@@ -9463,8 +9464,8 @@ function startSNAI(tabIdentity) {
     state.ai.enabled = Boolean(await gmGetValue(AI_ENABLED_KEY, false));
     const savedProvider = String(await gmGetValue(AI_PROVIDER_KEY, 'gemini-api') || 'gemini-api');
     const apiFirstMigrated=await gmGetValue('sn-ai-gemini-first-v1',false);if(!apiFirstMigrated){await gmSetValue(AI_PROVIDER_KEY,'gemini-api');await gmSetValue('sn-ai-gemini-first-v1',true);}
-    state.ai.provider = !apiFirstMigrated||savedProvider!=='web'?'gemini-api':'web';
-    if (savedProvider !== state.ai.provider) await gmSetValue(AI_PROVIDER_KEY, state.ai.provider);
+    state.ai.provider = !workspacePage||!apiFirstMigrated||savedProvider!=='web'?'gemini-api':'web';
+    if (workspacePage && savedProvider !== state.ai.provider) await gmSetValue(AI_PROVIDER_KEY, state.ai.provider);
     const savedWebService = String(await gmGetValue(AI_WEB_SERVICE_KEY, 'chatgpt') || 'chatgpt');
     state.ai.webService = ['chatgpt', 'gemini'].includes(savedWebService) ? savedWebService : 'chatgpt';
     state.ai.apiModel = DEFAULT_API_MODEL;
@@ -10249,6 +10250,21 @@ function snOfflineOpenPage(progress){
     document.addEventListener('sn-ai-shared-mode-status',render);document.addEventListener('sn-ai-runtime-dispose',()=>{clearTimeout(draftTimer);document.removeEventListener('sn-ai-shared-mode-status',render);window.removeEventListener('pagehide',onHide);},{once:true});window.addEventListener('pagehide',onHide,{once:true});render();
   }
 
+function snOfflineHistoryMethod(row){return row.manual===true||row.method==='manual'?'Manual':row.manual===false||row.method==='automatic'?'Automatic':'Unknown';}
+async function openSnOfflineHistory(panel,trigger){
+  if(panel.querySelector('[data-offline-history-modal]'))return;
+  const overlay=document.createElement('div');overlay.dataset.offlineHistoryModal='';overlay.style.cssText='position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;padding:18px;background:#0007;pointer-events:auto';
+  const card=document.createElement('section');card.className='local-sn-cpc-card';card.style.cssText='width:min(680px,calc(100vw - 36px));max-height:85vh';card.setAttribute('role','dialog');card.setAttribute('aria-modal','true');card.setAttribute('aria-label','Offline SNOW update history');
+  const head=document.createElement('div');head.className='local-sn-cpc-drag';head.style.cursor='default';const title=document.createElement('h2');title.textContent='Offline SNOW updates';const close=document.createElement('button');close.type='button';close.className='local-sn-cpc-close';close.ariaLabel='Close update history';close.innerHTML='<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m18 6-12 12M6 6l12 12"/></svg>';head.append(title,close);
+  const content=document.createElement('div');content.style.cssText='overflow:auto;padding:14px';const status=document.createElement('div'),list=document.createElement('div'),more=document.createElement('button');status.setAttribute('role','status');more.type='button';more.textContent='Load older updates';more.hidden=true;content.append(status,list,more);card.append(head,content);overlay.append(card);panel.append(overlay);close.onclick=()=>{overlay.remove();trigger.focus();};overlay.onclick=e=>{if(e.target===overlay)close.click();};overlay.onkeydown=e=>{e.stopPropagation();if(e.key==='Escape'){e.preventDefault();close.click();}if(e.key==='Tab'){const controls=[close,...(!more.hidden&&!more.disabled?[more]:[])],first=controls[0],last=controls.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}};close.focus();
+  const cacheKey='sn-ai-offline-history-v1:'+location.hostname;let rows=[],cursor=null,busy=false;
+  const render=()=>{list.replaceChildren();let day='';const style='display:grid;grid-template-columns:52px minmax(0,1fr) minmax(65px,.8fr) minmax(70px,.9fr);gap:8px;align-items:center;padding:10px;margin:5px 0;border:1px solid var(--sn-theme-655573,#655573);border-radius:6px;background:var(--sn-theme-251f31,#251f31);font-size:12px';
+    if(rows.length){const header=document.createElement('div');header.style.cssText=style;for(const text of ['Time','Updated by','Method','Result']){const cell=document.createElement('strong');cell.textContent=text;cell.style.cssText='min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';header.append(cell);}list.append(header);}
+    for(const row of rows){const date=new Date(row.updatedAt||row.startedAt);if(!Number.isFinite(date.getTime()))continue;const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Budapest',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(date),part=type=>parts.find(p=>p.type===type)?.value||'',dateLabel=part('year')+'.'+part('month')+'.'+part('day');if(day!==dateLabel){day=dateLabel;const group=document.createElement('strong');group.textContent=day;group.style.cssText='display:block;margin:14px 0 6px';list.append(group);}const item=document.createElement('div');item.style.cssText=style;for(const text of [part('hour')+':'+part('minute'),String(row.name||row.shortName||'Unknown').trim().split(/\s+/)[0],snOfflineHistoryMethod(row),'Completed']){const cell=document.createElement('span');cell.textContent=text;cell.style.cssText='min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';item.append(cell);}list.append(item);}
+  };
+  const load=async(reset=false)=>{if(busy)return;busy=true;more.disabled=true;try{await snOfflineAuthorizedAccount();const identity=await diagnosticIdentity(),data=await snOfflineRequest('history',{daily:true,token:identity.token,query:{limit:'50',...(!reset&&cursor?{before:cursor}:{})}});if(!Array.isArray(data.items))throw Error('history_invalid_response');const merged=new Map((reset?[]:rows).map(row=>[row.attemptId,row]));for(const row of data.items)if(row.status==='published'&&/^[a-f0-9]{32}$/.test(row.attemptId||''))merged.set(row.attemptId,{attemptId:row.attemptId,status:row.status,manual:typeof row.manual==='boolean'?row.manual:undefined,method:row.method,name:String(row.name||''),shortName:String(row.shortName||''),updatedAt:row.updatedAt,startedAt:row.startedAt});rows=[...merged.values()].sort((a,b)=>Date.parse(b.updatedAt||b.startedAt)-Date.parse(a.updatedAt||a.startedAt)).slice(0,500);cursor=/^[a-f0-9]{32}$/.test(data.nextCursor||'')?data.nextCursor:null;await gmSetValue(cacheKey,rows);status.textContent=rows.length?'':'No successful updates recorded yet.';}catch(error){status.textContent='History unavailable.'+(rows.length?' Saved history is shown.':'');recordCompactDiagnostic('warn','offline-update-history',{code:String(error.code||'request_failed'),status:Number(error.status)||0});}finally{busy=false;more.disabled=false;more.hidden=!cursor;if(overlay.isConnected)render();}};
+  more.onclick=()=>load(false);try{rows=(await gmGetValue(cacheKey,[])).filter(row=>row?.status==='published').slice(0,500);}catch{}render();await load(true);
+}
 function installSnOfflineUpdaterUI(panel){
   if(!snPersonalApprovedPage())return;
   snOfflineAuthorizedAccount().then(()=>{
@@ -10258,7 +10274,8 @@ function installSnOfflineUpdaterUI(panel){
     const update=document.createElement('button'),message=document.createElement('div');message.setAttribute('role','status');message.style.cssText='font-size:12px;line-height:1.5';
     update.type='button';update.textContent='Update Offline SNOW data';
     update.onclick=async()=>{if(snOfflineUpdating)return;update.disabled=true;bar.hidden=false;bar.value=0;try{await snOfflineUpdateReferences((text,percent)=>{message.textContent=text;if(Number.isFinite(percent))bar.value=Math.max(bar.value,percent);},{fresh:true});snRenderServiceError(row,null);}catch(e){message.textContent=e.message+' Pending data is kept for retry.';snRenderServiceError(row,e.safeDetails||snSafeServiceError('offline-update','/work/offline-snow/api.php',e.status||0,null,'','local_or_network_error'));recordCompactDiagnostic('warn','offline-reference-upload',e.safeDetails||{code:'unconfirmed',status:e.status||0});}finally{update.disabled=false;}};
-    row.append(update,bar,message);panel.append(row);
+    const history=document.createElement('button');history.type='button';history.className='secondary';history.textContent='Update history';history.onclick=()=>openSnOfflineHistory(panel,history);
+    row.append(update,history,bar,message);panel.append(row);
   }).catch(()=>{});
 }
   /* SN_AI_OFFLINE_UPDATER_END */
@@ -19898,7 +19915,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     aiDeleteConfirm.querySelector('div').textContent='Remove your saved Gemini API key from SN AI and your synced profile?';
     const setupButton=document.createElement('button');setupButton.type='button';setupButton.textContent='Setup guide';setupButton.className='secondary';setupButton.style.cssText='font-size:12px;padding:5px 9px;margin-top:14px;align-self:flex-start';aiAPISettings.append(setupButton);
     const fallbackBox=document.createElement('div');fallbackBox.hidden=true;fallbackBox.style.cssText='margin-top:12px;padding:12px;border:1px solid var(--sn-theme-655573);border-radius:9px';const fallbackText=document.createElement('div');fallbackText.textContent='Gemini API is unavailable. A connected backup companion is available. Switch to it?';const switchBackup=document.createElement('button'),stayAPI=document.createElement('button');switchBackup.type=stayAPI.type='button';switchBackup.textContent='Use backup companion';stayAPI.textContent='Keep Gemini API';stayAPI.className='secondary';fallbackBox.append(fallbackText,switchBackup,stayAPI);aiAPISettings.append(fallbackBox);
-    async function healthyBackup(){const heartbeat=await getSelectedWebsiteHeartbeat();return !!heartbeat&&heartbeat.context==='extension-offscreen'&&typeof heartbeat.companionVersion==='string'&&heartbeat.workerToken===CHATGPT_WEB_WINDOW_TOKEN&&Date.now()-Number(heartbeat.at||0)<=30000&&heartbeat.promptReady===true&&!heartbeat.requiresLogin;}
+    async function healthyBackup(){if(!workspacePage||!/^\/now\/workspace\/agent\/chat(?:\/|$)/i.test(location.pathname))return false;const heartbeat=await getSelectedWebsiteHeartbeat();return !!heartbeat&&heartbeat.context==='extension-offscreen'&&typeof heartbeat.companionVersion==='string'&&heartbeat.workerToken===CHATGPT_WEB_WINDOW_TOKEN&&Date.now()-Number(heartbeat.at||0)<=30000&&heartbeat.promptReady===true&&!heartbeat.requiresLogin;}
     const fallbackHeading=document.createElement('div');fallbackHeading.textContent='Use backup AI?';fallbackHeading.style.cssText='font-size:17px;font-weight:700;margin-bottom:8px';fallbackBox.prepend(fallbackHeading);
     fallbackText.textContent='Gemini API is unavailable. Your connected companion is ready to use instead.';fallbackText.style.marginBottom='18px';
     const fallbackActions=document.createElement('div');fallbackActions.style.cssText='display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap';fallbackActions.append(stayAPI,switchBackup);fallbackBox.append(fallbackActions);
