@@ -6006,6 +6006,7 @@ function installWorkspaceReferenceSearch(){
     return !!record && (record.active?.value===false || record.active?.value==='false' || ['closed_complete','closed_abandoned'].includes(record.state?.value));
   }
   function syncForcedIMSHost(host,record) {
+    host.toggleAttribute('data-sn-ai-chat-closed',isInactiveIMS(record));
     // inChatShell gates native message sounds and tab-update dispatches.
     // Never override it for active or not-yet-classified conversations.
     const shouldForce=forceIMSChatEnabled&&isInactiveIMS(record);
@@ -24467,6 +24468,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       choice.addEventListener('pointercancel', () => { hoveredChoice = null; restoreChoice(); });
       choice.addEventListener('focus', () => { if (!hoveredChoice) paintChoice(choice); });
       choice.addEventListener('click', event => {
+        event.stopPropagation?.();
         presencePreference.manualSelection = event.isTrusted ? {status:name,at:Date.now()} : null;
         closeMenu(true); select.value = name;
         select.dispatchEvent(new Event('change', { bubbles: true }));
@@ -24505,6 +24507,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     };
     async function applyDesired() {
       if (presencePreference.busy || !presencePreference.desired || !native.isConnected) return;
+      if(presencePreference.desired===actual())return;
       presencePreference.busy = true; presencePreference.lastAttempt = Date.now();
       try {
         const desired = presencePreference.desired, previousPresence = actual();
