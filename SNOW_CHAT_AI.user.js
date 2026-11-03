@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.843
+// @version      2.36.844
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.844","fixes":true,"changes":[{"key":"workspace-reference-search","meaningful":true,"text":"Search matrix codes and English titles with code-first ranking, show titles beneath options, and find templates by words in any order without an asterisk."}]},
 {"version":"2.36.843","fixes":true,"changes":[{"key":"chat-image-paste","meaningful":true,"text":"Drag images into chat to queue removable previews, just like paste, without immediate sending or the native shaded drop overlay."}]},
 {"version":"2.36.842","fixes":true,"changes":[{"key":"classic-gemini","meaningful":true,"text":"Keep Gemini API active on classic SNOW forms and restrict companion fallback offers to Workspace chat pages."}]},
 {"version":"2.36.841","fixes":true,"changes":[]},
@@ -7262,7 +7263,9 @@ const snAIChatDisplayNames=(()=>{
     ciInputLoadingTimer=setTimeout(()=>{ciLoadingTokens.delete('input-debounce');refreshCILoading();},1000);
   },true);
   // SN_AI_CI_LOADING_END
+  document.addEventListener('sn-ai-matrix-titles-ready',()=>{for(const root of spaceRoots)if(root.host?.localName==='now-dropdown-list')for(const option of root.querySelectorAll('[role="option"]'))decorateWorkspaceMatrixRows(option);});
   function discover(node) {
+    decorateWorkspaceMatrixRows(node);
     if(['now-record-typeahead','now-popover'].includes((node.host||node).localName))installCIDropdownPlacement(node.host||node);
     decorateCILoadingText(node);
     if(node.nodeType!==3&&ciLoadingTokens.size&&node.textContent?.length<600&&node.textContent.includes('No results found')){const walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT);let text;while((text=walker.nextNode()))decorateCILoadingText(text);}
@@ -10015,7 +10018,8 @@ function startSNAI(tabIdentity) {
     finally{memorySampling=false;}
   },60000):0;
   window.addEventListener('pagehide',()=>{memoryStopped=true;clearInterval(memoryTimer);},{once:true});
-  try{if(workspacePage)installCISearch();else if(/^\/(?:incident|new_call)\.do$/i.test(location.pathname))installClassicCISearch();}catch{/* Preserve native lookup if enhancement cannot initialize. */}
+  try{if(workspacePage){installCISearch();installWorkspaceReferenceSearch();}else if(/^\/(?:incident|new_call)\.do$/i.test(location.pathname))installClassicCISearch();}catch{/* Preserve native lookup if enhancement cannot initialize. */}
+  document.addEventListener('sn-ai-reference-search-error',event=>recordCompactDiagnostic('warn','workspace-reference-search-fallback',event.detail||{}));
   if(snPersonalApprovedPage())setTimeout(()=>installPersonalSettingsSync({
     identity:diagnosticIdentity,reporter:snPersonalCurrentAccount,defaultModes:DEFAULT_ENABLED_MODES,
     onCredentialBinding:ctx=>{geminiCredentials.bind(ctx);sharedModeMessages.bind(ctx);},onCredentialDetach:()=>{geminiCredentials.detach();sharedModeMessages.detach();},
@@ -25694,6 +25698,69 @@ function chatsTodaySearchMatch(text,query) {
   }
   return false;
 }
+// SN_AI_WORKSPACE_REFERENCE_SEARCH_BEGIN
+function snMatrixSearchTitles(){return snMatrixSearchTitles.rows||(snMatrixSearchTitles.rows=new Map());}
+function snReferenceSearchWords(query){return String(query||'').normalize('NFKD').replace(/\p{M}/gu,'').toLowerCase().replace(/\*/g,' ').match(/[\p{L}\p{N}]+/gu)||[];}
+function snReferenceSearchRank(rows,query,matrix){
+  const words=snReferenceSearchWords(query),phrase=words.join(' '),normalize=value=>snReferenceSearchWords(value).join(' ');
+  return [...new Map(rows.filter(row=>/^[a-f0-9]{32}$/i.test(row?.sysId||'')).map(row=>[row.sysId,row])).values()].map((row,index)=>{
+    const code=String(row.referenceData?.find(cell=>cell.key==='u_code')?.value||row.referenceData?.[0]?.value||''),title=matrix?snMatrixSearchTitles().get(row.sysId)?.title||'':'';
+    const main=normalize(code),secondary=normalize(title),codeMatch=words.every(word=>main.includes(word)),anyMatch=words.every(word=>(main+' '+secondary).includes(word));
+    return {row,index,main,codeMatch,anyMatch,exact:main===phrase,prefix:main.startsWith(phrase)};
+  }).filter(item=>!words.length||item.anyMatch).sort((a,b)=>Number(b.codeMatch)-Number(a.codeMatch)||Number(b.exact)-Number(a.exact)||Number(b.prefix)-Number(a.prefix)||a.main.length-b.main.length||a.index-b.index).map(item=>item.row);
+}
+function decorateWorkspaceMatrixRows(node){
+  const option=node?.matches?.('[role="option"]')?node:node?.nodeType===3?node.parentElement?.closest('[role="option"]'):null;if(!option)return;
+  const id=String(option.id||'').match(/[a-f0-9]{32}$/i)?.[0],title=snMatrixSearchTitles().get(id)?.title;let subtitle=option.querySelector('[data-sn-ai-matrix-title]');if(!title){if(subtitle){subtitle.remove();option.style.removeProperty('height');option.style.removeProperty('min-height');}return;}
+  if(subtitle?.textContent===title)return;
+  if(!subtitle){subtitle=document.createElement('div');subtitle.dataset.snAiMatrixTitle='';subtitle.style.cssText='font-size:11px;line-height:1.35;margin-top:3px;opacity:.8;white-space:normal;pointer-events:none;font-weight:400;color:inherit';(option.querySelector('.now-dropdown-list-labels')||option).append(subtitle);}
+  subtitle.textContent=title;option.style.setProperty('height','auto');option.style.setProperty('min-height','46px');
+}
+function installWorkspaceReferenceSearch(){
+  const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window,nativeFetch=page.fetch;if(nativeFetch.snAiWorkspaceReferenceSearch)return;
+  const cache=new Map(),active=new Map();
+  page.fetch=function enhancedReferenceFetch(input,init){
+    let operation;
+    try{
+      if(new URL(typeof input==='string'?input:input?.url,location.href).pathname!=='/api/now/graphql')return Reflect.apply(nativeFetch,this,arguments);
+      if(init?.body===undefined&&typeof input?.clone==='function'&&input.method==='POST'){const owner=this;return input.clone().text().then(body=>enhancedReferenceFetch.call(owner,input,{...init,body,signal:init?.signal||input.signal}));}
+      if(typeof init?.body!=='string')return Reflect.apply(nativeFetch,this,arguments);operation=JSON.parse(init.body);
+      if(operation.operationName!=='snRecordReferenceConnected'||!['u_matrix_category','u_matrix_subcategory','u_matrix_symptom','u_template_name'].includes(operation.variables?.field)||typeof operation.variables.chars!=='string')return Reflect.apply(nativeFetch,this,arguments);
+    }catch{return Reflect.apply(nativeFetch,this,arguments);}
+    const owner=this,vars=operation.variables,matrix=vars.field!=='u_template_name',query=vars.chars.slice(0,256),context=JSON.stringify({...vars,chars:undefined,paginationLimit:undefined,paginationOffset:undefined});
+    active.get(vars.field)?.abort();const controller=new AbortController();active.set(vars.field,controller);const abort=()=>controller.abort();init.signal?.addEventListener('abort',abort,{once:true});if(init.signal?.aborted)abort();
+    const check=()=>{if(controller.signal.aborted)throw new DOMException('Reference search superseded','AbortError');};
+    const read=async(chars,offset,limit=100)=>{
+      check();const headers=new page.Headers(init.headers||input?.headers||{});headers.delete('x-request-cancelable');
+      const response=await Reflect.apply(nativeFetch,owner,[input,{...init,headers,body:JSON.stringify({...operation,variables:{...vars,chars,paginationLimit:limit,paginationOffset:offset}}),signal:controller.signal}]);
+      if(!response.ok)throw Error('reference_http_'+response.status);const body=await response.json();check();const data=body?.data?.GlideLayout_Query?.referenceDataRetriever;if(body.errors?.length||!Array.isArray(data?.referenceDataList))throw Error('reference_response_invalid');return {body,data};
+    };
+    const hydrate=async rows=>{
+      if(!matrix)return;const missing=[...new Set(rows.map(row=>row.sysId))].filter(id=>/^[a-f0-9]{32}$/i.test(id||'')&&!snMatrixSearchTitles().has(id));
+      for(let offset=0;offset<missing.length;offset+=100){
+        const params=new URLSearchParams({sysparm_query:'sys_idIN'+missing.slice(offset,offset+100).join(','),sysparm_fields:'sys_id,u_code,u_name_en,u_description',sysparm_limit:'100',sysparm_exclude_reference_link:'true'}),headers=new page.Headers(init.headers||input?.headers||{});headers.delete('x-request-cancelable');
+        const response=await Reflect.apply(nativeFetch,owner,['/api/now/table/u_matrix?'+params,{credentials:'same-origin',headers,signal:controller.signal}]);if(!response.ok)throw Error('matrix_titles_http_'+response.status);const result=await response.json();check();if(!Array.isArray(result.result))throw Error('matrix_titles_invalid');
+        const value=v=>String(v&&typeof v==='object'?v.display_value??v.value??'':v??'');for(const row of result.result){const id=value(row.sys_id);if(missing.includes(id))snMatrixSearchTitles().set(id,{title:value(row.u_name_en)||value(row.u_description)});}
+        while(snMatrixSearchTitles().size>2000)snMatrixSearchTitles().delete(snMatrixSearchTitles().keys().next().value);
+      }
+      document.dispatchEvent(new CustomEvent('sn-ai-matrix-titles-ready'));
+    };
+    const run=async()=>{
+      // Empty search keeps ServiceNow's recent-selection groups unchanged.
+      if(!snReferenceSearchWords(query).length){const result=await read(vars.chars,Number(vars.paginationOffset)||0,Number(vars.paginationLimit)||25);await hydrate([...(result.data.referenceRecentDataList||[]),...result.data.referenceDataList]);return new page.Response(JSON.stringify(result.body),{headers:{'Content-Type':'application/json'}});}
+      let saved=cache.get(context);
+      if(!saved||Date.now()-saved.at>30000){
+        let template,rows=[],previous='';for(let offset=0;offset<2000;offset+=100){const result=await read('*',offset);template||=result.body;const ids=result.data.referenceDataList.map(row=>row.sysId).join(',');rows.push(...(result.data.referenceRecentDataList||[]),...result.data.referenceDataList);if(result.data.referenceDataList.length<100||ids===previous)break;previous=ids;}
+        await hydrate(rows);saved={body:template,rows,at:Date.now()};cache.set(context,saved);while(cache.size>12)cache.delete(cache.keys().next().value);
+      }
+      check();const body=JSON.parse(JSON.stringify(saved.body)),data=body.data.GlideLayout_Query.referenceDataRetriever,ranked=snReferenceSearchRank(saved.rows,query,matrix),offset=Math.max(0,Number(vars.paginationOffset)||0),limit=Math.max(1,Math.min(100,Number(vars.paginationLimit)||25));
+      Object.assign(data,{referenceRecentDataList:[],referenceDataList:ranked.slice(offset,offset+limit),recentCount:0,matchesCount:ranked.length,totalCount:ranked.length});return new page.Response(JSON.stringify(body),{headers:{'Content-Type':'application/json'}});
+    };
+    return run().catch(error=>{if(controller.signal.aborted||error.name==='AbortError')throw error;document.dispatchEvent(new CustomEvent('sn-ai-reference-search-error',{detail:{field:vars.field,reason:String(error.message).slice(0,100)}}));return Reflect.apply(nativeFetch,owner,[input,init]);}).finally(()=>{init.signal?.removeEventListener('abort',abort);if(active.get(vars.field)===controller)active.delete(vars.field);});
+  };page.fetch.snAiWorkspaceReferenceSearch=true;
+}
+// SN_AI_WORKSPACE_REFERENCE_SEARCH_END
+
 // SN_AI_CI_SEARCH_BEGIN
 async function snClassicCommitReference(name,query,options={}) {
   const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
