@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.880
+// @version      2.36.881
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.881","fixes":true,"changes":[]},
 {"version":"2.36.880","fixes":true,"changes":[]},
 {"version":"2.36.879","fixes":true,"changes":[]},
 {"version":"2.36.878","fixes":false,"changes":[{"key":"ticket-case-notes","meaningful":true,"text":"Use ticket-specific notes as additional context, rephrasing relevant facts naturally and omitting unrelated details."}]},
@@ -10464,7 +10465,7 @@ async function snOfflineUpdateReferences(progress,{fresh=false}={}){
         const bytes=new Uint8Array(await new Response(new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
         if(bytes.length>8388608)throw Error('offline_compressed_snapshot_exceeds_8MiB');
         const sha256=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),v=>v.toString(16).padStart(2,'0')).join('');
-        pending={schema:3,requestId:dailyRequestId,dailyTabId,sha256,bytes,counts,instance:location.hostname,userID:account.userID};
+        pending={schema:3,templateFilterVersion:1,requestId:dailyRequestId,dailyTabId,sha256,bytes,counts,instance:location.hostname,userID:account.userID};
         await snOfflinePending(pending);
       }
       if(pending.schema!==3)throw Error('offline_legacy_pending_retained: click Update to collect a fresh compressed snapshot');
