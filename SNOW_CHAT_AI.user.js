@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.881
+// @version      2.36.883
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,8 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.883","fixes":false,"changes":[{"key":"attachment-upload-name","meaningful":true,"text":"Keep original attachment names by default, with a separate Upload with random name option."}]},
+{"version":"2.36.882","fixes":false,"changes":[{"key":"ticket-feedback-back","meaningful":true,"text":"Return from feedback to the completed ticket with Back, keeping any unsent feedback."}]},
 {"version":"2.36.881","fixes":true,"changes":[]},
 {"version":"2.36.880","fixes":true,"changes":[]},
 {"version":"2.36.879","fixes":true,"changes":[]},
@@ -1549,21 +1551,23 @@ function snMediaChatSurface(chat){return [chat,...snMediaNodes(chat.shadowRoot,'
 function snMediaChatClosed(chat){return !!chat?.hasAttribute?.('data-sn-ai-chat-closed')||chat?.getProperties?.().readOnly===true||!!chat?.shadowRoot?.querySelector?.('.sn-ai-chat-preview-notice');}
 function snMediaRepairStyle(root,cache,text,version){let style=cache.get(root);if(!style||style.parentNode!==root){style=root.querySelector('style[data-sn-ai-media-runtime]')||document.createElement('style');if(!style.hasAttribute('data-sn-ai-media-style'))style.dataset.snAiMediaStyle='';if(style.dataset.snAiMediaRuntime!=='true')style.dataset.snAiMediaRuntime='true';cache.set(root,style);}if(style.textContent!==text)style.textContent=text;if(style.dataset.snAiStyleVersion!==version)style.dataset.snAiStyleVersion=version;if(style.parentNode!==root)root.append(style);return style;}
 function snMediaDefaultUploadName(file){const known={'image/png':'.png','image/jpeg':'.jpg','image/gif':'.gif','image/webp':'.webp','image/bmp':'.bmp','image/tiff':'.tif','image/avif':'.avif','application/pdf':'.pdf'},extension=known[file.type]||String(file.name||'').match(/\.[a-z0-9]{1,12}$/i)?.[0]?.toLowerCase()||'',bytes=new Uint8Array(8);crypto.getRandomValues(bytes);return {stem:'attachment-'+Array.from(bytes,value=>value.toString(16).padStart(2,'0')).join(''),extension};}
+function snMediaOriginalUploadName(file){const name=String(file.name||'');if(!name)return snMediaDefaultUploadName(file);const extension=name.match(/\.[a-z0-9]{1,12}$/i)?.[0]||'';return {stem:extension?name.slice(0,-extension.length):name,extension};}
 function snMediaConfirmUpload(files,submit){
   if(document.getElementById('sn-ai-upload-confirmation'))return Promise.reject(Error('Finish the current upload confirmation first.'));
   return new Promise((resolve,reject)=>{
     const host=document.createElement('div');host.id='sn-ai-upload-confirmation';host.setAttribute('popover','manual');host.style.cssText='position:fixed;inset:0;width:100vw;height:100dvh;max-width:none;max-height:none;margin:0;padding:20px;border:0;background:rgba(12,10,17,.7);z-index:2147483647;display:grid;place-items:center;box-sizing:border-box';
     const root=host.attachShadow({mode:'open'}),style=document.createElement('style');style.textContent='*{box-sizing:border-box}.card{width:min(800px,94vw);max-height:90vh;overflow:auto;background:var(--sn-theme-191621,#191621);color:var(--sn-theme-e6edf9,#eee);border:1px solid var(--sn-theme-655573,#655573);border-radius:14px;padding:22px;font:14px/1.4 system-ui;box-shadow:0 18px 60px #0005}header,footer{display:flex;align-items:center;gap:12px}header strong{font-size:19px;flex:1}footer{justify-content:flex-end;margin-top:20px}.files{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr));gap:14px;margin-top:20px}.file{min-width:0;padding:14px;border:1px solid var(--sn-theme-655573,#655573);border-radius:11px;background:var(--sn-theme-251f31,#251f31)}.file img{display:block;width:100%;height:260px;object-fit:contain;background:var(--sn-theme-191621,#191621);border:1px solid var(--sn-theme-655573,#655573);border-radius:9px;margin-bottom:14px}.files.single img{height:min(48vh,420px)}label{display:block;font-size:12px;font-weight:600;margin-bottom:6px}.filename{display:flex;align-items:center;gap:8px}.filename input{min-width:0;flex:1;width:100%;border:1px solid var(--sn-theme-655573,#655573);border-radius:7px;background:var(--sn-theme-191621,#191621);color:inherit;font:14px system-ui;padding:10px 12px}.filename input:focus{outline:2px solid #ad8cff;outline-offset:1px}.ext{font-size:13px;opacity:.8}button{font:600 14px system-ui;padding:10px 18px;border:1px solid #796c8d;border-radius:8px;color:inherit;background:#30283e;cursor:pointer}button svg{display:block}.upload{background:linear-gradient(110deg,#7bcaff,#ad8cff);color:#161124;border:0}.status{margin-top:12px;white-space:pre-wrap}button:disabled,input:disabled{opacity:.55;cursor:default}@media(max-width:480px){.card{padding:15px}.file{padding:10px}.file img{height:220px}}';root.append(style);
-    const card=document.createElement('section'),header=document.createElement('header'),title=document.createElement('strong'),close=document.createElement('button'),list=document.createElement('div'),status=document.createElement('div'),footer=document.createElement('footer'),cancel=document.createElement('button'),upload=document.createElement('button');
-    card.className='card';card.setAttribute('role','dialog');card.setAttribute('aria-modal','true');card.setAttribute('aria-label','Attach files to ticket');title.textContent='Attach '+files.length+(files.length===1?' file':' files')+' to ticket?';close.type=cancel.type=upload.type='button';close.innerHTML=snMediaIcon('x');close.ariaLabel='Cancel attachment upload';close.style.padding='7px';cancel.textContent='Cancel';upload.textContent='Upload';upload.className='upload';list.className='files'+(files.length===1?' single':'');status.className='status';status.setAttribute('role','status');
-    const urls=[],editors=[];for(const file of files){const row=document.createElement('div'),label=document.createElement('label'),filename=document.createElement('div'),input=document.createElement('input'),ext=document.createElement('span'),generated=snMediaDefaultUploadName(file);row.className='file';label.textContent='File name';filename.className='filename';input.type='text';input.value=generated.stem;input.maxLength=100;input.autocomplete='off';input.spellcheck=false;input.ariaLabel='Attachment file name '+(editors.length+1);ext.className='ext';ext.textContent=generated.extension;editors.push({file,input,extension:generated.extension});if(/^image\//i.test(file.type)&&editors.length<=10){const image=document.createElement('img'),url=file.previewURL||URL.createObjectURL(file);if(!file.previewURL)urls.push(url);image.src=url;image.alt='Attachment preview';row.append(image);}filename.append(input,ext);label.append(filename);row.append(label);list.append(row);}
-    header.append(title,close);footer.append(cancel,upload);card.append(header,list,status,footer);root.append(card);let sending=false;
+    const card=document.createElement('section'),header=document.createElement('header'),title=document.createElement('strong'),close=document.createElement('button'),list=document.createElement('div'),status=document.createElement('div'),footer=document.createElement('footer'),cancel=document.createElement('button'),randomUpload=document.createElement('button'),upload=document.createElement('button');
+    card.className='card';card.setAttribute('role','dialog');card.setAttribute('aria-modal','true');card.setAttribute('aria-label','Attach files to ticket');title.textContent='Attach '+files.length+(files.length===1?' file':' files')+' to ticket?';close.type=cancel.type=randomUpload.type=upload.type='button';close.innerHTML=snMediaIcon('x');close.ariaLabel='Cancel attachment upload';close.style.padding='7px';cancel.textContent='Cancel';randomUpload.textContent='Upload with random name';upload.textContent='Upload';upload.className='upload';list.className='files'+(files.length===1?' single':'');status.className='status';status.setAttribute('role','status');
+    const urls=[],editors=[];for(const file of files){const row=document.createElement('div'),label=document.createElement('label'),filename=document.createElement('div'),input=document.createElement('input'),ext=document.createElement('span'),generated=snMediaOriginalUploadName(file);row.className='file';label.textContent='File name';filename.className='filename';input.type='text';input.value=generated.stem;input.maxLength=Math.max(100,generated.stem.length);input.autocomplete='off';input.spellcheck=false;input.ariaLabel='Attachment file name '+(editors.length+1);ext.className='ext';ext.textContent=generated.extension;editors.push({file,input,extension:generated.extension});if(/^image\//i.test(file.type)&&editors.length<=10){const image=document.createElement('img'),url=file.previewURL||URL.createObjectURL(file);if(!file.previewURL)urls.push(url);image.src=url;image.alt='Attachment preview';row.append(image);}filename.append(input,ext);label.append(filename);row.append(label);list.append(row);}
+    header.append(title,close);footer.append(cancel,randomUpload,upload);card.append(header,list,status,footer);root.append(card);let sending=false;
     const cleanup=()=>{document.removeEventListener('keydown',keydown,true);urls.forEach(url=>URL.revokeObjectURL(url));host.remove();};
     const finish=result=>{cleanup();resolve(result);};
     const keydown=event=>{if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();if(!sending)finish([]);}};
     close.onclick=cancel.onclick=()=>{if(!sending)finish([]);};
-    upload.onclick=async()=>{if(sending)return;const names=new Set(),selected=[];for(const entry of editors){const stem=entry.input.value.trim();if(!stem||stem==='.'||stem==='..'||/[\\\\/:*?"<>|\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069]/.test(stem)||/[. ]$/.test(stem)){status.textContent='Enter a valid file name without path separators or special control characters.';entry.input.focus();return;}const name=stem+entry.extension;if(names.has(name.toLowerCase())){status.textContent='Each attachment needs a different file name.';entry.input.focus();return;}names.add(name.toLowerCase());selected.push(typeof Blob!=='undefined'&&entry.file instanceof Blob?new File([entry.file],name,{type:entry.file.type,lastModified:entry.file.lastModified}):{...entry.file,name});}
-      sending=true;upload.disabled=cancel.disabled=close.disabled=true;editors.forEach(entry=>entry.input.disabled=true);cleanup();try{resolve(await submit(selected));}catch(error){reject(error);}};
+    const send=async(randomNames=false)=>{if(sending)return;const names=new Set(),selected=[];for(const entry of editors){const generated=randomNames?snMediaDefaultUploadName(entry.file):null,stem=generated?generated.stem:entry.input.value.trim();if(!stem||stem==='.'||stem==='..'||/[\\\\/:*?"<>|\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069]/.test(stem)||/[. ]$/.test(stem)){status.textContent='Enter a valid file name without path separators or special control characters.';entry.input.focus();return;}const name=stem+(generated?generated.extension:entry.extension);if(names.has(name.toLowerCase())){status.textContent='Each attachment needs a different file name.';entry.input.focus();return;}names.add(name.toLowerCase());selected.push(typeof Blob!=='undefined'&&entry.file instanceof Blob?new File([entry.file],name,{type:entry.file.type,lastModified:entry.file.lastModified}):{...entry.file,name});}
+      sending=true;upload.disabled=randomUpload.disabled=cancel.disabled=close.disabled=true;editors.forEach(entry=>entry.input.disabled=true);cleanup();try{resolve(await submit(selected));}catch(error){reject(error);}};
+    upload.onclick=()=>send(false);randomUpload.onclick=()=>send(true);
     document.addEventListener('keydown',keydown,true);(document.body||document.documentElement).append(host);host.showPopover?.();
   });
 }
@@ -2017,15 +2021,19 @@ function installWorkspaceReferenceSearch(){
     link.dataset.snAiStyleVersion=sharedStyleVersion;link.dataset.snAiStylePending='true';
     link.dataset.snAiCssChars=String(text.length);
     style.snAiSharedLink=link;style.snAiSharedText=text;
-    link.addEventListener('load',()=>{
+    const clearStyleListeners=()=>{link.removeEventListener('load',onStyleLoad);link.removeEventListener('error',onStyleError);};
+    const onStyleLoad=()=>{
+      clearStyleListeners();
       delete link.dataset.snAiStylePending;
       if(style.snAiSharedLink!==link){link.remove();return;}
       if(!link.sheet){link.remove();style.snAiSharedLink=null;return;}
       if(style.textContent===text)style.textContent='';
       previous?.remove();
       for(const old of root.querySelectorAll('link[data-sn-ai-shared-style]'))if(old!==link&&old.dataset.snAiStyleVersion!==sharedStyleVersion)old.remove();
-    },{once:true});
-    link.addEventListener('error',()=>{if(style.snAiSharedLink===link){style.textContent=text;style.snAiSharedLink=null;}link.remove();previous?.remove();},{once:true});
+    };
+    const onStyleError=()=>{clearStyleListeners();if(style.snAiSharedLink===link){style.textContent=text;style.snAiSharedLink=null;}link.remove();previous?.remove();};
+    link.addEventListener('load',onStyleLoad,{once:true});
+    link.addEventListener('error',onStyleError,{once:true});
     style.before(link);
   }
   let acceptedIMS = new Set();
@@ -22128,6 +22136,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       };
       refs.feedbackSendButton.addEventListener('click', async () => {
         refs.feedbackSendButton.disabled = true;
+        refs.feedbackCancelButton.disabled = true;
         refs.errorLine.classList.remove('is-success');
         try {
           const feedback = sanitiseFeedback(refs.feedbackInput.value);
@@ -22146,9 +22155,10 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           setTimeout(finishFeedback, 900);
         }
         catch (error) { refs.errorLine.classList.remove('is-success'); refs.errorLine.textContent = error.message; }
-        finally { refs.feedbackSendButton.disabled = false; }
+        finally { refs.feedbackSendButton.disabled = false; refs.feedbackCancelButton.disabled = false; }
       });
-      refs.feedbackCancelButton.addEventListener('click', finishFeedback);
+      refs.feedbackCancelButton.textContent = 'Back';
+      refs.feedbackCancelButton.addEventListener('click', () => { refs.showFeedback(); });
       refs.feedbackInput.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); refs.feedbackSendButton.click(); } });
       refs.manualAIButton.addEventListener('click', () => { refs.manualAIPanel.hidden = false; refs.manualAIInput.focus(); });
       refs.manualAICancelButton.addEventListener('click', () => { refs.manualAIPanel.hidden = true; refs.manualAIInput.value = ''; if(modifyingSuccess){modifyingSuccess=false;refs.showFeedback();} });
