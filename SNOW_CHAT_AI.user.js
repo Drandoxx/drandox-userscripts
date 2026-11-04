@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.878
+// @version      2.36.879
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.879","fixes":true,"changes":[]},
 {"version":"2.36.878","fixes":false,"changes":[{"key":"ticket-case-notes","meaningful":true,"text":"Use ticket-specific notes as additional context, rephrasing relevant facts naturally and omitting unrelated details."}]},
 {"version":"2.36.877","fixes":false,"changes":[{"key":"ticket-prompt-context","meaningful":true,"text":"Keep ticket narratives focused on issue history and confirmed outcomes, without administrative narration or forced I wording."}]},
 {"version":"2.36.876","fixes":false,"changes":[{"key":"gemini-reasoning","meaningful":true,"text":"Use medium reasoning for Gemini requests while keeping Gemini as the default provider."}]},
@@ -12712,6 +12713,10 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     return baseTicketInstructions(text);
   }
   // Gemini API: private installation key, direct HTTPS and bounded transient retries.
+  function geminiFallbackAllowed(generationFailure=false,now=Date.now()) {
+    if((state.geminiActiveRequests||0)>0)return false;
+    return generationFailure||!state.geminiLastSuccessAt||now-state.geminiLastSuccessAt>=300000;
+  }
   function requestGeminiAPI({ apiKey, model = DEFAULT_API_MODEL, ims = '', mode = 'TEST', connectionOnly = false, instructions, input, schema, promptMode, validate = value => value }) {
     if(!connectionOnly && mode!=='FEEDBACK')instructions=sharedModeInstructions(promptMode||mode,compactGeminiInstructions(mode,instructions,ims))+'\nUse an existing relevant SNOW memory/skill if accessible; otherwise create one only if supported, without customer/ticket data. If unavailable, continue. Never falsely claim memory access or saving. Keep the JSON schema unchanged.';
     state.geminiDiagnosticsActive = true;
@@ -12723,16 +12728,19 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     if (!/^[A-Za-z0-9_.-]{20,256}$/.test(String(apiKey || ''))) preflight('Save a valid Gemini API key in Settings > AI first.');
     if (!/^gemini-[a-z0-9.-]{1,80}$/.test(model)) preflight('Select a valid Gemini model in Settings > AI.');
     if (typeof fetch !== 'function' && typeof GM_xmlhttpRequest !== 'function') preflight('No Gemini HTTPS transport is available. Update your browser and SN AI.');
+    let activityFinished=false;
+    const finishActivity=success=>{if(connectionOnly||activityFinished)return;activityFinished=true;state.geminiActiveRequests=Math.max(0,(state.geminiActiveRequests||0)-1);if(success)state.geminiLastSuccessAt=Date.now();if(typeof document!=='undefined'&&typeof CustomEvent==='function')document.dispatchEvent(new CustomEvent('sn-ai-gemini-activity',{detail:{active:state.geminiActiveRequests>0,success:!!success}}));};
+    if(!connectionOnly){state.geminiActiveRequests=(state.geminiActiveRequests||0)+1;if(typeof document!=='undefined'&&typeof CustomEvent==='function')document.dispatchEvent(new CustomEvent('sn-ai-gemini-activity',{detail:{active:true,success:false}}));}
     const sendRequest=typeof fetch==='function'?requestGeminiFetch:GM_xmlhttpRequest;
     const timeoutMs = 40000;
     let handle, rejectPending, settled = false, deadlineTimer, thinkingTimer, retryTimer, retryCount=0, readyState = 0, attemptId=0, attemptStartedAt=startedAt;
     const maxRetries=4;
     const busy=(value,reason='retry')=>{if(value&&reason==='retry'&&Date.now()-attemptStartedAt<15000)return;if(typeof document!=='undefined'&&typeof CustomEvent==='function')document.dispatchEvent(new CustomEvent('sn-ai-gemini-busy',{detail:{jobId,ims,mode:promptMode||mode,busy:value,reason,retry:retryCount,maxRetries}}));};
-    const stop = () => { if (!settled) { settled = true; clearTimeout(deadlineTimer);clearTimeout(thinkingTimer);clearTimeout(retryTimer);busy(false); log('info', 'cancelled', { code: 'AI_STOPPED' }); rejectPending(Object.assign(new Error('AI request stopped.'), { code: 'AI_STOPPED' })); } };
+    const stop = () => { if (!settled) { settled = true; clearTimeout(deadlineTimer);clearTimeout(thinkingTimer);clearTimeout(retryTimer);busy(false);finishActivity(false); log('info', 'cancelled', { code: 'AI_STOPPED' }); rejectPending(Object.assign(new Error('AI request stopped.'), { code: 'AI_STOPPED' })); } };
     const promise = new Promise((resolve, reject) => {
       rejectPending = reject;
       const fail = (error, details = {}) => { if (!settled) {
-        settled=true;clearTimeout(deadlineTimer);clearTimeout(thinkingTimer);clearTimeout(retryTimer);busy(false);
+        settled=true;clearTimeout(deadlineTimer);clearTimeout(thinkingTimer);clearTimeout(retryTimer);busy(false);finishActivity(false);
         const message=String(error?.message||error).split(apiKey).join('[redacted]');
         const safe={timestamp:new Date().toISOString(),jobId,model,operation:connectionOnly?'model-access-check':mode==='FEEDBACK'?'feedback':'ticket-generation',transport:typeof fetch==='function'?'browser-fetch':'userscript-request',endpoint:'/v1beta/models/'+model+(connectionOnly?'':':generateContent'),durationMs:Date.now()-startedAt,phase:readyState>=2?'reading-response':'waiting-for-response',httpStatus:Number(details.status)||0,code:details.code||'UNKNOWN',...(details.apiReason?{apiReason:details.apiReason}:{}),...(details.browserErrorName?{browserErrorName:details.browserErrorName}:{}),...(typeof navigator!=='undefined'?{browserOnline:navigator.onLine!==false}:{}),...(typeof document!=='undefined'?{pageVisibility:document.visibilityState==='hidden'?'hidden':'visible'}:{})};
         Object.assign(safe,{attempts:retryCount+1,maxAttempts:maxRetries+1,attemptDurationMs:Date.now()-attemptStartedAt,responseHeadersReceived:readyState>=2,requestChars:data?.length||0});
@@ -12790,7 +12798,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             const usage = body.usageMetadata || {}, counts = {};
             for (const key of ['promptTokenCount', 'candidatesTokenCount', 'totalTokenCount', 'thoughtsTokenCount', 'cachedContentTokenCount']) if (Number.isSafeInteger(usage[key]) && usage[key] >= 0) counts[key] = usage[key];
             log('info', 'completed', { status, finishReason, length: text.length, ...counts });
-            settled = true; clearTimeout(deadlineTimer);clearTimeout(thinkingTimer); resolve(result);
+            settled = true; clearTimeout(deadlineTimer);clearTimeout(thinkingTimer);finishActivity(true); resolve(result);
           } catch (error) { fail(error, { status, code: Object.prototype.hasOwnProperty.call(error || {}, 'aiResponse') ? 'VALIDATION_ERROR' : 'INVALID_RESPONSE' }); }
         },
         onerror: response => {if(!current()||retry({code:'NETWORK_ERROR'}))return;fail('Gemini API network error after four retries. Check access to generativelanguage.googleapis.com.', { status: 0, code: 'NETWORK_ERROR',browserErrorName:['TypeError','NetworkError','SecurityError'].includes(response?.browserErrorName)?response.browserErrorName:'Error' });},
@@ -20300,7 +20308,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     switchBackup.style.cssText+=';border:0;background:linear-gradient(110deg,#80c8ff,#ad8cff);color:#171222';
     document.addEventListener('sn-ai-runtime-dispose',()=>clearTimeout(startupPrimaryCheckTimer),{once:true});
     function closeFallbackOffer(){fallbackBox.hidden=true;if(fallbackBox.parentElement!==aiAPISettings){aiAPISettings.append(fallbackBox);fallbackBox.style.cssText='margin-top:12px;padding:12px;border:1px solid var(--sn-theme-655573);border-radius:9px';}}
-    async function offerCompanionFallback(){if(!state.ai.enabled||state.ai.provider!=='gemini-api'||Date.now()-fallbackOfferedAt<60000)return;if(await healthyBackup()){fallbackOfferedAt=Date.now();fallbackBox.hidden=false;if(settingsDialog.hidden){fallbackBox.setAttribute('role','dialog');fallbackBox.setAttribute('aria-label','Use connected backup AI companion');fallbackBox.style.cssText='position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2147483646;width:min(420px,calc(100vw - 40px));padding:18px;border:1px solid var(--sn-theme-655573,#655573);border-radius:10px;background:var(--sn-theme-251f31,#251f31);color:var(--sn-theme-e6edf9,#eee);box-shadow:0 8px 40px #0008;font:14px/1.5 system-ui';document.body.append(fallbackBox);}}}
+    async function offerCompanionFallback(generationFailure=false){if(!geminiFallbackAllowed(generationFailure)||!state.ai.enabled||state.ai.provider!=='gemini-api'||Date.now()-fallbackOfferedAt<60000)return;if(await healthyBackup()&&geminiFallbackAllowed(generationFailure)){fallbackOfferedAt=Date.now();fallbackBox.hidden=false;if(settingsDialog.hidden){fallbackBox.setAttribute('role','dialog');fallbackBox.setAttribute('aria-label','Use connected backup AI companion');fallbackBox.style.cssText='position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2147483646;width:min(420px,calc(100vw - 40px));padding:18px;border:1px solid var(--sn-theme-655573,#655573);border-radius:10px;background:var(--sn-theme-251f31,#251f31);color:var(--sn-theme-e6edf9,#eee);box-shadow:0 8px 40px #0008;font:14px/1.5 system-ui';document.body.append(fallbackBox);}}}
     switchBackup.onclick=async()=>{if(!(await healthyBackup())){closeFallbackOffer();return;}state.ai.provider='web';state.ai.model='chatgpt-web';await gmSetValue(AI_PROVIDER_KEY,'web');closeFallbackOffer();syncAISettingsUI();await checkPrimaryAI(true);};stayAPI.onclick=closeFallbackOffer;
     const useAPI=document.createElement('button');useAPI.type='button';useAPI.textContent='Use Gemini API';useAPI.className='secondary';useAPI.hidden=true;useAPI.style.marginTop='10px';aiAPISettings.append(useAPI);useAPI.onclick=async()=>{state.ai.provider='gemini-api';state.ai.model=DEFAULT_API_MODEL;await gmSetValue(AI_PROVIDER_KEY,'gemini-api');syncAISettingsUI();checkPrimaryAI(true);};
     const providerRow=document.createElement('label'),providerSelect=document.createElement('select');providerRow.hidden=true;providerRow.style.cssText='margin:12px 0;display:none;align-items:center;gap:12px';providerRow.append(document.createTextNode('AI mode'));
@@ -20312,13 +20320,14 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       if(primaryCheckBusy||!state.ai.enabled)return;if(!force&&(Date.now()<primaryCheckNotBefore||Date.now()-primaryCheckedAt<15000))return;
       primaryCheckBusy=true;const sequence=++primaryCheckSequence;checkButton.disabled=true;checkButton.classList.add('is-checking');
       try{let available=false;if(state.ai.provider==='web')available=await healthyBackup();else{const apiKey=await geminiCredentials.key();state.ai.keySaved=!!apiKey;if(apiKey){await requestGeminiAPI({apiKey,model:DEFAULT_API_MODEL,connectionOnly:true}).promise;available=true;}}
-        if(sequence!==primaryCheckSequence)return;statusText.textContent='AI status - '+(available?'Available':'Unavailable');aiStatusCard.style.background=available?'#17633f':'var(--sn-theme-251f31,#251f31)';aiStatusCard.style.color=available?'#fff':'var(--sn-theme-e6edf9,#eee)';if(available)fallbackBox.hidden=true;else await offerCompanionFallback();
-      }catch{if(sequence===primaryCheckSequence){statusText.textContent='AI status - Unavailable';aiStatusCard.style.background='var(--sn-theme-251f31,#251f31)';await offerCompanionFallback();}}
+        if(sequence!==primaryCheckSequence||state.ai.provider==='gemini-api'&&!geminiFallbackAllowed())return;statusText.textContent='AI status - '+(available?'Available':'Unavailable');aiStatusCard.style.background=available?'#17633f':'var(--sn-theme-251f31,#251f31)';aiStatusCard.style.color=available?'#fff':'var(--sn-theme-e6edf9,#eee)';if(available)fallbackBox.hidden=true;else await offerCompanionFallback();
+      }catch{if(sequence===primaryCheckSequence&&geminiFallbackAllowed()){statusText.textContent='AI status - Unavailable';aiStatusCard.style.background='var(--sn-theme-251f31,#251f31)';await offerCompanionFallback();}}
       finally{primaryCheckedAt=Date.now();primaryCheckBusy=false;checkButton.disabled=false;checkButton.classList.remove('is-checking');useAPI.hidden=state.ai.provider!=='web';}
     }
-    const primaryAIError=()=>{statusText.textContent='AI status - Unavailable';aiStatusCard.style.background='var(--sn-theme-251f31,#251f31)';offerCompanionFallback().catch(()=>{});};document.addEventListener('sn-ai-gemini-error',primaryAIError);
+    const primaryAIError=event=>{if(event.detail?.operation!=='ticket-generation'||!geminiFallbackAllowed(true)||state.ai.provider!=='gemini-api')return;statusText.textContent='AI status - Unavailable';aiStatusCard.style.background='var(--sn-theme-251f31,#251f31)';offerCompanionFallback(true).catch(()=>{});};document.addEventListener('sn-ai-gemini-error',primaryAIError);
+    const primaryAIActivity=event=>{if(state.ai.provider!=='gemini-api')return;if(event.detail?.active||event.detail?.success){primaryCheckSequence++;closeFallbackOffer();}if(event.detail?.success){statusText.textContent='AI status - Available';aiStatusCard.style.background='#17633f';aiStatusCard.style.color='#fff';}};document.addEventListener('sn-ai-gemini-activity',primaryAIActivity);
     let keyCheckTimer;const primaryKeyChanged=()=>{clearTimeout(keyCheckTimer);keyCheckTimer=setTimeout(()=>checkPrimaryAI(true),500);};document.addEventListener('sn-ai-credential-changed',primaryKeyChanged);
-    document.addEventListener('sn-ai-runtime-dispose',()=>{clearTimeout(keyCheckTimer);closeFallbackOffer();document.getElementById('sn-ai-gemini-setup-guide')?.remove();document.removeEventListener('sn-ai-gemini-error',primaryAIError);document.removeEventListener('sn-ai-credential-changed',primaryKeyChanged);},{once:true});
+    document.addEventListener('sn-ai-runtime-dispose',()=>{clearTimeout(keyCheckTimer);document.removeEventListener('sn-ai-gemini-activity',primaryAIActivity);closeFallbackOffer();document.getElementById('sn-ai-gemini-setup-guide')?.remove();document.removeEventListener('sn-ai-gemini-error',primaryAIError);document.removeEventListener('sn-ai-credential-changed',primaryKeyChanged);},{once:true});
     setupButton.onclick=()=>openGeminiSetupGuide();
     function openGeminiSetupGuide(){
       if(document.getElementById('sn-ai-gemini-setup-guide'))return;
