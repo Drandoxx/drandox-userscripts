@@ -7543,7 +7543,7 @@ function installWorkspaceReferenceSearch(){
     ciInputLoadingTimer=setTimeout(()=>{ciLoadingTokens.delete('input-debounce');refreshCILoading();},1000);
   },true);
   // SN_AI_CI_LOADING_END
-  document.addEventListener('sn-ai-matrix-titles-ready',()=>{for(const root of spaceRoots)if(root.host?.localName==='now-dropdown-list')for(const option of root.querySelectorAll('[role="option"]'))decorateWorkspaceMatrixRows(option);});
+  document.addEventListener('sn-ai-matrix-titles-ready',()=>{for(const root of spaceRoots)if(root.host?.isConnected)for(const option of root.querySelectorAll('[role="option"]'))decorateWorkspaceMatrixRows(option);});
   function discover(node) {
     enhanceWorkspaceMediaNode(node);
     decorateWorkspaceMatrixRows(node);
