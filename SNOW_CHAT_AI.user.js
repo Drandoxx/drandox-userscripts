@@ -10441,6 +10441,8 @@ async function snOfflineUpdateReferences(progress,{fresh=false}={}){
       const account=await snOfflineAuthorizedAccount(),identity=await diagnosticIdentity();
       if(fresh){progress('Clearing the previous local reference export…',0);await snOfflinePending(null);}
       let pending=await snOfflinePending();
+      // Recollect legacy reference batches; retain stored bytes until the replacement is durable.
+      if(pending&&pending.templateFilterVersion!==1)pending=null;
       const dailyRequestId=pending?.requestId||snOfflineRandomID(),dailyTabId=pending?.dailyTabId||snOfflineRandomID();
       const claim=await snOfflineRequest('claim',{daily:true,method:'POST',token:identity.token,body:JSON.stringify({instance:location.hostname,requestId:dailyRequestId,tabId:dailyTabId,manual:true,sourceAccount:{userID:account.userID.toUpperCase(),name:account.fullName,shortName:account.fullName.split(/\s+/)[0]}})});
       if(claim.claim?.status!=='active'||!/^[a-f0-9]{32}$/.test(claim.claim?.attemptId||''))throw Error('offline_daily_claim_unconfirmed');
