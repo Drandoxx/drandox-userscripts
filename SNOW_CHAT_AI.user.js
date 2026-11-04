@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.883
+// @version      2.36.884
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.884","fixes":true,"changes":[{"key":"media-memory","meaningful":true,"text":"Release completed stylesheet handlers and detached media observers; reduce repeated media discovery work."}]},
 {"version":"2.36.883","fixes":false,"changes":[{"key":"attachment-upload-name","meaningful":true,"text":"Keep original attachment names by default, with a separate Upload with random name option."}]},
 {"version":"2.36.882","fixes":false,"changes":[{"key":"ticket-feedback-back","meaningful":true,"text":"Return from feedback to the completed ticket with Back, keeping any unsent feedback."}]},
 {"version":"2.36.881","fixes":true,"changes":[]},
@@ -1700,7 +1701,6 @@ function installWorkspaceMedia(options={}){
       'sn-form-internal-attachments-list':':host{display:block!important;width:100%!important;min-width:0!important}.sn-panel-body,.sn-attachment-list-wrapper{width:100%!important;max-width:none!important;min-width:0!important;box-sizing:border-box!important}.sn-panel-body{padding-left:0!important;padding-right:0!important}.sn-attachment-select-all,.sn-card>now-checkbox{display:none!important}.sn-card{display:block!important;width:100%!important;max-width:none!important;box-sizing:border-box!important;padding:0!important;margin:10px 0!important}.sn-card-list{width:100%!important;max-width:none!important;margin:0!important;padding:0!important;box-sizing:border-box!important}.sn-attachment-list-wrapper.sn-attachment-list-wrapper.sn-attachment-list-wrapper{padding:0 10px!important}li:has(now-record-common-attachment-card[data-sn-ai-native-upload-progress]){display:none!important}now-record-common-attachment-card[data-sn-ai-native-upload-progress]{display:none!important}now-record-common-attachment-card{display:block!important;width:100%!important;min-width:0!important;max-width:none!important;margin:0!important}'
   };
   const discover=node=>{
-    for(const [root,observer]of listObservers)if(!root.host.isConnected){observer.disconnect();listObservers.delete(root);}
     const element=node?.nodeType===3?node.parentElement:node?.host||node;if(!element)return;
     if(styles[element.localName]&&element.shadowRoot)snMediaRepairStyle(element.shadowRoot,styled,styles[element.localName]+(element.localName==='sn-form-internal-attachments-list'?'.sn-card-list.sn-card-list{display:grid!important;grid-template-columns:repeat(auto-fill,minmax(min(128px,100%),1fr))!important;gap:8px!important;align-items:start!important}.sn-card.sn-card{margin:0!important}.sn-attachment-list-wrapper.sn-attachment-list-wrapper.sn-attachment-list-wrapper{padding-top:8px!important;padding-bottom:8px!important}':''),styleVersion);
     if(element.style?.getPropertyValue&&element.localName==='sn-form-internal-attachment-overlay'&&(element.style.getPropertyValue('display')!=='none'||element.style.getPropertyPriority('display')!=='important'))element.style.setProperty('display','none','important');
@@ -1712,6 +1712,7 @@ function installWorkspaceMedia(options={}){
   };
   const openChatImage=event=>{
     const path=event.composedPath?.()||[],button=path.find(node=>node.matches?.('[aria-label^="Maximize Image:"]')),selected=path.find(node=>node.localName==='img')||button?.querySelector('img');
+    if(selected){const activity=snMediaAncestor(selected,node=>node.localName==='now-activity-stream-connected'),card=snMediaAncestor(selected,node=>node.localName==='now-record-common-attachment-card');if(activity&&card){const info=cardInfo(card);if(!info)return;const images=gallery(activity.shadowRoot||activity);if(!images.length)images.push({src:info.src,name:info.name});event.preventDefault();event.stopImmediatePropagation();openSnMediaViewer(images,Math.max(0,images.findIndex(image=>image.src===info.src)),selected,viewerActions);return;}}
     if(!selected||(!button&&!snMediaIsChatImage(selected)))return;
     const chat=path.find(node=>node.localName==='sn-connect-conversation')||path.find(node=>node.localName==='sn-agent-chat')||snMediaAncestor(selected,node=>node.matches?.('.sn-chat,.chrome-tab-panel.is-active'));
     if(!chat)return;const scope=chat.shadowRoot||chat,images=snMediaNodes(scope,'img').filter(snMediaIsChatImage).map(image=>({src:snMediaImageURL(image.src),name:String(image.alt||button?.getAttribute('aria-label')||'Image').replace(/^Maximize Image:\s*/i,'')}));
@@ -1748,6 +1749,9 @@ function installWorkspaceMedia(options={}){
     async add(image){if(options.readOnly)throw Error('Read-only preview.');const item=target();if(!item)throw Error('Open the target ticket under this IMS first.');const key=linkKey(item,image);if(inFlight.has(key))return;const state=await viewerActions.status(image);if(state.added)return;if(!state.available)throw Error(state.reason||'Ticket unavailable.');if(inFlight.has(key))return;const filename=String(image.name||'Image').replace(/[\\/:*?"<>|]/g,'_');inFlight.set(key,{name:filename,before:new Set(state.rows.map(row=>row.sys_id))});try{const url=new URL(image.src,location.href);if(url.origin!==location.origin||!['https:','blob:'].includes(url.protocol))throw Error('This image source is not supported.');const response=await page.fetch(url.href,{credentials:'same-origin',signal:AbortSignal.timeout(15000)});if(!response.ok)throw Error('Could not read the image.');const blob=await response.blob();if(!/^image\//i.test(blob.type))throw Error('The selected file is not an image.');if(target()?.owner!==item.owner)throw Error('The active ticket changed. Please try again.');const rows=await upload(item.owner,item.form,[new File([blob],filename,{type:blob.type})]);saveLink(key,rows[0].sys_id);inFlight.delete(key);}catch(failure){if(!/could not be confirmed|before upload confirmation/i.test(failure.message||''))inFlight.delete(key);throw failure;}}
   };
   const listObservers=new Map();
+  // Discovery runs for many DOM nodes: prune once per interval, not once per node.
+  const pruneMedia=()=>{for(const [root,observer]of listObservers)if(!root.host.isConnected){observer.disconnect();listObservers.delete(root);}for(const [key,reference]of menus)if(!reference.deref()?.isConnected)menus.delete(key);};
+  const mediaCleanupTimer=setInterval(pruneMedia,5000);
   const observeList=list=>{if(!list.shadowRoot||listObservers.has(list.shadowRoot))return;const observer=new MutationObserver(records=>{if(records.some(record=>[...record.addedNodes,...record.removedNodes].some(node=>node.nodeType===1&&!node.matches?.('[data-sn-ai-attachment-card],style')))){const owner=snMediaAncestor(list,node=>node.localName==='now-record-form-connected');if(owner)renderPending(owner,list);changed();for(const card of snMediaNodes(list.shadowRoot,'now-record-common-attachment-card'))enhanceCard(card);}});observer.observe(list.shadowRoot,{childList:true,subtree:true});listObservers.set(list.shadowRoot,observer);};
   const onDragStart=event=>{if(event.isTrusted)dragSource=(event.composedPath?.()||[]).find(node=>node.localName==='img')?.src||'';};
   const onDrag=event=>{
@@ -1758,7 +1762,7 @@ function installWorkspaceMedia(options={}){
     if(source){try{const url=new URL(source,location.href);if(url.origin!==location.origin||!['https:','blob:'].includes(url.protocol))throw Error();void snMediaConfirmUpload([{name:'Image-'+Date.now()+'.png',type:'image/png',previewURL:url.href}],async selected=>{if(!owner.isConnected||owner.getProperties?.().active===false)throw Error('Return to the original ticket before uploading.');const response=await page.fetch(url.href,{credentials:'same-origin',signal:AbortSignal.timeout(15000)}),blob=await response.blob();if(!response.ok||!/^image\//i.test(blob.type))throw Error('Could not read the dragged image.');const files=[new File([blob],selected[0].name.replace(/\.[a-z0-9]{1,12}$/i,'')+snMediaDefaultUploadName({type:blob.type,name:selected[0].name}).extension,{type:blob.type})];const rows=await trackUpload(owner,files,()=>upload(owner,form,files,true));saveLink(linkKey({props:attachmentIdentity(owner)},{src:url.href}),rows[0].sys_id);return rows;}).catch(failure=>uploadError(failure.message));}catch{error('Could not read the dragged image. Save it and drop the image file instead.');}}
   };
   const reset=()=>{dragSource='';clearHint();},leave=event=>{if(!event.relatedTarget)clearHint();};document.addEventListener('click',openChatImage,true);document.addEventListener('dragstart',onDragStart,true);for(const type of ['dragenter','dragover','drop'])document.addEventListener(type,onDrag,true);document.addEventListener('dragend',reset,true);document.addEventListener('dragleave',leave,true);window.addEventListener('blur',reset);document.addEventListener('visibilitychange',reset);
-  const controller={discover,dispose(){disposed=true;reset();clearTimeout(changeTimer);for(const observer of listObservers.values())observer.disconnect();listObservers.clear();document.removeEventListener('click',openChatImage,true);document.removeEventListener('dragstart',onDragStart,true);for(const type of ['dragenter','dragover','drop'])document.removeEventListener(type,onDrag,true);document.removeEventListener('dragend',reset,true);document.removeEventListener('dragleave',leave,true);window.removeEventListener('blur',reset);document.removeEventListener('visibilitychange',reset);menus.clear();inFlight.clear();document.getElementById('sn-ai-image-viewer')?.snAiClose?.();for(const card of snMediaNodes(document,'now-record-common-attachment-card')){cards.get(card)?.box.remove();card.shadowRoot?.querySelector('.sn-attachments')?.style.removeProperty('display');}for(const style of snMediaNodes(document,'style[data-sn-ai-media-style]'))style.remove();installWorkspaceMedia.instance=null;}};installWorkspaceMedia.instance=controller;for(const node of snMediaNodes(document,'now-record-common-attachment-card,now-dropdown-list,sn-agent-chat,sn-connect-conversation,sn-form-internal-attachment-overlay,sn-form-internal-attachments-list'))discover(node);document.addEventListener('sn-ai-runtime-dispose',()=>controller.dispose(),{once:true});return controller;
+  const controller={discover,dispose(){if(disposed)return;disposed=true;clearInterval(mediaCleanupTimer);fingerprints.clear();reset();clearTimeout(changeTimer);for(const observer of listObservers.values())observer.disconnect();listObservers.clear();document.removeEventListener('click',openChatImage,true);document.removeEventListener('dragstart',onDragStart,true);for(const type of ['dragenter','dragover','drop'])document.removeEventListener(type,onDrag,true);document.removeEventListener('dragend',reset,true);document.removeEventListener('dragleave',leave,true);window.removeEventListener('blur',reset);document.removeEventListener('visibilitychange',reset);menus.clear();inFlight.clear();document.getElementById('sn-ai-image-viewer')?.snAiClose?.();for(const card of snMediaNodes(document,'now-record-common-attachment-card')){cards.get(card)?.box.remove();card.shadowRoot?.querySelector('.sn-attachments')?.style.removeProperty('display');}for(const style of snMediaNodes(document,'style[data-sn-ai-media-style]'))style.remove();installWorkspaceMedia.instance=null;}};installWorkspaceMedia.instance=controller;for(const node of snMediaNodes(document,'now-record-common-attachment-card,now-dropdown-list,sn-agent-chat,sn-connect-conversation,sn-form-internal-attachment-overlay,sn-form-internal-attachments-list'))discover(node);document.addEventListener('sn-ai-runtime-dispose',()=>controller.dispose(),{once:true});return controller;
 }
 // SN_AI_WORKSPACE_MEDIA_END
 
@@ -1988,6 +1992,7 @@ function installWorkspaceReferenceSearch(){
     for (const root of spaceRoots) {
       if (root === document || (root.host ? root.host.isConnected : root.defaultView?.frameElement?.isConnected)) continue;
       themeRootObservers.get(root)?.observer.disconnect();
+      for(const link of root.querySelectorAll?.('link[data-sn-ai-shared-style]')||[])link.snAiReleaseStyle?.();
       ticketPresentationQueue.delete(root);
       spaceRoots.delete(root);
       spaceStyles.delete(root);
@@ -2021,7 +2026,8 @@ function installWorkspaceReferenceSearch(){
     link.dataset.snAiStyleVersion=sharedStyleVersion;link.dataset.snAiStylePending='true';
     link.dataset.snAiCssChars=String(text.length);
     style.snAiSharedLink=link;style.snAiSharedText=text;
-    const clearStyleListeners=()=>{link.removeEventListener('load',onStyleLoad);link.removeEventListener('error',onStyleError);};
+    const clearStyleListeners=()=>{link.removeEventListener('load',onStyleLoad);link.removeEventListener('error',onStyleError);delete link.snAiReleaseStyle;};
+    link.snAiReleaseStyle=clearStyleListeners;
     const onStyleLoad=()=>{
       clearStyleListeners();
       delete link.dataset.snAiStylePending;
