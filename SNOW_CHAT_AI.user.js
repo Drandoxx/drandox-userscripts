@@ -1531,7 +1531,7 @@ const snAIChatDisplayNames=(()=>{
 
 // SN_AI_WORKSPACE_MEDIA_BEGIN
 function snMediaAncestor(node,predicate){for(let n=node;n;n=n.parentElement||n.getRootNode?.().host)if(predicate(n))return n;return null;}
-function snMediaNodes(root,selector){const out=[];function visit(r){if(!r)return;for(const node of r.querySelectorAll('*')){if(node.matches(selector))out.push(node);if(node.shadowRoot)visit(node.shadowRoot);}}visit(root);return out;}
+function snMediaNodes(root,selector){const out=[];function visit(r){if(!r)return;for(const node of r.querySelectorAll('*')){if(node.matches(selector))out.push(node);if(node.shadowRoot)visit(node.shadowRoot);}}visit(root);if(root?.shadowRoot)visit(root.shadowRoot);return out;}
 function snMediaFit(width,height,viewWidth,viewHeight){return Math.min(1,viewWidth/Math.max(1,width),viewHeight/Math.max(1,height));}
 function snMediaPan(value,base,zoom,viewport){const limit=Math.max(0,(base*zoom-viewport)/2);return Math.max(-limit,Math.min(limit,value));}
 function snMediaImageURL(source){try{const url=new URL(source,location.href);const id=url.pathname.match(/^\/([a-f0-9]{32})\.iix$/i)?.[1];return id?location.origin+'/sys_attachment.do?sys_id='+id:url.href;}catch{return '';}}
@@ -1682,7 +1682,7 @@ function installWorkspaceMedia(options={}){
     for(const [root,observer]of listObservers)if(!root.host.isConnected){observer.disconnect();listObservers.delete(root);}
     const element=node?.nodeType===3?node.parentElement:node?.host||node;if(!element)return;
     if(styles[element.localName]&&element.shadowRoot)snMediaRepairStyle(element.shadowRoot,styled,styles[element.localName]+(element.localName==='sn-form-internal-attachments-list'?'.sn-card-list.sn-card-list{display:grid!important;grid-template-columns:repeat(auto-fill,minmax(min(128px,100%),1fr))!important;gap:8px!important;align-items:start!important}.sn-card.sn-card{margin:0!important}.sn-attachment-list-wrapper.sn-attachment-list-wrapper.sn-attachment-list-wrapper{padding-top:8px!important;padding-bottom:8px!important}':''),styleVersion);
-    if(element.localName==='sn-form-internal-attachment-overlay'&&(element.style.getPropertyValue('display')!=='none'||element.style.getPropertyPriority('display')!=='important'))element.style.setProperty('display','none','important');
+    if(element.style?.getPropertyValue&&element.localName==='sn-form-internal-attachment-overlay'&&(element.style.getPropertyValue('display')!=='none'||element.style.getPropertyPriority('display')!=='important'))element.style.setProperty('display','none','important');
     if(pendingAction&&element.localName==='now-dropdown-list'){element.style.setProperty('visibility','hidden','important');setTimeout(()=>element.style.removeProperty('visibility'),2200);}
     if(element.matches?.('[role="menu"]')&&/^Actions /.test(element.getAttribute('aria-label')||''))menus.set(element.getAttribute('aria-label'),new WeakRef(element));
     if(element.localName==='now-dropdown-list')for(const menu of element.shadowRoot?.querySelectorAll('[role="menu"]')||[])if(/^Actions /.test(menu.getAttribute('aria-label')||''))menus.set(menu.getAttribute('aria-label'),new WeakRef(menu));
@@ -7918,7 +7918,9 @@ function installWorkspaceReferenceSearch(){
   const attach = Element.prototype.attachShadow;
   Element.prototype.attachShadow = function (...args) {
     const root = attach.apply(this, args);
-    watch(root);
+    // Native constructors must finish before inspecting their host properties.
+    // Presentation errors must never escape into ServiceNow's render pipeline.
+    queueMicrotask(()=>{try{watch(root);}catch(error){recordCompactDiagnostic('warn','shadow-root-presentation-failed',{component:this.localName,message:String(error?.message||error).slice(0,200)});}});
     return root;
   };
   if (document.documentElement) watch(document);
