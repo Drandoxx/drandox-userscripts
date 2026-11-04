@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.873
+// @version      2.36.874
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.874","fixes":true,"changes":[]},
 {"version":"2.36.873","fixes":true,"changes":[]},
 {"version":"2.36.872","fixes":true,"changes":[]},
 {"version":"2.36.871","fixes":true,"changes":[]},
@@ -1663,6 +1664,10 @@ function installWorkspaceMedia(options={}){
   const cardInfo=card=>{const item=card.getProperties?.()?.item;if(/^image\//i.test(item?.type||'')&&/^[a-f0-9]{32}$/i.test(item.sysId||''))return {src:location.origin+'/sys_attachment.do?sys_id='+item.sysId,name:item.name||'Image'};const photo=snMediaNodes(card.shadowRoot,'img').find(node=>!node.closest('[data-sn-ai-attachment-card]'));if(!photo)return null;return {src:snMediaImageURL(photo.src),name:photo.alt||'Image',photo};};
   const gallery=scope=>snMediaNodes(scope,'now-record-common-attachment-card').map(cardInfo).filter(Boolean).map(({src,name})=>({src,name}));
   const enhanceCard=card=>{
+    const progress=card.getProperties?.()?.displayInProgressBar===true;
+    if(card.toggleAttribute)card.toggleAttribute('data-sn-ai-native-upload-progress',progress);
+    if(progress){card.setAttribute?.('data-sn-ai-progress-hidden','');if(card.style?.getPropertyValue&&card.style.getPropertyValue('display')!=='none')card.style.setProperty('display','none','important');return;}
+    if(card.hasAttribute?.('data-sn-ai-progress-hidden')){card.style.removeProperty('display');card.removeAttribute('data-sn-ai-progress-hidden');}
     // Never replace cards belonging to native upload progress or preview dialogs.
     if(!snMediaAncestor(card,node=>node.localName==='sn-form-internal-attachments-list')||card.getProperties?.()?.displayInProgressBar)return;
     if(!card?.shadowRoot)return;const info=cardInfo(card);if(!info)return;const owner=snMediaAncestor(card,node=>node.localName==='now-record-form-connected');for(const job of pendingUploads.get(owner)||[]){if(job.files.some(file=>file.name===info.name)){if(!job.hidden.has(card))job.hidden.set(card,{value:card.style.getPropertyValue('display'),priority:card.style.getPropertyPriority('display')});card.style.setProperty('display','none','important');return;}}let item=cards.get(card);
@@ -1677,10 +1682,11 @@ function installWorkspaceMedia(options={}){
     image.onclick=event=>{event.stopPropagation();const list=snMediaAncestor(card,node=>node.localName==='sn-form-internal-attachments-list'),images=gallery(list?.shadowRoot||card.getRootNode());openSnMediaViewer(images,Math.max(0,images.findIndex(entry=>entry.src===image.src)),image,viewerActions);};image.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();image.click();}};title.append(name,edit,remove);box.append(title,image);card.shadowRoot.append(box);native.style.setProperty('display','none','important');cards.set(card,{name,image,box,editorStyle});
   };
   const styles={
+      'now-record-common-attachments-connected':'now-record-common-attachment-card[data-sn-ai-native-upload-progress],li:has(now-record-common-attachment-card[data-sn-ai-native-upload-progress]){display:none!important}',
       'sn-agent-chat':'.sn-chat-dragdrop-overlay{display:none!important;visibility:hidden!important;pointer-events:none!important}',
       'sn-connect-conversation':'.sn-attachments--drop,.sn-attachments--drop--target{display:none!important;pointer-events:none!important}',
       'sn-form-internal-attachment-overlay':':host{display:none!important;pointer-events:none!important}',
-      'sn-form-internal-attachments-list':':host{display:block!important;width:100%!important;min-width:0!important}.sn-panel-body,.sn-attachment-list-wrapper{width:100%!important;max-width:none!important;min-width:0!important;box-sizing:border-box!important}.sn-panel-body{padding-left:0!important;padding-right:0!important}.sn-attachment-select-all,.sn-card>now-checkbox{display:none!important}.sn-card{display:block!important;width:100%!important;max-width:none!important;box-sizing:border-box!important;padding:0!important;margin:10px 0!important}.sn-card-list{width:100%!important;max-width:none!important;margin:0!important;padding:0!important;box-sizing:border-box!important}.sn-attachment-list-wrapper.sn-attachment-list-wrapper.sn-attachment-list-wrapper{padding:0 10px!important}now-record-common-attachment-card{display:block!important;width:100%!important;min-width:0!important;max-width:none!important;margin:0!important}'
+      'sn-form-internal-attachments-list':':host{display:block!important;width:100%!important;min-width:0!important}.sn-panel-body,.sn-attachment-list-wrapper{width:100%!important;max-width:none!important;min-width:0!important;box-sizing:border-box!important}.sn-panel-body{padding-left:0!important;padding-right:0!important}.sn-attachment-select-all,.sn-card>now-checkbox{display:none!important}.sn-card{display:block!important;width:100%!important;max-width:none!important;box-sizing:border-box!important;padding:0!important;margin:10px 0!important}.sn-card-list{width:100%!important;max-width:none!important;margin:0!important;padding:0!important;box-sizing:border-box!important}.sn-attachment-list-wrapper.sn-attachment-list-wrapper.sn-attachment-list-wrapper{padding:0 10px!important}li:has(now-record-common-attachment-card[data-sn-ai-native-upload-progress]){display:none!important}now-record-common-attachment-card[data-sn-ai-native-upload-progress]{display:none!important}now-record-common-attachment-card{display:block!important;width:100%!important;min-width:0!important;max-width:none!important;margin:0!important}'
   };
   const discover=node=>{
     for(const [root,observer]of listObservers)if(!root.host.isConnected){observer.disconnect();listObservers.delete(root);}
