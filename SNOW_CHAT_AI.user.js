@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.879
+// @version      2.36.880
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.880","fixes":true,"changes":[]},
 {"version":"2.36.879","fixes":true,"changes":[]},
 {"version":"2.36.878","fixes":false,"changes":[{"key":"ticket-case-notes","meaningful":true,"text":"Use ticket-specific notes as additional context, rephrasing relevant facts naturally and omitting unrelated details."}]},
 {"version":"2.36.877","fixes":false,"changes":[{"key":"ticket-prompt-context","meaningful":true,"text":"Keep ticket narratives focused on issue history and confirmed outcomes, without administrative narration or forced I wording."}]},
@@ -10383,7 +10384,7 @@ async function snOfflineCollectReferences(page,progress=()=>{},cancelled=()=>fal
     return{rows,total,complete:rows.length===total};
   };
   const users=await read('sys_user','active=true','sys_id,user_name,name,location,department',150000);
-  const templates=await read('sys_template','table=new_call','sys_id,name,table,template,u_call_type,active',2000);
+  const templates=await read('sys_template','table=new_call^active=true','sys_id,name,table,template,u_call_type,active',2000);
   const matrix=await read('u_matrix','u_active=true^u_confidential!=true','sys_id,u_code,u_parent,u_type,u_restrict_visibility,u_confidential,u_department,u_description,u_name_en',20000);
   const departments=await read('cmn_department','sys_idISNOTEMPTY','sys_id,parent',20000);
   const parseTemplate=raw=>{
@@ -10392,7 +10393,7 @@ async function snOfflineCollectReferences(page,progress=()=>{},cancelled=()=>fal
       if(!/^javascript:/i.test(v))out[key]=v;
     }return out;
   };
-  const allTemplates=templates.rows.map(row=>{const fields=parseTemplate(value(row.template));return{id:value(row.sys_id),name:display(row.name),description:fields.description||'',shortDescription:fields.short_description||'',eventType:value(row.u_call_type)||fields.call_type||'',matrixIds:{category:fields.u_matrix_category||'',subcategory:fields.u_matrix_subcategory||'',symptom:fields.u_matrix_symptom||''}};});
+  const allTemplates=templates.rows.filter(row=>value(row.active)==='true').map(row=>{const fields=parseTemplate(value(row.template));return{id:value(row.sys_id),name:display(row.name),description:fields.description||'',shortDescription:fields.short_description||'',eventType:value(row.u_call_type)||fields.call_type||'',matrixIds:{category:fields.u_matrix_category||'',subcategory:fields.u_matrix_subcategory||'',symptom:fields.u_matrix_symptom||''}};});
   return{schema:1,exportedAt:new Date().toISOString(),meta:{source:page.location.origin,usersComplete:users.complete,reportedUserCount:users.total,downloadedUserCount:users.rows.length,templatesWithoutStaticDescription:allTemplates.filter(t=>!t.description.trim()).length,departmentsComplete:departments.complete,matrixComplete:matrix.complete,templatesComplete:templates.complete},eligibilitySchema:1,userDirectoryFilterVersion:1,departments:departments.rows.map(r=>({id:value(r.sys_id),parent:value(r.parent)})),users:users.rows.filter(r=>display(r.location).trim()&&!/castorama|france|brico|unknown/i.test(display(r.location))).map(r=>({id:value(r.sys_id),userID:value(r.user_name),username:value(r.user_name),name:display(r.name),location:display(r.location),locationId:value(r.location),departmentId:value(r.department)})),templates:allTemplates.filter(t=>t.description.trim()),matrix:matrix.rows.map(r=>({id:value(r.sys_id),code:value(r.u_code),nameEN:value(r.u_name_en)||value(r.u_description),departmentIds:value(r.u_department).split(',').filter(Boolean),parent:value(r.u_parent),type:display(r.u_type),restricted:value(r.u_restrict_visibility)==='true',confidential:value(r.u_confidential)==='true'}))};
 }
 
