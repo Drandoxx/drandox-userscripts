@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.870
+// @version      2.36.871
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.871","fixes":true,"changes":[]},
 {"version":"2.36.870","fixes":true,"changes":[]},
 {"version":"2.36.869","fixes":true,"changes":[{"key":"workspace-media","meaningful":true,"text":"Recognise existing images across ticket types, including renamed copies. Close upload confirmation immediately and show pending attachment cards until confirmed."}]},
 {"version":"2.36.868","fixes":true,"changes":[{"key":"workspace-media","meaningful":false,"text":"Use larger rounded upload previews, editable filenames and safe attachment-ID default names while preserving file extensions."}]},
@@ -1617,7 +1618,33 @@ function installWorkspaceMedia(options={}){
   const error=message=>document.dispatchEvent(new CustomEvent('sn-ai-media-error',{detail:{message}}));
   const pendingUploads=new WeakMap();
   const openAttachments=owner=>{const button=snMediaNodes(owner.shadowRoot,'button[aria-label="Attachments"]').find(node=>node.getBoundingClientRect().width);if(button&&!button.classList.contains('is-selected'))button.click();};
-  const renderPending=(owner,list)=>{const jobs=pendingUploads.get(owner);if(!jobs||!list.shadowRoot)return;for(const job of jobs){const previous=job.boxes.get(list);if(previous?.isConnected&&list.shadowRoot.contains(previous))continue;previous?.remove();const box=document.createElement('div');box.dataset.snAiAttachmentCard='pending';box.style.cssText='display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:8px;padding:0 10px 8px';for(const file of job.files){const card=document.createElement('div'),name=document.createElement('div'),loader=document.createElement('div');card.style.cssText='border:1px solid var(--sn-theme-655573,#655573);border-radius:8px;overflow:hidden;background:var(--sn-theme-191621,#191621);color:var(--sn-theme-e6edf9,#eee)';name.textContent=file.name;name.style.cssText='padding:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font:600 12px system-ui';loader.style.cssText='aspect-ratio:1;display:grid;place-items:center';loader.setAttribute('aria-label','Attachment upload in progress');loader.innerHTML='<svg class="lucide lucide-loader-circle" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3a9 9 0 1 1-9 9"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite"/></path></svg>';card.append(name,loader);box.append(card);}const container=list.shadowRoot.querySelector('.sn-card-list')||list.shadowRoot.querySelector('.sn-panel-body')||list.shadowRoot;box.style.gridColumn='1 / -1';container.prepend(box);job.boxes.set(list,box);}};
+  const renderPending=(owner,list)=>{
+    const jobs=pendingUploads.get(owner),container=list.shadowRoot?.querySelector('.sn-card-list');
+    if(!jobs||!container)return;
+    for(const job of jobs){
+      const previous=job.boxes.get(list);
+      if(previous?.isConnected&&previous.parentNode===container)continue;
+      previous?.remove();
+      // display:contents puts every pending card into the existing grid, not
+      // a second full-width grid or a separate section below the attachments.
+      const group=document.createElement('div');group.dataset.snAiAttachmentCard='pending';group.style.display='contents';
+      for(const file of job.files){
+        const card=document.createElement('div'),title=document.createElement('div'),name=document.createElement('span'),loader=document.createElement('div');
+        card.dataset.snAiAttachmentCard='pending-item';
+        card.style.cssText='width:100%;aspect-ratio:1;display:grid;grid-template-rows:36px minmax(0,1fr);overflow:hidden;border:1px solid var(--sn-theme-655573,#655573);border-radius:7px;background:var(--sn-theme-251f31,#29252f);color:var(--sn-theme-e6edf9,#eee);box-sizing:border-box';
+        title.style.cssText='display:flex;align-items:center;gap:5px;padding:3px 7px 3px 10px;min-width:0;border-bottom:1px solid var(--sn-theme-655573,#655573)';
+        name.textContent=name.title=file.name;name.style.cssText='flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:600 12px system-ui';title.append(name);
+        for(const [icon,label]of [['edit','Rename attachment'],['delete','Delete attachment']]){
+          const button=document.createElement('button');button.type='button';button.disabled=true;button.ariaLabel=label+' (available after upload)';button.innerHTML=snMediaIcon(icon);
+          button.style.cssText='display:grid;place-items:center;flex:0 0 26px;width:26px;height:26px;padding:3px;border:0!important;border-radius:4px;background:transparent!important;color:var(--sn-theme-e6edf9,#eee)!important;cursor:default';title.append(button);
+        }
+        loader.style.cssText='display:grid;place-items:center;width:100%;height:100%;min-height:0;background:var(--sn-theme-191621,#19171e)';loader.setAttribute('role','status');loader.setAttribute('aria-label','Attachment upload in progress');
+        loader.innerHTML='<svg class="lucide lucide-loader-circle" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3a9 9 0 1 1-9 9"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite"/></path></svg>';
+        card.append(title,loader);group.append(card);
+      }
+      container.append(group);job.boxes.set(list,group);
+    }
+  };
   const trackUpload=async(owner,files,submit)=>{const job={files:files.map(file=>({name:file.name})),boxes:new Map(),hidden:new Map()};let jobs=pendingUploads.get(owner);if(!jobs){jobs=new Set();pendingUploads.set(owner,jobs);}jobs.add(job);openAttachments(owner);for(const list of snMediaNodes(owner.shadowRoot,'sn-form-internal-attachments-list'))renderPending(owner,list);try{return await submit();}finally{jobs.delete(job);for(const box of job.boxes.values())box.remove();for(const [card,style]of job.hidden){if(style.value)card.style.setProperty('display',style.value,style.priority);else card.style.removeProperty('display');}job.boxes.clear();job.hidden.clear();changed();}};
   const uploadError=message=>{error(message);const host=document.createElement('div');host.setAttribute('popover','manual');host.style.cssText='position:fixed;inset:0;margin:auto;width:min(460px,90vw);padding:24px;border:1px solid #655573;border-radius:12px;background:var(--sn-theme-191621,#191621);color:var(--sn-theme-e6edf9,#eee);z-index:2147483647;font:14px system-ui;box-shadow:0 15px 60px #0008';const title=document.createElement('h3'),text=document.createElement('p'),close=document.createElement('button');title.textContent='Attachment upload failed';text.textContent=message;close.textContent='Close';close.style.cssText='float:right;padding:8px 16px;border:0;border-radius:7px;background:linear-gradient(110deg,#7bcaff,#ad8cff);color:#161124';close.onclick=()=>host.remove();host.append(title,text,close);document.body.append(host);host.showPopover?.();};
   const clearHint=()=>{clearTimeout(hintTimer);hint?.remove();hint=null;hintSurface=hintTarget=null;hintPaintAt=0;};
