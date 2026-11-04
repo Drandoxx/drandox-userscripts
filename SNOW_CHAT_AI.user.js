@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.875
+// @version      2.36.876
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.876","fixes":false,"changes":[{"key":"gemini-reasoning","meaningful":true,"text":"Use medium reasoning for Gemini requests while keeping Gemini as the default provider."}]},
 {"version":"2.36.875","fixes":false,"changes":[{"key":"ai-ticket-relevance","meaningful":true,"text":"Unify shared and mode-specific factual rules, contact formatting and FTF guidance across AI providers."},{"key":"ai-settings-gemini-first","meaningful":true,"text":"Allow choosing ChatGPT companion in AI settings only while its live heartbeat is healthy."}]},
 {"version":"2.36.874","fixes":true,"changes":[]},
 {"version":"2.36.873","fixes":true,"changes":[]},
@@ -12738,7 +12739,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         if(typeof document!=='undefined'&&typeof CustomEvent==='function')document.dispatchEvent(new CustomEvent('sn-ai-gemini-error',{detail:safe}));
         const failure=error instanceof Error?error:new Error(message);failure.message=message+'\nGemini error details: '+JSON.stringify(safe);failure.safeDetails=safe;reject(failure);
       } };
-      const data = connectionOnly ? undefined : JSON.stringify({ systemInstruction: { parts: [{ text: instructions }] }, contents: [{ role: 'user', parts: [{ text: JSON.stringify(input) }] }], generationConfig: { responseMimeType: 'application/json', responseJsonSchema: schema, thinkingConfig:{thinkingLevel:'minimal'} } });
+      const data = connectionOnly ? undefined : JSON.stringify({ systemInstruction: { parts: [{ text: instructions }] }, contents: [{ role: 'user', parts: [{ text: JSON.stringify(input) }] }], generationConfig: { responseMimeType: 'application/json', responseJsonSchema: schema, thinkingConfig:{thinkingLevel:'medium'} } });
       log('info', 'request-started', { length: data?.length||0, phase:connectionOnly?'model-access-check':'ticket-generation', source:typeof fetch==='function'?'browser-fetch':'userscript-request' });
       const retry=(details={})=>{if(settled||retryCount>=maxRetries)return false;clearTimeout(deadlineTimer);clearTimeout(thinkingTimer);attemptId++;retryCount++;const raw=String(details.retryAfter||'').trim(),serverDelay=/^\d+(\.\d+)?$/.test(raw)?Number(raw)*1000:raw?Math.max(0,Date.parse(raw)-Date.now()):0;const delayMs=Math.max(Math.min(60000,1000*2**(retryCount-1))*(.8+Math.random()*.4),Number.isFinite(serverDelay)?serverDelay:0);busy(true);log('warn','transient-retry-scheduled',{status:details.status||0,code:details.code||'TRANSIENT',retry:retryCount,maxRetries,delayMs:Math.round(delayMs)});retryTimer=setTimeout(()=>{retryTimer=null;sendAttempt();},delayMs);return true;};
       const sendAttempt=()=>{if(settled)return;readyState=0;attemptStartedAt=Date.now();const attempt=++attemptId;const current=()=>!settled&&attempt===attemptId;
