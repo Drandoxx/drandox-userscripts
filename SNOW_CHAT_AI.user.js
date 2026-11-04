@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.864
+// @version      2.36.865
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.865","fixes":true,"changes":[{"key":"workspace-media","meaningful":true,"text":"Restore media styles removed by Workspace re-renders and repair native drop-overlay suppression when dragging begins."},{"key":"style-version-recovery","meaningful":false,"text":"Version-stamp shared styles and replace stale or broken stylesheet links without reloading unsaved records."}]},
 {"version":"2.36.864","fixes":true,"changes":[{"key":"ftf-solution-advice","meaningful":true,"text":"Include actual human-agent advice, form links, VITA instructions or call-support guidance as FTF solutions and reject missing-solution placeholders."}]},
 {"version":"2.36.863","fixes":true,"changes":[{"key":"ticket-channel-metadata","meaningful":true,"text":"Exclude channel suffixes such as Name - Teams from issue narratives while retaining genuine Teams faults and stated contact preferences."}]},
 {"version":"2.36.862","fixes":true,"changes":[{"key":"gemini-busy-retries","meaningful":false,"text":"Keep retry notices hidden during the first 15 seconds of each request and clear stale notices when a new attempt starts."}]},
@@ -1530,6 +1531,7 @@ function snMediaPan(value,base,zoom,viewport){const limit=Math.max(0,(base*zoom-
 function snMediaImageURL(source){try{const url=new URL(source,location.href);const id=url.pathname.match(/^\/([a-f0-9]{32})\.iix$/i)?.[1];return id?location.origin+'/sys_attachment.do?sys_id='+id:url.href;}catch{return '';}}
 function snMediaChatSurface(chat){return [chat,...snMediaNodes(chat.shadowRoot,'.sn-chat,.sn-section,sn-connect-conversation,.sn-conversation')].filter(node=>node.getBoundingClientRect?.().width).sort((a,b)=>b.getBoundingClientRect().height-a.getBoundingClientRect().height)[0]||chat;}
 function snMediaChatClosed(chat){return !!chat?.hasAttribute?.('data-sn-ai-chat-closed')||chat?.getProperties?.().readOnly===true||!!chat?.shadowRoot?.querySelector?.('.sn-ai-chat-preview-notice');}
+function snMediaRepairStyle(root,cache,text,version){let style=cache.get(root);if(!style||style.parentNode!==root){style=root.querySelector('style[data-sn-ai-media-runtime]')||document.createElement('style');style.dataset.snAiMediaStyle='';style.dataset.snAiMediaRuntime='true';cache.set(root,style);}if(style.textContent!==text)style.textContent=text;style.dataset.snAiStyleVersion=version;if(style.parentNode!==root)root.append(style);return style;}
 function snMediaCheckIcon(){return '<svg class="lucide lucide-check" aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg>';}
 function snMediaIsChatImage(image){if(/^Maximize Image:/i.test(image.alt||'')||snMediaAncestor(image,node=>node.matches?.('[aria-label^="Maximize Image:"],sn-image-message,.sn-image-message')||/image.*message|message.*image/.test(node.localName||'')))return true;const chat=snMediaAncestor(image,node=>['sn-agent-chat','sn-connect-conversation'].includes(node.localName)||node.matches?.('.sn-chat')),rect=image.getBoundingClientRect?.();return !!chat&&rect?.width>=70&&rect.height>=45&&!/avatar/i.test((image.alt||'')+' '+(image.className||''));}
 // The native delete action owns the single, user-confirmed deletion dialog.
@@ -1581,7 +1583,7 @@ function openSnMediaViewer(images,index=0,opener,actions={}){
 function enhanceWorkspaceMediaNode(node){const controller=installWorkspaceMedia.instance;if(!controller)return;controller.discover(node);for(const element of node?.querySelectorAll?.('now-record-common-attachment-card,now-template-card-attachment,img,now-dropdown-list,[role="menu"],sn-agent-chat,sn-connect-conversation,sn-form-internal-attachment-overlay,sn-form-internal-attachments-list')||[])controller.discover(element);}
 function installWorkspaceMedia(options={}){
   if(installWorkspaceMedia.instance)return installWorkspaceMedia.instance;
-  const cards=new WeakMap(),menus=new Map(),styled=new WeakSet(),page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;let dragSource='',hint=null,hintTimer,pendingAction=false,disposed=false,changeTimer;
+  const cards=new WeakMap(),menus=new Map(),styled=new WeakMap(),page=typeof unsafeWindow!=='undefined'?unsafeWindow:window,styleVersion=String(typeof GM_info!=='undefined'?GM_info.script?.version||'current':'current');let dragSource='',hint=null,hintTimer,pendingAction=false,disposed=false,changeTimer;
   const addedKey='sn-ai-media-ticket-links-v1',inFlight=new Map();
   const dragForms=new WeakMap();let hintSurface=null,hintTarget=null,hintChat=false,hintPaintAt=0;
   const recordDropForm=owner=>{let form=dragForms.get(owner);if(!form?.isConnected){form=snMediaNodes(owner.shadowRoot,'form.sn-workspace-form-layout')[0];if(form)dragForms.set(owner,form);}return form;};
@@ -1593,7 +1595,7 @@ function installWorkspaceMedia(options={}){
   const showHint=(surface,chat)=>{
     clearTimeout(hintTimer);hintTimer=setTimeout(clearHint,700);
     const changedZone=hintSurface!==surface||hintChat!==chat,now=Date.now();if(!changedZone&&hint&&now-hintPaintAt<80)return;
-    if(changedZone){hintSurface=surface;hintChat=chat;hintTarget=chat?snMediaChatSurface(surface):surface;}
+    if(changedZone){hintSurface=surface;hintChat=chat;hintTarget=chat?snMediaChatSurface(surface):surface;const owner=chat?surface:snMediaAncestor(surface,node=>node.localName==='now-record-form-connected');if(owner){discover(owner);for(const element of snMediaNodes(owner.shadowRoot,'sn-agent-chat,sn-connect-conversation,sn-form-internal-attachment-overlay,sn-form-internal-attachments-list'))discover(element);}}
     const rect=hintTarget.getBoundingClientRect();if(!rect.width||!rect.height)return;hintPaintAt=now;
     if(!hint){hint=document.createElement('div');hint.dataset.snAiDropHint='';hint.setAttribute('role','status');hint.innerHTML='<div style="display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px">'+snMediaIcon('image-down')+'<span></span></div>';hint.querySelector('svg').style.cssText='width:64px;height:64px;flex:none';document.body.append(hint);}
     if(changedZone)hint.querySelector('span').textContent=chat?'Drop images to queue them above your message':'Drop files to attach them to this record';
@@ -1623,7 +1625,7 @@ function installWorkspaceMedia(options={}){
   const discover=node=>{
     for(const [root,observer]of listObservers)if(!root.host.isConnected){observer.disconnect();listObservers.delete(root);}
     const element=node?.nodeType===3?node.parentElement:node?.host||node;if(!element)return;
-    if(styles[element.localName]&&element.shadowRoot&&!styled.has(element.shadowRoot)){styled.add(element.shadowRoot);const style=document.createElement('style');style.dataset.snAiMediaStyle='';style.textContent=styles[element.localName]+(element.localName==='sn-form-internal-attachments-list'?'.sn-card-list.sn-card-list{display:grid!important;grid-template-columns:repeat(auto-fill,minmax(min(128px,100%),1fr))!important;gap:8px!important;align-items:start!important}.sn-card.sn-card{margin:0!important}.sn-attachment-list-wrapper.sn-attachment-list-wrapper.sn-attachment-list-wrapper{padding-top:8px!important;padding-bottom:8px!important}':'');element.shadowRoot.append(style);}
+    if(styles[element.localName]&&element.shadowRoot)snMediaRepairStyle(element.shadowRoot,styled,styles[element.localName]+(element.localName==='sn-form-internal-attachments-list'?'.sn-card-list.sn-card-list{display:grid!important;grid-template-columns:repeat(auto-fill,minmax(min(128px,100%),1fr))!important;gap:8px!important;align-items:start!important}.sn-card.sn-card{margin:0!important}.sn-attachment-list-wrapper.sn-attachment-list-wrapper.sn-attachment-list-wrapper{padding-top:8px!important;padding-bottom:8px!important}':''),styleVersion);
     if(element.localName==='sn-form-internal-attachment-overlay')element.style.setProperty('display','none','important');
     if(pendingAction&&element.localName==='now-dropdown-list'){element.style.setProperty('visibility','hidden','important');setTimeout(()=>element.style.removeProperty('visibility'),2200);}
     if(element.matches?.('[role="menu"]')&&/^Actions /.test(element.getAttribute('aria-label')||''))menus.set(element.getAttribute('aria-label'),new WeakRef(element));
@@ -1918,8 +1920,10 @@ function installWorkspaceReferenceSearch(){
   }, { once: true });
   const spaceStyles = new Map();
   const sharedStyleResources = new Map();
+  const sharedStyleVersion=String(typeof GM_info!=='undefined'?GM_info.script?.version||'current':'current');
   function shareActionStyle(root, style, text) {
-    if(style.snAiSharedText===text&&style.snAiSharedLink?.parentNode===style.parentNode)return;
+    const mounted=style.snAiSharedLink;
+    if(style.snAiSharedText===text&&mounted?.parentNode===style.parentNode&&mounted.dataset.snAiStyleVersion===sharedStyleVersion&&!mounted.disabled&&(mounted.sheet||mounted.dataset.snAiStylePending==='true'))return;
     if(style.textContent!==text)style.textContent=text;
     if(!style.parentNode)return;
     let resource=sharedStyleResources.get(text);
@@ -1932,13 +1936,16 @@ function installWorkspaceReferenceSearch(){
     // Ordinary links preserve cascade position; adopted sheets did not.
     const previous=style.snAiSharedLink,link=document.createElement('link');
     link.rel='stylesheet';link.href=resource.url;link.dataset.snAiSharedStyle='true';
+    link.dataset.snAiStyleVersion=sharedStyleVersion;link.dataset.snAiStylePending='true';
     link.dataset.snAiCssChars=String(text.length);
     style.snAiSharedLink=link;style.snAiSharedText=text;
     link.addEventListener('load',()=>{
+      delete link.dataset.snAiStylePending;
       if(style.snAiSharedLink!==link){link.remove();return;}
       if(!link.sheet){link.remove();style.snAiSharedLink=null;return;}
       if(style.textContent===text)style.textContent='';
       previous?.remove();
+      for(const old of root.querySelectorAll('link[data-sn-ai-shared-style]'))if(old!==link&&old.dataset.snAiStyleVersion!==sharedStyleVersion)old.remove();
     },{once:true});
     link.addEventListener('error',()=>{if(style.snAiSharedLink===link){style.textContent=text;style.snAiSharedLink=null;}link.remove();previous?.remove();},{once:true});
     style.before(link);
@@ -7785,6 +7792,7 @@ function installWorkspaceReferenceSearch(){
       // Workspace sometimes clears a mounted root's children, including our
       // style. Restore only this changed root; never rescan the whole page.
       ensureSpaceRoot(root);
+      installWorkspaceMedia.instance?.discover(root);
       filterIncidentActions(root.host);
       if(forceIMSChatEnabled)syncForcedIMSChat(root);
       syncIMSPreview(root);
