@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.600.0
+// @version      1.601.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -9605,12 +9605,33 @@
     // Visibility, never focus: an unfocused window on another monitor is live.
     try{return doc.defaultView.top.document.hidden || doc.hidden;}catch(_){return doc.hidden;}
   }
+  function reconcileOwnBoardCall(table) {
+    const signal=currentLiveCallSignal();
+    const connected=signal?.state==='connected' && currentAgentApiId;
+    for(const row of table.tBodies[0]?.rows || []) {
+      const href=row.querySelector('td.column-agent a[href]')?.getAttribute('href') || '';
+      const cell=row.querySelector('td.column-status');if(!cell)continue;
+      const own=connected && href.includes(currentAgentApiId);
+      if(own) {
+        if(cell.textContent.trim()!=='In Call') {
+          row.__gbsNativeStatus=cell.textContent;
+          if(row.__gbsMismatchCall!==signal.id){row.__gbsMismatchCall=signal.id;performanceEvent('board-own-call-mismatch',{conversationId:signal.id,dashboardStatus:cell.textContent.trim().slice(0,40),liveState:signal.state});}
+          cell.textContent='In Call';
+        }
+        row.__gbsCallOverride=true;
+      } else if(row.__gbsCallOverride) {
+        if(cell.textContent.trim()==='In Call' && row.__gbsNativeStatus)cell.textContent=row.__gbsNativeStatus;
+        delete row.__gbsCallOverride;delete row.__gbsNativeStatus;delete row.__gbsMismatchCall;
+      }
+    }
+  }
   function sortBoard(table) {
     if(boardPageHidden(table.ownerDocument)){table.__gbsVisibilityDeferred=true;return;}
     table.__gbsVisibilityDeferred=false;
     if (table.closest('.gbs-board-preview')) return;
     const body = table.tBodies[0];
     if (!body) return;
+    reconcileOwnBoardCall(table);
     injectStyles(table.ownerDocument);
     table.classList.add('gbs-board');
     shortenTimeHeader(table);
