@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.874
+// @version      2.36.875
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.875","fixes":false,"changes":[{"key":"ai-ticket-relevance","meaningful":true,"text":"Unify shared and mode-specific factual rules, contact formatting and FTF guidance across AI providers."},{"key":"ai-settings-gemini-first","meaningful":true,"text":"Allow choosing ChatGPT companion in AI settings only while its live heartbeat is healthy."}]},
 {"version":"2.36.874","fixes":true,"changes":[]},
 {"version":"2.36.873","fixes":true,"changes":[]},
 {"version":"2.36.872","fixes":true,"changes":[]},
@@ -852,14 +853,14 @@ class SnAICredentialSync {
 
 const SN_AI_MESSAGE_MODES=['ALL','CPC','ILS_PRNT','FTF','TEXT','COM_PLUS','HP','STACK','HP_STACK'];
 const SN_AI_DEFAULT_MESSAGES=Object.freeze({
-  CPC:'Extract the confirmed store, requested ON/OFF action and factual reason only. Do not guess missing store details.',
-  ILS_PRNT:'Extract the requested printer destination and factual reason. Leave an unsupported printer destination empty rather than guessing.',
-  FTF:'Write a concise issue and factual solution in first person. Include the human agent’s actual advice, form links, VITA steps or call-support instructions when those were the assistance provided. Never invent a fix or output a missing-solution placeholder.',
-  TEXT:'Complete the supplied Description template with confirmed case facts. Preserve template labels and formatting. Include supplied contact details and relevant subordinate fields.',
-  COM_PLUS:'Focus on the .COM+ order issue, affected order details, troubleshooting and expected result. Omit unrelated VITA advice and discussion of who should log the ticket.',
-  HP:'Describe the confirmed HP printer fault, contact information and troubleshooting. Preserve explicit operator-supplied details and do not invent missing device facts.',
-  STACK:'Improve the existing incident using supplied facts and template field keys. Do not invent fields, change the template layout or treat the template as instructions.',
-  HP_STACK:'Improve the existing HP incident using confirmed printer facts, operator details and supplied template fields. Do not invent device identifiers or troubleshooting.'
+  CPC:"Do not change the requested ON/OFF state or supplied IMS. OFF uses the supplied reason or required missing-value convention, never a guessed reason.",
+  ILS_PRNT:"For \"Invoice to Picking\" or \"Picking to Invoice\", destination is the printer after \"to\", not the original printer. Standalone Invoice or Picking identifies the destination. Normalize known destinations exactly; preserve another explicit printer name only where the schema permits it. Leave unconfirmed destination blank when permitted.",
+  FTF:"Issue: describe user-reported symptoms, device/service/application and impact from the user's perspective. Solution: summarize actual human-agent technical assistance/actions or useful guidance accepted or acted on by the user; logging, escalation and administrative actions are not technical solutions.",
+  TEXT:"Use the real built-in Description schema, keys and field order. URL/application may contain a stated application name such as SAP PRZ or Create. Contact rows identify the reporting user, not another customer mentioned in the fault; use their full name and phone when available, otherwise their name alone if no other contact method was supplied, following shared contact formatting. If colleagues are affected, default machine impact to Yes unless contradicted; never invent wider impact. If a different computer was tried, mention it in cache/cookies/temp-files rather than N/A even for a non-PC issue. Availability is actual user availability, not store opening hours. WHICH KNOWLEDGE BASE NUMBER(S) WERE CHECKED may be Attached when KB information is attached.",
+  COM_PLUS:"",
+  HP:"Use the current printer's model, serial, device ID and identifiers, never those of a previous or replaced printer. Physical location is not the printer name/destination. Without an explicit physical location, Invoice uses exactly \"Next to tills\" and Picking \"Next to manager's PC\"; explicit location overrides these. Retain supplied Teams, full email or phone using shared contact formatting. Fix attempts are performed troubleshooting/repair, not advice alone, information requests or administrative actions. For a jam, printer-restarted is NA unless explicitly restarted. Preserve exact errors and only the built-in Issue Type options. no-other-working-printer must be boolean, based on actual usable alternatives, not assumptions.",
+  STACK:"Return STACK with shortDescription, values and extraValues, using supplied real template field keys, not a generic schema or JSON Schema metadata (type, properties, required, additionalProperties). Omit missing/unreliable fields where permitted; keep shortDescription concise. Preserve exact technical details, printer names, locations, errors, IPs, contacts and serials. Picking physical location defaults to \"Next to manager's PC\" unless explicit location is supplied.",
+  HP_STACK:"Use exact supplied HP-STACK template and Description keys, not JSON Schema metadata (type, properties, required, additionalProperties). Omit missing fields where permitted. Improve only incomplete/inaccurate/incorrect values; do not unnecessarily rewrite correct information. Preserve current device IDs, serials, printer names, IPs, errors and contacts. Picking physical location defaults to \"Next to manager's PC\" unless explicit location is supplied."
 });
 function snValidateModeMessages(value){
   if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!SN_AI_MESSAGE_MODES.includes(k)))throw Error('Invalid shared mode message map.');
@@ -9093,7 +9094,7 @@ function startSNAI(tabIdentity) {
       });
     }
   });
-  function sharedModeInstructions(mode,instructions){const key=mode==='DESCRIPTION'?'TEXT':mode;const builtIn=SN_AI_DEFAULT_MESSAGES[key]||'',message=sharedModeMessages.message(key);
+  function sharedModeInstructions(mode,instructions){const key=mode==='DESCRIPTION'?'TEXT':mode;const builtIn=SN_AI_DEFAULT_MESSAGES[key==='COM_PLUS'?'TEXT':key]||'',message=sharedModeMessages.message(key);
     const allMessage=SN_AI_MESSAGE_MODES.includes(key)&&key!=='ALL'&&key!=='STACK'&&key!=='HP_STACK'?sharedModeMessages.message('ALL'):'';
     if(message||allMessage)recordCompactDiagnostic('info','shared-mode-message-applied',{mode,version:String(sharedModeMessages.snapshot.revision??'built-in')});
     const channelRule='Participant labels such as "Name - Teams" contain channel metadata, not a fault or part of the person\'s name. In issue narratives say "The user" rather than repeating participant display labels. Mention Teams only for a genuine Teams-related issue or an explicitly stated contact preference, not because it appears in a speaker/name label. Keep actual contact names in contact fields without channel suffixes.';
@@ -9939,7 +9940,7 @@ function startSNAI(tabIdentity) {
     pauseRule: 'When the ServiceNow browser tab loses focus or the matching New Event is no longer active, the helper pauses safely and shows Paused. It resumes automatically when the page is safe again; Continue only resumes when the matching New Event is active.',
     sourceOfTruth: '#local-sn-inspector-ai-cache, #local-sn-inspector-ai-chat, #local-sn-inspector-ai-request, and #local-sn-inspector-ai-result. Do not inspect the ServiceNow page.',
     fastPath: 'Read ai-cache. If the IMS is listed in availableIMS but its full entry is not in entries, send cache <IMS> once to focus/publish it. CACHE HIT: send one IMS-aware profile data command; the helper restores the session and reuses/creates the exact New Event. CACHE MISS/EMPTY: START <MODE> <IMS>, read ai-chat and ai-request, then send the IMS-aware final command. If any command returns automation-error, report only its exact code and stop.',
-    genericMode: 'TEXT mode owns Reporting User, Short Description, Description, and discovered fields beneath Description. Extract factual availability whenever stated, including shift end-times, working hours, days off, and contact-channel preferences. For a CONTACT NAME\\NUMBER template line, treat NUMBER as any stated contact method: enter the contact name plus the exact supplied phone number, Teams preference, full email address, or other stated method; never abbreviate or mask provided contact details. Always scan the complete transcript for an order number stated in plain language and copy it exactly into ORDER NUMBER(s), even when it appears inside a longer problem description. For an EAN CODES AFFECTED template line, enter Whole order by default. Override Whole order only when the user explicitly identifies a particular EAN, product, or order line as affected, and then copy the specific identifiers exactly; never invent product codes. Separate virtual-agent history from human support work at the transcript message matching <user ID> has joined.; the ID varies. For FIX ATTEMPTS, JOURNEY SO FAR, solutions, or claims about actions taken, use only human-agent messages after that join marker. Write those actions in first person from the logging agent’s perspective, for example “I asked the user to…”, “I checked…”, or “I advised…”. Never write “the support agent requested/advised” or attribute actions to a third-person support agent. Never attribute pre-join virtual-agent prompts, automated troubleshooting, summaries, knowledge suggestions, or instructions to the human agent. If no qualifying post-join fix or advice exists, enter None or Not provided as appropriate. For workaround questions, record any alternate device or process together with its current limitation; a partial or presently unavailable workaround must retain both facts and must not be reduced to No workaround. Before using N/A or Not provided, scan the complete transcript for plain-language error states and contact methods: a condition such as jam is an error message without needing a numeric code, and a store telephone number is a valid contact number that must be copied exactly into the description and matching subordinate field. In printer templates, default IS PRINTER POWERED ON to Yes unless the user explicitly reports no power or that it is turned off. Enter only Yes for IS PRINTER ONLINE unless the user explicitly reports it offline; explicit user statements override both defaults. In applicable templates, default DOES THIS AFFECT OTHER COLLEAGUES to No unless stated otherwise, and default DOES THIS AFFECT OTHER MACHINES to Not tried unless another result is confirmed; explicit user statements override both defaults. When an issue is not device-specific, enter N/A for both WIN 7 / 10 and HOST NAME. Use actual confirmed OS and hostname details only for a device-specific issue; never invent them. When an issue is not a PC issue, enter N/A for both PC RESTARTED and CACHE CLEARED (if applicable). For a PC issue, use only confirmed restart and cache-clearing status; never assume either was completed. When a template has a URL field, scan the user messages for a relevant supplied link and copy the full URL exactly; never use Not provided when the user supplied the affected application URL. Do not substitute unrelated, virtual-agent, automated knowledge, or support links. Use Not provided only when the relevant fact is absent, unless the operator explicitly requests that unconfirmed values remain blank; in that case send those labels with empty-string values. External facts may be gathered only from tabs explicitly placed in scope by the operator.',
+    genericMode: 'TEXT mode owns Reporting User, Short Description, Description, and discovered fields beneath Description. Extract factual availability whenever stated, including shift end-times, working hours, days off, and contact-channel preferences. For a CONTACT NAME\\NUMBER template line, treat NUMBER as any stated contact method: enter the contact name plus the exact supplied phone number, Teams preference, full email address, or other stated method; never abbreviate or mask provided contact details. Always scan the complete transcript for an order number stated in plain language and copy it exactly into ORDER NUMBER(s), even when it appears inside a longer problem description. For an EAN CODES AFFECTED template line, enter Whole order by default. Override Whole order only when the user explicitly identifies a particular EAN, product, or order line as affected, and then copy the specific identifiers exactly; never invent product codes. Separate virtual-agent history from human support work at the transcript message matching <user ID> has joined.; the ID varies. For FIX ATTEMPTS, JOURNEY SO FAR, solutions, or claims about actions taken, use only human-agent messages after that join marker. Write those actions in first person from the logging agent’s perspective, for example “I asked the user to…”, “I checked…”, or “I advised…”. Never write “the support agent requested/advised” or attribute actions to a third-person support agent. Never attribute pre-join virtual-agent prompts, automated troubleshooting, summaries, knowledge suggestions, or instructions to the human agent. If no qualifying post-join fix or advice exists, enter None or Not provided as appropriate. For workaround questions, record any alternate device or process together with its current limitation; a partial or presently unavailable workaround must retain both facts and must not be reduced to No workaround. Before using N/A or Not provided, scan the complete transcript for plain-language error states and contact methods: a condition such as jam is an error message without needing a numeric code, and a store telephone number is a valid contact number that must be copied exactly into the description and matching subordinate field. In printer templates, default IS PRINTER POWERED ON to Yes unless the user explicitly reports no power or that it is turned off. Enter only Yes for IS PRINTER ONLINE unless the user explicitly reports it offline; explicit user statements override both defaults. In applicable templates, default DOES THIS AFFECT OTHER COLLEAGUES to No unless stated otherwise, and default DOES THIS AFFECT OTHER MACHINES to Yes when colleagues are affected, otherwise Not tried unless another result is confirmed; explicit user statements override both defaults. When an issue is not device-specific, enter N/A for both WIN 7 / 10 and HOST NAME. Use actual confirmed OS and hostname details only for a device-specific issue; never invent them. When an issue is not a PC issue, enter N/A for both PC RESTARTED and CACHE CLEARED (if applicable). For a PC issue, use only confirmed restart and cache-clearing status; never assume either was completed. When a template has a URL field, scan the user messages for a relevant supplied link or application name and copy it exactly; never use Not provided when the user supplied the affected application URL. Do not substitute unrelated, virtual-agent, automated knowledge, or support links. Use Not provided only when the relevant fact is absent, unless the operator explicitly requests that unconfirmed values remain blank; in that case send those labels with empty-string values. External facts may be gathered only from tabs explicitly placed in scope by the operator.',
   });
 
   function compactLogDetails(details = {}) {
@@ -11693,7 +11694,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       'Copy stated order numbers, URLs, error conditions, contact numbers, availability, and workaround limitations exactly.',
       'For EAN CODES AFFECTED use Whole order unless a specific EAN, product, or line is explicitly identified.',
       'For non-device issues use N/A for WIN 7 / 10 and HOST NAME. For non-PC issues use N/A for PC RESTARTED and CACHE CLEARED.',
-      'Default DOES THIS AFFECT OTHER COLLEAGUES to No and DOES THIS AFFECT OTHER MACHINES to Not tried unless the transcript says otherwise.',
+      'Default DOES THIS AFFECT OTHER COLLEAGUES to No unless stated otherwise. Default DOES THIS AFFECT OTHER MACHINES to Yes when colleagues are affected, otherwise Not tried, unless explicitly contradicted.',
       'For printer templates default powered on and online to Yes unless explicitly contradicted.',
       'Short Description must be concise and no longer than 80 characters.',
       `The IMS must be exactly ${ims}.`,
@@ -12137,7 +12138,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const mode = normalise(values.mode || values.Mode).toUpperCase();
     const rawLocation = normalise(values.location || values.Location);
     const location = cpcStoreIdFromAI(rawLocation);
-    const reason = normalise(values.reason || values.Reason) || (mode === 'ON' ? 'store is open now' : '');
+    const reason = normalise(values.reason || values.Reason) || (mode === 'ON' ? 'Store is open again' : '');
     if (!['ON', 'OFF'].includes(mode)) throwAIValidation('The AI could not determine whether CPC should be ON or OFF.', raw);
     if (!location) throwAIValidation(`The AI could not determine a valid CPC Store ID from ${JSON.stringify(rawLocation || 'empty location')}. Return only exactly three letters/digits such as LB2, or SFD followed immediately by that three-character code such as SFDLB2.`, raw);
     if (mode === 'OFF' && !reason) throwAIValidation('The AI could not determine the reason for disabling CPC.', raw);
@@ -12169,7 +12170,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       'Extract the affected Store ID, whether CPC must be turned ON or OFF, and the factual reason.',
       'Location is only the 3-character alphanumeric store code, optionally prefixed SFD (LB2 or SFDLB2), never a town/address.',
       'Use ON when the request is to enable, restore, or turn CPC back on; use OFF when the request is to disable or turn CPC off.',
-      'For ON, use "store is open now" when no more specific reason is stated. For OFF, never invent a reason.',
+      'For ON, use exactly "Store is open again" when no more specific reason is stated. For OFF, never invent a reason.',
       'Return a CPC object containing IMS and a Values object with exactly mode, location, and reason. Do not use display labels or perform ServiceNow actions.',
       `The IMS must be exactly ${ims}.`,
     ].join(' ');
@@ -12234,7 +12235,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     ].join(' ');
   }
 
-  const FTF_SOLUTION_RULE='FTF solution means the actual help or next-step advice given, not only a technical fix. Include confirmed human-agent advice, exact form links to log a ticket, VITA instructions, or advice to call support when supplied. This FTF-specific rule overrides general omission of VITA/referral advice, but still omit mere negotiations about who will log a ticket. Never claim a technical fix or successful outcome unless confirmed. Never return Not provided, N/A, None or another missing-solution placeholder. Recheck all human-agent messages for assistance; if none exists, ask the operator rather than inventing it.';
+  const FTF_SOLUTION_RULE="FTF solution is actual technical assistance, performed actions or useful guidance provided by the human agent after the relevant participant has joined marker (multiword names allowed), in first person. Never call logging, escalation or administration a technical fix. Never use Not provided or NA when assistance exists. Normally omit VITA. This FTF-specific rule overrides general omission only if no other technical solution/troubleshooting outcome exists and VITA is the sole resolution path: if the user accepts/returns to VITA, describe the exact advice and acceptance; if rejected, omit it unless the user explicitly expresses dissatisfaction and leaves without another solution. Omit unrelated VITA if another actual solution exists. Never invent a fix or claim success without confirmation. If no assistance exists, ask the operator rather than inventing it.";
   function ftfAIInstructions(ims) {
     return [
       FTF_SOLUTION_RULE,
@@ -14786,7 +14787,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       const on=data.action==='ENABLE';
       plan.push({kind:'lookup',field:'Location',value:data.locationSearch});
       text('Short Description',`CPC TCND turn ${on?'ON':'OFF'} for ${location||data.locationSearch}`,80);
-      text('Description',`REASON FOR REQUEST TO DISABLE/ENABLE: ${on?`ENABLE - ${data.reason||'store is open now'}`:`DISABLE - ${data.reason}`}\nDOES TC ALSO NEED TCND TO TURN ON\\OFF?: yes\nINFORMATION PROVIDED: this ticket`);
+      text('Description',`REASON FOR REQUEST TO DISABLE/ENABLE: ${on?`ENABLE - ${data.reason||'Store is open again'}`:`DISABLE - ${data.reason}`}\nDOES TC ALSO NEED TCND TO TURN ON\\OFF?: yes\nINFORMATION PROVIDED: this ticket`);
     }else if(profile==='HP'){
       const values=data.values;
       const hpSchema={fieldsUnderDescription:schema};
@@ -15241,7 +15242,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         : `CPC TCND turn back ON for ${location}`);
       description = data.action === 'DISABLE'
         ? `REASON FOR REQUEST TO DISABLE/ENABLE: DISABLE - ${data.reason}\nDOES TC ALSO NEED TCND TO TURN ON\\OFF?: yes\nINFORMATION PROVIDED: this ticket`
-        : `REASON FOR REQUEST TO DISABLE/ENABLE: ENABLE - ${data.reason || 'store is open now'}\nDOES TC ALSO NEED TCND TO TURN ON\\OFF?: yes\nINFORMATION PROVIDED: this ticket`;
+        : `REASON FOR REQUEST TO DISABLE/ENABLE: ENABLE - ${data.reason || 'Store is open again'}\nDOES TC ALSO NEED TCND TO TURN ON\\OFF?: yes\nINFORMATION PROVIDED: this ticket`;
       await runBatch([
         { field: 'Short Description', value: shortDescription },
         { field: 'Description', value: description },
@@ -16993,7 +16994,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       });
       const on = data.action === 'ENABLE';
       const shortDescription = `CPC TCND turn ${on ? 'ON' : 'OFF'} for ${finalLocation}`;
-      const description = `REASON FOR REQUEST TO DISABLE/ENABLE: ${on ? `ENABLE - ${data.reason || 'store is open now'}` : `DISABLE - ${data.reason}`}\nDOES TC ALSO NEED TCND TO TURN ON\\OFF?: yes\nINFORMATION PROVIDED: this ticket`;
+      const description = `REASON FOR REQUEST TO DISABLE/ENABLE: ${on ? `ENABLE - ${data.reason || 'Store is open again'}` : `DISABLE - ${data.reason}`}\nDOES TC ALSO NEED TCND TO TURN ON\\OFF?: yes\nINFORMATION PROVIDED: this ticket`;
       await autoText('Short Description', shortDescription, 'CPC_SHORT_DESCRIPTION_COMMIT_FAILED', 80);
       await autoText('Description', description, 'CPC_DESCRIPTION_COMMIT_FAILED');
       const genericSchema = await waitForGenericDescriptionSchema(5000, 350);
@@ -20297,6 +20298,11 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     async function offerCompanionFallback(){if(!state.ai.enabled||state.ai.provider!=='gemini-api'||Date.now()-fallbackOfferedAt<60000)return;if(await healthyBackup()){fallbackOfferedAt=Date.now();fallbackBox.hidden=false;if(settingsDialog.hidden){fallbackBox.setAttribute('role','dialog');fallbackBox.setAttribute('aria-label','Use connected backup AI companion');fallbackBox.style.cssText='position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2147483646;width:min(420px,calc(100vw - 40px));padding:18px;border:1px solid var(--sn-theme-655573,#655573);border-radius:10px;background:var(--sn-theme-251f31,#251f31);color:var(--sn-theme-e6edf9,#eee);box-shadow:0 8px 40px #0008;font:14px/1.5 system-ui';document.body.append(fallbackBox);}}}
     switchBackup.onclick=async()=>{if(!(await healthyBackup())){closeFallbackOffer();return;}state.ai.provider='web';state.ai.model='chatgpt-web';await gmSetValue(AI_PROVIDER_KEY,'web');closeFallbackOffer();syncAISettingsUI();await checkPrimaryAI(true);};stayAPI.onclick=closeFallbackOffer;
     const useAPI=document.createElement('button');useAPI.type='button';useAPI.textContent='Use Gemini API';useAPI.className='secondary';useAPI.hidden=true;useAPI.style.marginTop='10px';aiAPISettings.append(useAPI);useAPI.onclick=async()=>{state.ai.provider='gemini-api';state.ai.model=DEFAULT_API_MODEL;await gmSetValue(AI_PROVIDER_KEY,'gemini-api');syncAISettingsUI();checkPrimaryAI(true);};
+    const providerRow=document.createElement('label'),providerSelect=document.createElement('select');providerRow.hidden=true;providerRow.style.cssText='margin:12px 0;display:none;align-items:center;gap:12px';providerRow.append(document.createTextNode('AI mode'));
+    providerSelect.setAttribute('aria-label','AI mode');for(const [value,label]of [['gemini-api','Gemini API'],['web','ChatGPT companion']]){const option=document.createElement('option');option.value=value;option.textContent=label;providerSelect.append(option);}providerSelect.style.cssText='flex:1;min-width:0;padding:9px;border:1px solid var(--sn-theme-655573,#655573);border-radius:7px;background:var(--sn-theme-191621,#191621);color:inherit';providerRow.append(providerSelect);aiAPISettings.insertBefore(providerRow,aiAPISettings.firstChild);
+    async function refreshProviderChoice(){const healthy=await healthyBackup();providerRow.hidden=!healthy;providerRow.style.display=healthy?'flex':'none';providerSelect.value=state.ai.provider==='web'?'web':'gemini-api';return healthy;}
+    providerSelect.onchange=async()=>{if(providerSelect.value==='web'&&!(await healthyBackup())){await refreshProviderChoice();return;}state.ai.provider=providerSelect.value==='web'?'web':'gemini-api';state.ai.model=state.ai.provider==='web'?'chatgpt-web':DEFAULT_API_MODEL;await gmSetValue(AI_PROVIDER_KEY,state.ai.provider);syncAISettingsUI();await refreshProviderChoice();checkPrimaryAI(true);};
+    const providerChoiceTimer=setInterval(()=>{if(!settingsDialog.hidden&&state.ai.enabled)refreshProviderChoice().catch(()=>{});},5000);void refreshProviderChoice().catch(()=>{});document.addEventListener('sn-ai-runtime-dispose',()=>clearInterval(providerChoiceTimer),{once:true});
     async function checkPrimaryAI(force=false){
       if(primaryCheckBusy||!state.ai.enabled)return;if(!force&&(Date.now()<primaryCheckNotBefore||Date.now()-primaryCheckedAt<15000))return;
       primaryCheckBusy=true;const sequence=++primaryCheckSequence;checkButton.disabled=true;checkButton.classList.add('is-checking');
@@ -21928,7 +21934,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
               + `\nSOLUTION PROVIDED: ${String(ftfValues.Solution ?? ftfValues.solution ?? '')}`;
           } else if (refs.aiReturnedMode === 'CPC') {
             const enabled = String(returnedValues.Mode ?? returnedValues.mode ?? '').trim().toUpperCase() === 'ON';
-            const reason = String(returnedValues.Reason ?? returnedValues.reason ?? (enabled ? 'store is open now' : '')).trim();
+            const reason = String(returnedValues.Reason ?? returnedValues.reason ?? (enabled ? 'Store is open again' : '')).trim();
             data.Description = `REASON FOR REQUEST TO DISABLE/ENABLE: ${enabled ? 'ENABLE' : 'DISABLE'} - ${reason}`
               + '\nDOES TC ALSO NEED TCND TO TURN ON\\OFF?: yes\nINFORMATION PROVIDED: this ticket';
           } else if (refs.aiReturnedMode === 'ILS_PRNT') {
@@ -22568,8 +22574,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         cpcSwitch.checked = cpcMode === 'ON';
         cpcToggleText.textContent = cpcMode;
         cpcSwitch.setAttribute('aria-label', `Change CPC to ${cpcMode === 'ON' ? 'OFF' : 'ON'}`);
-        if (cpcMode === 'ON') cpcReason.value = 'store is open now';
-        else if (previousMode === 'ON' && normalise(cpcReason.value).toLowerCase() === 'store is open now') cpcReason.value = '';
+        if (cpcMode === 'ON') cpcReason.value = 'Store is open again';
+        else if (previousMode === 'ON' && normalise(cpcReason.value).toLowerCase() === 'store is open again') cpcReason.value = '';
       };
       const setProgress = (nextProgress) => {
         progress = Math.max(progress, Math.min(100, Math.round(nextProgress)));
@@ -22685,7 +22691,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
               cpcStore.focus();
               return;
             }
-            const reason = normalise(cpcReason.value) || (cpcMode === 'ON' ? 'store is open now' : '');
+            const reason = normalise(cpcReason.value) || (cpcMode === 'ON' ? 'Store is open again' : '');
             if (cpcMode === 'OFF' && !reason) {
               cpcError.textContent = 'Reason is required when changing CPC to OFF.';
               cpcReason.focus();
