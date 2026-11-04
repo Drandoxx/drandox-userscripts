@@ -17405,9 +17405,11 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         ...(contactNumber ? [['Contact Number', contactNumber]] : []),
         ['Short Description', data.shortDescription],
         ['Description', data.description],
-        ...fieldsToFill.map(({ field, value }) => [field.label, value]),
       ].filter(([field, expected]) => !fieldMatchesExpected(readableControlValue(field), expected, field));
-      if (mismatches.length) automationFailure('TEXT_FINAL_VERIFICATION_FAILED', 'Description-mode fields did not pass final verification.', { fields: mismatches.map(([field]) => field) });
+      // Reuse the exact subordinate identity and formatting comparison used at
+      // commit time. A generic "Contact" lookup may resolve another field.
+      for(const {field,value} of fieldsToFill){if(!subordinateFieldMatchesExpected(readableDescriptionFieldValue(field),value,field.label))mismatches.push([field.label,value]);}
+      if (mismatches.length) automationFailure('TEXT_FINAL_VERIFICATION_FAILED', 'Description-mode verification needs attention: '+mismatches.map(([field])=>field).join(', ')+'.', { fields: mismatches.map(([field]) => field) });
       const warnings = reportingUser.skipped ? [reportingUser.warning] : [];
       const result = { kind: 'auto-complete', ok: true, profile: 'TEXT', ims: state.autoSession.ims, saved: false, durationMs: Math.round(performance.now() - started), warnings };
       state.commandResult = result;
