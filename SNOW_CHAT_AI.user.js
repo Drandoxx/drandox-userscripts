@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.871
+// @version      2.36.872
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.872","fixes":true,"changes":[]},
 {"version":"2.36.871","fixes":true,"changes":[]},
 {"version":"2.36.870","fixes":true,"changes":[]},
 {"version":"2.36.869","fixes":true,"changes":[{"key":"workspace-media","meaningful":true,"text":"Recognise existing images across ticket types, including renamed copies. Close upload confirmation immediately and show pending attachment cards until confirmed."}]},
