@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.889
+// @version      2.36.890
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.890","fixes":true,"changes":[{"key":"ticket-impact-rules","meaningful":true,"text":"Recognise reported impact on colleagues or other stores as multi-device impact and mark irrelevant device rows accordingly."}]},
 {"version":"2.36.889","fixes":true,"changes":[{"key":"ticket-important-context","meaningful":true,"text":"Preserve explicitly reported business impact and other important operational details in ticket narratives."}]},
 {"version":"2.36.888","fixes":true,"changes":[{"key":"ai-auto-fallback","meaningful":true,"text":"Automatically try a connected ChatGPT companion after transient Gemini ticket failures, without changing your saved AI mode."}]},
 {"version":"2.36.887","fixes":true,"changes":[{"key":"ai-mode-selector","meaningful":true,"text":"Refresh the manual AI mode selector when settings open and keep settings text non-selectable except editable fields."}]},
@@ -11722,8 +11723,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       'Ignore VITA, virtual-agent, chatbot, and automated-history errors unless the human agent and user explicitly discuss VITA as the main issue after the join marker. For any non-VITA main issue, never mention VITA in the returned values.',
       'Copy stated order numbers, URLs, error conditions, contact numbers, availability, and workaround limitations exactly.',
       'For EAN CODES AFFECTED use Whole order unless a specific EAN, product, or line is explicitly identified.',
-      'For non-device issues use N/A for WIN 7 / 10 and HOST NAME. For non-PC issues use N/A for PC RESTARTED and CACHE CLEARED.',
-      'For DOES THIS AFFECT OTHER MACHINES use N/A when the issue is specific to one exact machine and testing another machine would not meaningfully diagnose or resolve that machine’s fault, for example Excel missing from that machine or a local hardware fault. Do not use Not tried for these device-specific cases. Use Yes only when other machines are actually affected or a shared issue is explicitly reported to affect colleagues and machines; use No when explicitly confirmed limited to one machine. For a transferable issue where another-machine testing is meaningful but unreported, use Not tried. For DOES THIS AFFECT OTHER COLLEAGUES default to No unless the transcript explicitly reports other colleagues affected; do not infer wider impact merely from the issue type. These impact-specific conventions override generic missing-value defaults.',
+      'For non-device issues use N/A for WIN 7 / 10. For HOST NAME, IP ADDRESS, PC RESTARTED and CACHE CLEARED (if applicable), use N/A - not device issue when they are irrelevant to a non-device issue. When the same issue is explicitly reported on other PCs, by everyone or several other colleagues, or at other stores, treat it as multi-device impact: set DOES THIS AFFECT OTHER MACHINES to Yes and use N/A - affects other devices too in those device-specific rows when no relevant factual device details or performed troubleshooting belong there. Preserve explicitly supplied relevant host/IP details and actual restart/cache-clearing actions; never erase confirmed troubleshooting with an N/A default. If a different computer was actually tried, preserve that fact in the cache/cookies/temp-files row as required. Do not invent restart or cache-clearing actions.',
+      'For DOES THIS AFFECT OTHER MACHINES use N/A when the issue is specific to one exact machine and testing another machine would not meaningfully diagnose or resolve that machine’s fault, for example Excel missing from that machine or a local hardware fault. Do not use Not tried for these device-specific cases. Explicit reports that the same issue affects everyone, some other colleagues, other PCs or other stores mean more than one device is affected: always use Yes, without requiring the user to separately list machines. For a transferable issue where another-machine testing is meaningful but unreported, use Not tried. For DOES THIS AFFECT OTHER COLLEAGUES default to No unless the transcript explicitly reports other colleagues affected; do not infer wider impact merely from the issue type. These impact-specific conventions override generic missing-value defaults.',
       'For printer templates default powered on and online to Yes unless explicitly contradicted.',
       'Short Description must be concise and no longer than 80 characters.',
       `The IMS must be exactly ${ims}.`,
