@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.885
+// @version      2.36.886
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.886","fixes":true,"changes":[{"key":"ai-error-retry","meaningful":true,"text":"Retry Description connection failures without skipping fields, with a connected ChatGPT companion available for a one-run retry."}]},
 {"version":"2.36.885","fixes":true,"changes":[{"key":"ticket-impact-rules","meaningful":true,"text":"Use N/A for other-machine impact on device-specific faults and No for colleagues unless wider impact is reported."}]},
 {"version":"2.36.884","fixes":true,"changes":[{"key":"media-memory","meaningful":true,"text":"Release completed stylesheet handlers and detached media observers; reduce repeated media discovery work."}]},
 {"version":"2.36.883","fixes":false,"changes":[{"key":"attachment-upload-name","meaningful":true,"text":"Keep original attachment names by default, with a separate Upload with random name option."}]},
@@ -23639,8 +23640,13 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       skipProblemFieldsButton.hidden = true;
       cancelButton.before(skipProblemFieldsButton);
       descriptionDialog.dataset.pinnedIms = pinnedIMS;
+      const retryChatGPTButton=document.createElement('button');retryChatGPTButton.type='button';retryChatGPTButton.className='secondary';retryChatGPTButton.textContent='Retry with ChatGPT';retryChatGPTButton.hidden=true;runButton.before(retryChatGPTButton);
+      let nextRetryProvider=null,runProvider=null,errorGeneration=0;
+      const descriptionProvider=()=>runProvider||state.ai.provider;
+      const connectedRetryCompanion=async()=>{try{const heartbeat=await getSelectedWebsiteHeartbeat();return !!heartbeat&&heartbeat.context==='extension-offscreen'&&typeof heartbeat.companionVersion==='string'&&heartbeat.workerToken===CHATGPT_WEB_WINDOW_TOKEN&&Date.now()-Number(heartbeat.at||0)<=30000&&heartbeat.promptReady===true&&!heartbeat.requiresLogin;}catch{return false;}};
+      retryChatGPTButton.onclick=async()=>{if(running||state.commandRunning||state.busy)return;retryChatGPTButton.disabled=true;try{if(!(await connectedRetryCompanion())){retryChatGPTButton.hidden=true;return;}nextRetryProvider='web';runButton.click();}finally{retryChatGPTButton.disabled=false;}};
       const modelLine = descriptionDialog.querySelector('[data-description-model]');
-      modelLine.textContent = reusableAICommand ? 'Validated command cached · retry uses no AI tokens' : `AI mode: ${aiProviderDisplayName()}`;
+      modelLine.textContent = reusableAICommand ? 'Validated command cached · retry uses no AI tokens' : `AI mode: ${(descriptionProvider()==='web'?'ChatGPT Web':'Gemini API')}`;
       let running = false;
       let stoppedFromWindow = false;
       let progress = 0;
@@ -23653,11 +23659,11 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       descriptionShell.onFullRetry = async () => {
         reusableAICommand = ''; lastAIResponse = null;
         await clearCachedAICommand(mode, pinnedIMS);
-        modelLine.textContent = `AI mode: ${aiProviderDisplayName()}`;
+        modelLine.textContent = `AI mode: ${(descriptionProvider()==='web'?'ChatGPT Web':'Gemini API')}`;
       };
       const setProgress = (nextProgress) => {
         progress = Math.max(progress, Math.min(100, Math.round(nextProgress)));
-        if (state.ai.provider === 'web' && progress >= 25) {
+        if (descriptionProvider() === 'web' && progress >= 25) {
           const stages = aiMessageAccepted
             ? ['Getting Chat data', 'Message to AI sent', 'Waiting for AI reply', 'Validating AI response', 'Filling out Description', 'Finishing']
             : ['Getting Chat data', 'Sending message to AI', 'Validating AI response', 'Filling out Description', 'Finishing'];
@@ -23671,7 +23677,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         renderTicketProgressStages(progressText, progress);
       };
       const aiWebProgress = (event) => {
-        if (!running || stoppedFromWindow || state.ai.provider !== 'web') return;
+        if (!running || stoppedFromWindow || descriptionProvider() !== 'web') return;
         if (event.detail?.stage === 'job-message-accepted') {
           aiMessageAccepted = true;
           setProgress(Math.max(progress, 35));
@@ -23708,8 +23714,10 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         descriptionShell.fixAIButton.hidden = true;
         descriptionShell.manualAIButton.hidden = true;
         runButton.disabled = false;
-        runButton.textContent = reusableAICommand ? 'Continue' : 'Run';
-        skipProblemFieldsButton.hidden = false;
+        const connectionFailure=!!error?.safeDetails&&error.safeDetails.operation==='ticket-generation';
+        runButton.textContent = connectionFailure ? 'Retry' : reusableAICommand ? 'Continue' : 'Run';
+        skipProblemFieldsButton.hidden = connectionFailure;
+        retryChatGPTButton.hidden=true;const generation=++errorGeneration;if(connectionFailure)void connectedRetryCompanion().then(available=>{if(generation===errorGeneration&&descriptionDialog.isConnected)retryChatGPTButton.hidden=!available;});
         skipProblemFieldsButton.disabled = false;
         let returned = error?.aiResponse || lastAIResponse;
         if (!returned && reusableAICommand) {
@@ -23778,9 +23786,10 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         running = true;
         try {
           await loadAISettings();
+          runProvider=nextRetryProvider||state.ai.provider;nextRetryProvider=null;errorGeneration++;retryChatGPTButton.hidden=true;
           if (!state.ai.enabled) throw new Error('AI power is off.');
-          if (state.ai.provider === 'gemini-api' && !state.ai.keySaved) throw new Error('The Gemini API key has been removed.');
-          modelLine.textContent = reusableAICommand ? 'Validated command cached · retry uses no AI tokens' : `AI mode: ${aiProviderDisplayName()}`;
+          if (descriptionProvider() === 'gemini-api' && !state.ai.keySaved) throw new Error('The Gemini API key has been removed.');
+          modelLine.textContent = reusableAICommand ? 'Validated command cached · retry uses no AI tokens' : `AI mode: ${(descriptionProvider()==='web'?'ChatGPT Web':'Gemini API')}`;
           running = true;
           stoppedFromWindow = false;
           progress = 0;
@@ -23831,10 +23840,10 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             ? { ...genericSchema, fieldsUnderDescription: [] }
             : { ...genericSchema, fieldsUnderDescription: uniqueDescriptionFields(genericSchema.fieldsUnderDescription) };
           setProgress(32);
-          titleMain.textContent = `${pinnedIMS} - Asking ${aiProviderDisplayName()}…`;
+          titleMain.textContent = `${pinnedIMS} - Asking ${(descriptionProvider()==='web'?'ChatGPT Web':'Gemini API')}…`;
           const transcript = appendCurrentCaseInstruction(await aiTranscriptWithUserInformation(cacheEntry, 'TEXT', pinnedIMS, requestSchema), descriptionShell.caseInstruction?.value);
           assertTicketWindowAlive(descriptionDialog);
-          if (state.ai.provider === 'web') {
+          if (descriptionProvider() === 'web') {
             aiRequest = requestChatGPTWebDescription({ ims: pinnedIMS, transcript, genericSchema: requestSchema, promptMode:mode==='COM_PLUS'?'COM_PLUS':'TEXT' });
           } else {
             const apiKey = await geminiCredentials.key();
@@ -23888,10 +23897,10 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             restoreEditableWindow('Stopped. You can run this Description request again.');
           } else {
             showError(error);
-            addLog('error', 'ai-description-failed', { ims: pinnedIMS, provider: state.ai.provider, model: state.ai.model, message: error.message });
+            addLog('error', 'ai-description-failed', { ims: pinnedIMS, provider: descriptionProvider(), model: state.ai.model, message: error.message });
           }
         } finally {
-          running = false;
+          running = false;runProvider=null;
           document.removeEventListener('sn-ai-progress', automationProgress);
           document.removeEventListener('sn-ai-web-progress', aiWebProgress);
         }
