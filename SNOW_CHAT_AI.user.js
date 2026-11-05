@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.892
+// @version      2.36.893
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.893","fixes":true,"changes":[{"key":"ai-auto-fallback","meaningful":true,"text":"Use the newest companion heartbeat and wait for cold-start readiness before rejecting ChatGPT fallback."}]},
 {"version":"2.36.892","fixes":true,"changes":[{"key":"ai-auto-fallback","meaningful":true,"text":"Probe the ChatGPT companion before automatic fallback and provide FTF connection Retry actions without changing saved AI mode."}]},
 {"version":"2.36.891","fixes":true,"changes":[{"key":"ticket-application-field","meaningful":true,"text":"Fill URL fields with the affected application or website name when no explicit link is supplied."}]},
 {"version":"2.36.890","fixes":true,"changes":[{"key":"ticket-impact-rules","meaningful":true,"text":"Recognise reported impact on colleagues or other stores as multi-device impact and mark irrelevant device rows accordingly."}]},
@@ -8817,6 +8818,7 @@ function startSNAI(tabIdentity) {
   const CHATGPT_WEB_ACK_KEY = 'local-sn-inspector-chatgpt-web-ack-v1';
   const CHATGPT_WEB_HEARTBEAT_KEY = 'local-sn-inspector-chatgpt-web-heartbeat-v1';
   const WEB_AI_HEARTBEATS_KEY = 'local-sn-inspector-web-ai-heartbeats-v1';
+  const liveWebsiteHeartbeats=new Map();
   const CHATGPT_WEB_CONVERSATION_KEY = 'local-sn-inspector-chatgpt-web-conversation-v1';
   const CHATGPT_WEB_WAKE_KEY = 'local-sn-inspector-chatgpt-web-wake-v1';
   const CHATGPT_WEB_URL = 'https://chatgpt.com/?sn_ai_bridge=1';
@@ -9007,6 +9009,7 @@ function startSNAI(tabIdentity) {
       document.documentElement.dataset.snAiCompanionSeen=String(Date.now());
       if (message.action === 'worker-heartbeat' && message.heartbeat) {
         const provider = message.heartbeat.provider === 'gemini' ? 'gemini' : 'chatgpt';
+        if(Number(message.heartbeat.at||0)>=Number(liveWebsiteHeartbeats.get(provider)?.at||0))liveWebsiteHeartbeats.set(provider,message.heartbeat);
         gmGetValue(WEB_AI_HEARTBEATS_KEY, {}).then((heartbeats) => gmSetValue(WEB_AI_HEARTBEATS_KEY, {
           ...(heartbeats && typeof heartbeats === 'object' ? heartbeats : {}),
           [provider]: message.heartbeat,
@@ -9357,18 +9360,16 @@ function startSNAI(tabIdentity) {
   const bridgeSleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
   const getSelectedWebsiteHeartbeat = async (explicitProvider = '') => {
     const provider = explicitProvider || (state.ai.webService === 'gemini' ? 'gemini' : 'chatgpt');
-    const heartbeats = await gmGetValue(WEB_AI_HEARTBEATS_KEY, {});
-    const heartbeat = heartbeats && typeof heartbeats === 'object' ? heartbeats[provider] : null;
-    if (heartbeat) return heartbeat;
-    const legacy = await gmGetValue(CHATGPT_WEB_HEARTBEAT_KEY, null);
-    return String(legacy?.provider || 'chatgpt') === provider ? legacy : null;
+    const [heartbeats,legacy]=await Promise.all([gmGetValue(WEB_AI_HEARTBEATS_KEY,{}).catch(()=>null),gmGetValue(CHATGPT_WEB_HEARTBEAT_KEY,null).catch(()=>null)]);
+    return [liveWebsiteHeartbeats.get(provider),heartbeats?.[provider],legacy].filter(value=>value&&String(value.provider||'chatgpt')===provider).sort((a,b)=>Number(b.at||0)-Number(a.at||0))[0]||null;
   };
   async function readyChatGPTCompanion({wake=false,stopped=()=>false}={}){
     const ready=heartbeat=>!!heartbeat&&heartbeat.context==='extension-offscreen'&&typeof heartbeat.companionVersion==='string'&&heartbeat.workerToken===CHATGPT_WEB_WINDOW_TOKEN&&String(heartbeat.provider||'chatgpt')==='chatgpt'&&Date.now()-Number(heartbeat.at||0)<=30000&&heartbeat.promptReady===true&&!heartbeat.requiresLogin;
     let heartbeat;try{heartbeat=await getSelectedWebsiteHeartbeat('chatgpt');}catch{}
     if(ready(heartbeat)&&!stopped())return true;
-    if(wake&&!stopped()){ensureChatGPTWebIframeWorker({provider:'chatgpt'});for(let attempt=0;attempt<12&&!stopped();attempt++){await bridgeSleep(500);try{heartbeat=await getSelectedWebsiteHeartbeat('chatgpt');}catch{}if(ready(heartbeat))return !stopped();}}
-    recordCompactDiagnostic('warn','companion-fallback-unavailable',{heartbeatPresent:!!heartbeat,ageMs:heartbeat?Math.max(0,Date.now()-Number(heartbeat.at||0)):null,context:heartbeat?.context||'',promptReady:heartbeat?.promptReady===true,requiresLogin:heartbeat?.requiresLogin===true,companionVersion:heartbeat?.companionVersion||'',cancelled:stopped()});return false;
+    if(wake&&!stopped()){ensureChatGPTWebIframeWorker({provider:'chatgpt'});for(let attempt=0;attempt<40&&!stopped();attempt++){await bridgeSleep(500);try{heartbeat=await getSelectedWebsiteHeartbeat('chatgpt');}catch{}if(ready(heartbeat))return !stopped();if(heartbeat?.requiresLogin)break;}}
+    const reason=stopped()?'cancelled':!heartbeat?'no-heartbeat':heartbeat.requiresLogin?'login-required':Date.now()-Number(heartbeat.at||0)>30000?'stale-heartbeat':heartbeat.promptReady!==true?'composer-not-ready':heartbeat.workerToken!==CHATGPT_WEB_WINDOW_TOKEN?'worker-mismatch':'unsupported-context';
+    recordCompactDiagnostic('warn','companion-fallback-unavailable',{reason,heartbeatPresent:!!heartbeat,ageMs:heartbeat?Math.max(0,Date.now()-Number(heartbeat.at||0)):null,context:heartbeat?.context||'',promptReady:heartbeat?.promptReady===true,requiresLogin:heartbeat?.requiresLogin===true,companionVersion:heartbeat?.companionVersion||'',cancelled:stopped()});return false;
   }
   const chatGPTWebDOMWakeResolvers = new Set();
   const wakeChatGPTWebDOMWaiters = () => {
@@ -10277,7 +10278,7 @@ function startSNAI(tabIdentity) {
         else if(typeof value==='string')safe[key]=value.slice(0,80);
         continue;
       }
-      if(!/^(mode|code|message|error|field|label|phase|status|profile|provider|jobId|commandId|ims|attempt|timeoutMs|durationMs|elapsedMs|waitMs|length|fields|ok|source|reason|stage|workerCount|receivedAt|submittedAt|startedAt|completedAt|textLength|assistantCount|observedAssistantMutations|generating|responseSource|conversationId|fetchStatus|fetchError|version|companionVersion|area|eventType|targetTag|targetId|targetRole|blocked|x|y)$/i.test(key))continue;
+      if(!/^(mode|code|message|error|field|label|phase|status|profile|provider|jobId|commandId|ims|attempt|timeoutMs|durationMs|elapsedMs|waitMs|length|fields|ok|source|reason|stage|workerCount|receivedAt|submittedAt|startedAt|completedAt|textLength|assistantCount|observedAssistantMutations|generating|responseSource|conversationId|fetchStatus|fetchError|version|companionVersion|heartbeatPresent|ageMs|context|promptReady|requiresLogin|cancelled|area|eventType|targetTag|targetId|targetRole|blocked|x|y)$/i.test(key))continue;
       if(typeof value==='number'||typeof value==='boolean')safe[key]=value;
       else if(typeof value==='string')safe[key]=value.replace(/\b(Bearer\s+)[^\s]+/gi,'$1[redacted]').slice(0,180);
     }
