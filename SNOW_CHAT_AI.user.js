@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.887
+// @version      2.36.888
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.888","fixes":true,"changes":[{"key":"ai-auto-fallback","meaningful":true,"text":"Automatically try a connected ChatGPT companion after transient Gemini ticket failures, without changing your saved AI mode."}]},
 {"version":"2.36.887","fixes":true,"changes":[{"key":"ai-mode-selector","meaningful":true,"text":"Refresh the manual AI mode selector when settings open and keep settings text non-selectable except editable fields."}]},
 {"version":"2.36.886","fixes":true,"changes":[{"key":"ai-error-retry","meaningful":true,"text":"Retry Description connection failures without skipping fields, with a connected ChatGPT companion available for a one-run retry."}]},
 {"version":"2.36.885","fixes":true,"changes":[{"key":"ticket-impact-rules","meaningful":true,"text":"Use N/A for other-machine impact on device-specific faults and No for colleagues unless wider impact is reported."}]},
@@ -12739,6 +12740,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     return generationFailure||!state.geminiLastSuccessAt||now-state.geminiLastSuccessAt>=300000;
   }
   function requestGeminiAPI({ apiKey, model = DEFAULT_API_MODEL, ims = '', mode = 'TEST', connectionOnly = false, instructions, input, schema, promptMode, validate = value => value }) {
+    const originalInstructions=instructions;let fallbackRequest=null,fallbackStopped=false;
     if(!connectionOnly && mode!=='FEEDBACK')instructions=sharedModeInstructions(promptMode||mode,compactGeminiInstructions(mode,instructions,ims))+'\nUse an existing relevant SNOW memory/skill if accessible; otherwise create one only if supported, without customer/ticket data. If unavailable, continue. Never falsely claim memory access or saving. Keep the JSON schema unchanged.';
     state.geminiDiagnosticsActive = true;
     if (state.diagnostics?.passive) state.diagnostics = null;
@@ -12769,7 +12771,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         if(details.safetyRatings)safe.safetyRatings=details.safetyRatings;
         if(details.tokenCounts)safe.tokenCounts=details.tokenCounts;
         state.geminiLastError=safe;log('error','failed',{message,...safe,...details});
-        if(typeof document!=='undefined'&&typeof CustomEvent==='function')document.dispatchEvent(new CustomEvent('sn-ai-gemini-error',{detail:safe}));
+        // The outer recovery path decides whether this failure needs user attention.
         const failure=error instanceof Error?error:new Error(message);failure.message=message+'\nGemini error details: '+JSON.stringify(safe);failure.safeDetails=safe;reject(failure);
       } };
       const data = connectionOnly ? undefined : JSON.stringify({ systemInstruction: { parts: [{ text: instructions }] }, contents: [{ role: 'user', parts: [{ text: JSON.stringify(input) }] }], generationConfig: { responseMimeType: 'application/json', responseJsonSchema: schema, thinkingConfig:{thinkingLevel:'medium'} } });
@@ -12828,7 +12830,17 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       }); } catch { fail('Gemini API request could not start. Check Tampermonkey permissions.', { status: 0, code: 'REQUEST_START_FAILED' }); }
       };sendAttempt();
     });
-    return { promise, abort() { if (settled) return; stop(); handle?.abort?.(); } };
+    const recovered=promise.catch(async error=>{
+      const details=error?.safeDetails,transient=details&&(details.httpStatus===408||details.httpStatus===429||details.httpStatus>=500||['CALLBACK_DEADLINE','TIMEOUT','NETWORK_ERROR'].includes(details.code));
+      if(!fallbackStopped&&!connectionOnly&&mode!=='TEST'&&mode!=='FEEDBACK'&&transient){
+        let heartbeat;try{heartbeat=await getSelectedWebsiteHeartbeat();}catch{}
+        const available=heartbeat&&heartbeat.context==='extension-offscreen'&&typeof heartbeat.companionVersion==='string'&&heartbeat.workerToken===CHATGPT_WEB_WINDOW_TOKEN&&Date.now()-Number(heartbeat.at||0)<=30000&&heartbeat.promptReady===true&&!heartbeat.requiresLogin;
+        if(available&&!fallbackStopped){log('info','companion-fallback-started',{code:details.code,status:details.httpStatus});fallbackRequest=requestChatGPTWeb({ims,instructions:originalInstructions,schema,input,validate,promptMode:promptMode||mode});const result=await fallbackRequest.promise;if(fallbackStopped)throw Object.assign(Error('AI request stopped.'),{code:'AI_STOPPED'});log('info','companion-fallback-completed');return result;}
+      }
+      if(details&&!fallbackStopped&&typeof document!=='undefined'&&typeof CustomEvent==='function')document.dispatchEvent(new CustomEvent('sn-ai-gemini-error',{detail:details}));
+      throw error;
+    });
+    return { promise:recovered, abort() { fallbackStopped=true;fallbackRequest?.abort();if(settled)return;stop();handle?.abort?.(); } };
   }
   function requestGeminiCPC(args) {
     const { ims, transcript } = args; collectDiagnosticChat('CPC', ims, transcript);
