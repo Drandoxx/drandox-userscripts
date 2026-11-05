@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.893
+// @version      2.36.894
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.894","fixes":true,"changes":[{"key":"ai-mode-selector","meaningful":true,"text":"Use the AI mode selector alone to switch providers; remove the redundant Use Gemini API button."}]},
 {"version":"2.36.893","fixes":true,"changes":[{"key":"ai-auto-fallback","meaningful":true,"text":"Use the newest companion heartbeat and wait for cold-start readiness before rejecting ChatGPT fallback."}]},
 {"version":"2.36.892","fixes":true,"changes":[{"key":"ai-auto-fallback","meaningful":true,"text":"Probe the ChatGPT companion before automatic fallback and provide FTF connection Retry actions without changing saved AI mode."}]},
 {"version":"2.36.891","fixes":true,"changes":[{"key":"ticket-application-field","meaningful":true,"text":"Fill URL fields with the affected application or website name when no explicit link is supplied."}]},
@@ -20355,7 +20356,6 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     function closeFallbackOffer(){fallbackBox.hidden=true;if(fallbackBox.parentElement!==aiAPISettings){aiAPISettings.append(fallbackBox);fallbackBox.style.cssText='margin-top:12px;padding:12px;border:1px solid var(--sn-theme-655573);border-radius:9px';}}
     async function offerCompanionFallback(generationFailure=false){if(!geminiFallbackAllowed(generationFailure)||!state.ai.enabled||state.ai.provider!=='gemini-api'||Date.now()-fallbackOfferedAt<60000)return;if(await healthyBackup()&&geminiFallbackAllowed(generationFailure)){fallbackOfferedAt=Date.now();fallbackBox.hidden=false;if(settingsDialog.hidden){fallbackBox.setAttribute('role','dialog');fallbackBox.setAttribute('aria-label','Use connected backup AI companion');fallbackBox.style.cssText='position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2147483646;width:min(420px,calc(100vw - 40px));padding:18px;border:1px solid var(--sn-theme-655573,#655573);border-radius:10px;background:var(--sn-theme-251f31,#251f31);color:var(--sn-theme-e6edf9,#eee);box-shadow:0 8px 40px #0008;font:14px/1.5 system-ui';document.body.append(fallbackBox);}}}
     switchBackup.onclick=async()=>{if(!(await healthyBackup())){closeFallbackOffer();return;}state.ai.provider='web';state.ai.model='chatgpt-web';await gmSetValue(AI_PROVIDER_KEY,'web');closeFallbackOffer();syncAISettingsUI();await checkPrimaryAI(true);};stayAPI.onclick=closeFallbackOffer;
-    const useAPI=document.createElement('button');useAPI.type='button';useAPI.textContent='Use Gemini API';useAPI.className='secondary';useAPI.hidden=true;useAPI.style.marginTop='10px';aiAPISettings.append(useAPI);useAPI.onclick=async()=>{state.ai.provider='gemini-api';state.ai.model=DEFAULT_API_MODEL;await gmSetValue(AI_PROVIDER_KEY,'gemini-api');syncAISettingsUI();checkPrimaryAI(true);};
     const providerRow=document.createElement('label'),providerSelect=document.createElement('select');providerRow.hidden=true;providerRow.style.cssText='margin:12px 0;display:none;align-items:center;gap:12px';providerRow.append(document.createTextNode('AI mode'));
     providerSelect.setAttribute('aria-label','AI mode');for(const [value,label]of [['gemini-api','Gemini API'],['web','ChatGPT companion']]){const option=document.createElement('option');option.value=value;option.textContent=label;providerSelect.append(option);}providerSelect.style.cssText='flex:1;min-width:0;padding:9px;border:1px solid var(--sn-theme-655573,#655573);border-radius:7px;background:var(--sn-theme-191621,#191621);color:inherit';providerRow.append(providerSelect);aiAPISettings.insertBefore(providerRow,aiAPISettings.firstChild);
     async function refreshProviderChoice(){let healthy=false;try{healthy=await healthyBackup();}catch{}providerRow.hidden=!healthy;providerRow.style.display=healthy?'flex':'none';providerSelect.value=state.ai.provider==='web'?'web':'gemini-api';return healthy;}
@@ -20369,7 +20369,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       try{let available=false;if(state.ai.provider==='web')available=await healthyBackup();else{const apiKey=await geminiCredentials.key();state.ai.keySaved=!!apiKey;if(apiKey){await requestGeminiAPI({apiKey,model:DEFAULT_API_MODEL,connectionOnly:true}).promise;available=true;}}
         if(sequence!==primaryCheckSequence||state.ai.provider==='gemini-api'&&!geminiFallbackAllowed())return;statusText.textContent='AI status - '+(available?'Available':'Unavailable');aiStatusCard.style.background=available?'#17633f':'var(--sn-theme-251f31,#251f31)';aiStatusCard.style.color=available?'#fff':'var(--sn-theme-e6edf9,#eee)';if(available)fallbackBox.hidden=true;else await offerCompanionFallback();
       }catch{if(sequence===primaryCheckSequence&&geminiFallbackAllowed()){statusText.textContent='AI status - Unavailable';aiStatusCard.style.background='var(--sn-theme-251f31,#251f31)';await offerCompanionFallback();}}
-      finally{primaryCheckedAt=Date.now();primaryCheckBusy=false;checkButton.disabled=false;checkButton.classList.remove('is-checking');useAPI.hidden=state.ai.provider!=='web';}
+      finally{primaryCheckedAt=Date.now();primaryCheckBusy=false;checkButton.disabled=false;checkButton.classList.remove('is-checking');}
     }
     const primaryAIError=event=>{if(event.detail?.operation!=='ticket-generation'||!geminiFallbackAllowed(true)||state.ai.provider!=='gemini-api')return;statusText.textContent='AI status - Unavailable';aiStatusCard.style.background='var(--sn-theme-251f31,#251f31)';offerCompanionFallback(true).catch(()=>{});};document.addEventListener('sn-ai-gemini-error',primaryAIError);
     const primaryAIActivity=event=>{if(state.ai.provider!=='gemini-api')return;if(event.detail?.active||event.detail?.success){primaryCheckSequence++;closeFallbackOffer();}if(event.detail?.success){statusText.textContent='AI status - Available';aiStatusCard.style.background='#17633f';aiStatusCard.style.color='#fff';}};document.addEventListener('sn-ai-gemini-activity',primaryAIActivity);
