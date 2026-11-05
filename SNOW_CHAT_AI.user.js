@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.891
+// @version      2.36.892
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.892","fixes":true,"changes":[{"key":"ai-auto-fallback","meaningful":true,"text":"Probe the ChatGPT companion before automatic fallback and provide FTF connection Retry actions without changing saved AI mode."}]},
 {"version":"2.36.891","fixes":true,"changes":[{"key":"ticket-application-field","meaningful":true,"text":"Fill URL fields with the affected application or website name when no explicit link is supplied."}]},
 {"version":"2.36.890","fixes":true,"changes":[{"key":"ticket-impact-rules","meaningful":true,"text":"Recognise reported impact on colleagues or other stores as multi-device impact and mark irrelevant device rows accordingly."}]},
 {"version":"2.36.889","fixes":true,"changes":[{"key":"ticket-important-context","meaningful":true,"text":"Preserve explicitly reported business impact and other important operational details in ticket narratives."}]},
@@ -9299,12 +9300,12 @@ function startSNAI(tabIdentity) {
     } catch { return false; }
   };
 
-  const waitForPersistentChatGPTWebWindow = async (timeoutMs = 20000) => {
-    ensureChatGPTWebIframeWorker();
-    const requestedProvider = state.ai.webService === 'gemini' ? 'gemini' : 'chatgpt';
+  const waitForPersistentChatGPTWebWindow = async (timeoutMs = 20000, webProvider = '') => {
+    const requestedProvider = webProvider || (state.ai.webService === 'gemini' ? 'gemini' : 'chatgpt');
+    ensureChatGPTWebIframeWorker({provider:requestedProvider});
     const probeAt = Date.now();
     await gmSetValue(CHATGPT_WEB_WAKE_KEY, { id: `worker-probe-${probeAt}`, at: probeAt, source: 'servicenow-worker-discovery' });
-    let heartbeat = await getSelectedWebsiteHeartbeat();
+    let heartbeat = await getSelectedWebsiteHeartbeat(requestedProvider);
     // A worker sends a heartbeat every 2.5 seconds. Treating an older value as
     // live caused window.open('', name) to manufacture an about:blank window
     // after the real worker had closed. Never use window.open solely to focus a
@@ -9320,7 +9321,7 @@ function startSNAI(tabIdentity) {
     const discoveryStarted = Date.now();
     while (!matchesPersistentWindow() && Date.now() - discoveryStarted < 4500) {
       await bridgeSleep(250);
-      heartbeat = await getSelectedWebsiteHeartbeat();
+      heartbeat = await getSelectedWebsiteHeartbeat(requestedProvider);
     }
     if (heartbeat?.windowName) windowNameForChatGPT = String(heartbeat.windowName).trim() || windowNameForChatGPT;
     if (!matchesPersistentWindow()) {
@@ -9337,7 +9338,7 @@ function startSNAI(tabIdentity) {
     }
     const started = Date.now();
     while (Date.now() - started < timeoutMs) {
-      heartbeat = await getSelectedWebsiteHeartbeat();
+      heartbeat = await getSelectedWebsiteHeartbeat(requestedProvider);
       if (matchesPersistentWindow()) {
         // The heartbeat proves that an existing worker was found. Its composer
         // can appear a few seconds later after ChatGPT hydrates, especially
@@ -9354,14 +9355,21 @@ function startSNAI(tabIdentity) {
   };
 
   const bridgeSleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
-  const getSelectedWebsiteHeartbeat = async () => {
-    const provider = state.ai.webService === 'gemini' ? 'gemini' : 'chatgpt';
+  const getSelectedWebsiteHeartbeat = async (explicitProvider = '') => {
+    const provider = explicitProvider || (state.ai.webService === 'gemini' ? 'gemini' : 'chatgpt');
     const heartbeats = await gmGetValue(WEB_AI_HEARTBEATS_KEY, {});
     const heartbeat = heartbeats && typeof heartbeats === 'object' ? heartbeats[provider] : null;
     if (heartbeat) return heartbeat;
     const legacy = await gmGetValue(CHATGPT_WEB_HEARTBEAT_KEY, null);
     return String(legacy?.provider || 'chatgpt') === provider ? legacy : null;
   };
+  async function readyChatGPTCompanion({wake=false,stopped=()=>false}={}){
+    const ready=heartbeat=>!!heartbeat&&heartbeat.context==='extension-offscreen'&&typeof heartbeat.companionVersion==='string'&&heartbeat.workerToken===CHATGPT_WEB_WINDOW_TOKEN&&String(heartbeat.provider||'chatgpt')==='chatgpt'&&Date.now()-Number(heartbeat.at||0)<=30000&&heartbeat.promptReady===true&&!heartbeat.requiresLogin;
+    let heartbeat;try{heartbeat=await getSelectedWebsiteHeartbeat('chatgpt');}catch{}
+    if(ready(heartbeat)&&!stopped())return true;
+    if(wake&&!stopped()){ensureChatGPTWebIframeWorker({provider:'chatgpt'});for(let attempt=0;attempt<12&&!stopped();attempt++){await bridgeSleep(500);try{heartbeat=await getSelectedWebsiteHeartbeat('chatgpt');}catch{}if(ready(heartbeat))return !stopped();}}
+    recordCompactDiagnostic('warn','companion-fallback-unavailable',{heartbeatPresent:!!heartbeat,ageMs:heartbeat?Math.max(0,Date.now()-Number(heartbeat.at||0)):null,context:heartbeat?.context||'',promptReady:heartbeat?.promptReady===true,requiresLogin:heartbeat?.requiresLogin===true,companionVersion:heartbeat?.companionVersion||'',cancelled:stopped()});return false;
+  }
   const chatGPTWebDOMWakeResolvers = new Set();
   const wakeChatGPTWebDOMWaiters = () => {
     for (const resolve of [...chatGPTWebDOMWakeResolvers]) resolve();
@@ -12435,7 +12443,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       return {promise,abort:()=>{stopped=true;current?.abort?.();}};
     };
   }
-  function requestChatGPTWeb({ ims, instructions, schema, input, validate, promptMode }) {
+  function requestChatGPTWeb({ ims, instructions, schema, input, validate, promptMode, webProvider = '' }) {
     if(schema?.required?.[0]!=='TEST')instructions=baseTicketInstructions(instructions);
     instructions=sharedModeInstructions(promptMode||schema?.required?.[0],instructions);
     if(input?.transcript)collectDiagnosticChat(schema?.required?.[0]||'TEXT',ims,input.transcript);
@@ -12457,7 +12465,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     };
     activeWebRequestAborts.set(normaliseIMS(ims), abort);
     const promise = (async () => {
-      await waitForPersistentChatGPTWebWindow();
+      await waitForPersistentChatGPTWebWindow(20000,webProvider);
       if (stopped) throw Object.assign(new Error('AI request stopped.'), { code: 'AI_STOPPED' });
       const initiallyContinueConversation = Boolean(state.webContinueNext);
       const requestedCorrection = String(state.webCorrectionPrompt || '').trim();
@@ -12527,7 +12535,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           status: 'pending',
           ims,
         prompt,
-        provider: state.ai.webService === 'gemini' ? 'gemini' : 'chatgpt',
+        provider: webProvider || (state.ai.webService === 'gemini' ? 'gemini' : 'chatgpt'),
           continueConversation,
           conversationUrl,
           expectedValueKeys,
@@ -12699,8 +12707,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     input: { ims, transcript },
     validate: (raw) => validateILSPrntAIResult(raw, ims),
   });
-  const requestChatGPTWebFTF = ({ ims, transcript }) => requestChatGPTWeb({
-    ims,
+  const requestChatGPTWebFTF = ({ ims, transcript, webProvider }) => requestChatGPTWeb({
+    ims,webProvider,
     instructions: ftfAIInstructions(ims),
     schema: FTF_OUTPUT_SCHEMA,
     input: { ims, transcript },
@@ -12837,9 +12845,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const recovered=promise.catch(async error=>{
       const details=error?.safeDetails,transient=details&&(details.httpStatus===408||details.httpStatus===429||details.httpStatus>=500||['CALLBACK_DEADLINE','TIMEOUT','NETWORK_ERROR'].includes(details.code));
       if(!fallbackStopped&&!connectionOnly&&mode!=='TEST'&&mode!=='FEEDBACK'&&transient){
-        let heartbeat;try{heartbeat=await getSelectedWebsiteHeartbeat();}catch{}
-        const available=heartbeat&&heartbeat.context==='extension-offscreen'&&typeof heartbeat.companionVersion==='string'&&heartbeat.workerToken===CHATGPT_WEB_WINDOW_TOKEN&&Date.now()-Number(heartbeat.at||0)<=30000&&heartbeat.promptReady===true&&!heartbeat.requiresLogin;
-        if(available&&!fallbackStopped){log('info','companion-fallback-started',{code:details.code,status:details.httpStatus});fallbackRequest=requestChatGPTWeb({ims,instructions:originalInstructions,schema,input,validate,promptMode:promptMode||mode});const result=await fallbackRequest.promise;if(fallbackStopped)throw Object.assign(Error('AI request stopped.'),{code:'AI_STOPPED'});log('info','companion-fallback-completed');return result;}
+        const available=await readyChatGPTCompanion({wake:true,stopped:()=>fallbackStopped});
+        if(available&&!fallbackStopped){log('info','companion-fallback-started',{code:details.code,status:details.httpStatus});busy(false,'companion-fallback');fallbackRequest=requestChatGPTWeb({ims,instructions:originalInstructions,schema,input,validate,promptMode:promptMode||mode,webProvider:'chatgpt'});const result=await fallbackRequest.promise;if(fallbackStopped)throw Object.assign(Error('AI request stopped.'),{code:'AI_STOPPED'});log('info','companion-fallback-completed');return result;}
       }
       if(details&&!fallbackStopped&&typeof document!=='undefined'&&typeof CustomEvent==='function')document.dispatchEvent(new CustomEvent('sn-ai-gemini-error',{detail:details}));
       throw error;
@@ -21579,6 +21586,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       const detail=event.detail||{},mode=value=>String(value==='TEXT'?'DESCRIPTION':value||'').toUpperCase().replace(/[^A-Z]/g,'');
       for(const target of host.querySelectorAll('.local-sn-cpc-dialog.is-running [data-ticket-progress]')){
         const dialog=target.closest('.local-sn-cpc-dialog');if(String(dialog.dataset.pinnedIms||'').toUpperCase()!==String(detail.ims||'').toUpperCase()||mode(dialog.dataset.ticketWindow)!==mode(detail.mode))continue;
+        if(detail.reason==='companion-fallback'){const note=dialog.querySelector('[data-ftf-model],[data-description-model],[data-hp-model],.local-sn-model-note');if(note)note.textContent='AI mode: ChatGPT companion · automatic fallback';delete target.dataset.geminiBusyJob;delete target.dataset.geminiBusyText;renderTicketProgressStages(target,Number(target.dataset.ticketProgress)||25,target.snAiProgressOptions||{});continue;}
         if(detail.busy){target.dataset.geminiBusyJob=detail.jobId;target.dataset.geminiBusyText=detail.reason==='thinking'?'Gemini is still thinking…':'Gemini is a bit busy now, please wait';}else if(detail.reason==='new-attempt'||target.dataset.geminiBusyJob===detail.jobId){delete target.dataset.geminiBusyJob;delete target.dataset.geminiBusyText;}else continue;
         renderTicketProgressStages(target,Number(target.dataset.ticketProgress)||25,target.snAiProgressOptions||{});
       }
@@ -23139,9 +23147,13 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         contentHTML: '<div class="local-sn-ftf-message">Create First time fix ticket with the help of AI</div><div class="local-sn-model-note" data-ftf-model></div>',
       });
       const { dialog: ftfDialog, titleMain, progressText, errorLine, stopButton, runButton, closeButton, cancelButton } = ftfShell;
+      let nextFTFProvider=null,ftfRunProvider=null,ftfErrorGeneration=0;
+      const ftfProvider=()=>ftfRunProvider||state.ai.provider;
+      const retryFTFChatGPT=document.createElement('button');retryFTFChatGPT.type='button';retryFTFChatGPT.className='secondary';retryFTFChatGPT.textContent='Retry with ChatGPT';retryFTFChatGPT.hidden=true;runButton.before(retryFTFChatGPT);
+      retryFTFChatGPT.onclick=async()=>{if(running||state.commandRunning||state.busy)return;retryFTFChatGPT.disabled=true;try{if(!(await readyChatGPTCompanion())){retryFTFChatGPT.hidden=true;return;}nextFTFProvider='web';runButton.click();}finally{retryFTFChatGPT.disabled=false;}};
       ftfDialog.dataset.pinnedIms = pinnedIMS;
       const modelLine = ftfDialog.querySelector('[data-ftf-model]');
-      modelLine.textContent = reusableAICommand ? 'Validated command cached · retry uses no AI tokens' : `AI mode: ${aiProviderDisplayName()}`;
+      modelLine.textContent = reusableAICommand ? 'Validated command cached · retry uses no AI tokens' : `AI mode: ${(ftfProvider()==='web'?'ChatGPT Web':'Gemini API')}`;
       let running = false;
       let stoppedFromWindow = false;
       let progress = 0;
@@ -23155,7 +23167,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         reusableAICommand = ''; lastFTFAIResponse = null;
         clearIgnoredAutomationFields('FTF', pinnedIMS);
         await clearCachedAICommand('FTF', pinnedIMS);
-        modelLine.textContent = `AI mode: ${aiProviderDisplayName()}`;
+        modelLine.textContent = `AI mode: ${(ftfProvider()==='web'?'ChatGPT Web':'Gemini API')}`;
       };
       const setProgress = (nextProgress) => {
         progress = Math.max(progress, Math.min(100, Math.round(nextProgress)));
@@ -23164,7 +23176,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         renderTicketProgressStages(progressText,progress,{currentStage});
       };
       const aiWebProgress = (event) => {
-        if (!running || stoppedFromWindow || state.ai.provider !== 'web' || ftfPhase==='collecting') return;
+        if (!running || stoppedFromWindow || ftfProvider() !== 'web' || ftfPhase==='collecting') return;
         if (event.detail?.stage === 'job-message-accepted') {
           aiMessageAccepted = true;ftfPhase='waiting';
           setProgress(Math.max(progress, 35));
@@ -23199,11 +23211,13 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         ftfShell.fixAIButton.hidden = true;
         ftfShell.manualAIButton.hidden = true;
         runButton.disabled = false;
-        runButton.textContent = reusableAICommand ? 'Continue' : 'Run';
+        const requestFailure=error?.safeDetails?.operation==='ticket-generation';
+        runButton.textContent = requestFailure ? 'Retry' : reusableAICommand ? 'Continue' : 'Run';
+        retryFTFChatGPT.hidden=true;const generation=++ftfErrorGeneration;if(requestFailure)void readyChatGPTCompanion().then(available=>{if(generation===ftfErrorGeneration&&ftfDialog.isConnected)retryFTFChatGPT.hidden=!available;});
         recoverableAutomationError = normalise(error?.details?.field)
           ? { field: normalise(error.details.field), message: error?.message || '' }
           : null;
-        ftfShell.ignoreErrorButton.hidden = !recoverableAutomationError;
+        ftfShell.ignoreErrorButton.hidden = requestFailure || !recoverableAutomationError;
         ftfShell.ignoreErrorButton.disabled = false;
         let returned = error?.aiResponse || lastFTFAIResponse;
         if (!returned && reusableAICommand) { try { returned = JSON.parse(reusableAICommand); } catch {} }
@@ -23254,9 +23268,10 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         running = true;
         try {
           await loadAISettings();
+          ftfRunProvider=nextFTFProvider||state.ai.provider;nextFTFProvider=null;ftfErrorGeneration++;retryFTFChatGPT.hidden=true;
           if (!state.ai.enabled) throw new Error('AI power is off.');
-          if (state.ai.provider === 'gemini-api' && !state.ai.keySaved) throw new Error('The Gemini API key has been removed.');
-          modelLine.textContent = reusableAICommand ? 'Validated command cached · retry uses no AI tokens' : `AI mode: ${aiProviderDisplayName()}`;
+          if (ftfProvider() === 'gemini-api' && !state.ai.keySaved) throw new Error('The Gemini API key has been removed.');
+          modelLine.textContent = reusableAICommand ? 'Validated command cached · retry uses no AI tokens' : `AI mode: ${(ftfProvider()==='web'?'ChatGPT Web':'Gemini API')}`;
           running = true;
           stoppedFromWindow = false;
           progress = 0;ftfPhase='collecting';delete progressText.dataset.webAiStage;
@@ -23295,8 +23310,8 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
           const transcript = appendCurrentCaseInstruction(await aiTranscriptWithUserInformation(cacheEntry, 'FTF', pinnedIMS), ftfShell.caseInstruction?.value);
           assertTicketWindowAlive(ftfDialog);
           ftfPhase='sending';setProgress(25);
-          if (state.ai.provider === 'web') {
-            aiRequest = requestChatGPTWebFTF({ ims: pinnedIMS, transcript });
+          if (ftfProvider() === 'web') {
+            aiRequest = requestChatGPTWebFTF({ ims: pinnedIMS, transcript, webProvider:'chatgpt' });
           } else {
             const apiKey = await geminiCredentials.key();
             if (!apiKey) throw new Error('The saved Gemini API key is unavailable.');
@@ -23337,10 +23352,10 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
             restoreEditableWindow('Stopped. You can run this FTF request again.');
           } else {
             showError(error);
-            addLog('error', 'ai-ftf-failed', { ims: pinnedIMS, provider: state.ai.provider, model: state.ai.model, message: error.message });
+            addLog('error', 'ai-ftf-failed', { ims: pinnedIMS, provider: ftfProvider(), model: state.ai.model, message: error.message });
           }
         } finally {
-          running = false;
+          running = false;ftfRunProvider=null;
           document.removeEventListener('sn-ai-progress', automationProgress);
           document.removeEventListener('sn-ai-web-progress', aiWebProgress);
         }
