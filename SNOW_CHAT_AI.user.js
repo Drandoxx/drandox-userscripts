@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.886
+// @version      2.36.887
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.887","fixes":true,"changes":[{"key":"ai-mode-selector","meaningful":true,"text":"Refresh the manual AI mode selector when settings open and keep settings text non-selectable except editable fields."}]},
 {"version":"2.36.886","fixes":true,"changes":[{"key":"ai-error-retry","meaningful":true,"text":"Retry Description connection failures without skipping fields, with a connected ChatGPT companion available for a one-run retry."}]},
 {"version":"2.36.885","fixes":true,"changes":[{"key":"ticket-impact-rules","meaningful":true,"text":"Use N/A for other-machine impact on device-specific faults and No for colleagues unless wider impact is reported."}]},
 {"version":"2.36.884","fixes":true,"changes":[{"key":"media-memory","meaningful":true,"text":"Release completed stylesheet handlers and detached media observers; reduce repeated media discovery work."}]},
@@ -20333,7 +20334,9 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
     const useAPI=document.createElement('button');useAPI.type='button';useAPI.textContent='Use Gemini API';useAPI.className='secondary';useAPI.hidden=true;useAPI.style.marginTop='10px';aiAPISettings.append(useAPI);useAPI.onclick=async()=>{state.ai.provider='gemini-api';state.ai.model=DEFAULT_API_MODEL;await gmSetValue(AI_PROVIDER_KEY,'gemini-api');syncAISettingsUI();checkPrimaryAI(true);};
     const providerRow=document.createElement('label'),providerSelect=document.createElement('select');providerRow.hidden=true;providerRow.style.cssText='margin:12px 0;display:none;align-items:center;gap:12px';providerRow.append(document.createTextNode('AI mode'));
     providerSelect.setAttribute('aria-label','AI mode');for(const [value,label]of [['gemini-api','Gemini API'],['web','ChatGPT companion']]){const option=document.createElement('option');option.value=value;option.textContent=label;providerSelect.append(option);}providerSelect.style.cssText='flex:1;min-width:0;padding:9px;border:1px solid var(--sn-theme-655573,#655573);border-radius:7px;background:var(--sn-theme-191621,#191621);color:inherit';providerRow.append(providerSelect);aiAPISettings.insertBefore(providerRow,aiAPISettings.firstChild);
-    async function refreshProviderChoice(){const healthy=await healthyBackup();providerRow.hidden=!healthy;providerRow.style.display=healthy?'flex':'none';providerSelect.value=state.ai.provider==='web'?'web':'gemini-api';return healthy;}
+    async function refreshProviderChoice(){let healthy=false;try{healthy=await healthyBackup();}catch{}providerRow.hidden=!healthy;providerRow.style.display=healthy?'flex':'none';providerSelect.value=state.ai.provider==='web'?'web':'gemini-api';return healthy;}
+    const settingsSelectionStyle=document.createElement('style');settingsSelectionStyle.textContent='#local-sn-ai-settings-template,#local-sn-ai-settings-template *{user-select:none;-webkit-user-select:none}#local-sn-ai-settings-template input,#local-sn-ai-settings-template textarea,#local-sn-ai-settings-template [contenteditable="true"]{user-select:text;-webkit-user-select:text}';settingsDialog.append(settingsSelectionStyle);
+    aiStatusCard.after(providerRow);
     providerSelect.onchange=async()=>{if(providerSelect.value==='web'&&!(await healthyBackup())){await refreshProviderChoice();return;}state.ai.provider=providerSelect.value==='web'?'web':'gemini-api';state.ai.model=state.ai.provider==='web'?'chatgpt-web':DEFAULT_API_MODEL;await gmSetValue(AI_PROVIDER_KEY,state.ai.provider);syncAISettingsUI();await refreshProviderChoice();checkPrimaryAI(true);};
     const providerChoiceTimer=setInterval(()=>{if(!settingsDialog.hidden&&state.ai.enabled)refreshProviderChoice().catch(()=>{});},5000);void refreshProviderChoice().catch(()=>{});document.addEventListener('sn-ai-runtime-dispose',()=>clearInterval(providerChoiceTimer),{once:true});
     async function checkPrimaryAI(force=false){
@@ -20417,6 +20420,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       aiPowerSwitch.checked = state.ai.enabled;
       aiToggleText.textContent = state.ai.enabled ? 'ON' : 'OFF';
       aiDetails.hidden = !state.ai.enabled;
+      void refreshProviderChoice();
       aiProviderSelect.value = state.ai.provider;
       if (aiWebServiceSelect) aiWebServiceSelect.value = state.ai.webService;
       aiProviderSelect.closest('.local-sn-cpc-row').hidden=true;aiAPIModelRow.hidden=true;
