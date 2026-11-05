@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.894
+// @version      2.36.895
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.895","fixes":true,"changes":[{"key":"chatgpt-send-recovery","meaningful":true,"text":"Companion 0.4.44 distinguishes interrupted preparation from a send attempt, safely recovering unsent prompts while blocking uncertain duplicates."}]},
 {"version":"2.36.894","fixes":true,"changes":[{"key":"ai-mode-selector","meaningful":true,"text":"Use the AI mode selector alone to switch providers; remove the redundant Use Gemini API button."}]},
 {"version":"2.36.893","fixes":true,"changes":[{"key":"ai-auto-fallback","meaningful":true,"text":"Use the newest companion heartbeat and wait for cold-start readiness before rejecting ChatGPT fallback."}]},
 {"version":"2.36.892","fixes":true,"changes":[{"key":"ai-auto-fallback","meaningful":true,"text":"Probe the ChatGPT companion before automatic fallback and provide FTF connection Retry actions without changing saved AI mode."}]},
@@ -23212,7 +23213,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
         ftfShell.fixAIButton.hidden = true;
         ftfShell.manualAIButton.hidden = true;
         runButton.disabled = false;
-        const requestFailure=error?.safeDetails?.operation==='ticket-generation';
+        const requestFailure=error?.safeDetails?.operation==='ticket-generation'||/CHATGPT_(?:SEND|SESSION|FRESH|TEMPORARY)/.test(error?.message||'');
         runButton.textContent = requestFailure ? 'Retry' : reusableAICommand ? 'Continue' : 'Run';
         retryFTFChatGPT.hidden=true;const generation=++ftfErrorGeneration;if(requestFailure)void readyChatGPTCompanion().then(available=>{if(generation===ftfErrorGeneration&&ftfDialog.isConnected)retryFTFChatGPT.hidden=!available;});
         recoverableAutomationError = normalise(error?.details?.field)
