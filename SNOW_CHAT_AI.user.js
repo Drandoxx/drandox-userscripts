@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.884
+// @version      2.36.885
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.885","fixes":true,"changes":[{"key":"ticket-impact-rules","meaningful":true,"text":"Use N/A for other-machine impact on device-specific faults and No for colleagues unless wider impact is reported."}]},
 {"version":"2.36.884","fixes":true,"changes":[{"key":"media-memory","meaningful":true,"text":"Release completed stylesheet handlers and detached media observers; reduce repeated media discovery work."}]},
 {"version":"2.36.883","fixes":false,"changes":[{"key":"attachment-upload-name","meaningful":true,"text":"Keep original attachment names by default, with a separate Upload with random name option."}]},
 {"version":"2.36.882","fixes":false,"changes":[{"key":"ticket-feedback-back","meaningful":true,"text":"Return from feedback to the completed ticket with Back, keeping any unsent feedback."}]},
@@ -865,7 +866,7 @@ const SN_AI_DEFAULT_MESSAGES=Object.freeze({
   CPC:"Do not change the requested ON/OFF state or supplied IMS. OFF uses the supplied reason or required missing-value convention, never a guessed reason.",
   ILS_PRNT:"For \"Invoice to Picking\" or \"Picking to Invoice\", destination is the printer after \"to\", not the original printer. Standalone Invoice or Picking identifies the destination. Normalize known destinations exactly; preserve another explicit printer name only where the schema permits it. Leave unconfirmed destination blank when permitted.",
   FTF:"Issue: describe user-reported symptoms, device/service/application and impact from the user's perspective. Solution: summarize actual human-agent technical assistance/actions or useful guidance accepted or acted on by the user; logging, escalation and administrative actions are not technical solutions.",
-  TEXT:"Use the real built-in Description schema, keys and field order. URL/application may contain a stated application name such as SAP PRZ or Create. Contact rows identify the reporting user, not another customer mentioned in the fault; use their full name and phone when available, otherwise their name alone if no other contact method was supplied, following shared contact formatting. If colleagues are affected, default machine impact to Yes unless contradicted; never invent wider impact. If a different computer was tried, mention it in cache/cookies/temp-files rather than N/A even for a non-PC issue. Availability is actual user availability, not store opening hours. WHICH KNOWLEDGE BASE NUMBER(S) WERE CHECKED may be Attached when KB information is attached.",
+TEXT:"Use the real built-in Description schema, keys and field order. URL/application may contain a stated application name such as SAP PRZ or Create. Contact rows identify the reporting user, not another customer mentioned in the fault; use their full name and phone when available, otherwise their name alone if no other contact method was supplied, following shared contact formatting. Follow the Description prompt’s device-specific versus transferable machine-impact rules; never infer wider impact. If a different computer was tried, mention it in cache/cookies/temp-files rather than N/A even for a non-PC issue. Availability is actual user availability, not store opening hours. WHICH KNOWLEDGE BASE NUMBER(S) WERE CHECKED may be Attached when KB information is attached.",
   COM_PLUS:"",
   HP:"Use the current printer's model, serial, device ID and identifiers, never those of a previous or replaced printer. Physical location is not the printer name/destination. Without an explicit physical location, Invoice uses exactly \"Next to tills\" and Picking \"Next to manager's PC\"; explicit location overrides these. Retain supplied Teams, full email or phone using shared contact formatting. Fix attempts are performed troubleshooting/repair, not advice alone, information requests or administrative actions. For a jam, printer-restarted is NA unless explicitly restarted. Preserve exact errors and only the built-in Issue Type options. no-other-working-printer must be boolean, based on actual usable alternatives, not assumptions.",
   STACK:"Return STACK with shortDescription, values and extraValues, using supplied real template field keys, not a generic schema or JSON Schema metadata (type, properties, required, additionalProperties). Omit missing/unreliable fields where permitted; keep shortDescription concise. Preserve exact technical details, printer names, locations, errors, IPs, contacts and serials. Picking physical location defaults to \"Next to manager's PC\" unless explicit location is supplied.",
@@ -11718,7 +11719,7 @@ const payload={schema:2,version:typeof GM_info!=='undefined'?GM_info.script?.ver
       'Copy stated order numbers, URLs, error conditions, contact numbers, availability, and workaround limitations exactly.',
       'For EAN CODES AFFECTED use Whole order unless a specific EAN, product, or line is explicitly identified.',
       'For non-device issues use N/A for WIN 7 / 10 and HOST NAME. For non-PC issues use N/A for PC RESTARTED and CACHE CLEARED.',
-      'Default DOES THIS AFFECT OTHER COLLEAGUES to No unless stated otherwise. Default DOES THIS AFFECT OTHER MACHINES to Yes when colleagues are affected, otherwise Not tried, unless explicitly contradicted.',
+      'For DOES THIS AFFECT OTHER MACHINES use N/A when the issue is specific to one exact machine and testing another machine would not meaningfully diagnose or resolve that machine’s fault, for example Excel missing from that machine or a local hardware fault. Do not use Not tried for these device-specific cases. Use Yes only when other machines are actually affected or a shared issue is explicitly reported to affect colleagues and machines; use No when explicitly confirmed limited to one machine. For a transferable issue where another-machine testing is meaningful but unreported, use Not tried. For DOES THIS AFFECT OTHER COLLEAGUES default to No unless the transcript explicitly reports other colleagues affected; do not infer wider impact merely from the issue type. These impact-specific conventions override generic missing-value defaults.',
       'For printer templates default powered on and online to Yes unless explicitly contradicted.',
       'Short Description must be concise and no longer than 80 characters.',
       `The IMS must be exactly ${ims}.`,
