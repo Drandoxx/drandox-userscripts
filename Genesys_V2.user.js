@@ -6363,6 +6363,57 @@
     }
     if(changed) {saveLastCallWindow();GM_setValue('genesys-v2-earlier-call-cards',earlierCallCards);const card=document.getElementById('gbs-last-call-data');if(card)delete card.dataset.renderSignature;}
   }
+  function installRingtoneDiagnostics(win) {
+    const key='genesys-v2-ringtone-evidence',tracked=new WeakMap(),recent=new Map(),undo=[];
+    let stopped=false;
+    const evidence=(object,phase,mechanism,extra={})=>{
+      if(stopped)return;
+      try {
+        const signal=currentLiveCallSignal(),alerting=signal && ['alerting','contacting'].includes(signal.state);
+        const previous=tracked.get(object);
+        if(!alerting && !previous)return;
+        // Remote voice streams are never ringtone evidence. No samples are read.
+        if(object.srcObject)return;
+        let asset='';try{const u=new URL(object.currentSrc || object.src || '',win.location.href);asset=u.protocol==='blob:'?'[blob]':u.protocol==='data:'?'[data]':u.pathname.split('/').pop().slice(0,100);}catch(_){}
+        const ringNamed=/ringtone|ringer|incoming[-_ ]?(call|ring)|phone[-_ ]?ring/i.test(asset);
+        const classification=previous?.classification || (ringNamed?'ringtone-asset':'incoming-audio-candidate');
+        const conversationId=previous?.conversationId || signal?.id;
+        const dedup=conversationId+':'+mechanism+':'+phase+':'+asset;
+        if(recent.has(dedup))return;
+        recent.set(dedup,true);if(recent.size>100)recent.delete(recent.keys().next().value);
+        tracked.set(object,{conversationId,classification});
+        const stack=phase==='start-request'?String(new Error().stack || '').split('\n').slice(2,7).map(line=>line.replace(/https?:\/\/[^\s)]+/g,url=>{try{const u=new URL(url);return u.pathname.split('/').pop().slice(0,100);}catch(_){return '[script]';}}).slice(0,180)):undefined;
+        const event={at:Date.now(),conversationId,classification,phase,mechanism,asset:asset || undefined,
+          alerting:!!alerting,hidden:!!win.document?.hidden,popupPresent:!!document.getElementById('gbs-call-information'),
+          loop:!!object.loop,volume:Number.isFinite(object.volume)?object.volume:undefined,muted:object.muted,
+          contextState:object.context?.state,bufferSeconds:object.buffer?.duration,stack,...extra};
+        const saved=GM_getValue(key,{version:GM_info.script.version,events:[]});
+        const events=saved.version===GM_info.script.version?saved.events || []:[];
+        events.push(event);GM_setValue(key,{version:GM_info.script.version,events:events.filter(e=>Date.now()-e.at<86400000).slice(-100)});
+      }catch(_){/* Diagnostics must never interrupt native audio. */}
+    };
+    const wrap=(proto,name,build)=>{
+      const original=proto?.[name];if(typeof original!=='function')return;
+      const replacement=build(original);try{proto[name]=replacement;undo.push(()=>{if(proto[name]===replacement)proto[name]=original;});}catch(_){}
+    };
+    const observed=new WeakSet();
+    const observe=audio=>{
+      if(observed.has(audio))return;observed.add(audio);
+      for(const phase of ['playing','pause','ended','error'])audio.addEventListener(phase,()=>evidence(audio,phase,'html-media'),{passive:true});
+    };
+    wrap(win.HTMLMediaElement?.prototype,'play',original=>function(){
+      if(this.tagName==='AUDIO'){observe(this);evidence(this,'start-request','html-media');}
+      const result=original.apply(this,arguments);
+      if(this.tagName==='AUDIO' && result?.then)result.then(()=>evidence(this,'play-accepted','html-media'),error=>evidence(this,'play-rejected','html-media',{error:String(error?.name || 'Error').slice(0,50)}));
+      return result;
+    });
+    wrap(win.AudioBufferSourceNode?.prototype,'start',original=>function(){
+      evidence(this,'start-request','web-audio-buffer',{scheduledAt:arguments[0] || 0,contextTime:this.context?.currentTime});
+      const result=original.apply(this,arguments);
+      this.addEventListener?.('ended',()=>evidence(this,'ended','web-audio-buffer'),{once:true});return result;
+    });
+    return ()=>{stopped=true;undo.forEach(fn=>fn());recent.clear();};
+  }
   function installCallNetworkBridge(win) {
     if (!win || callNetworkBridges.has(win)) return;
     try {
@@ -6370,28 +6421,7 @@
       let authorization=null, stopped=false;
       const nativeFetch=win.fetch, proto=win.XMLHttpRequest.prototype;
       const NativeWebSocket=win.WebSocket;
-      // Event-driven audio evidence: no polling, audio recording or retained URLs.
-      const audioSeen=new Map();
-      const audioEvidence=(kind,element)=>{
-        if(stopped)return;
-        const signal=currentLiveCallSignal();
-        const alerting=signal && /alerting|contacting/i.test(signal.state || '');
-        const key=(signal?.id || 'no-call')+':'+kind;
-        const now=Date.now();if(now-(audioSeen.get(key)||0)<1000)return;
-        audioSeen.set(key,now);if(audioSeen.size>40)audioSeen.delete(audioSeen.keys().next().value);
-        performanceEvent('call-audio-timing',{kind,at:now,conversationId:signal?.id || null,alerting:!!alerting,
-          muted:element?.muted ?? null,volume:element?.volume ?? null,hidden:win.document.hidden,
-          popupVisible:!!document.getElementById('gbs-call-information')});
-      };
-      const playing=event=>{if(event.target?.tagName==='AUDIO')audioEvidence('media-playing',event.target);};
-      win.document?.addEventListener('playing',playing,true);
-      const audioProto=win.AudioBufferSourceNode?.prototype,originalAudioStart=audioProto?.start;
-      const wrappedAudioStart=originalAudioStart && function(){
-        const result=originalAudioStart.apply(this,arguments);
-        if(this.context?.state==='running')audioEvidence('webaudio-start');
-        return result;
-      };
-      if(wrappedAudioStart)audioProto.start=wrappedAudioStart;
+      const stopRingtoneDiagnostics=installRingtoneDiagnostics(win);
       const originalOpen=proto.open, originalHeader=proto.setRequestHeader, originalSend=proto.send;
       const observed = url => {try{const u=new URL(url,win.location.href);return u.origin===CALL_API_ORIGIN?u:null;}catch(_){return null;}};
       const scriptPath=path=>/^\/api\/v2\/scripts\/published\/[a-f0-9-]{36}(?:\/pages\/[a-f0-9-]{36})?$/.test(path);
@@ -6455,7 +6485,7 @@
         } finally {window.clearTimeout(timeout);}
       },stop:()=>{stopped=true;win.document?.removeEventListener('click',recordNativeCallControl,true);if(win.fetch===wrappedFetch)win.fetch=nativeFetch;if(proto.open===wrappedOpen)proto.open=originalOpen;if(proto.setRequestHeader===wrappedHeader)proto.setRequestHeader=originalHeader;if(proto.send===wrappedSend)proto.send=originalSend;if(win.WebSocket===wrappedSocket)win.WebSocket=NativeWebSocket;delete win.__gbsCallApiBridge;authorization=null;}};
       const originalStop=bridge.stop;
-      bridge.stop=()=>{win.document?.removeEventListener('playing',playing,true);if(audioProto && audioProto.start===wrappedAudioStart)audioProto.start=originalAudioStart;audioSeen.clear();originalStop();};
+      bridge.stop=()=>{stopRingtoneDiagnostics();originalStop();};
       win.__gbsCallApiBridge=bridge;callNetworkBridges.add(win);
     } catch (_) { /* Inaccessible frames remain handled by existing DOM logging. */ }
   }
@@ -10425,6 +10455,7 @@ function fitDashboardMetricSpacing(doc) {
       // preferences or the API cache used by My calls Today.
       GM_deleteValue('genesys-v2-call-measurements');
       GM_deleteValue('genesys-v2-call-event-timeline');
+      GM_deleteValue('genesys-v2-ringtone-evidence');
       GM_setValue(key,version);
     }
     try {
@@ -10473,6 +10504,7 @@ function fitDashboardMetricSpacing(doc) {
     const report={schemaVersion:1,version:GM_info.script.version,exportedAt:new Date().toISOString(),
       callSources:{mode:callSourceMode,failedRecoveryAttempts:callRecoveryFailures,pushHealthy:callPushHealthy(),counts:{...callSourceCounts}},
       callEventTimeline:GM_getValue(CALL_TIMELINE_KEY,{events:[]}),
+      ringtoneEvidence:GM_getValue('genesys-v2-ringtone-evidence',{events:[]}),
       snowCapture:{scriptDefinitions:snowScriptEvidence.size,status:snowScriptEvidence.size?'captured':'not-observed-possibly-native-cache',nativeActions:snowActionsByConversation.size},
       performance:performanceReport(),
       callMeasurements:{...saved,active:measurementState || saved.active || null,pendingNetworkChanges:callNetworkChanges.slice()},
