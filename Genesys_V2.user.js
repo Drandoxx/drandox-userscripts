@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.602.0
+// @version      1.603.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -4023,6 +4023,27 @@
       color: #94a3b8 !important; opacity: 1 !important;
     }
     .preferences-main .profile-selection-v2 .call-controls-subheader { background: #252b33 !important; color: #cbd5e1 !important; }
+    /* Audio profiles are also shown in Calls > Phone Settings. */
+    html:not(.gbs-light-mode) .profile-selection-v2 .dropdown-menu {
+      background: #252b33 !important; color: #e5e7eb !important;
+      border: 1px solid #4b596a !important; box-shadow: 0 8px 24px #0006 !important;
+      color-scheme: dark;
+    }
+    html:not(.gbs-light-mode) .profile-selection-v2 .dropdown-menu :is(.profile-option,a,[role="menuitem"]) {
+      background: transparent !important; color: #e5e7eb !important;
+    }
+    html:not(.gbs-light-mode) .profile-selection-v2 .dropdown-menu .profile-option:not(.disabled):is(:hover,:focus-within) {
+      background: #343d49 !important;
+    }
+    html:not(.gbs-light-mode) .profile-selection-v2 .dropdown-menu :is(a,[role="menuitem"]):focus-visible {
+      outline: 2px solid #22d3ee !important; outline-offset: -2px;
+    }
+    html:not(.gbs-light-mode) .profile-selection-v2 .dropdown-menu .profile-option.disabled,
+    html:not(.gbs-light-mode) .profile-selection-v2 .dropdown-menu .profile-option.disabled :is(a,[role="menuitem"]),
+    html:not(.gbs-light-mode) .profile-selection-v2 .dropdown-menu [aria-disabled="true"] {
+      color: #94a3b8 !important; opacity: 1 !important;
+    }
+    html:not(.gbs-light-mode) .profile-selection-v2 .dropdown-menu .divider { background: #4b596a !important; border-color: #4b596a !important; }
     .user-settings-popover, .user-settings-popover .info-card, .user-settings-popover .user-information,
     .user-settings-popover .avatar-header, .user-settings-popover .user-sub-info,
     .user-settings-popover .status-container, .user-settings-popover .presence-section,
