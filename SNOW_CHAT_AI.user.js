@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.897
+// @version      2.36.898
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.898","fixes":true,"changes":[{"key":"image-viewer-thumbnails","meaningful":true,"text":"Keep image-viewer thumbnails square and crop images to fill each preview."}]},
 {"version":"2.36.897","fixes":true,"changes":[{"key":"classic-event-editor","meaningful":true,"text":"Category is optional when editing existing classic Events, including password resets, and before saving."}]},
 {"version":"2.36.896","fixes":false,"changes":[{"key":"classic-event-editor","meaningful":true,"text":"Edit existing classic Event user, reporting user, configuration item and description fields, with native Save beside Copy Event."}]},
 {"version":"2.36.895","fixes":true,"changes":[{"key":"chatgpt-send-recovery","meaningful":true,"text":"Companion 0.4.44 distinguishes interrupted preparation from a send attempt, safely recovering unsent prompts while blocking uncertain duplicates."}]},
@@ -1609,6 +1610,8 @@ function openSnMediaViewer(images,index=0,opener,actions={}){
   const sourceStyle=opener?getComputedStyle(opener):getComputedStyle(document.documentElement);for(const key of ['--sn-theme-e6edf9','--sn-theme-191621','--sn-theme-251f31','--sn-theme-655573','--sn-theme-49365a']){const value=sourceStyle.getPropertyValue(key);if(value)host.style.setProperty(key,value);}
   const hiddenStyle=document.createElement('style');hiddenStyle.textContent='[hidden]{display:none!important}';root.append(hiddenStyle);
   const extraStyle=document.createElement('style');extraStyle.textContent='.stage{inset:60px 66px 88px}.arrow{position:fixed;top:calc(50% - 14px)}.prev{left:12px}.next{right:12px}header{height:60px;padding:10px 14px;gap:16px}.add{width:auto;min-width:130px;margin-right:12px;padding:0 14px;white-space:nowrap;font:600 13px system-ui}.add.added{background:#196040;color:#c5f8d7;border-color:#3d956a}.thumbs{position:absolute;bottom:10px;left:66px;right:66px;height:64px;display:flex;justify-content:safe center;gap:8px;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}.thumb{flex:0 0 54px;width:54px;height:54px;padding:3px;border:2px solid transparent;background:var(--sn-theme-251f31,#29252f)}.thumb[aria-current=true]{border-color:#bda3ff;background:#6c548b}.thumb img{width:100%;height:100%;object-fit:cover;pointer-events:none}.notice{position:absolute;bottom:76px;left:15%;right:15%;text-align:center;color:#ffcca5;font-size:12px;pointer-events:none}@media(max-width:560px){header{gap:7px;padding:8px}.add{min-width:0;max-width:145px;white-space:normal;font-size:11px;margin-right:2px;padding:3px 8px}.stage{left:48px;right:48px}.prev{left:5px}.next{right:5px}.thumbs{left:48px;right:48px}}';root.append(extraStyle);
+  // Fixed square clips portrait/landscape thumbnails, independent of intrinsic image size.
+  const thumbnailStyle=document.createElement('style');thumbnailStyle.textContent='.thumb{display:block;position:relative;flex:0 0 54px;width:54px;min-width:54px;max-width:54px;height:54px;min-height:54px;max-height:54px;overflow:hidden;padding:0;aspect-ratio:1}.thumb img{display:block;width:100%!important;height:100%!important;min-width:0!important;min-height:0!important;max-width:none!important;max-height:none!important;object-fit:cover!important;object-position:center;aspect-ratio:1;border-radius:inherit}';root.append(thumbnailStyle);
   // Controls occupy separate gutters; zoomed pixels cannot cover navigation or thumbnails.
   const opaqueControls=document.createElement('style');opaqueControls.textContent=':host{background:rgba(18,18,24,.88)!important}button{background:#302b3a!important;border-color:#625a70;opacity:1!important;color:#f6f4fa}button:hover{background:#443b50!important}button:disabled{background:#282431!important;color:#a39baF;border-color:#48404f;cursor:default}.thumb{background:#292431!important}.thumb[aria-current=true]{background:#604b80!important;border-color:#c4adff}.add.added,.add.added:disabled{background:#215b3e!important;color:#dcffe7;border-color:#4e9b6c}';root.append(opaqueControls);
   name.remove();
