@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.899
+// @version      2.36.900
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.900","fixes":false,"changes":[{"key":"store-network","meaningful":true,"text":"Open store router and IP details from the Location CI button, with Screwfix printer IPs, collapsible Computers and copy controls."}]},
 {"version":"2.36.899","fixes":true,"changes":[{"key":"auto-greet","meaningful":true,"text":"Recheck pending greetings on tab return, ignore AI summaries, and cancel greeting after a customer message instead of sending the look-into-it reply."}]},
 {"version":"2.36.898","fixes":true,"changes":[{"key":"image-viewer-thumbnails","meaningful":true,"text":"Keep image-viewer thumbnails square and crop images to fill each preview."}]},
 {"version":"2.36.897","fixes":true,"changes":[{"key":"classic-event-editor","meaningful":true,"text":"Category is optional when editing existing classic Events, including password resets, and before saving."}]},
@@ -10395,9 +10396,10 @@ function startSNAI(tabIdentity) {
     finally{memorySampling=false;}
   },60000):0;
   window.addEventListener('pagehide',()=>{memoryStopped=true;clearInterval(memoryTimer);},{once:true});
-  for(const [name,install] of workspacePage?[['ci',installCISearch],['reference-search',installWorkspaceReferenceSearch]]:/^\/(?:incident|new_call)\.do$/i.test(location.pathname)?[['classic-event-edit',installClassicEventEditor],['classic-ci',installClassicCISearch]]:[]){try{install();}catch(failure){recordCompactDiagnostic('warn','workspace-enhancement-start-failed',{feature:name,reason:String(failure?.message||failure).slice(0,200)});}}
+  for(const [name,install] of workspacePage?[['ci',installCISearch],['reference-search',installWorkspaceReferenceSearch],['store-network',installStoreNetworkPopup]]:/^\/(?:incident|new_call)\.do$/i.test(location.pathname)?[['classic-event-edit',installClassicEventEditor],['classic-ci',installClassicCISearch]]:[]){try{install();}catch(failure){recordCompactDiagnostic('warn','workspace-enhancement-start-failed',{feature:name,reason:String(failure?.message||failure).slice(0,200)});}}
   document.addEventListener('sn-ai-media-error',event=>{showChatImagePasteHint(event.detail?.message||'The attachment action could not finish.');recordCompactDiagnostic('warn','workspace-media-error',{message:event.detail?.message||'media_action_failed'});});
   document.addEventListener('sn-ai-reference-search-error',event=>recordCompactDiagnostic('warn','workspace-reference-search-fallback',event.detail||{}));
+  document.addEventListener('sn-ai-store-network-error',event=>recordCompactDiagnostic('warn','store-network-load-failed',event.detail||{}));
   if(snPersonalApprovedPage())setTimeout(()=>installPersonalSettingsSync({
     identity:diagnosticIdentity,reporter:snPersonalCurrentAccount,defaultModes:DEFAULT_ENABLED_MODES,
     onCredentialBinding:ctx=>{geminiCredentials.bind(ctx);sharedModeMessages.bind(ctx);},onCredentialDetach:()=>{geminiCredentials.detach();sharedModeMessages.detach();},
@@ -26230,6 +26232,57 @@ async function snClassicCommitReference(name,query,options={}) {
   if(form.getValue(name)!==chosen.sysId||input.value!==chosen.referenceData[0].value)throw Error('CLASSIC_REFERENCE_COMMIT_FAILED: '+name);
   return input.value;
 }
+// SN_AI_STORE_NETWORK_BEGIN
+function snStoreKind(location,opco){
+  const text=String(location||'').trim();
+  if(/^SFD[a-z0-9]{3}(?=$|[^a-z0-9])/i.test(text)&&!/head\s*office/i.test(text))return {kind:'screwfix',code:text.slice(0,6).toUpperCase()};
+  const bq=text.match(/^(\d{4})\s*-\s*\S/);if(bq&&/b\s*&\s*q/i.test(opco||''))return {kind:'bq',code:bq[1]};
+  return null;
+}
+function snStoreNetworkData(rows,store){
+  const value=v=>String(v&&typeof v==='object'?v.display_value??v.value??'':v??'');
+  const ipv4=v=>/^\d{1,3}(?:\.\d{1,3}){3}$/.test(v)&&v.split('.').every(n=>Number(n)<=255);
+  const records=rows.map(row=>({id:value(row.sys_id),name:value(row.name),ip:value(row.ip_address),category:value(row.category),table:value(row.sys_class_name)}));
+  const candidates=records.filter(r=>ipv4(r.ip)&&(/router|appliance/i.test(r.category)||/cmdb_ci_ip_router|u_cmdb_ci_appliance_net_gear/.test(r.table)));
+  const preferred=r=>store.kind==='screwfix'?new RegExp('^'+store.code+'(?:[^a-z0-9]|$)','i').test(r.name):new RegExp('^UKBQ[^a-z0-9]*'+store.code+'(?:[^a-z0-9]|$)','i').test(r.name);
+  const router=candidates.find(preferred)||candidates.find(r=>store.kind==='screwfix'&&/^scf-r-/i.test(r.name))||null;
+  return {router,computers:records.filter(r=>/^KF[a-z0-9]+$/i.test(r.name)&&/^hardware$/i.test(r.category)).sort((a,b)=>a.name.localeCompare(b.name)),printerIPs:router&&store.kind==='screwfix'?{picking:router.ip.replace(/\.\d+$/,'.202'),invoice:router.ip.replace(/\.\d+$/,'.200')}:null};
+}
+function installStoreNetworkPopup(){
+  if(document.documentElement.dataset.snAiStoreNetwork)return;document.documentElement.dataset.snAiStoreNetwork='1';
+  const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
+  const walk=(root,visit)=>{if(!root)return;for(const node of root.querySelectorAll('*')){visit(node);if(node.shadowRoot)walk(node.shadowRoot,visit);}};
+  const ancestor=(node,predicate)=>{for(let n=node;n;n=n.parentElement||n.getRootNode?.().host)if(predicate(n))return n;return null;};
+  const svg=kind=>'<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="lucide lucide-'+kind+'">'+({copy:'<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',check:'<path d="m9 12 2 2 4-4"/>',x:'<path d="m18 6-12 12M6 6l12 12"/>','chevron-down':'<path d="m6 9 6 6 6-6"/>','chevron-up':'<path d="m18 15-6-6-6 6"/>'}[kind]||'')+'</svg>';
+  let active=null;
+  document.addEventListener('click',event=>{
+    const button=event.composedPath().find(n=>n?.getAttribute?.('aria-label')==='Show configuration items for this location');if(!button)return;
+    const reference=ancestor(button,n=>n.localName==='sn-record-reference-connected'&&/^(u_)?location$/.test(n.getAttribute('name')||''));
+    const owner=ancestor(reference,n=>n.localName==='now-record-form-connected');if(!reference||!owner)return;
+    let label='',opco='';walk(reference.shadowRoot,n=>{if(n.localName==='now-record-typeahead')label=n.getAttribute('value')||label;});
+    label||=button.getAttribute('aria-description')?.replace(/^Location field\s*:\s*/i,'')||'';
+    walk(owner.shadowRoot,n=>{if(n.getAttribute('role')==='combobox'&&/^OpCo$/i.test(n.getAttribute('aria-label')||''))opco=n.value||n.getAttribute('value')||n.textContent; if(n.localName==='sn-record-reference-connected'&&/^(?:u_)?(?:opco|company)$/i.test(n.getAttribute('name')||''))walk(n.shadowRoot,c=>{if(c.localName==='now-record-typeahead')opco=c.getAttribute('value')||opco;});});
+    const store=snStoreKind(label,opco),locationId=reference.getAttribute('value');if(!store||!/^[a-f0-9]{32}$/i.test(locationId||''))return;
+    event.preventDefault();event.stopImmediatePropagation();active?.();
+    const host=document.createElement('div');host.id='sn-ai-store-network';host.style.cssText='position:fixed;inset:0;z-index:2147483646;display:grid;place-items:center;background:#0008';
+    const root=host.attachShadow({mode:'open'}),style=document.createElement('style');style.textContent='*{box-sizing:border-box}.card{width:min(520px,94vw);max-height:85vh;overflow:auto;padding:22px;background:var(--sn-theme-191621,#20232b);color:var(--sn-theme-e6edf9,#eee);border:1px solid var(--sn-theme-655573,#646574);border-radius:12px;font:14px/1.45 system-ui;box-shadow:0 18px 60px #0005}header{display:flex;align-items:center;gap:12px;margin-bottom:18px}header strong{flex:1;font-size:19px}.subtitle{font-size:12px;opacity:.75;margin-bottom:18px}.row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #8883}.text{flex:1;min-width:0;overflow-wrap:anywhere}.label{font-size:12px;opacity:.7}.value{font-size:16px}button{display:grid;place-items:center;background:transparent;color:inherit;border:0;border-radius:6px;padding:7px;cursor:pointer}button:hover{background:#8882}button.ok{color:#76dfa0}summary{cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;padding:16px 0 4px;font-weight:600}summary::-webkit-details-marker{display:none}.error{color:#ffb7ae}';root.append(style);
+    const card=document.createElement('section');card.className='card';card.setAttribute('role','dialog');card.setAttribute('aria-modal','true');card.setAttribute('aria-label','Store network');root.append(card);
+    const header=document.createElement('header'),title=document.createElement('strong'),close=document.createElement('button');title.textContent='Store network';close.innerHTML=svg('x');close.ariaLabel='Close';header.append(title,close);card.append(header);
+    const subtitle=document.createElement('div');subtitle.className='subtitle';subtitle.textContent=label;card.append(subtitle);
+    const body=document.createElement('div');body.textContent='Loading store details…';card.append(body);document.body.append(host);
+    const controller=new AbortController(),timers=new Set();let closed=false;
+    const dispose=()=>{if(closed)return;closed=true;controller.abort();for(const timer of timers)clearTimeout(timer);document.removeEventListener('keydown',onKey,true);host.remove();if(active===dispose)active=null;};
+    const onKey=e=>{if(e.key==='Escape'){e.stopPropagation();dispose();}};active=dispose;close.onclick=dispose;host.onclick=e=>{if(e.target===host)dispose();};document.addEventListener('keydown',onKey,true);
+    const row=(label,value,parent=body)=>{const line=document.createElement('div'),text=document.createElement('div'),caption=document.createElement('div'),content=document.createElement('div'),copy=document.createElement('button');line.className='row';text.className='text';caption.className='label';content.className='value';caption.textContent=label;content.textContent=value;copy.innerHTML=svg('copy');copy.ariaLabel='Copy '+label;let reset;
+      copy.onclick=async()=>{try{if(typeof GM_setClipboard==='function')await GM_setClipboard(value,'text');else await navigator.clipboard.writeText(value);if(closed)return;clearTimeout(reset);timers.delete(reset);copy.innerHTML=svg('check');copy.classList.add('ok');reset=setTimeout(()=>{timers.delete(reset);copy.innerHTML=svg('copy');copy.classList.remove('ok');},4000);timers.add(reset);}catch{copy.ariaLabel='Copy failed; try again';}};text.append(caption,content);line.append(text,copy);parent.append(line);};
+    const deadline=setTimeout(()=>controller.abort(),20000);timers.add(deadline);
+    (async()=>{const rows=[];for(let offset=0;offset<5000;offset+=200){const params=new URLSearchParams({sysparm_query:'locationISNOTEMPTY^location!=f032f42510d9b00036179bfd88ecc856^location='+locationId+'^operational_status!=11^ORDERBYsys_id',sysparm_fields:'sys_id,name,ip_address,category,sys_class_name',sysparm_limit:'200',sysparm_offset:String(offset),sysparm_exclude_reference_link:'true'});const response=await page.fetch('/api/now/table/cmdb_ci_hardware?'+params,{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':page.g_ck},signal:controller.signal});if(!response.ok)throw Error('Hardware API HTTP '+response.status);const data=await response.json();if(!Array.isArray(data.result))throw Error('Invalid hardware API response');rows.push(...data.result);if(data.result.length<200)break;if(offset===4800)throw Error('Store hardware result limit exceeded');}
+      if(closed)return;clearTimeout(deadline);timers.delete(deadline);const data=snStoreNetworkData(rows,store);body.textContent='';if(data.router){row('Router CI',data.router.name);row('IP',data.router.ip);if(data.printerIPs){row('Picking printer',data.printerIPs.picking);row('Invoice printer',data.printerIPs.invoice);}}else{const missing=document.createElement('p');missing.textContent='No matching store router with an IP was found.';body.append(missing);}
+      const details=document.createElement('details'),summary=document.createElement('summary'),caption=document.createElement('span'),chevron=document.createElement('span');caption.textContent='Computers ('+data.computers.length+')';chevron.innerHTML=svg('chevron-down');summary.append(caption,chevron);details.append(summary);details.ontoggle=()=>{chevron.innerHTML=svg(details.open?'chevron-up':'chevron-down');};for(const computer of data.computers)row('Hardware',computer.name,details);body.append(details);
+    })().catch(error=>{if(closed)return;body.className='error';body.textContent='Store details could not be loaded. Please close and try again.';document.dispatchEvent(new CustomEvent('sn-ai-store-network-error',{detail:{reason:String(error.message||error).slice(0,160)}}));}).finally(()=>{clearTimeout(deadline);timers.delete(deadline);});
+  },true);
+}
+// SN_AI_STORE_NETWORK_END
 function installClassicEventEditor() {
   const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
   if(!/^\/new_call\.do$/i.test(page.location.pathname)||page.__snAiEventEditorInstalled)return;
