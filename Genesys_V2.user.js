@@ -10324,7 +10324,60 @@ function fitDashboardMetricSpacing(doc) {
     });
   }
 
+  function ensureCustomAudioDropdowns(doc) {
+    const scope=doc.querySelector('.profile-selection-v2');if(!scope)return;
+    if(!doc.getElementById('gbs-audio-dropdown-style')) {
+      const style=doc.createElement('style');style.id='gbs-audio-dropdown-style';
+      style.textContent=`.gbs-audio-native{display:none!important}.gbs-audio-select{position:relative;width:100%;font:inherit;color:#e5e7eb}.gbs-audio-trigger{display:flex!important;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:40px;padding:8px 12px!important;text-align:left;background:#171b20!important;color:#e5e7eb!important;border:1px solid #4b596a!important;border-radius:5px;font:inherit;cursor:pointer}.gbs-audio-trigger svg{width:18px;height:18px;flex:none}.gbs-audio-menu{position:absolute;top:calc(100% + 3px);left:0;right:0;z-index:2147483646;max-height:260px;overflow:auto;padding:6px;background:#252b33;border:1px solid #4b596a;border-radius:6px;box-shadow:0 8px 24px #0006}.gbs-audio-menu[hidden]{display:none!important}.gbs-audio-option{display:flex!important;align-items:center;gap:8px;width:100%;min-height:40px;padding:8px 10px!important;margin:0!important;text-align:left;white-space:normal;line-height:20px!important;font:inherit;background:transparent!important;color:#e5e7eb!important;border:0!important;border-radius:5px;cursor:pointer}.gbs-audio-option:hover,.gbs-audio-option:focus-visible,.gbs-audio-option[aria-selected=true]{background:#343d49!important}.gbs-audio-option:disabled{color:#94a3b8!important;cursor:default}.gbs-audio-option.gbs-new-profile{margin-top:6px!important;background:#22343b!important;color:#a5f3fc!important;border:1px solid #398797!important;font-weight:600}.gbs-audio-option svg{width:18px;height:18px;flex:0 0 18px}.gbs-audio-select button:focus-visible{outline:2px solid #22d3ee!important;outline-offset:-2px}`;
+      doc.head.append(style);
+      doc.addEventListener('pointerdown',event=>{for(const wrapper of doc.querySelectorAll('.gbs-audio-select'))if(!wrapper.contains(event.target)){wrapper.querySelector('.gbs-audio-menu').hidden=true;wrapper.querySelector('.gbs-audio-trigger').setAttribute('aria-expanded','false');}},true);
+    }
+    for(const native of scope.querySelectorAll('gux-dropdown')) {
+      if(native.__gbsAudioCustom)continue;
+      const options=()=>Array.from(native.querySelectorAll('gux-option'));
+      if(!options().length)continue;
+      const wrapper=doc.createElement('div');wrapper.className='gbs-audio-select';
+      const trigger=doc.createElement('button');trigger.type='button';trigger.className='gbs-audio-trigger';trigger.setAttribute('aria-haspopup','listbox');trigger.setAttribute('aria-expanded','false');
+      const menu=doc.createElement('div');menu.className='gbs-audio-menu';menu.hidden=true;menu.setAttribute('role','listbox');
+      const label=native.closest('gux-form-field-dropdown')?.querySelector('label')?.textContent.trim() || 'Audio selection';menu.setAttribute('aria-label',label);
+      const close=()=>{menu.hidden=true;trigger.setAttribute('aria-expanded','false');};
+      const sync=()=>{
+        const entries=options(),selected=entries.find(o=>o.getAttribute('aria-selected')==='true' || o.classList.contains('gux-selected'));
+        const text=selected?.textContent.trim() || native.getAttribute('value') || 'Select';
+        const signature=JSON.stringify(entries.map(o=>[o.textContent.trim(),o.getAttribute('value'),o.getAttribute('aria-selected'),o.hasAttribute('disabled')]));
+        if(wrapper.dataset.signature===signature)return;wrapper.dataset.signature=signature;
+        trigger.replaceChildren(doc.createTextNode(text));trigger.insertAdjacentHTML('beforeend','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>');trigger.setAttribute('aria-label',label+': '+text);
+        const focused=menu.contains(doc.activeElement);menu.replaceChildren();
+        for(const option of entries){
+          const button=doc.createElement('button');button.type='button';button.className='gbs-audio-option';button.setAttribute('role','option');button.setAttribute('aria-selected',String(option===selected));
+          button.disabled=option.hasAttribute('disabled') || option.getAttribute('aria-disabled')==='true' || !!option.querySelector('.unavailable-profile-option');
+          if(option.getAttribute('value')==='__new_profile__'){button.classList.add('gbs-new-profile');button.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';}
+          const span=doc.createElement('span');span.textContent=option.textContent.trim();button.append(span);
+          button.addEventListener('click',()=>{
+            if(button.disabled || !option.isConnected)return;
+            // Let the existing Genesys dropdown execute its own selection handler.
+            native.classList.remove('gbs-audio-native');option.click();native.classList.add('gbs-audio-native');close();sync();trigger.focus();
+          });menu.append(button);
+        }
+        if(focused)menu.querySelector('button:not(:disabled)')?.focus();
+      };
+      trigger.addEventListener('click',()=>{sync();menu.hidden=!menu.hidden;trigger.setAttribute('aria-expanded',String(!menu.hidden));if(!menu.hidden)menu.querySelector('button[aria-selected=true]:not(:disabled),button:not(:disabled)')?.focus();});
+      wrapper.addEventListener('keydown',event=>{
+        if(event.key==='Escape'){event.preventDefault();close();trigger.focus();return;}
+        if(event.key==='Tab'){close();return;}
+        if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key))return;
+        event.preventDefault();sync();menu.hidden=false;trigger.setAttribute('aria-expanded','true');
+        const buttons=Array.from(menu.querySelectorAll('button:not(:disabled)')),index=buttons.indexOf(doc.activeElement);
+        const next=event.key==='Home'?0:event.key==='End'?buttons.length-1:event.key==='ArrowDown'?(index+1)%buttons.length:(index<=0?buttons.length-1:index-1);buttons[next]?.focus();
+      });
+      wrapper.append(trigger,menu);native.after(wrapper);native.classList.add('gbs-audio-native');native.__gbsAudioCustom=wrapper;
+      const observer=new MutationObserver(()=>{if(!native.isConnected){observer.disconnect();wrapper.remove();return;}sync();});
+      observer.observe(native,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['aria-selected','value','disabled','aria-disabled','class']});
+      doc.defaultView.addEventListener('pagehide',()=>observer.disconnect(),{once:true});sync();
+    }
+  }
   function sortDocument(doc) {
+    ensureCustomAudioDropdowns(doc);
     performanceMeasure('maintenance-setup',()=>{
     applyPowerMode(doc);
     syncCallTestLayout(doc);
