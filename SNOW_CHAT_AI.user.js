@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.909
+// @version      2.36.910
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.910","fixes":true,"changes":[{"key":"kb-relevance","meaningful":true,"text":"Rank direct KB title matches above weaker body matches, including relevant Service Continuity Plans."},{"key":"kb-sidebar-default","meaningful":true,"text":"Keep Agent Assist closed by default outside New Event without preventing manual opening."}]},
 {"version":"2.36.909","fixes":false,"changes":[{"key":"location-event-search","meaningful":true,"text":"Browse Location Events in a popup: four months newest-first by default, or search short descriptions and descriptions across one year ranked by relevance."}]},
 {"version":"2.36.908","fixes":true,"changes":[{"key":"reference-field-actions","meaningful":true,"text":"Restore Location's similar-events triangle on Details and New Event, preserving its location-filtered Event link alongside the separate store-network button."}]},
 {"version":"2.36.907","fixes":false,"changes":[{"key":"reference-field-actions","meaningful":true,"text":"Hide Location and user-reference search icons and give Details the same Location configuration-items action as New Event."}]},
@@ -5476,20 +5477,21 @@ function installWorkspaceReferenceSearch(){
   const knowledgeOriginalFetch=knowledgePage.fetch;
   const kbBaseFilterCache = new Map();
   function rankLocalKBResults(results, query) {
-    const tokens = [...new Set(String(query || '').toLowerCase().match(/[a-z0-9]{3,}/g) || [])];
+    const normalize=value=>String(value||'').normalize('NFKD').replace(/\p{M}/gu,'').toLowerCase();
+    const tokens = [...new Set(normalize(query).match(/[\p{L}\p{N}]{2,}/gu) || [])],phrase=tokens.join(' ');
     const score = item => {
       const id = /^kb_knowledge:([a-f0-9]{32})$/i.exec(item?.id || '')?.[1];
       const entry = kbBaseFilterCache.get(id);
-      const title = String(item.title || '').toLowerCase();
-      const content = String(entry?.content || item.snippet || '').toLowerCase();
+      const title = normalize(item.title);
+      const content = normalize(entry?.content || item.snippet);
       const matches = tokens.filter(token => title.includes(token) || content.includes(token));
-      const relevance = tokens.reduce((sum, token) => sum + (title.includes(token) ? 12 : content.includes(token) ? 2 : 0), 0);
+      const relevance = tokens.reduce((sum, token) => sum + (title.includes(token) ? 120 : content.includes(token) ? 12 : -80), 0);
       const continuity = /^service\s+continuity$/i.test(entry?.base || '') || /service continuity plan/i.test(title);
-      // Relevant continuity plans beat unrelated articles, but relevant normal
-      // support articles always precede continuity plans. Stable ties preserve
-      // ServiceNow's own ranking, without rewriting its score metadata.
-      const tier = matches.length ? (continuity ? 1 : 2) : 0;
-      return tier * 1000 + relevance + (matches.length && /support page|troubleshoot|resolution|how to/i.test(title) ? 6 : 0);
+      // Actual relevance wins: continuity is only a small tie-break penalty.
+      // Preserve native order for ties and never rewrite native score metadata.
+      if(!tokens.length)return 0;
+      if(!matches.length)return -1000;
+      return relevance+(matches.length===tokens.length?75:0)+(tokens.every(token=>title.includes(token))?100:0)+(title.includes(phrase)?30:0)+(title.trim()===phrase?100:0)+(/support page|troubleshoot|resolution|how to/i.test(title)?12:0)-(continuity?8:0);
     };
     return results.map((item,index)=>({item,index,score:score(item)}))
       .sort((a,b)=>b.score-a.score || a.index-b.index).map(entry=>entry.item);
@@ -5821,6 +5823,7 @@ function installWorkspaceReferenceSearch(){
     return {outer,inner,font,title:Math.max(10,Math.min(20,20-(266-width)/12)),button:Math.max(22,Math.min(32,32-(280-width)/12))};
   }
   function installResponsiveKBPanel(panel) {
+    snDefaultKnowledgePanel(panel);
     if (!panel?.matches?.('now-agent-assist') || responsiveKBPanels.has(panel)) return;
     responsiveKBPanels.add(panel);
     const update=()=>{
@@ -7662,6 +7665,7 @@ function installWorkspaceReferenceSearch(){
     for(const tab of node.querySelectorAll?.('.sn-chrome-one-tab')||[])installChatDisplayName(tab);
     if (node.nodeType===3 && node.textContent.trim()==='Related Search Results' && kbAssistAncestor(node.parentElement)) node.textContent='Search Results';
     installResponsiveKBPanel(node.host || node);
+    snDefaultKnowledgePanel(node.host || node);
     markActionPopover(node.host || node);
     installAttachmentDivider(node.host || node);
     installPlainModalAction(node.host || node);
@@ -7779,6 +7783,7 @@ function installWorkspaceReferenceSearch(){
       installILSLinkCopy(element);
       for (const child of element.childNodes) if (child.nodeType===3 && child.textContent.trim()==='Related Search Results' && kbAssistAncestor(element)) child.textContent='Search Results';
       installResponsiveKBPanel(element);
+      snDefaultKnowledgePanel(element);
       queueNewChatGreeting(element);
       markActionPopover(element);
       filterIncidentActions(element);
@@ -26246,6 +26251,18 @@ async function snClassicCommitReference(name,query,options={}) {
   return input.value;
 }
 // SN_AI_STORE_NETWORK_BEGIN
+function snDefaultKnowledgePanel(node){
+  if(!['now-record-common-sidebar','now-agent-assist','sn-form-internal-sidebar-action'].includes(node?.localName))return;
+  let sidebar=node;while(sidebar&&sidebar.localName!=='now-record-common-sidebar')sidebar=sidebar.parentElement||sidebar.getRootNode?.().host;
+  let owner=sidebar;while(owner&&owner.localName!=='now-record-form-connected')owner=owner.parentElement||owner.getRootNode?.().host;if(!owner||!sidebar)return;
+  const props=owner.getProperties?.();if(!props?.table||!props.sysId||props.table==='new_call'&&props.sysId==='-1')return;
+  const seen=snDefaultKnowledgePanel.seen||(snDefaultKnowledgePanel.seen=new WeakMap()),key=props.table+':'+props.sysId;if(seen.get(owner)===key)return;
+  let action=null;const walk=root=>{if(!root)return;for(const element of root.querySelectorAll('*')){if(element.localName==='sn-form-internal-sidebar-action'&&element.getAttribute('name')==='assist_knowledge')action=element;if(element.shadowRoot)walk(element.shadowRoot);}};walk(sidebar.shadowRoot);if(!action)return;
+  const sidebarProps=sidebar.getProperties?.(),selected=action.getProperties?.()?.selected??action.hasAttribute('selected');if(typeof sidebarProps?.opened!=='boolean')return;
+  if(!sidebarProps.opened||!selected){seen.set(owner,key);return;}
+  let button=null;const find=root=>{if(!root)return;for(const element of root.querySelectorAll('*')){if(element.localName==='button'&&!button)button=element;if(element.shadowRoot)find(element.shadowRoot);}};find(action.shadowRoot);if(!button)return;
+  seen.set(owner,key);button.click();
+}
 function snStoreKind(location,opco){
   const text=String(location||'').trim();
   if(/^SFD[a-z0-9]{3}(?=$|[^a-z0-9])/i.test(text)&&!/head\s*office/i.test(text))return {kind:'screwfix',code:text.slice(0,6).toUpperCase()};
