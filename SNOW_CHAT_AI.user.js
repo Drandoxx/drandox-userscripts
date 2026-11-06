@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.907
+// @version      2.36.908
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.908","fixes":true,"changes":[{"key":"reference-field-actions","meaningful":true,"text":"Restore Location's similar-events triangle on Details and New Event, preserving its location-filtered Event link alongside the separate store-network button."}]},
 {"version":"2.36.907","fixes":false,"changes":[{"key":"reference-field-actions","meaningful":true,"text":"Hide Location and user-reference search icons and give Details the same Location configuration-items action as New Event."}]},
 {"version":"2.36.906","fixes":false,"changes":[{"key":"store-network","meaningful":true,"text":"Keep Computers first, with a distinct Other categories dropdown containing closed, colour-labelled category groups ordered Router, Servers, Hardware and Switches."}]},
 {"version":"2.36.905","fixes":false,"changes":[{"key":"store-network","meaningful":true,"text":"List remaining store Name/IP pairs in collapsed Others and exclude retired, disposed and non-operational hardware using status values and labels."}]},
@@ -26275,9 +26276,13 @@ function snStoreReferenceActions(node){
   const name=reference?.getAttribute('name')||'',location=/^(u_)?location$/.test(name),user=/^(caller|opened_for|requested_for|u_requested_for|u_user_id|user_id)$/.test(name);if(!location&&!user)return;
   const label=node.getAttribute('aria-label');
   if(label==='Search for Record'){const wrapper=node.getRootNode?.().host;const target=wrapper?.localName==='now-button-iconic'?wrapper:node;if(target.style.getPropertyValue('display')!=='none')target.style.setProperty('display','none','important');return;}
-  if(location&&(label==='Show similar events for this Location'||node.hasAttribute('data-sn-ai-location-list'))){
-    node.setAttribute('data-sn-ai-location-list','');node.setAttribute('aria-label','Show configuration items for this location');node.setAttribute('data-tooltip','Show configuration items for this location');node.setAttribute('data-ariadescribedby','Show configuration items for this location');
-    const icon=node.querySelector('now-icon');if(icon?.getAttribute('icon')!=='list-outline')icon?.setAttribute('icon','list-outline');
+  if(location){
+    let nativeTriangle=false,custom=null,typeahead=null;
+    const visit=root=>{if(!root)return;for(const element of root.querySelectorAll('*')){if(element.hasAttribute('data-sn-ai-location-events'))custom=element;else if(element.getAttribute('aria-label')==='Show similar events for this Location')nativeTriangle=true;if(element.localName==='now-typeahead')typeahead=element;if(element.shadowRoot)visit(element.shadowRoot);}};visit(reference.shadowRoot);
+    if(nativeTriangle){custom?.remove();return;}
+    if(custom||!typeahead)return;
+    const triangle=document.createElement('button');triangle.type='button';triangle.slot='end';triangle.setAttribute('data-sn-ai-location-events','');triangle.setAttribute('aria-label','Show similar events for this Location');triangle.title='Show similar events for this Location';triangle.style.cssText='display:inline-flex;align-items:center;justify-content:center;align-self:center;width:24px;height:24px;padding:4px;border:0;background:transparent;color:inherit;cursor:pointer';triangle.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-triangle-alert" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4M12 17h.01"/></svg>';
+    triangle.onclick=event=>{event.preventDefault();event.stopPropagation();const id=reference.getAttribute('value');if(!/^[a-f0-9]{32}$/i.test(id||''))return;const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;page.open('/new_call_list.do?sysparm_query='+encodeURIComponent('u_location='+id),'_blank','noopener');};typeahead.append(triangle);
   }
 }
 function installStoreNetworkPopup(){
