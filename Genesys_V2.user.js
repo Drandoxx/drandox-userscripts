@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.601.0
+// @version      1.602.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -6410,7 +6410,7 @@
     wrap(win.AudioBufferSourceNode?.prototype,'start',original=>function(){
       evidence(this,'start-request','web-audio-buffer',{scheduledAt:arguments[0] || 0,contextTime:this.context?.currentTime});
       const result=original.apply(this,arguments);
-      this.addEventListener?.('ended',()=>evidence(this,'ended','web-audio-buffer'),{once:true});return result;
+      if(tracked.has(this))this.addEventListener?.('ended',()=>evidence(this,'ended','web-audio-buffer'),{once:true});return result;
     });
     return ()=>{stopped=true;undo.forEach(fn=>fn());recent.clear();};
   }
