@@ -4242,6 +4242,17 @@
   `;
 
   const SHADOW_CSS = `
+    /* Phone Profiles uses gux-dropdown > gux-popup shadow surfaces. */
+    :host-context(.profile-selection-v2) .gux-popup-container {
+      background:#252b33!important;color:#e5e7eb!important;border:1px solid #4b596a!important;box-shadow:0 8px 24px #0006!important;
+    }
+    :host-context(.profile-selection-v2) .gux-option-wrapper,
+    :host-context(.profile-selection-v2) .gux-truncate-slot-container { background:transparent!important;color:#e5e7eb!important; }
+    :host(gux-option):host-context(.profile-selection-v2) { background:transparent!important;color:#e5e7eb!important; }
+    :host(gux-option:hover):host-context(.profile-selection-v2),
+    :host(gux-option.gux-selected):host-context(.profile-selection-v2),
+    :host(gux-option.gux-active):host-context(.profile-selection-v2) { background:#343d49!important;color:#fff!important; }
+    :host-context(.profile-selection-v2) ::slotted(.unavailable-profile-option) { color:#94a3b8!important; }
     /* Export controls include nested time-zone dropdowns and slotted labels. */
     :host-context(.ember-engine-queues-export-panel) { color:#e5e7eb!important;color-scheme:dark; }
     :host-context(.ember-engine-queues-export-panel) ::slotted(label),
