@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.910
+// @version      2.36.911
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.911","fixes":false,"changes":[{"key":"close-code-menu","meaningful":true,"text":"Use a custom Close Code menu with preferred Incident choices and an expandable Other section, preserving native values and other event-type lists."}]},
 {"version":"2.36.910","fixes":true,"changes":[{"key":"kb-relevance","meaningful":true,"text":"Rank direct KB title matches above weaker body matches, including relevant Service Continuity Plans."},{"key":"kb-sidebar-default","meaningful":true,"text":"Keep Agent Assist closed by default outside New Event without preventing manual opening."}]},
 {"version":"2.36.909","fixes":false,"changes":[{"key":"location-event-search","meaningful":true,"text":"Browse Location Events in a popup: four months newest-first by default, or search short descriptions and descriptions across one year ranked by relevance."}]},
 {"version":"2.36.908","fixes":true,"changes":[{"key":"reference-field-actions","meaningful":true,"text":"Restore Location's similar-events triangle on Details and New Event, preserving its location-filtered Event link alongside the separate store-network button."}]},
@@ -10413,7 +10414,7 @@ function startSNAI(tabIdentity) {
     finally{memorySampling=false;}
   },60000):0;
   window.addEventListener('pagehide',()=>{memoryStopped=true;clearInterval(memoryTimer);},{once:true});
-  for(const [name,install] of workspacePage?[['ci',installCISearch],['reference-search',installWorkspaceReferenceSearch],['store-network',installStoreNetworkPopup]]:/^\/(?:incident|new_call)\.do$/i.test(location.pathname)?[['classic-event-edit',installClassicEventEditor],['classic-ci',installClassicCISearch]]:[]){try{install();}catch(failure){recordCompactDiagnostic('warn','workspace-enhancement-start-failed',{feature:name,reason:String(failure?.message||failure).slice(0,200)});}}
+  for(const [name,install] of workspacePage?[['ci',installCISearch],['reference-search',installWorkspaceReferenceSearch],['store-network',installStoreNetworkPopup],['close-code-menu',installCloseCodeDropdown]]:/^\/(?:incident|new_call)\.do$/i.test(location.pathname)?[['classic-event-edit',installClassicEventEditor],['classic-ci',installClassicCISearch]]:[]){try{install();}catch(failure){recordCompactDiagnostic('warn','workspace-enhancement-start-failed',{feature:name,reason:String(failure?.message||failure).slice(0,200)});}}
   document.addEventListener('sn-ai-media-error',event=>{showChatImagePasteHint(event.detail?.message||'The attachment action could not finish.');recordCompactDiagnostic('warn','workspace-media-error',{message:event.detail?.message||'media_action_failed'});});
   document.addEventListener('sn-ai-reference-search-error',event=>recordCompactDiagnostic('warn','workspace-reference-search-fallback',event.detail||{}));
   document.addEventListener('sn-ai-store-network-error',event=>recordCompactDiagnostic('warn','store-network-load-failed',event.detail||{}));
@@ -26250,6 +26251,38 @@ async function snClassicCommitReference(name,query,options={}) {
   if(form.getValue(name)!==chosen.sysId||input.value!==chosen.referenceData[0].value)throw Error('CLASSIC_REFERENCE_COMMIT_FAILED: '+name);
   return input.value;
 }
+// SN_AI_CLOSE_CODE_BEGIN
+function snCloseCodeGroups(choices,incident){
+  const rows=(choices||[]).filter(row=>!row._isTmp).map(row=>({value:String(row.value??row.id??''),label:String(row.displayValue??row.label??''),disabled:!!row.disabled}));
+  if(!incident)return {primary:rows,other:[]};
+  const names=['Supplier Resolved','User Resolved Issue','No Fault Found'],primary=names.map(name=>rows.find(row=>row.label.trim().toLowerCase()===name.toLowerCase())).filter(Boolean),selected=new Set(primary);
+  return {primary,other:rows.filter(row=>!selected.has(row))};
+}
+function snCloseCodeIncident(props){
+  const fields=props.formData?.fields||{},type=fields.u_type||fields.call_type||fields.event_type;
+  if(type)return /^incident$/i.test(String(type.displayValue||type.display_value||type.value||'').trim());
+  return props.tableName==='incident';
+}
+function installCloseCodeDropdown(){
+  if(installCloseCodeDropdown.installed)return;installCloseCodeDropdown.installed=true;let active=null;
+  document.addEventListener('click',event=>{
+    const path=event.composedPath(),owner=path.find(node=>node?.localName==='sn-record-choice-connected'&&/^(?:u_)?close_code$/.test(node.getAttribute('name')||'')),select=path.find(node=>node?.localName==='now-select');if(!owner||!select)return;
+    const props=owner.getProperties?.();if(!props||!Array.isArray(props.choices)||props.readonly||props.readOnly||props.disabled||select.readonly||select.disabled||path.some(node=>node?.localName==='button'&&node.disabled))return;
+    if(typeof props.onValueChange!=='function'&&typeof select.dispatch!=='function')return;
+    event.preventDefault();event.stopImmediatePropagation();if(active?.owner===owner){active.close();return;}active?.close();
+    const control=path.find(node=>node?.localName==='button'||node?.getAttribute?.('role')==='combobox')||select,box=control.getBoundingClientRect();if(!box.width)return;
+    const host=document.createElement('div');host.id='sn-ai-close-code-dropdown';host.style.cssText='position:fixed;z-index:2147483647;';const width=Math.min(Math.max(box.width,260),innerWidth-16);host.style.width=width+'px';host.style.left=Math.max(8,Math.min(box.left,innerWidth-width-8))+'px';
+    const below=innerHeight-box.bottom-12,above=box.top-12,useBelow=below>=Math.min(260,above),height=Math.max(80,Math.min(360,useBelow?below:above));if(useBelow)host.style.top=box.bottom+4+'px';else host.style.bottom=innerHeight-box.top+4+'px';
+    const root=host.attachShadow({mode:'open'}),style=document.createElement('style');style.textContent='*{box-sizing:border-box}.menu{max-height:'+height+'px;overflow:auto;background:var(--sn-theme-251f31,#251f31);color:var(--sn-theme-e6edf9,#eee);border:1px solid var(--sn-theme-65538f,#65538f);border-radius:8px;box-shadow:0 8px 24px #0005;padding:5px;font:14px/1.4 "Source Sans Pro",Arial,sans-serif;user-select:none}button,summary{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;padding:9px 12px;background:transparent;border:0;border-radius:5px;color:inherit;text-align:left;font:inherit;cursor:pointer}button:hover,button:focus-visible,summary:hover,summary:focus-visible{background:var(--sn-theme-49365a,#49365a);outline:0}button[aria-selected=true]{background:var(--sn-theme-49365a,#49365a)}button:disabled{opacity:.45;cursor:default}summary{list-style:none;border-top:1px solid #8883;border-radius:0;margin-top:4px;font-weight:600}summary::-webkit-details-marker{display:none}svg{width:18px;height:18px;flex:none}.error{padding:10px;color:#ffb7ae}';root.append(style);const menu=document.createElement('div');menu.className='menu';menu.setAttribute('role','listbox');menu.ariaLabel='Close Code';root.append(menu);
+    let closed=false;const close=()=>{if(closed)return;closed=true;document.removeEventListener('pointerdown',outside,true);window.removeEventListener('resize',close);document.removeEventListener('sn-ai-runtime-dispose',close);host.remove();control.setAttribute('aria-expanded','false');if(active?.close===close)active=null;};const outside=e=>{if(!e.composedPath().includes(host)&&!e.composedPath().includes(select))close();};active={owner,close};
+    const options=snCloseCodeGroups(props.choices,snCloseCodeIncident(props));
+    const append=(row,parent)=>{const button=document.createElement('button');button.type='button';button.setAttribute('role','option');button.setAttribute('aria-selected',String(String(props.value??props.formData?.fields?.[props.name]?.value??'')===row.value));button.textContent=row.label;button.disabled=row.disabled;button.onclick=e=>{e.stopPropagation();const current=owner.getProperties?.(),match=current?.choices?.find(choice=>!choice._isTmp&&String(choice.value)===row.value);if(!owner.isConnected||!match||match.disabled||current.readonly||current.readOnly||current.disabled){close();return;}try{if(typeof current.onValueChange==='function')current.onValueChange(current.tableName,current.name,row.value,String(match.displayValue??row.label));else select.dispatch('NOW_SELECT#SELECTED_ITEM_SET',{item:{id:row.value,label:row.label}});close();}catch{const message=document.createElement('div');message.className='error';message.textContent='Could not change Close Code. Please try again.';menu.append(message);}};parent.append(button);};
+    options.primary.forEach(row=>append(row,menu));if(options.other.length){const details=document.createElement('details'),summary=document.createElement('summary'),icon=document.createElement('span');summary.textContent='Other';const arrow=open=>'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-'+(open?'up':'down')+'" aria-hidden="true"><path d="'+(open?'m18 15-6-6-6 6':'m6 9 6 6 6-6')+'"/></svg>';icon.innerHTML=arrow(false);summary.append(icon);details.append(summary);details.ontoggle=()=>{icon.innerHTML=arrow(details.open);};options.other.forEach(row=>append(row,details));menu.append(details);}
+    host.addEventListener('click',e=>e.stopPropagation());root.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();close();control.focus?.();return;}if(!['ArrowDown','ArrowUp','Home','End'].includes(e.key))return;e.preventDefault();const buttons=[...menu.querySelectorAll('button:not(:disabled),summary')].filter(button=>!button.closest('details')||button.localName==='summary'||button.closest('details').open),index=buttons.indexOf(root.activeElement),next=e.key==='Home'?0:e.key==='End'?buttons.length-1:e.key==='ArrowDown'?(index+1)%buttons.length:(index-1+buttons.length)%buttons.length;buttons[next]?.focus();});
+    document.body.append(host);control.setAttribute('aria-expanded','true');document.addEventListener('pointerdown',outside,true);window.addEventListener('resize',close);document.addEventListener('sn-ai-runtime-dispose',close,{once:true});menu.querySelector('button:not(:disabled)')?.focus();
+  },true);
+}
+// SN_AI_CLOSE_CODE_END
 // SN_AI_STORE_NETWORK_BEGIN
 function snDefaultKnowledgePanel(node){
   if(!['now-record-common-sidebar','now-agent-assist','sn-form-internal-sidebar-action'].includes(node?.localName))return;
