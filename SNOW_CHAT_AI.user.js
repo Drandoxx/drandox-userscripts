@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.895
+// @version      2.36.896
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.896","fixes":false,"changes":[{"key":"classic-event-editor","meaningful":true,"text":"Edit existing classic Event user, reporting user, configuration item and description fields, with native Save beside Copy Event."}]},
 {"version":"2.36.895","fixes":true,"changes":[{"key":"chatgpt-send-recovery","meaningful":true,"text":"Companion 0.4.44 distinguishes interrupted preparation from a send attempt, safely recovering unsent prompts while blocking uncertain duplicates."}]},
 {"version":"2.36.894","fixes":true,"changes":[{"key":"ai-mode-selector","meaningful":true,"text":"Use the AI mode selector alone to switch providers; remove the redundant Use Gemini API button."}]},
 {"version":"2.36.893","fixes":true,"changes":[{"key":"ai-auto-fallback","meaningful":true,"text":"Use the newest companion heartbeat and wait for cold-start readiness before rejecting ChatGPT fallback."}]},
@@ -10382,7 +10383,7 @@ function startSNAI(tabIdentity) {
     finally{memorySampling=false;}
   },60000):0;
   window.addEventListener('pagehide',()=>{memoryStopped=true;clearInterval(memoryTimer);},{once:true});
-  for(const [name,install] of workspacePage?[['ci',installCISearch],['reference-search',installWorkspaceReferenceSearch]]:/^\/(?:incident|new_call)\.do$/i.test(location.pathname)?[['classic-ci',installClassicCISearch]]:[]){try{install();}catch(failure){recordCompactDiagnostic('warn','workspace-enhancement-start-failed',{feature:name,reason:String(failure?.message||failure).slice(0,200)});}}
+  for(const [name,install] of workspacePage?[['ci',installCISearch],['reference-search',installWorkspaceReferenceSearch]]:/^\/(?:incident|new_call)\.do$/i.test(location.pathname)?[['classic-event-edit',installClassicEventEditor],['classic-ci',installClassicCISearch]]:[]){try{install();}catch(failure){recordCompactDiagnostic('warn','workspace-enhancement-start-failed',{feature:name,reason:String(failure?.message||failure).slice(0,200)});}}
   document.addEventListener('sn-ai-media-error',event=>{showChatImagePasteHint(event.detail?.message||'The attachment action could not finish.');recordCompactDiagnostic('warn','workspace-media-error',{message:event.detail?.message||'media_action_failed'});});
   document.addEventListener('sn-ai-reference-search-error',event=>recordCompactDiagnostic('warn','workspace-reference-search-fallback',event.detail||{}));
   if(snPersonalApprovedPage())setTimeout(()=>installPersonalSettingsSync({
@@ -26216,6 +26217,42 @@ async function snClassicCommitReference(name,query,options={}) {
   check();ac.referenceSelect(chosen.sysId,chosen.referenceData[0].value);ac.clearDropDown();ac.hideDropDown();
   if(form.getValue(name)!==chosen.sysId||input.value!==chosen.referenceData[0].value)throw Error('CLASSIC_REFERENCE_COMMIT_FAILED: '+name);
   return input.value;
+}
+function installClassicEventEditor() {
+  const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
+  if(!/^\/new_call\.do$/i.test(page.location.pathname)||page.__snAiEventEditorInstalled)return;
+  page.__snAiEventEditorInstalled=true;
+  const doc=page.document,fields=['caller','u_reporting_user','u_configuration_item','short_description','description'];
+  let attempts=0;
+  const install=()=>{
+    const form=page.g_form;
+    if(!form||form.getTableName?.()!=='new_call')return false;
+    if(!/^[a-f0-9]{32}$/i.test(String(form.getUniqueValue?.()||'')))return true;
+    const copies=Array.from(doc.querySelectorAll('button,input[type="submit"]')).filter(button=>/^Copy Event$/i.test((button.textContent||button.value||'').trim()));
+    if(!copies.length)return false;
+    // Native GlideForm retains reference validation, UI policies and server ACLs.
+    for(const field of fields)if(form.getControl?.(field))form.setReadOnly(field,false);
+    for(const [index,copy] of copies.entries()){
+      const id='sn-ai-classic-event-save-'+index;if(doc.getElementById(id))continue;
+      const save=doc.createElement('button');save.id=id;save.type='button';save.className=copy.className;
+      save.textContent='Save';save.setAttribute('aria-label','Save Event');save.style.marginInlineStart='6px';
+      save.addEventListener('click',()=>{
+        if(save.disabled)return;
+        doc.activeElement?.blur?.();
+        try{
+          if(typeof form.save!=='function')throw Error('Native Event save is unavailable.');
+          save.disabled=true;
+          const result=form.save();
+          if(result&&typeof result.then==='function')result.catch(error=>form.addErrorMessage?.('Event could not be saved: '+String(error?.message||error))).finally(()=>{save.disabled=false;});
+          else page.setTimeout(()=>{save.disabled=false;},1500);
+        }catch(error){save.disabled=false;form.addErrorMessage?.('Event could not be saved: '+String(error?.message||error));}
+      });
+      copy.insertAdjacentElement('afterend',save);
+    }
+    return true;
+  };
+  const retry=()=>{if(!install()&&++attempts<40)page.setTimeout(retry,500);};
+  retry();
 }
 function installClassicCISearch() {
   const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
