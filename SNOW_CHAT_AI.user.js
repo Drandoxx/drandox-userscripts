@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.896
+// @version      2.36.897
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.897","fixes":true,"changes":[{"key":"classic-event-editor","meaningful":true,"text":"Category is optional when editing existing classic Events, including password resets, and before saving."}]},
 {"version":"2.36.896","fixes":false,"changes":[{"key":"classic-event-editor","meaningful":true,"text":"Edit existing classic Event user, reporting user, configuration item and description fields, with native Save beside Copy Event."}]},
 {"version":"2.36.895","fixes":true,"changes":[{"key":"chatgpt-send-recovery","meaningful":true,"text":"Companion 0.4.44 distinguishes interrupted preparation from a send attempt, safely recovering unsent prompts while blocking uncertain duplicates."}]},
 {"version":"2.36.894","fixes":true,"changes":[{"key":"ai-mode-selector","meaningful":true,"text":"Use the AI mode selector alone to switch providers; remove the redundant Use Gemini API button."}]},
@@ -26230,6 +26231,8 @@ function installClassicEventEditor() {
     if(!/^[a-f0-9]{32}$/i.test(String(form.getUniqueValue?.()||'')))return true;
     const copies=Array.from(doc.querySelectorAll('button,input[type="submit"]')).filter(button=>/^Copy Event$/i.test((button.textContent||button.value||'').trim()));
     if(!copies.length)return false;
+    const makeCategoryOptional=()=>{if(form.getControl?.('u_matrix_category'))form.setMandatory('u_matrix_category',false);};
+    makeCategoryOptional();
     // Native GlideForm retains reference validation, UI policies and server ACLs.
     for(const field of fields)if(form.getControl?.(field))form.setReadOnly(field,false);
     for(const [index,copy] of copies.entries()){
@@ -26241,6 +26244,7 @@ function installClassicEventEditor() {
         doc.activeElement?.blur?.();
         try{
           if(typeof form.save!=='function')throw Error('Native Event save is unavailable.');
+          makeCategoryOptional();
           save.disabled=true;
           const result=form.save();
           if(result&&typeof result.then==='function')result.catch(error=>form.addErrorMessage?.('Event could not be saved: '+String(error?.message||error))).finally(()=>{save.disabled=false;});
