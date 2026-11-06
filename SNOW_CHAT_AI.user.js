@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.914
+// @version      2.36.915
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.915","fixes":true,"changes":[{"key":"kb-sidebar-default","meaningful":true,"text":"Recognise Incident and other Agent Assist action variants so KB defaults closed outside New Event."}]},
 {"version":"2.36.914","fixes":false,"changes":[{"key":"close-code-menu","meaningful":true,"text":"Place Software - App above No Fault Found in the preferred Incident Close Code choices."}]},
 {"version":"2.36.913","fixes":false,"changes":[{"key":"location-event-search","meaningful":true,"text":"Use location-titled event cards with short-description headings, Chats Today-style EVNT and linked ticket buttons, right-aligned search and compact dates."},{"key":"store-network","meaningful":true,"text":"Support every location in the hardware popup, listing non-store categories directly without an outer group."}]},
 {"version":"2.36.912","fixes":true,"changes":[{"key":"reference-field-actions","meaningful":true,"text":"Use the same native Location list and similar-events button components in Details, New Event and other Workspace forms, in a consistent order."}]},
@@ -26293,7 +26294,7 @@ function snDefaultKnowledgePanel(node){
   let owner=sidebar;while(owner&&owner.localName!=='now-record-form-connected')owner=owner.parentElement||owner.getRootNode?.().host;if(!owner||!sidebar)return;
   const props=owner.getProperties?.();if(!props?.table||!props.sysId||props.table==='new_call'&&props.sysId==='-1')return;
   const seen=snDefaultKnowledgePanel.seen||(snDefaultKnowledgePanel.seen=new WeakMap()),key=props.table+':'+props.sysId;if(seen.get(owner)===key)return;
-  let action=null;const walk=root=>{if(!root)return;for(const element of root.querySelectorAll('*')){if(element.localName==='sn-form-internal-sidebar-action'&&element.getAttribute('name')==='assist_knowledge')action=element;if(element.shadowRoot)walk(element.shadowRoot);}};walk(sidebar.shadowRoot);if(!action)return;
+  let action=null;const walk=root=>{if(!root)return;for(const element of root.querySelectorAll('*')){if(element.localName==='sn-form-internal-sidebar-action'){const name=element.getAttribute('name')||'',tooltip=element.getProperties?.()?.tooltip||'';if(/^(?:assist_knowledge|agent_assist(?:_.*)?)$/i.test(name)||/^(?:Agent Assist|Search Results)$/i.test(tooltip))action=element;}if(element.shadowRoot)walk(element.shadowRoot);}};walk(sidebar.shadowRoot);if(!action)return;
   const sidebarProps=sidebar.getProperties?.(),selected=action.getProperties?.()?.selected??action.hasAttribute('selected');if(typeof sidebarProps?.opened!=='boolean')return;
   if(!sidebarProps.opened||!selected){seen.set(owner,key);return;}
   let button=null;const find=root=>{if(!root)return;for(const element of root.querySelectorAll('*')){if(element.localName==='button'&&!button)button=element;if(element.shadowRoot)find(element.shadowRoot);}};find(action.shadowRoot);if(!button)return;
