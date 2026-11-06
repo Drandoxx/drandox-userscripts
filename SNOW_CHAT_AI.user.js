@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.900
+// @version      2.36.901
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.901","fixes":true,"changes":[{"key":"auto-greet","meaningful":true,"text":"Do not treat ServiceNow's automatic Service Desk search-bar welcome as a manual agent reply when greeting a newly accepted chat."}]},
 {"version":"2.36.900","fixes":false,"changes":[{"key":"store-network","meaningful":true,"text":"Open store router and IP details from the Location CI button, with Screwfix printer IPs, collapsible Computers and copy controls."}]},
 {"version":"2.36.899","fixes":true,"changes":[{"key":"auto-greet","meaningful":true,"text":"Recheck pending greetings on tab return, ignore AI summaries, and cancel greeting after a customer message instead of sending the look-into-it reply."}]},
 {"version":"2.36.898","fixes":true,"changes":[{"key":"image-viewer-thumbnails","meaningful":true,"text":"Keep image-viewer thumbnails square and crop images to fill each preview."}]},
@@ -1325,7 +1326,8 @@ function snGreetingMessageInfo(message) {
   const bubble=message.shadowRoot?.querySelector('.now-chat-message:not(.system)');
   const text=String(native.formatted_message??native.text??bubble?.textContent??'').trim();
   const type=String(native.type||native.message_type||props.message?.type||'');
-  const system=Boolean(props.isSystem||native.is_system||control||/typing|summary|system/i.test(type));
+  const nativeWelcome=/^Thank you for contacting (?:the )?Service Desk UK\s*\.\s*Please type your query in the search bar below\.?$/i.test(text.replace(/\s+/g,' '));
+  const system=Boolean(props.isSystem||native.is_system||nativeWelcome||control||/typing|summary|system/i.test(type));
   return {right:props.orientation==='right'||Boolean(message.shadowRoot?.querySelector('.now-chat-message.right:not(.system)')),system,text,
     meaningful:!system&&!!text&&!/^(?:\.{3}|…|(?:\S+\s+)?is typing(?:\.{3}|…)?|typing(?:\.{3}|…)?)$/i.test(text),
     orientation:String(props.orientation||''),type:String(native.messageType||type).slice(0,80),
