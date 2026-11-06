@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.904
+// @version      2.36.905
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.905","fixes":false,"changes":[{"key":"store-network","meaningful":true,"text":"List remaining store Name/IP pairs in collapsed Others and exclude retired, disposed and non-operational hardware using status values and labels."}]},
 {"version":"2.36.904","fixes":true,"changes":[{"key":"store-network","meaningful":true,"text":"Use consistent name/IP columns for router, printers and computers, white values and icon-only copy controls with the standard green check."}]},
 {"version":"2.36.903","fixes":true,"changes":[{"key":"store-network","meaningful":true,"text":"Keep Store network open during copying and expansion, with settings-style layout, side-by-side router/IP and clearer printer names."}]},
 {"version":"2.36.902","fixes":false,"changes":[{"key":"ticket-detail-completeness","meaningful":true,"text":"Use Anytime via email for email-only contacts without availability, and preserve relevant customers, affected users, orders, items and device details across ticket modes."}]},
@@ -26248,11 +26249,16 @@ function snStoreKind(location,opco){
 function snStoreNetworkData(rows,store){
   const value=v=>String(v&&typeof v==='object'?v.display_value??v.value??'':v??'');
   const ipv4=v=>/^\d{1,3}(?:\.\d{1,3}){3}$/.test(v)&&v.split('.').every(n=>Number(n)<=255);
-  const records=rows.map(row=>({id:value(row.sys_id),name:value(row.name),ip:value(row.ip_address),category:value(row.category),table:value(row.sys_class_name)}));
+  const raw=v=>String(v&&typeof v==='object'?v.value??'':v??'');
+  const functional=row=>{const status=row.operational_status,code=raw(status),label=value(status).replace(/[_-]+/g,' ');return !['2','3','6','11'].includes(code)&&!(/\b(?:non operational|not operational|disposed|retired|decommissioned|out of service|repair|broken|failed|inactive|offline|removed|pending install|standby)\b/i.test(label));};
+  const records=rows.filter(functional).map(row=>({id:value(row.sys_id),name:value(row.name),ip:value(row.ip_address).trim(),category:value(row.category),table:raw(row.sys_class_name)}));
   const candidates=records.filter(r=>ipv4(r.ip)&&(/router|appliance/i.test(r.category)||/cmdb_ci_ip_router|u_cmdb_ci_appliance_net_gear/.test(r.table)));
   const preferred=r=>store.kind==='screwfix'?new RegExp('^'+store.code+'(?:[^a-z0-9]|$)','i').test(r.name):new RegExp('^UKBQ[^a-z0-9]*'+store.code+'(?:[^a-z0-9]|$)','i').test(r.name);
   const router=candidates.find(preferred)||candidates.find(r=>store.kind==='screwfix'&&/^scf-r-/i.test(r.name))||null;
-  return {router,computers:records.filter(r=>/^KF[a-z0-9]+$/i.test(r.name)&&/^hardware$/i.test(r.category)).sort((a,b)=>a.name.localeCompare(b.name)),printerIPs:router&&store.kind==='screwfix'?{picking:router.ip.replace(/\.\d+$/,'.202'),invoice:router.ip.replace(/\.\d+$/,'.200')}:null};
+  const computers=records.filter(r=>/^KF[a-z0-9]+$/i.test(r.name)&&/^hardware$/i.test(r.category)).sort((a,b)=>a.name.localeCompare(b.name));
+  const listed=new Set([router,...computers].filter(Boolean));
+  const others=records.filter(r=>!listed.has(r)&&r.name&&r.ip).sort((a,b)=>a.name.localeCompare(b.name));
+  return {router,computers,others,printerIPs:router&&store.kind==='screwfix'?{picking:router.ip.replace(/\.\d+$/,'.202'),invoice:router.ip.replace(/\.\d+$/,'.200')}:null};
 }
 function installStoreNetworkPopup(){
   if(document.documentElement.dataset.snAiStoreNetwork)return;document.documentElement.dataset.snAiStoreNetwork='1';
@@ -26285,9 +26291,10 @@ function installStoreNetworkPopup(){
       copy.onclick=async event=>{event.stopPropagation();try{if(typeof GM_setClipboard==='function')await GM_setClipboard(value,'text');else await navigator.clipboard.writeText(value);if(closed)return;clearTimeout(reset);timers.delete(reset);copy.innerHTML=snMediaCheckIcon();copy.classList.add('ok');copy.ariaLabel=copy.title='Copied';reset=setTimeout(()=>{timers.delete(reset);copy.innerHTML=svg('copy');copy.classList.remove('ok');copy.ariaLabel=copy.title='Copy '+label;},4000);timers.add(reset);}catch{copy.ariaLabel=copy.title='Copy failed; try again';}};line.append(copy);}parent.append(line);};
     const group=(title,rows,parent=body,headings=true)=>{const grid=document.createElement('div');grid.className='network-grid';if(headings)for(const text of [title,'IP']){const heading=document.createElement('div');heading.className='column-title';heading.textContent=text;grid.append(heading);}for(const entry of rows){cell(entry.name,entry.name,grid);cell(entry.ip,entry.name+' IP',grid,true);}parent.append(grid);return grid;};
     const deadline=setTimeout(()=>controller.abort(),20000);timers.add(deadline);
-    (async()=>{const rows=[];for(let offset=0;offset<5000;offset+=200){const params=new URLSearchParams({sysparm_query:'locationISNOTEMPTY^location!=f032f42510d9b00036179bfd88ecc856^location='+locationId+'^operational_status!=11^ORDERBYsys_id',sysparm_fields:'sys_id,name,ip_address,category,sys_class_name',sysparm_limit:'200',sysparm_offset:String(offset),sysparm_exclude_reference_link:'true'});const response=await page.fetch('/api/now/table/cmdb_ci_hardware?'+params,{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':page.g_ck},signal:controller.signal});if(!response.ok)throw Error('Hardware API HTTP '+response.status);const data=await response.json();if(!Array.isArray(data.result))throw Error('Invalid hardware API response');rows.push(...data.result);if(data.result.length<200)break;if(offset===4800)throw Error('Store hardware result limit exceeded');}
+    (async()=>{const rows=[];for(let offset=0;offset<5000;offset+=200){const params=new URLSearchParams({sysparm_query:'locationISNOTEMPTY^location!=f032f42510d9b00036179bfd88ecc856^location='+locationId+'^operational_status!=11^ORDERBYsys_id',sysparm_fields:'sys_id,name,ip_address,category,sys_class_name,operational_status',sysparm_display_value:'all',sysparm_limit:'200',sysparm_offset:String(offset),sysparm_exclude_reference_link:'true'});const response=await page.fetch('/api/now/table/cmdb_ci_hardware?'+params,{credentials:'same-origin',headers:{Accept:'application/json','X-UserToken':page.g_ck},signal:controller.signal});if(!response.ok)throw Error('Hardware API HTTP '+response.status);const data=await response.json();if(!Array.isArray(data.result))throw Error('Invalid hardware API response');rows.push(...data.result);if(data.result.length<200)break;if(offset===4800)throw Error('Store hardware result limit exceeded');}
       if(closed)return;clearTimeout(deadline);timers.delete(deadline);const data=snStoreNetworkData(rows,store);body.textContent='';if(data.router){group('Router CI',[data.router]);if(data.printerIPs)group('Printers',[{name:'Picking printer',ip:data.printerIPs.picking},{name:'Invoice printer',ip:data.printerIPs.invoice}]);}else{const missing=document.createElement('p');missing.textContent='No matching store router with an IP was found.';body.append(missing);}
-      const details=document.createElement('details'),summary=document.createElement('summary'),caption=document.createElement('span'),right=document.createElement('span'),chevron=document.createElement('span');caption.textContent='Computers ('+data.computers.length+')';right.className='summary-ip';right.append(document.createTextNode('IP'),chevron);chevron.innerHTML=svg('chevron-down');summary.append(caption,right);details.append(summary);details.ontoggle=()=>{chevron.innerHTML=svg(details.open?'chevron-up':'chevron-down');};group('Computers',data.computers,details,false).classList.add('computers-grid');body.append(details);
+      const dropdown=(title,entries)=>{const details=document.createElement('details'),summary=document.createElement('summary'),caption=document.createElement('span'),right=document.createElement('span'),chevron=document.createElement('span');caption.textContent=title+' ('+entries.length+')';right.className='summary-ip';right.append(document.createTextNode('IP'),chevron);chevron.innerHTML=svg('chevron-down');summary.append(caption,right);details.append(summary);details.ontoggle=()=>{chevron.innerHTML=svg(details.open?'chevron-up':'chevron-down');};group(title,entries,details,false).classList.add('computers-grid');body.append(details);};
+      dropdown('Computers',data.computers);dropdown('Others',data.others);
     })().catch(error=>{if(closed)return;body.classList.add('error');body.textContent='Store details could not be loaded. Please close and try again.';document.dispatchEvent(new CustomEvent('sn-ai-store-network-error',{detail:{reason:String(error.message||error).slice(0,160)}}));}).finally(()=>{clearTimeout(deadline);timers.delete(deadline);});
   },true);
 }
