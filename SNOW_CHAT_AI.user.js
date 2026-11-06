@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.911
+// @version      2.36.912
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.912","fixes":true,"changes":[{"key":"reference-field-actions","meaningful":true,"text":"Use the same native Location list and similar-events button components in Details, New Event and other Workspace forms, in a consistent order."}]},
 {"version":"2.36.911","fixes":false,"changes":[{"key":"close-code-menu","meaningful":true,"text":"Use a custom Close Code menu with preferred Incident choices and an expandable Other section, preserving native values and other event-type lists."}]},
 {"version":"2.36.910","fixes":true,"changes":[{"key":"kb-relevance","meaningful":true,"text":"Rank direct KB title matches above weaker body matches, including relevant Service Continuity Plans."},{"key":"kb-sidebar-default","meaningful":true,"text":"Keep Agent Assist closed by default outside New Event without preventing manual opening."}]},
 {"version":"2.36.909","fixes":false,"changes":[{"key":"location-event-search","meaningful":true,"text":"Browse Location Events in a popup: four months newest-first by default, or search short descriptions and descriptions across one year ranked by relevance."}]},
@@ -26344,12 +26345,20 @@ function snStoreReferenceActions(node){
   const label=node.getAttribute('aria-label');
   if(label==='Search for Record'){const wrapper=node.getRootNode?.().host;const target=wrapper?.localName==='now-button-iconic'?wrapper:node;if(target.style.getPropertyValue('display')!=='none')target.style.setProperty('display','none','important');return;}
   if(location){
-    let nativeTriangle=false,custom=null,typeahead=null;
-    const visit=root=>{if(!root)return;for(const element of root.querySelectorAll('*')){if(element.hasAttribute('data-sn-ai-location-events'))custom=element;else if(element.getAttribute('aria-label')==='Show similar events for this Location')nativeTriangle=true;if(element.localName==='now-typeahead')typeahead=element;if(element.shadowRoot)visit(element.shadowRoot);}};visit(reference.shadowRoot);
-    if(nativeTriangle){custom?.remove();return;}
-    if(custom||!typeahead)return;
-    const triangle=document.createElement('button');triangle.type='button';triangle.slot='end';triangle.setAttribute('data-sn-ai-location-events','');triangle.setAttribute('aria-label','Show similar events for this Location');triangle.title='Show similar events for this Location';triangle.style.cssText='display:inline-flex;align-items:center;justify-content:center;align-self:center;width:24px;height:24px;padding:4px;border:0;background:transparent;color:inherit;cursor:pointer';triangle.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-triangle-alert" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4M12 17h.01"/></svg>';
-    triangle.onclick=event=>{event.preventDefault();event.stopPropagation();snStoreEventsPopup(reference.getAttribute('value'),typeahead.getAttribute('value')||'Location');};typeahead.append(triangle);
+    let list=null,triangle=null,typeahead=null,template=null;
+    const visit=root=>{if(!root)return;for(const element of root.querySelectorAll('*')){
+      if(element.hasAttribute('data-sn-ai-location-events')){triangle=element;continue;}
+      if(element.hasAttribute('data-sn-ai-location-list')){list=element;continue;}
+      if(element.localName==='now-typeahead')typeahead=element;
+      if(element.localName==='button'&&['Show similar events for this Location','Show configuration items for this location'].includes(element.getAttribute('aria-label'))){const wrapper=element.getRootNode?.().host;if(wrapper?.localName==='now-button-iconic'){template||=wrapper; if(wrapper.style.getPropertyValue('display')!=='none')wrapper.style.setProperty('display','none','important');}}
+      if(element.shadowRoot)visit(element.shadowRoot);
+    }};visit(reference.shadowRoot);if(!typeahead)return;
+    const props=template?.getProperties?.()||{},create=(icon,label,marker)=>{const control=document.createElement('now-button-iconic');control.slot='end';control.setAttribute(marker,'');control.setAttribute('icon',icon);control.setAttribute('size',props.size||'sm');control.setAttribute('variant',props.variant||'tertiary');control.setAttribute('bare','');control.setAttribute('aria-label',label);control.title=label;control.style.cssText='align-self:center;flex:0 0 auto';return control;};
+    // Both tabs use the very same native iconic component, not an HTML imitation.
+    if(!list){list=create('list-outline','Show configuration items for this location','data-sn-ai-location-list');typeahead.append(list);}
+    if(!triangle){triangle=create('exclamation-triangle-outline','Show similar events for this Location','data-sn-ai-location-events');typeahead.append(triangle);}
+    // Reorder only our controls, preserving native declarative actions and callbacks.
+    if(list.parentElement===typeahead&&triangle.parentElement===typeahead&&list.nextElementSibling!==triangle)typeahead.insertBefore(list,triangle);
   }
 }
 function installStoreNetworkPopup(){
