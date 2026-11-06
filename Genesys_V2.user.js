@@ -10341,6 +10341,7 @@ function fitDashboardMetricSpacing(doc) {
       const menu=doc.createElement('div');menu.className='gbs-audio-menu';menu.hidden=true;menu.setAttribute('role','listbox');
       const label=native.closest('gux-form-field-dropdown')?.querySelector('label')?.textContent.trim() || 'Audio selection';menu.setAttribute('aria-label',label);
       const close=()=>{menu.hidden=true;trigger.setAttribute('aria-expanded','false');};
+      const place=()=>{const r=trigger.getBoundingClientRect();menu.style.position='fixed';menu.style.left=r.left+'px';menu.style.right='auto';menu.style.width=r.width+'px';menu.style.top=Math.min(r.bottom+3,Math.max(0,doc.defaultView.innerHeight-180))+'px';menu.style.maxHeight=Math.max(80,Math.min(260,doc.defaultView.innerHeight-parseFloat(menu.style.top)-12))+'px';};
       const sync=()=>{
         const entries=options(),selected=entries.find(o=>o.getAttribute('aria-selected')==='true' || o.classList.contains('gux-selected'));
         const text=selected?.textContent.trim() || entries.find(o=>o.getAttribute('value')===String(native.value))?.textContent.trim() || native.getAttribute('value') || 'Select';
@@ -10361,12 +10362,12 @@ function fitDashboardMetricSpacing(doc) {
         }
         if(focused)menu.querySelector('button:not(:disabled)')?.focus();
       };
-      trigger.addEventListener('click',()=>{sync();menu.hidden=!menu.hidden;trigger.setAttribute('aria-expanded',String(!menu.hidden));if(!menu.hidden)menu.querySelector('button[aria-selected=true]:not(:disabled),button:not(:disabled)')?.focus();});
+      trigger.addEventListener('click',()=>{sync();menu.hidden=!menu.hidden;trigger.setAttribute('aria-expanded',String(!menu.hidden));if(!menu.hidden){place();}if(!menu.hidden)menu.querySelector('button[aria-selected=true]:not(:disabled),button:not(:disabled)')?.focus();});
       wrapper.addEventListener('keydown',event=>{
         if(event.key==='Escape'){event.preventDefault();close();trigger.focus();return;}
         if(event.key==='Tab'){close();return;}
         if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key))return;
-        event.preventDefault();sync();menu.hidden=false;trigger.setAttribute('aria-expanded','true');
+        event.preventDefault();sync();menu.hidden=false;place();trigger.setAttribute('aria-expanded','true');
         const buttons=Array.from(menu.querySelectorAll('button:not(:disabled)')),index=buttons.indexOf(doc.activeElement);
         const next=event.key==='Home'?0:event.key==='End'?buttons.length-1:event.key==='ArrowDown'?(index+1)%buttons.length:(index<=0?buttons.length-1:index-1);buttons[next]?.focus();
       });
