@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.605.0
+// @version      1.606.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -4242,6 +4242,15 @@
   `;
 
   const SHADOW_CSS = `
+    /* Fill listbox slots too: transparent hosts otherwise expose native white. */
+    :host(gux-listbox):host-context(.command-panel),
+    :host(gux-listbox):host-context(.profile-selection-v2) {
+      background:#252b33!important;background-color:#252b33!important;color:#e5e7eb!important;
+    }
+    :host-context(.command-panel) ::slotted(gux-listbox),
+    :host-context(.profile-selection-v2) ::slotted(gux-listbox) {
+      background:#252b33!important;background-color:#252b33!important;color:#e5e7eb!important;
+    }
     /* Phone Profiles uses gux-dropdown > gux-popup shadow surfaces. */
     :host-context(.profile-selection-v2) .gux-popup-container,
     :host-context(.device-selection) .gux-popup-container,
@@ -4251,7 +4260,7 @@
     }
     :host-context(.profile-selection-v2) .gux-option-wrapper,
     :host-context(.profile-selection-v2) .gux-truncate-slot-container { background:transparent!important;color:#e5e7eb!important; }
-    :host(gux-option):host-context(.profile-selection-v2) { background:transparent!important;color:#e5e7eb!important; }
+    :host(gux-option):host-context(.profile-selection-v2) { background:#252b33!important;color:#e5e7eb!important; }
     :host(gux-option:hover):host-context(.profile-selection-v2),
     :host(gux-option.gux-selected):host-context(.profile-selection-v2),
     :host(gux-option.gux-active):host-context(.profile-selection-v2) { background:#343d49!important;color:#fff!important; }
@@ -4259,7 +4268,7 @@
     /* Device editors can render outside the profile-selector wrapper. */
     :host-context(.command-panel) .gux-option-wrapper,
     :host-context(.command-panel) .gux-truncate-slot-container { background:transparent!important;color:#e5e7eb!important; }
-    :host(gux-option):host-context(.command-panel) { background:transparent!important;color:#e5e7eb!important; }
+    :host(gux-option):host-context(.command-panel) { background:#252b33!important;color:#e5e7eb!important; }
     :host(gux-option:hover):host-context(.command-panel),
     :host(gux-option.gux-selected):host-context(.command-panel),
     :host(gux-option.gux-active):host-context(.command-panel) { background:#343d49!important;color:#fff!important; }
@@ -4269,10 +4278,13 @@
       background:#22343b!important;color:#a5f3fc!important;
     }
     :host(gux-option[value="__new_profile__"]):host-context(.profile-selection-v2) .gux-option-wrapper {
-      color:#a5f3fc!important;font-weight:600!important;
+      display:flex!important;align-items:center!important;justify-content:flex-start!important;
+      gap:8px!important;min-height:40px!important;height:auto!important;padding:8px 12px!important;
+      box-sizing:border-box!important;color:#a5f3fc!important;font-weight:600!important;line-height:20px!important;
     }
     :host(gux-option[value="__new_profile__"]):host-context(.profile-selection-v2) .gux-option-wrapper::before {
-      content:'+';margin-right:8px;color:#67e8f9;font-size:18px;
+      content:'+';display:inline-flex;align-items:center;justify-content:center;flex:0 0 18px;
+      width:18px;height:20px;margin:0;color:#67e8f9;font-size:18px;line-height:20px;
     }
     /* Export controls include nested time-zone dropdowns and slotted labels. */
     :host-context(.ember-engine-queues-export-panel) { color:#e5e7eb!important;color-scheme:dark; }
