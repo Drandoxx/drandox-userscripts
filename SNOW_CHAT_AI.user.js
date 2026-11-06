@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.915
+// @version      2.36.916
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,7 +29,8 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
-{"version":"2.36.915","fixes":true,"changes":[{"key":"kb-sidebar-default","meaningful":true,"text":"Recognise Incident and other Agent Assist action variants so KB defaults closed outside New Event."}]},
+{"version":"2.36.916","fixes":true,"changes":[{"key":"chase-reference-search","meaningful":true,"text":"Search other users' INC/RITM references from eight characters, with five results and the reporting user preserved."},{"key":"kb-sidebar-default","meaningful":true,"text":"Keep KB closed outside New Event even when ServiceNow restores the panel after rendering."}]},
+{"version":"2.36.915","fixes":true,"changes":[{"key":"kb-sidebar-default","meaningful":false,"text":"Recognise Incident and other Agent Assist action variants so KB defaults closed outside New Event."}]},
 {"version":"2.36.914","fixes":false,"changes":[{"key":"close-code-menu","meaningful":true,"text":"Place Software - App above No Fault Found in the preferred Incident Close Code choices."}]},
 {"version":"2.36.913","fixes":false,"changes":[{"key":"location-event-search","meaningful":true,"text":"Use location-titled event cards with short-description headings, Chats Today-style EVNT and linked ticket buttons, right-aligned search and compact dates."},{"key":"store-network","meaningful":true,"text":"Support every location in the hardware popup, listing non-store categories directly without an outer group."}]},
 {"version":"2.36.912","fixes":true,"changes":[{"key":"reference-field-actions","meaningful":true,"text":"Use the same native Location list and similar-events button components in Details, New Event and other Workspace forms, in a consistent order."}]},
@@ -1832,6 +1833,14 @@ function installWorkspaceReferenceSearch(){
       if(new URL(typeof input==='string'?input:input?.url,location.href).pathname!=='/api/now/graphql')return Reflect.apply(nativeFetch,this,arguments);
       if(init?.body===undefined&&typeof input?.clone==='function'&&input.method==='POST'){const owner=this;return input.clone().text().then(body=>enhancedReferenceFetch.call(owner,input,{...init,body,signal:init?.signal||input.signal}));}
       if(typeof init?.body!=='string')return Reflect.apply(nativeFetch,this,arguments);operation=JSON.parse(init.body);
+      if(operation.operationName==='snRecordReferenceConnected'&&operation.variables?.table==='new_call'&&operation.variables.field==='u_existing_reference'){
+        const vars=operation.variables;let changes;try{changes=JSON.parse(vars.serializedChanges||'{}');}catch{}
+        if(changes?.call_type==='status_call'&&String(vars.chars||'').trim().length>=8){
+          snPreserveChaseCaller();
+          const query=[vars.query,'sys_class_nameINincident,sc_req_item'].filter(Boolean).join('^');
+          return Reflect.apply(nativeFetch,this,[input,{...init,body:JSON.stringify({...operation,variables:{...vars,ignoreRefQual:true,paginationLimit:5,query}})}]);
+        }
+      }
       if(operation.operationName!=='snRecordReferenceConnected'||!['u_matrix_category','u_matrix_subcategory','u_matrix_symptom','u_template_name'].includes(operation.variables?.field)||typeof operation.variables.chars!=='string')return Reflect.apply(nativeFetch,this,arguments);
     }catch{return Reflect.apply(nativeFetch,this,arguments);}
     const owner=this,vars=operation.variables,matrix=vars.field!=='u_template_name',query=vars.chars.slice(0,256),context=JSON.stringify({...vars,chars:undefined,paginationLimit:undefined,paginationOffset:undefined});
@@ -1865,6 +1874,44 @@ function installWorkspaceReferenceSearch(){
     };
     return run().catch(error=>{if(controller.signal.aborted||error.name==='AbortError')throw error;document.dispatchEvent(new CustomEvent('sn-ai-reference-search-error',{detail:{field:vars.field,reason:String(error.message).slice(0,100)}}));return Reflect.apply(nativeFetch,owner,[input,init]);}).finally(()=>{init.signal?.removeEventListener('abort',abort);if(active.get(vars.field)===controller)active.delete(vars.field);});
   };page.fetch.snAiWorkspaceReferenceSearch=true;
+}
+function snPreserveChaseCaller(){
+  // Attach only to the lookup being used, not every field on every form.
+  const visit=root=>{for(const el of root.querySelectorAll('*')){
+    if(el.localName==='sn-record-reference-connected'&&el.getProperties?.()?.name==='u_existing_reference')bind(el);
+    if(el.shadowRoot)visit(el.shadowRoot);
+  }};
+  const bind=reference=>{
+    if(reference.snAiChaseCallerGuard)return;reference.snAiChaseCallerGuard=true;
+    const start=event=>{
+      const path=event.composedPath?.()||[];
+      if(event.type==='keydown'&&event.key!=='Enter')return;
+      if(event.type==='click'&&!path.some(el=>el.getAttribute?.('role')==='option'))return;
+      let owner=reference;while(owner&&owner.localName!=='now-record-form-connected')owner=owner.parentElement||owner.getRootNode?.().host;
+      if(!owner)return;const props=reference.getProperties?.(),fields=props?.formData?.fields;
+      if(fields?.call_type?.value!=='status_call'||!fields?.caller?.value)return;
+      const original={value:fields.caller.value,label:fields.caller.displayValue},deadline=Date.now()+4000;
+      clearTimeout(reference.snAiChaseCallerTimer);reference.snAiChaseCallerCleanup?.();
+      const cancel=ev=>{if(ev.isTrusted&&(ev.composedPath?.()||[]).some(el=>el.getProperties?.()?.name==='caller')){clearTimeout(reference.snAiChaseCallerTimer);owner.removeEventListener('input',cancel,true);}};
+      owner.addEventListener('input',cancel,true);
+      reference.snAiChaseCallerCleanup=()=>owner.removeEventListener('input',cancel,true);
+      const check=()=>{
+        if(!reference.isConnected||Date.now()>deadline){owner.removeEventListener('input',cancel,true);return;}
+        const find=root=>{for(const el of root.querySelectorAll('*')){if(el.localName==='sn-record-reference-connected'&&el.getProperties?.()?.name==='caller')return el;if(el.shadowRoot){const found=find(el.shadowRoot);if(found)return found;}}};
+        const caller=find(owner.shadowRoot||owner),current=caller?.getProperties?.();
+        if(current&&current.referenceSysId!==original.value&&typeof current.onValueChange==='function')current.onValueChange(current.tableName,current.name,original.value,original.label);
+        reference.snAiChaseCallerTimer=setTimeout(check,100);
+      };reference.snAiChaseCallerTimer=setTimeout(check,0);
+    };
+    // The option list is rendered in a portal, outside the reference component.
+    const capture=event=>{
+      if(!reference.isConnected){document.removeEventListener('click',capture,true);document.removeEventListener('keydown',capture,true);return;}
+      const path=event.composedPath?.()||[];
+      const ownList=path.some(el=>el.getAttribute?.('role')==='listbox'&&el.getAttribute?.('aria-label')==='Existing Reference');
+      if(path.includes(reference)||ownList)start(event);
+    };
+    document.addEventListener('click',capture,true);document.addEventListener('keydown',capture,true);
+  };visit(document);
 }
 // SN_AI_WORKSPACE_REFERENCE_SEARCH_END
 
@@ -26293,12 +26340,21 @@ function snDefaultKnowledgePanel(node){
   let sidebar=node;while(sidebar&&sidebar.localName!=='now-record-common-sidebar')sidebar=sidebar.parentElement||sidebar.getRootNode?.().host;
   let owner=sidebar;while(owner&&owner.localName!=='now-record-form-connected')owner=owner.parentElement||owner.getRootNode?.().host;if(!owner||!sidebar)return;
   const props=owner.getProperties?.();if(!props?.table||!props.sysId||props.table==='new_call'&&props.sysId==='-1')return;
-  const seen=snDefaultKnowledgePanel.seen||(snDefaultKnowledgePanel.seen=new WeakMap()),key=props.table+':'+props.sysId;if(seen.get(owner)===key)return;
+  const seen=snDefaultKnowledgePanel.seen||(snDefaultKnowledgePanel.seen=new WeakMap()),key=props.table+':'+props.sysId;
+  let state=seen.get(owner);if(state?.key!==key){state?.observer?.disconnect();state={key,done:false};seen.set(owner,state);}
+  if(state.done)return;
+  // A saved record can initially render closed, then restore Agent Assist later.
+  // Watch only this sidebar until its default is applied or the agent intervenes.
+  if(!state.observer&&typeof MutationObserver!=='undefined'){
+    state.observer=new MutationObserver(()=>{watch(sidebar.shadowRoot||sidebar);snDefaultKnowledgePanel(sidebar);});
+    const roots=new WeakSet(),watch=root=>{if(!root)return;if(!roots.has(root)){roots.add(root);state.observer.observe(root,{childList:true,subtree:true,attributes:true,attributeFilter:['selected']});}for(const el of root.querySelectorAll('*'))if(el.shadowRoot)watch(el.shadowRoot);};watch(sidebar.shadowRoot||sidebar);
+    sidebar.addEventListener('click',event=>{if(!event.isTrusted)return;state.done=true;state.observer.disconnect();},{capture:true});
+  }
   let action=null;const walk=root=>{if(!root)return;for(const element of root.querySelectorAll('*')){if(element.localName==='sn-form-internal-sidebar-action'){const name=element.getAttribute('name')||'',tooltip=element.getProperties?.()?.tooltip||'';if(/^(?:assist_knowledge|agent_assist(?:_.*)?)$/i.test(name)||/^(?:Agent Assist|Search Results)$/i.test(tooltip))action=element;}if(element.shadowRoot)walk(element.shadowRoot);}};walk(sidebar.shadowRoot);if(!action)return;
   const sidebarProps=sidebar.getProperties?.(),selected=action.getProperties?.()?.selected??action.hasAttribute('selected');if(typeof sidebarProps?.opened!=='boolean')return;
-  if(!sidebarProps.opened||!selected){seen.set(owner,key);return;}
+  if(!sidebarProps.opened||!selected)return;
   let button=null;const find=root=>{if(!root)return;for(const element of root.querySelectorAll('*')){if(element.localName==='button'&&!button)button=element;if(element.shadowRoot)find(element.shadowRoot);}};find(action.shadowRoot);if(!button)return;
-  seen.set(owner,key);button.click();
+  state.done=true;state.observer?.disconnect();button.click();
 }
 function snStoreKind(location,opco){
   const text=String(location||'').trim();
