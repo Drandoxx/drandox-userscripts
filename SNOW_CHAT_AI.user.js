@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.906
+// @version      2.36.907
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.907","fixes":false,"changes":[{"key":"reference-field-actions","meaningful":true,"text":"Hide Location and user-reference search icons and give Details the same Location configuration-items action as New Event."}]},
 {"version":"2.36.906","fixes":false,"changes":[{"key":"store-network","meaningful":true,"text":"Keep Computers first, with a distinct Other categories dropdown containing closed, colour-labelled category groups ordered Router, Servers, Hardware and Switches."}]},
 {"version":"2.36.905","fixes":false,"changes":[{"key":"store-network","meaningful":true,"text":"List remaining store Name/IP pairs in collapsed Others and exclude retired, disposed and non-operational hardware using status values and labels."}]},
 {"version":"2.36.904","fixes":true,"changes":[{"key":"store-network","meaningful":true,"text":"Use consistent name/IP columns for router, printers and computers, white values and icon-only copy controls with the standard green check."}]},
@@ -7674,6 +7675,7 @@ function installWorkspaceReferenceSearch(){
     removeWorkspaceTabMenus(node);
     installDurationSummary(node.host || node);
     installUserReferenceEmail(node.host || node);
+    snStoreReferenceActions(node.host || node);
     suppressEventCallerAutofocus(node);
     markAcceptedTab(node);
     syncIMSReplyMessage(node);
@@ -7770,6 +7772,7 @@ function installWorkspaceReferenceSearch(){
     if (node.nodeType === 1 && node.shadowRoot) watch(node.shadowRoot);
     else queueLateShadowHost(node);
     for (const element of node.querySelectorAll?.('*') || []) {
+      snStoreReferenceActions(element);
       installSubTabRecordButton(element);
       installILSLinkCopy(element);
       for (const child of element.childNodes) if (child.nodeType===3 && child.textContent.trim()==='Related Search Results' && kbAssistAncestor(element)) child.textContent='Search Results';
@@ -26266,6 +26269,17 @@ function snStoreCategoryGroups(rows){
   const priority=name=>/router/i.test(name)?0:/server/i.test(name)?1:/^hardware$/i.test(name)?2:/switch/i.test(name)?3:4;
   return [...groups.values()].sort((a,b)=>priority(a.name)-priority(b.name)||a.name.localeCompare(b.name)).map((group,index)=>({...group,hue:Math.round((205+index*137.508)%360),rows:group.rows.sort((a,b)=>a.name.localeCompare(b.name))}));
 }
+function snStoreReferenceActions(node){
+  if(node?.localName!=='button')return;
+  let reference=node;while(reference&&reference.localName!=='sn-record-reference-connected')reference=reference.parentElement||reference.getRootNode?.().host;
+  const name=reference?.getAttribute('name')||'',location=/^(u_)?location$/.test(name),user=/^(caller|opened_for|requested_for|u_requested_for|u_user_id|user_id)$/.test(name);if(!location&&!user)return;
+  const label=node.getAttribute('aria-label');
+  if(label==='Search for Record'){const wrapper=node.getRootNode?.().host;const target=wrapper?.localName==='now-button-iconic'?wrapper:node;if(target.style.getPropertyValue('display')!=='none')target.style.setProperty('display','none','important');return;}
+  if(location&&(label==='Show similar events for this Location'||node.hasAttribute('data-sn-ai-location-list'))){
+    node.setAttribute('data-sn-ai-location-list','');node.setAttribute('aria-label','Show configuration items for this location');node.setAttribute('data-tooltip','Show configuration items for this location');node.setAttribute('data-ariadescribedby','Show configuration items for this location');
+    const icon=node.querySelector('now-icon');if(icon?.getAttribute('icon')!=='list-outline')icon?.setAttribute('icon','list-outline');
+  }
+}
 function installStoreNetworkPopup(){
   if(document.documentElement.dataset.snAiStoreNetwork)return;document.documentElement.dataset.snAiStoreNetwork='1';
   const page=typeof unsafeWindow!=='undefined'?unsafeWindow:window;
@@ -26280,7 +26294,8 @@ function installStoreNetworkPopup(){
     let label='',opco='';walk(reference.shadowRoot,n=>{if(n.localName==='now-record-typeahead')label=n.getAttribute('value')||label;});
     label||=button.getAttribute('aria-description')?.replace(/^Location field\s*:\s*/i,'')||'';
     walk(owner.shadowRoot,n=>{if(n.getAttribute('role')==='combobox'&&/^OpCo$/i.test(n.getAttribute('aria-label')||''))opco=n.value||n.getAttribute('value')||n.textContent; if(n.localName==='sn-record-reference-connected'&&/^(?:u_)?(?:opco|company)$/i.test(n.getAttribute('name')||''))walk(n.shadowRoot,c=>{if(c.localName==='now-record-typeahead')opco=c.getAttribute('value')||opco;});});
-    const store=snStoreKind(label,opco),locationId=reference.getAttribute('value');if(!store||!/^[a-f0-9]{32}$/i.test(locationId||''))return;
+    const store=snStoreKind(label,opco),locationId=reference.getAttribute('value');if(!/^[a-f0-9]{32}$/i.test(locationId||''))return;
+    if(!store){if(button.hasAttribute('data-sn-ai-location-list')){event.preventDefault();event.stopImmediatePropagation();page.open('/cmdb_ci_hardware_list.do?sysparm_query='+encodeURIComponent('locationISNOTEMPTY^location!=f032f42510d9b00036179bfd88ecc856^location='+locationId+'^operational_status!=11'),'_blank','noopener');}return;}
     event.preventDefault();event.stopImmediatePropagation();active?.();
     const host=document.createElement('div');host.id='sn-ai-store-network';host.style.cssText='position:fixed;inset:0;z-index:2147483646;display:grid;place-items:center;background:#0008';
     const root=host.attachShadow({mode:'open'}),style=document.createElement('style');style.textContent='*{box-sizing:border-box}.card{width:min(520px,94vw);max-height:85vh;overflow:auto;padding:22px;background:var(--sn-theme-191621,#20232b);color:var(--sn-theme-e6edf9,#eee);border:1px solid var(--sn-theme-655573,#646574);border-radius:12px;font:14px/1.45 system-ui;box-shadow:0 18px 60px #0005}header{display:flex;align-items:center;gap:12px;margin-bottom:18px}header strong{flex:1;font-size:19px}.subtitle{font-size:12px;opacity:.75;margin-bottom:18px}.row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #8883}.text{flex:1;min-width:0;overflow-wrap:anywhere}.label{font-size:12px;opacity:.7}.value{font-size:16px}button{display:grid;place-items:center;background:transparent;color:inherit;border:0;border-radius:6px;padding:7px;cursor:pointer}button:hover{background:#8882}button.ok{color:#76dfa0}summary{cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;padding:16px 0 4px;font-weight:600}summary::-webkit-details-marker{display:none}.error{color:#ffb7ae}';root.append(style);
