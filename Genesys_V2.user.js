@@ -10343,7 +10343,7 @@ function fitDashboardMetricSpacing(doc) {
       const close=()=>{menu.hidden=true;trigger.setAttribute('aria-expanded','false');};
       const sync=()=>{
         const entries=options(),selected=entries.find(o=>o.getAttribute('aria-selected')==='true' || o.classList.contains('gux-selected'));
-        const text=selected?.textContent.trim() || native.getAttribute('value') || 'Select';
+        const text=selected?.textContent.trim() || entries.find(o=>o.getAttribute('value')===String(native.value))?.textContent.trim() || native.getAttribute('value') || 'Select';
         const signature=JSON.stringify(entries.map(o=>[o.textContent.trim(),o.getAttribute('value'),o.getAttribute('aria-selected'),o.hasAttribute('disabled')]));
         if(wrapper.dataset.signature===signature)return;wrapper.dataset.signature=signature;
         trigger.replaceChildren(doc.createTextNode(text));trigger.insertAdjacentHTML('beforeend','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>');trigger.setAttribute('aria-label',label+': '+text);
