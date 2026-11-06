@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.913
+// @version      2.36.914
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.914","fixes":false,"changes":[{"key":"close-code-menu","meaningful":true,"text":"Place Software - App above No Fault Found in the preferred Incident Close Code choices."}]},
 {"version":"2.36.913","fixes":false,"changes":[{"key":"location-event-search","meaningful":true,"text":"Use location-titled event cards with short-description headings, Chats Today-style EVNT and linked ticket buttons, right-aligned search and compact dates."},{"key":"store-network","meaningful":true,"text":"Support every location in the hardware popup, listing non-store categories directly without an outer group."}]},
 {"version":"2.36.912","fixes":true,"changes":[{"key":"reference-field-actions","meaningful":true,"text":"Use the same native Location list and similar-events button components in Details, New Event and other Workspace forms, in a consistent order."}]},
 {"version":"2.36.911","fixes":false,"changes":[{"key":"close-code-menu","meaningful":true,"text":"Use a custom Close Code menu with preferred Incident choices and an expandable Other section, preserving native values and other event-type lists."}]},
@@ -26257,7 +26258,7 @@ async function snClassicCommitReference(name,query,options={}) {
 function snCloseCodeGroups(choices,incident){
   const rows=(choices||[]).filter(row=>!row._isTmp).map(row=>({value:String(row.value??row.id??''),label:String(row.displayValue??row.label??''),disabled:!!row.disabled}));
   if(!incident)return {primary:rows,other:[]};
-  const names=['Supplier Resolved','User Resolved Issue','No Fault Found'],primary=names.map(name=>rows.find(row=>row.label.trim().toLowerCase()===name.toLowerCase())).filter(Boolean),selected=new Set(primary);
+  const names=['Supplier Resolved','User Resolved Issue','Software - App','No Fault Found'],primary=names.map(name=>rows.find(row=>row.label.trim().toLowerCase()===name.toLowerCase())).filter(Boolean),selected=new Set(primary);
   return {primary,other:rows.filter(row=>!selected.has(row))};
 }
 function snCloseCodeIncident(props){
