@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.604.0
+// @version      1.605.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -4243,7 +4243,10 @@
 
   const SHADOW_CSS = `
     /* Phone Profiles uses gux-dropdown > gux-popup shadow surfaces. */
-    :host-context(.profile-selection-v2) .gux-popup-container {
+    :host-context(.profile-selection-v2) .gux-popup-container,
+    :host-context(.device-selection) .gux-popup-container,
+    :host-context(.phone-settings) .gux-popup-container,
+    :host-context(.command-panel) .gux-popup-container {
       background:#252b33!important;color:#e5e7eb!important;border:1px solid #4b596a!important;box-shadow:0 8px 24px #0006!important;
     }
     :host-context(.profile-selection-v2) .gux-option-wrapper,
@@ -4253,6 +4256,24 @@
     :host(gux-option.gux-selected):host-context(.profile-selection-v2),
     :host(gux-option.gux-active):host-context(.profile-selection-v2) { background:#343d49!important;color:#fff!important; }
     :host-context(.profile-selection-v2) ::slotted(.unavailable-profile-option) { color:#94a3b8!important; }
+    /* Device editors can render outside the profile-selector wrapper. */
+    :host-context(.command-panel) .gux-option-wrapper,
+    :host-context(.command-panel) .gux-truncate-slot-container { background:transparent!important;color:#e5e7eb!important; }
+    :host(gux-option):host-context(.command-panel) { background:transparent!important;color:#e5e7eb!important; }
+    :host(gux-option:hover):host-context(.command-panel),
+    :host(gux-option.gux-selected):host-context(.command-panel),
+    :host(gux-option.gux-active):host-context(.command-panel) { background:#343d49!important;color:#fff!important; }
+    :host(gux-option[value="__new_profile__"]):host-context(.profile-selection-v2) {
+      display:block!important;margin:6px 8px!important;width:calc(100% - 16px)!important;
+      box-sizing:border-box!important;border:1px solid #398797!important;border-radius:7px!important;
+      background:#22343b!important;color:#a5f3fc!important;
+    }
+    :host(gux-option[value="__new_profile__"]):host-context(.profile-selection-v2) .gux-option-wrapper {
+      color:#a5f3fc!important;font-weight:600!important;
+    }
+    :host(gux-option[value="__new_profile__"]):host-context(.profile-selection-v2) .gux-option-wrapper::before {
+      content:'+';margin-right:8px;color:#67e8f9;font-size:18px;
+    }
     /* Export controls include nested time-zone dropdowns and slotted labels. */
     :host-context(.ember-engine-queues-export-panel) { color:#e5e7eb!important;color-scheme:dark; }
     :host-context(.ember-engine-queues-export-panel) ::slotted(label),
