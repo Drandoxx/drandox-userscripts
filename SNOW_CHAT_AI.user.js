@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.898
+// @version      2.36.899
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.899","fixes":true,"changes":[{"key":"auto-greet","meaningful":true,"text":"Recheck pending greetings on tab return, ignore AI summaries, and cancel greeting after a customer message instead of sending the look-into-it reply."}]},
 {"version":"2.36.898","fixes":true,"changes":[{"key":"image-viewer-thumbnails","meaningful":true,"text":"Keep image-viewer thumbnails square and crop images to fill each preview."}]},
 {"version":"2.36.897","fixes":true,"changes":[{"key":"classic-event-editor","meaningful":true,"text":"Category is optional when editing existing classic Events, including password resets, and before saving."}]},
 {"version":"2.36.896","fixes":false,"changes":[{"key":"classic-event-editor","meaningful":true,"text":"Edit existing classic Event user, reporting user, configuration item and description fields, with native Save beside Copy Event."}]},
@@ -1347,11 +1348,14 @@ function snClassifyCustomerGreeting(value) {
   return {code,reason,greetingRatio:Math.round(ratio*1000)/1000,nonGreetingRatio:Math.round((1-ratio)*1000)/1000,messageLength:text.length,maxGreetingLength,issueMarker:issue,matchedGreetings:matches.slice(0,8).map(match=>match[0]),unmatchedChars:remainder.length};
 }
 function snGreetingDecisionEvidence(messages) {
-  const infos=messages.map(snGreetingMessageInfo),selectedIndex=infos.findLastIndex(info=>info.meaningful);
+  const allInfos=messages.map(snGreetingMessageInfo);
+  const boundary=allInfos.findLastIndex(info=>info.system&&/^(?:Welcome to Service Desk|.*\bhas joined\.?)$/i.test(info.text));
+  const infos=allInfos.slice(boundary+1),selectedIndex=infos.findLastIndex(info=>info.meaningful);
   const snapshot=(info,index,limit)=>({index,messageId:info.messageId,timestamp:info.timestamp,type:info.type,orientation:info.orientation,right:info.right,system:info.system,meaningful:info.meaningful,excludedReason:info.excludedReason,text:info.text.slice(0,limit),textLength:info.text.length,truncated:info.text.length>limit});
   const selected=selectedIndex>=0?infos[selectedIndex]:null;
-  const classification=selected&&!selected.right?snClassifyCustomerGreeting(selected.text):null;
-  return {code:classification?classification.code:'w',reason:classification?classification.reason:!selected?'no-meaningful-message':'last-meaningful-message-is-agent',classification,messageCount:infos.length,excludedCount:infos.filter(info=>!info.meaningful).length,
+  const customer=infos.some(info=>info.meaningful&&!info.right),agent=infos.some(info=>info.meaningful&&info.right);
+  const classification=null;
+  return {code:customer||agent?null:'w',reason:customer?'customer-already-messaged':agent?'agent-already-replied':'no-meaningful-message',classification,messageCount:infos.length,excludedCount:infos.filter(info=>!info.meaningful).length,
     selected:selected?snapshot(selected,selectedIndex,1800):null,recent:infos.slice(-6).map((info,index)=>snapshot(info,Math.max(0,infos.length-6)+index,400))};
 }
 function snWorkspaceTabBars(){
@@ -2067,7 +2071,9 @@ function installWorkspaceReferenceSearch(){
   const greetTrace=(stage,details={})=>document.dispatchEvent(new CustomEvent('sn-ai-greet-diagnostic',{detail:{stage,...details}}));
   const scanGreetingHosts=()=>{for(const scope of spaceRoots){queueNewChatGreeting(scope.host);for(const input of scope.querySelectorAll?.('sn-chat-input')||[])queueNewChatGreeting(input);}};
   Promise.resolve(GM_getValue('sn-ai-auto-greet-v1',false)).then(value=>{if(!autoGreetChanged)autoGreetEnabled=value===true;greetTrace('setting-loaded',{ok:autoGreetEnabled});if(autoGreetEnabled)scanGreetingHosts();});
-  document.addEventListener('sn-ai-auto-greet',event=>{autoGreetChanged=true;autoGreetEnabled=event.detail===true;});
+  document.addEventListener('sn-ai-auto-greet',event=>{autoGreetChanged=true;autoGreetEnabled=event.detail===true;if(autoGreetEnabled)scanGreetingHosts();});
+  window.addEventListener('focus',()=>{if(autoGreetEnabled)scanGreetingHosts();});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&autoGreetEnabled)scanGreetingHosts();});
   // An accepted incoming offer is required: opening an old IMS never greets it.
   const autoGreetOffers=new Map();
   const pendingGreetingIds=new Set();
@@ -2134,7 +2140,7 @@ function installWorkspaceReferenceSearch(){
           disabled:Boolean(node.disabled),readOnly:Boolean(node.readOnly),focused:node.getRootNode()?.activeElement===node,
           visible:Boolean(node.getBoundingClientRect?.().width&&node.getBoundingClientRect?.().height),path:path(node)}))};
     };
-    const safe=()=>autoGreetEnabled&&host.isConnected&&(host.sysId||host.getAttribute('sys-id'))===id&&host.isChatOwner===true&&!input()?.disabled&&!input()?.readOnly&&ownElements().some(node=>node.matches('[aria-selected="true"]')&&/Public Chat/i.test(node.getAttribute('aria-label')||node.textContent));
+    const safe=()=>autoGreetEnabled&&!document.hidden&&host.isConnected&&(host.sysId||host.getAttribute('sys-id'))===id&&host.isChatOwner===true&&input()?.getBoundingClientRect().width>0&&!input()?.disabled&&!input()?.readOnly&&ownElements().some(node=>node.matches('[aria-selected="true"]')&&/Public Chat/i.test(node.getAttribute('aria-label')||node.textContent));
     const wait=async predicate=>{for(let i=0;i<50;i++){
       if(!autoGreetEnabled||!host.isConnected||(host.sysId||host.getAttribute('sys-id'))!==id||host.isChatOwner!==true)return null;
       // Native snippet selection replaces the textarea. Wait through that
@@ -2150,7 +2156,7 @@ function installWorkspaceReferenceSearch(){
         if(!autoGreetEnabled||!host.isConnected||greetAttempted.has(id)){outcome('skipped',!autoGreetEnabled?'auto-greet-disabled':!host.isConnected?'composer-disconnected':'already-attempted');return;}
         const field=input(),nodes=ownElements();
         const send=nodes.find(node=>node.matches('button[aria-label="Send Message"]'));
-        const loading=nodes.some(node=>node.matches('[aria-busy="true"],now-loader,now-loading-indicator,[role="alert"]')&&node.getBoundingClientRect().width>0&&(node.getAttribute('aria-busy')==='true'||/error|failed|loading/i.test(node.textContent||node.localName)));
+        const loading=nodes.some(node=>node.matches('[aria-busy="true"],now-loader,now-loading-indicator')&&node.getBoundingClientRect().width>0);
         if(safe()&&field&&send&&typeof host.dispatch==='function'&&!loading){
           // Native readonly loading renders an em dash as its value. A draft
           // check is meaningful only after the public composer is editable.
@@ -2185,7 +2191,7 @@ function installWorkspaceReferenceSearch(){
         const decision=snGreetingDecisionEvidence(agentMessages);
         const query=decision.code;
         greetTrace('greeting-decision',{ims:record.number.value,code:query,reason:decision.reason,decisionEvidence:decision});
-        if(!query){rememberGreetingAttempt(id);outcome('skipped','uncertain-greeting-or-issue');return;}
+        if(!query){rememberGreetingAttempt(id);outcome('skipped',decision.reason);return;}
         greetTrace('shortcut-requested',{ims:record.number.value,code:query,source:'native-read-only-quick-reply-lookup',menuOpened:false});
         const controller=new AbortController(),lookupTimer=setTimeout(()=>controller.abort(),8000);
         let snippet;
@@ -2199,9 +2205,7 @@ function installWorkspaceReferenceSearch(){
         const decoder=document.createElement('span');decoder.innerHTML=snippet.displayValue||'';const expected=decoder.textContent.trim();
         const latestHumanMessages=chatMessages().filter(message=>!messageInfo(message).system);
         logOutgoingEvidence(latestHumanMessages);
-        const latestHuman=latestHumanMessages.at(-1);
-        const latestQuery=latestHuman&&!messageInfo(latestHuman).right?'q':'w';
-        if(latestQuery!==query){outcome('not-sent','latest-message-changed-retry');return;}
+        if(!snGreetingDecisionEvidence(chatMessages()).code){rememberGreetingAttempt(id);outcome('skipped','chat-already-has-message');return;}
         if(composerEditedByUser){outcome('skipped','composer-edited-by-user');return;}
         if(transferredGreetingIds.has(id)||transferredGreetingIds.has(record.number.value)){rememberGreetingAttempt(id);outcome('skipped','explicit-agent-transfer-offer');return;}
         if(!expected||!safe()||input().value.trim()){outcome('not-sent',!expected?'quick-action-empty':!safe()?'chat-no-longer-safe':'composer-edited');return;}
@@ -2212,6 +2216,10 @@ function installWorkspaceReferenceSearch(){
         if(composerEditedByUser){outcome('skipped','composer-edited-by-user');return;}
         if(transferredGreetingIds.has(id)||transferredGreetingIds.has(record.number.value)){rememberGreetingAttempt(id);outcome('skipped','explicit-agent-transfer-offer');return;}
         const send=ownElements().find(node=>node.matches('button[aria-label="Send Message"]'));
+        if(!snGreetingDecisionEvidence(chatMessages()).code){
+          if(input()?.value.trim()===expected){input().value='';input().dispatchEvent(new Event('input',{bubbles:true,composed:true}));}
+          rememberGreetingAttempt(id);outcome('skipped','chat-already-has-message');return;
+        }
         if(!ready||!safe()||input().value.trim()!==expected||!send||send.disabled){outcome('not-sent',!ready?'quick-action-did-not-fill':!safe()?'chat-no-longer-safe':!send?'send-control-missing':send.disabled?'send-control-disabled':'composer-edited');return;}
         greetTrace('shortcut-expanded',{ims:record.number.value,code:query,composerSnapshot:composerSnapshot()});
         // Use the native action dispatched by ServiceNow's Send/Enter handler.
