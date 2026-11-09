@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Genesys board sorter
 // @namespace    https://apps.mypurecloud.de/
-// @version      1.607.0
+// @version      1.608.0
 // @updateURL    https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @downloadURL  https://drandox.cc/work/Genesys/Genesys_V2.user.js
 // @description  Sorts and modernizes Genesys agent boards.
@@ -1250,6 +1250,11 @@
     .gbs-rank-header, .gbs-rank-cell { width: 42px !important; min-width: 42px !important; text-align: center !important; font-variant-numeric: tabular-nums !important; font-weight: 700 !important; }
     .gbs-rank-cell { color: var(--gbs-status) !important; }
 
+    /* Native presence classes can lag behind the routing status (Meal -> Idle).
+       Use the same resolved row status for the dot, including the YOU row. */
+    table.gbs-board tbody tr[data-gbs-status] .entity-v3-presence-indicator-dot {
+      background:var(--gbs-status)!important;color:var(--gbs-status)!important;
+    }
     /* Explicit backgrounds plus !important keep Dark Reader from making dots transparent. */
     table.gbs-board .entity-v3-presence-indicator-dot {
       width: 18px !important; height: 18px !important; min-width: 18px !important; min-height: 18px !important;
