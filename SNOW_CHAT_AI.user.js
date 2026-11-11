@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SN AI
 // @namespace    local.servicenow.workspace-inspector
-// @version      2.36.918
+// @version      2.36.919
 // @updateURL    https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @downloadURL  https://drandox.cc/work/SNOW/SNOW_CHAT_AI.user.js
 // @author       Drandox
@@ -29,6 +29,7 @@
 // ==/UserScript==
 /* SN_AI_RELEASE_NOTES_BEGIN
 {"schema":1,"releases":[
+{"version":"2.36.919","fixes":true,"changes":[{"key":"runtime-memory","meaningful":true,"text":"Reuse parsed theme stylesheets across Workspace components and release detached email-field handlers to reduce retained memory after automation."}]},
 {"version":"2.36.918","fixes":true,"changes":[{"key":"close-code-dropdown","meaningful":true,"text":"Close Code always opens below its field, with Software - App first, then Supplier Resolved, User Resolved Issue and Others."}]},
 {"version":"2.36.917","fixes":true,"changes":[{"key":"chase-reference-search","meaningful":true,"text":"Existing Reference no longer changes a populated User ID; empty User IDs retain native autofill without a change-back timer."}]},
 {"version":"2.36.916","fixes":true,"changes":[{"key":"chase-reference-search","meaningful":false,"text":"Search other users' INC/RITM references from eight characters, with five results and the reporting user preserved."},{"key":"kb-sidebar-default","meaningful":true,"text":"Keep KB closed outside New Event even when ServiceNow restores the panel after rendering."}]},
@@ -2063,6 +2064,9 @@ function snGuardExistingReferenceScripts(body){
     for (const root of spaceRoots) {
       if (root === document || (root.host ? root.host.isConnected : root.defaultView?.frameElement?.isConnected)) continue;
       themeRootObservers.get(root)?.observer.disconnect();
+      root.host?.snAiDisposeEmail?.();
+      const ownSheets=new Set([...root.querySelectorAll?.('style[data-sn-ai-space-theme],style[data-sn-ai-action-style]')||[]].map(style=>style.snAiSharedSheet).filter(Boolean));
+      if(ownSheets.size&&'adoptedStyleSheets' in root)root.adoptedStyleSheets=root.adoptedStyleSheets.filter(sheet=>!ownSheets.has(sheet));
       for(const link of root.querySelectorAll?.('link[data-sn-ai-shared-style]')||[])link.snAiReleaseStyle?.();
       ticketPresentationQueue.delete(root);
       spaceRoots.delete(root);
@@ -2075,11 +2079,14 @@ function snGuardExistingReferenceScripts(body){
     clearInterval(themeRootCleanupTimer);
     for (const root of spaceRoots) themeRootObservers.get(root)?.observer.disconnect();
     spaceRoots.clear(); spaceStyles.clear();
+    for(const resource of sharedStyleResources.values())if(resource.url)URL.revokeObjectURL(resource.url);
+    sharedStyleResources.clear();
   }, { once: true });
   const spaceStyles = new Map();
   const sharedStyleResources = new Map();
   const sharedStyleVersion=String(typeof GM_info!=='undefined'?GM_info.script?.version||'current':'current');
   function shareActionStyle(root, style, text) {
+    if(style.snAiSharedText===text&&style.snAiSharedSheet&&root.adoptedStyleSheets?.includes(style.snAiSharedSheet)&&!style.textContent)return;
     // One parsed sheet per CSS source/document, rather than thousands of
     // link-owned CSSOM wrappers. Keep native sheets and our action/theme order.
     if(style.parentNode&&'adoptedStyleSheets' in root&&typeof CSSStyleSheet==='function'){
@@ -6077,7 +6084,9 @@ function snGuardExistingReferenceScripts(body){
     }
     observer.observe(host,{attributes:true,attributeFilter:['value'],childList:true});
     host.addEventListener('input',()=>{generation++;request?.abort();lastCommitted='';row.hidden=true;clearTimeout(timer);timer=setTimeout(check,350);});
-    document.addEventListener('sn-ai-runtime-dispose',()=>{disposed=true;clearTimeout(timer);observer.disconnect();request?.abort();row.remove();},{once:true});
+    const disposeEmail=()=>{disposed=true;clearTimeout(timer);clearTimeout(copiedTimer);observer.disconnect();roots.clear();request?.abort();row.remove();document.removeEventListener('sn-ai-runtime-dispose',disposeEmail);delete host.snAiDisposeEmail;};
+    host.snAiDisposeEmail=disposeEmail;
+    document.addEventListener('sn-ai-runtime-dispose',disposeEmail,{once:true});
     timer=setTimeout(check,350);
   }
   function installDurationSummary(element) {
@@ -7995,7 +8004,7 @@ function snGuardExistingReferenceScripts(body){
       // when native controls mount, not only newly inserted descendants.
       queueNewChatGreeting(root.host);
       if(style.getRootNode()!==root)(root.nodeType===9?(root.head || root.documentElement):root)?.prepend(style);
-      if(style.snAiSharedText&&style.snAiSharedLink?.parentNode!==style.parentNode)shareActionStyle(root,style,style.snAiSharedText);
+      if(style.snAiSharedText&&(style.snAiSharedSheet?!root.adoptedStyleSheets.includes(style.snAiSharedSheet):style.snAiSharedLink?.parentNode!==style.parentNode))shareActionStyle(root,style,style.snAiSharedText);
       if(records.some(record=>[...record.addedNodes].some(node=>node.nodeType===1
         && node.matches?.('style,link[rel="stylesheet"]') && !node.hasAttribute('data-sn-ai-space-theme')
         && !node.hasAttribute('data-sn-ai-action-style') && !node.hasAttribute('data-sn-ai-shared-style')))) {
