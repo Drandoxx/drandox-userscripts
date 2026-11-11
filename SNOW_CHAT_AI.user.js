@@ -2080,15 +2080,37 @@ function snGuardExistingReferenceScripts(body){
   const sharedStyleResources = new Map();
   const sharedStyleVersion=String(typeof GM_info!=='undefined'?GM_info.script?.version||'current':'current');
   function shareActionStyle(root, style, text) {
+    // One parsed sheet per CSS source/document, rather than thousands of
+    // link-owned CSSOM wrappers. Keep native sheets and our action/theme order.
+    if(style.parentNode&&'adoptedStyleSheets' in root&&typeof CSSStyleSheet==='function'){
+      try{
+        let resource=sharedStyleResources.get(text);
+        if(!resource){resource={text,sheets:new WeakMap()};sharedStyleResources.set(text,resource);}
+        resource.sheets||=new WeakMap();const doc=root.ownerDocument||root;
+        let sheet=resource.sheets.get(doc);
+        if(!sheet){const Sheet=doc.defaultView?.CSSStyleSheet||CSSStyleSheet;sheet=new Sheet();sheet.replaceSync(text);resource.sheets.set(doc,sheet);}
+        const previous=style.snAiSharedSheet;
+        const ownStyles=[...root.querySelectorAll('style[data-sn-ai-action-style],style[data-sn-ai-space-theme]')];
+        style.snAiSharedSheet=sheet;style.snAiSharedText=text;
+        const ownSheets=new Set(ownStyles.map(item=>item.snAiSharedSheet).filter(Boolean));if(previous)ownSheets.add(previous);
+        const native=root.adoptedStyleSheets.filter(item=>!ownSheets.has(item));
+        const ordered=ownStyles.map(item=>item.snAiSharedSheet).filter(Boolean),next=[...native,...new Set(ordered)];
+        if(next.length!==root.adoptedStyleSheets.length||next.some((item,index)=>item!==root.adoptedStyleSheets[index]))root.adoptedStyleSheets=next;
+        style.snAiSharedLink?.snAiReleaseStyle?.();style.snAiSharedLink?.remove();style.snAiSharedLink=null;
+        if(style.textContent)style.textContent='';
+        while(sharedStyleResources.size>20){const key=sharedStyleResources.keys().next().value,old=sharedStyleResources.get(key);if(old.url)URL.revokeObjectURL(old.url);sharedStyleResources.delete(key);}
+        return;
+      }catch{/* Older/cross-document contexts retain the existing link fallback. */}
+    }
     const mounted=style.snAiSharedLink;
     if(style.snAiSharedText===text&&mounted?.parentNode===style.parentNode&&mounted.dataset.snAiStyleVersion===sharedStyleVersion&&!mounted.disabled&&(mounted.sheet||mounted.dataset.snAiStylePending==='true'))return;
     if(style.textContent!==text)style.textContent=text;
     if(!style.parentNode)return;
     let resource=sharedStyleResources.get(text);
-    if(!resource){
+    if(!resource?.url){
       try{resource={url:URL.createObjectURL(new Blob([text],{type:'text/css'})),text};}catch{return;}
       sharedStyleResources.set(text,resource);
-      while(sharedStyleResources.size>20){const oldest=sharedStyleResources.keys().next().value;URL.revokeObjectURL(sharedStyleResources.get(oldest).url);sharedStyleResources.delete(oldest);}
+      while(sharedStyleResources.size>20){const oldest=sharedStyleResources.keys().next().value,old=sharedStyleResources.get(oldest);if(old.url)URL.revokeObjectURL(old.url);sharedStyleResources.delete(oldest);}
     }
     text=resource.text;
     // Ordinary links preserve cascade position; adopted sheets did not.
