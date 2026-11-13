@@ -586,6 +586,9 @@ async function snPersonalCurrentAccount(){
 function installPersonalSettingsSync({identity,reporter,readModes,writeModes,defaultModes,onCredentialBinding=()=>{},onCredentialDetach=()=>{}}){
   if(!snPersonalApprovedPage())return;
   let stopped=false,checking=false,context=null,generation=0,status='connecting',panel=null,refreshing=false;
+  let syncDeveloper=false,syncDeveloperChanged=false;
+  document.addEventListener('sn-ai-developer-mode',event=>{syncDeveloperChanged=true;syncDeveloper=event.detail===true;render();});
+  Promise.resolve(GM_getValue('sn-ai-developer-mode-v1',false)).then(value=>{if(!syncDeveloperChanged)syncDeveloper=value===true;render();}).catch(()=>{});
   const clone=value=>JSON.parse(JSON.stringify(value));
   const notify=()=>document.dispatchEvent(new CustomEvent('sn-ai-personal-settings-applied'));
   const userStamp=()=>{
@@ -651,7 +654,7 @@ function installPersonalSettingsSync({identity,reporter,readModes,writeModes,def
       }
       parent.append(panel);
     }
-    panel.hidden=!(context?.failureSince&&Date.now()-context.failureSince>=60000)&&status!=='local-save-failed';panel.style.display=panel.hidden?'none':'flex';
+    panel.hidden=!syncDeveloper||(!(context?.failureSince&&Date.now()-context.failureSince>=60000)&&status!=='local-save-failed');panel.style.display=panel.hidden?'none':'flex';
     const labels={connecting:'Settings: connecting',saved:'Settings: saved',pending:'Settings: saving',saving:'Settings: saving',offline:'Settings: offline - saved locally',conflict:'Settings: conflict',
       'local-save-failed':'Settings: local save failed - keep this page open','ambiguous-identity':'Settings: identity conflict - local data kept','queue-reconciliation':'Settings: previous unsaved changes need reconciliation','access-unavailable':'Settings: access unavailable','binding-revoked':'Settings: access revoked','authentication-required':'Settings: access unavailable',rejected:'Settings: save rejected - kept locally','identity-required':'Settings: waiting for signed-in name and userID',standby:'Settings: synced by another tab','account-changed':'Settings: another account is active in this browser'};
     panel.firstChild.textContent=status==='local-save-failed'?labels[status]:'Online sync failed - local settings working.';
